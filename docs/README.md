@@ -1,0 +1,141 @@
+# Experiment index
+
+Project overview is in [../HANDOFF.md](../HANDOFF.md). This file is the index and
+the measured results.
+
+Six separable experiments on one question: what does an agent harness gain when
+the agent's world is a live Lisp image rather than a directory of files?
+
+The substrate is [genera-lab](../../genera-lab) — an SBCL image an agent already
+inspects, repairs and extends while it serves. `ledger.lisp` records every
+mutation with its previous source, so rollback and replay-into-a-fresh-image
+already work. What is missing is a scored loop on top.
+
+Each experiment states one claim, the method that would settle it, and the result
+that kills it. They are independent unless a dependency is named.
+
+| # | experiment | claim under test | status |
+|---|---|---|---|
+| [E1](e1-trial-isolation.md) | trial isolation & cost | an isolated trial in a live image costs milliseconds, not seconds | **done — see below** |
+| [E2](e2-archive-tree.md) | archive/frontier search | Pareto-frontier search over ledger entries beats greedy keep-best on equal budget | **claim 2 confirmed: greedy frozen at 10.1 at every budget, pareto reaches global 15.0 at 10× budget; claim 1 open** |
+| [E3](e3-subturn-steering.md) | sub-turn steering | mutating a live agent object changes the *next request inside the running turn* | open |
+| [E4](e4-self-editing-object.md) | self-editing agent object | an agent that edits its own CLOS object outperforms a fixed one | needs E1 + E3 |
+| [E5](e5-single-tool-rlm.md) | single-tool RLM | one tool (`eval` a form in the image) beats a fixed tool schema | open |
+| [E6](e6-harness-teardown.md) | production harness teardown | read how Codex and Claude Code actually assemble a request | partial |
+| [harness](harness-lineage.md) | `vivarium` — Pi's loop ported, then diverged | shared substrate for E3–E5 | **arm A repairs a live image and extends itself; 40 tests green** |
+
+## Prior art, settled
+
+- [karpathy/autoresearch](https://github.com/karpathy/autoresearch) — one editable
+  file, 5-minute time-boxed trials, one scalar (val_bpb), keep-or-revert, git as
+  history. Family A: single asset, hill-climb.
+- [GEPA](https://arxiv.org/abs/2507.19457), [ADAS](https://arxiv.org/abs/2408.08435),
+  [DGM](https://arxiv.org/abs/2505.22954), AlphaEvolve — Family B: population,
+  archive, frontier. GEPA's finding matters here: always taking the best-scoring
+  candidate sticks in a local optimum, so keep anything that wins on *at least one*
+  instance.
+- [prime-agent](https://www.primeintellect.ai/blog/prime-agent) — closest existing
+  system. Persistent IPython kernel as the only tool; prompts, skills, memory and
+  sub-agents are CRUD-able at runtime; `/refine` reads its own trajectory and
+  applies the smallest edit. Base system prompt immutable, everything around it
+  mutable, all changes written to disk so they survive turns.
+
+prime-agent is the file-backed approximation of an image. It uses a persistent
+kernel because that is the nearest thing Python has to one, then adds append-only
+JSONL so harness edits survive a turn boundary — which is what `ledger.lisp` is.
+The concept is not unclaimed. The substrate is.
+
+## E1 result, which reshapes everything downstream
+
+**SBCL 2.6.7 refuses to fork with more than one thread running.** Measured, not
+inferred ([probes/fork-probe.lisp](probes/fork-probe.lisp)):
+
+```
+[stage1] threads=1  fork+work+reap=34.7ms  status=0  child: ok result=42
+[stage2] threads=5  FORK REFUSED: Cannot fork with multiple threads running.
+```
+
+genera-lab serves over Hunchentoot and is permanently multi-threaded, so **the
+serving image can never be the thing that forks.** A zygote is mandatory, not an
+optimisation.
+
+Cost per isolated trial, all on SBCL 2.6.7 / macOS ARM64, genera-lab loaded
+([probes/zygote-probe.lisp](probes/zygote-probe.lisp)):
+
+| path | per trial | isolation |
+|---|---|---|
+| cold `sbcl` + `quickload` | ~2,600 ms | full |
+| saved core, fresh process | ~75 ms | full |
+| zygote fork, sequential ×20 | 31.8 ms | full |
+| zygote fork, parallel ×20 | 28.3 ms | full |
+| in-process, no fork | 0.12 ms | none |
+
+Two things to read off this.
+
+**Parallel fan-out barely beats sequential** (28.3 vs 31.8 ms). Fork cost dominates
+and does not parallelise — copy-on-write page-table setup over a ~100 MB heap on
+macOS. Do not plan on wide fan-out being free.
+
+**The gain is not "big experiments get faster", it is "small experiments become
+viable."** Against a 100 ms benchmark, a cold-process loop spends 96% of wall-clock
+on startup; the fork loop spends 22%; in-process spends 0.1%. Nothing here makes a
+5-minute training run cheaper. What it does is let the trial *be* 100 ms — which
+changes what you can search, not how fast you search it.
+
+Do not compare these against autoresearch's 5-minute budget. That budget is the
+experiment, not overhead; his startup cost is explicitly excluded and unstated.
+
+## Bases and model runtime
+
+**[Pi](https://github.com/badlogic/pi-mono) is the control arm, prime-agent is the
+treatment.** Pi resolves extensions, skills, prompts and tool schemas at startup — it
+*is* the "everything fixed before the run" condition prime-agent argues against — and
+it is a strong, minimal, MIT-licensed baseline.
+
+**Pi's loop gets ported to Lisp, not driven over RPC** — see [harness-lineage.md](harness-lineage.md)
+for the measured scope (~1,500–2,300 lines, in `packages/agent`, not the 58k
+`packages/coding-agent`) and for the one fidelity measurement that keeps a ported
+control attributable.
+
+**`llama-server`, not ollama**, for anything scored:
+
+- seed and full sampler control per request — E1/E2 are worthless without
+  reproducible trials
+- GBNF / `json_schema` constraints — E5's single-tool arm needs well-formed
+  s-expressions without a retry loop
+- `-np N` parallel slots with continuous batching — E2's fan-out shares one weight
+  copy; ollama queues
+- slot-level prompt cache visibility (`--cache-reuse`, slot save/restore) — E3's
+  third kill criterion is a cache measurement ollama's abstraction hides
+
+`~/.llamabarn/gpt-oss-20b-mxfp4.gguf` is ready to serve. `devstral-small-2` is the
+stronger coding model and lives as an ollama blob; llama.cpp reads GGUF by magic, so
+the sha256 filename is fine to point at directly.
+
+**Trust boundary on local models.** For "does harness B beat harness A", a local
+model is fine held constant across arms — but watch for floor effects, where a model
+too weak to use either harness shows no difference that is not evidence of none. For
+"does this work at all", a local 20B measures the model, not the harness. Local for
+high-volume low-stakes roles (E2 mutation proposals, judges); frontier for arms that
+decide something.
+
+## Architecture forced by E1
+
+Three processes, not one:
+
+- **serving image** — threaded, holds live sessions and real traffic. Mutated by
+  `install`, exactly as genera-lab does today. Never forks.
+- **zygote** — single-threaded, genera-lab and benchmark fixtures loaded, no
+  threads ever spawned. Forks one child per trial. Children `_exit`; a child that
+  wedges or corrupts its heap cannot touch the parent.
+- **arena** — out-of-process, owns the archive, samples parents, promotes winning
+  ledger entries into the serving image.
+
+They share the ledger. A variant is a set of `(target, source, previous-source)`
+entries — that is the genome, and the datatype already exists.
+
+The consequence to accept: the zygote's warm state is loaded code and fixtures,
+**not the serving image's live sessions**. Fixture-scored trials and live-traffic
+scoring are now two different mechanisms, separated by a measured constraint rather
+than by preference. Live-traffic scoring is the per-session CLOS variant path
+genera-lab already has, not a fork.
