@@ -186,3 +186,109 @@ than a story told afterwards.
    flipped the sign of its headline quantity, and S2c measured 24% cell
    disagreement at temperature 0 with a fixed seed. A mean without its range is
    not a result here.
+
+---
+
+## RESULT (2026-08-11)
+
+35 pairs, **34 usable**, 1 ineligible, 0 dropped, 0 faults, 0 retries.
+gpt-oss-120b, checkpoint turn 4, 7 tasks across 6 families.
+
+Read in the pre-registered order. Ranges are wide enough that **sign consistency
+across the 34 pairs carries the result, not the means**.
+
+### 1. Score against SHAM — nothing is bought or lost
+
+| vs SHAM | mean | better / worse / equal |
+|---|---|---|
+| FULL | +0.016 | 3 / 1 / 30 |
+| DISTILLED | −0.010 | 3 / 5 / 26 |
+| LEDGER | **−0.057** | 1 / 6 / 27 |
+
+No arm loses enough score to end the experiment, so efficiency is meaningful.
+LEDGER's −0.057 is small but one-sided — it is worse in six pairs and better in
+one.
+
+### 2. `SHAM − FULL` — the restart costs about 3,000 tokens, reliably
+
+```
++2,989 tokens mean, positive in 31 of 34 pairs
+```
+
+That is the bound every other contrast is read against, and it is the number a
+three-arm design would have buried.
+
+### 3. The generalisation gate — **passes, narrowly**
+
+Keeping the transcript beat dropping it in **4 of 34 pairs** — T18 (3/5) and T11
+(1/5). So the broad claim is not forbidden. It is also not comfortable: on five
+of seven tasks the transcript never once earned its place.
+
+### 4. Efficiency — compression works, the restart it needs does not pay for it
+
+| | mean | consistent in |
+|---|---|---|
+| `DIST − SHAM` | **+1,698** | positive 27/34 |
+| `DIST − FULL` | **+4,687** | positive 32/34 |
+| `LEDGER − SHAM` | **−2,392** | negative 25/34 |
+| `LEDGER − FULL` | +597 | positive 22/34 |
+
+Which decomposes cleanly:
+
+```
+dropping the transcript saves        ~2,400 tokens   (LEDGER − SHAM)
+the restart it requires costs        ~3,000 tokens   (SHAM − FULL)
+                                     ─────────────
+net against just continuing            ~+600 tokens  (LEDGER − FULL)
+```
+
+> **Compression genuinely works. The restart it requires costs more than the
+> compression saves.**
+
+And **distillation is worse than the raw transcript it replaces** — +1,698 tokens
+against SHAM even before the restart, and +4,687 against simply continuing, at
+6.18 turns versus FULL's 2.68. The summariser's own call is part of that, which
+is exactly why it was charged here.
+
+### 5. The pre-registered prediction is disconfirmed, 3 clauses of 4
+
+| clause | result |
+|---|---|
+| `DIST < SHAM` — compression itself helps | **FAILS** (+1,698) |
+| `DIST < FULL` — the procedure beats continuing | **FAILS** (+4,687) |
+| `DIST > LEDGER` on score | holds (+0.047) |
+| `DIST ≥ SHAM` on score | **FAILS** (−0.010) |
+
+Recorded in advance, so this is a prediction failing rather than a story retold.
+
+### 6. B10's observation was a property of family D
+
+The acceptance criterion asked for this either way. B10 stage 1 found ledger
+restart *cheaper* than continuing, `A1 − C = −2,569` tokens:
+
+| `LEDGER − FULL` | mean | cheaper in |
+|---|---|---|
+| family D only (T18, T20) — B10's original ground | **−2,229** | 7/10 pairs |
+| the five non-family-D tasks | **+1,774** | 5/24 pairs |
+
+**It replicates where B10 measured it and reverses everywhere else.** That is the
+mirror-image failure this document was written to catch — now measured rather
+than feared, and the reason the task set was deliberately not inherited.
+
+### What this answers, and what it does not
+
+The question was *what cognitive state should cross a version boundary*. On this
+workload:
+
+- **Do not restart in order to compress.** The saving is real and smaller than
+  the restart.
+- **If a restart is forced**, the ledger is the cheaper context and costs about
+  0.06 of score.
+- **The distilled summary, as specified here, is not worth its cost** — worse
+  than the transcript on tokens, turns, and marginally on score.
+
+**Scope.** One frozen summariser: a single prompt, one call, untuned by
+construction. This is a result about *that* distillation, not about distillation.
+A cheaper or better-targeted summariser is a different experiment, and the honest
+version of it would pre-register the prompt again rather than tune until the
+arm wins.
