@@ -1645,9 +1645,36 @@ raw transcript worth its tokens" from "should the agent author its own state",
 which is B10's A2 and is not this experiment. The summariser call is charged to
 DISTILLED -- a compression costing more than it saves has improved nothing.
 
-  distillation benefit = DISTILLED - FULL
-  compression floor    = LEDGER - FULL
-  does structure pay   = DISTILLED - LEDGER
+AMENDED before implementation: FOUR ARMS, KEEPING B10's SHAM. Three would have
+confounded the measurement -- FULL vs DISTILLED is transcript-vs-summary PLUS
+continue-vs-restart, and B10 measured that second term as large (the restart
+channel alone moved score by 0.4 on one pair and tokens by +2,703 on another
+with no cognition lost). Every contrast is therefore taken against SHAM, so the
+restart sits on both sides and cancels:
+
+  restart / plumbing            = SHAM      - FULL
+  effect of distillation        = DISTILLED - SHAM
+  effect of discarding it       = LEDGER    - SHAM
+  distilled cognition beyond
+    authoritative facts         = DISTILLED - LEDGER
+
+The summariser is frozen on model, temperature, prompt, schema, max output and
+INPUT BOUNDARY: DISTILLED may see only what existed before the fork -- no
+post-checkpoint results, no reference fix, no evaluator output, no cases.
+
+THE FULL-WINS REQUIREMENT IS DEMOTED from a validity gate to a GENERALISATION
+gate, because as a validity gate it would have required reality to produce a
+result favourable to FULL before the experiment counted as working. If FULL
+never wins the instrument may be sound and the finding simply true. What the
+gate governs is the CLAIM: "on this workload retaining the raw transcript showed
+no observed benefit" stays available; "raw transcripts are unnecessary for
+agentic repair" does not.
+
+PREDICTION RECORDED IN ADVANCE, so that finding it later is a confirmation
+rather than a story told afterwards: the most consequential outcome is not
+LEDGER winning but the MIDDLE arm -- DISTILLED > LEDGER and DISTILLED >= SHAM at
+lower cost than FULL, which would say useful cognition exists and the raw
+trajectory is the wrong representation of it.
 """
 acceptance = [
   "three arms over a task set chosen for this question, not inherited from B10, with score reported before efficiency",

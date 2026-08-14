@@ -18,40 +18,69 @@ differing by only ~10%, so fewer turns rather than cheaper ones. One point,
 observed on tasks chosen for a different property, with the arm never varied or
 optimised. That is a reason to run an experiment, not a result.
 
-## Three arms, one variable
+## Four arms, one variable
 
-Forked from an identical quiescent turn-4 state, exactly as B10:
+**The sham is retained**, and dropping it was a mistake in the first draft of
+this document. Three arms would have confounded the thing being measured:
+
+```
+FULL vs DISTILLED  =  transcript-vs-summary  +  continue-vs-restart
+```
+
+and B10 measured that second term as large — on one pair the restart channel
+alone moved score by 0.4 in both directions, and on another it moved tokens by
++2,703 with no cognition lost at all. Comparing a restarting arm against a
+continuing one throws away B10's best methodological lesson.
 
 ```
                 identical, quiescent turn-4 state
                               │
-              ┌───────────────┼───────────────┐
-              │               │               │
-            FULL          DISTILLED         LEDGER
-        keep the whole   restart with a   restart from the
-        transcript and   structured       ledger recap
-        continue         summary          alone
+        ┌──────────────┬──────┴───────┬──────────────┐
+        │              │              │              │
+      FULL           SHAM         DISTILLED        LEDGER
+   keep the       restart, then   restart with   restart from
+   transcript,    restore the     a structured   the ledger
+   continue       identical       summary        recap alone
+                  transcript
 ```
 
-- **FULL** is B10's `control`: same context object, keep going. What every
-  harness does today.
-- **DISTILLED** replaces the transcript with hypotheses, conclusions and
-  unresolved work, with the exploratory noise removed. **Harness-produced, by one
-  model call over the transcript** — not agent-authored. That deliberately
+- **FULL** — B10's `control`. What every harness does today.
+- **SHAM** — B10's `sham`, unchanged: the machinery is rebuilt, the transcript is
+  handed back. Restart exercised, cognition retained.
+- **DISTILLED** — hypotheses, conclusions and unresolved work, exploratory noise
+  removed. **Harness-produced by one model call** — not agent-authored, which
   isolates *"is the raw transcript worth its tokens"* from *"should the agent
-  author its own state"*, which is B10's A2 and is not this experiment. The
-  summariser call is **counted against DISTILLED's budget**; a compression that
-  costs more than it saves has not improved anything.
-- **LEDGER** is B10's `recovery` arm unchanged: the authoritative external facts
-  and actions, nothing else.
+  author its own state"* (B10's A2, a different question).
+- **LEDGER** — B10's `recovery` arm unchanged: authoritative external facts and
+  actions, nothing else.
 
-Quantities:
+**Every contrast is taken against SHAM, not FULL**, so the restart is on both
+sides of every subtraction and cancels:
 
 ```
-distillation benefit   =  DISTILLED − FULL
-compression floor      =  LEDGER − FULL
-does structure pay     =  DISTILLED − LEDGER
+restart / plumbing effect          =  SHAM      − FULL
+effect of distillation itself      =  DISTILLED − SHAM
+effect of discarding the transcript=  LEDGER    − SHAM
+value of distilled cognition
+  beyond authoritative facts       =  DISTILLED − LEDGER
 ```
+
+### The summariser is frozen too
+
+Fixed before the first run and not tuned between runs: **model, temperature,
+prompt, output schema, maximum output length, and input boundary.**
+
+> **DISTILLED may only see information available before the fork.** No
+> post-checkpoint results, no reference fix, no evaluator output, no case
+> definitions.
+
+The summariser call is **charged to DISTILLED's budget**, so what is reported is
+
+```
+net efficiency gain = post-checkpoint savings − summarisation cost
+```
+
+Otherwise the experiment would be measuring free compression.
 
 **Score is reported before efficiency, always.** The B10 observation is only
 interesting if score holds; a cheaper arm that solves less is not a finding.
@@ -72,26 +101,54 @@ again. B11 runs on a spread across the *existing* families — `A-STATE`, `A-LIV
 `A-FLIGHT`, `B-CAPABILITY`, `M-CONFLICT` — plus family D, so the result is about
 agentic repair rather than about one family's shape.
 
-## The validity check that decides whether the result means anything
+## The generalisation gate — which is not a validity gate
 
-The mirror image of B10's failure. B10 mistook length for path-dependence twice;
-the corresponding error here is that these tasks may simply be ones where the
-transcript adds nothing, in which case B11 measures the task set.
+The first draft of this document called "at least one task must show FULL winning"
+an instrument-validity criterion. That was wrong, and wrong in a way B10's own
+discipline forbids: **it would require reality to produce a result favourable to
+FULL before the experiment counted as working.** If FULL never wins, the
+instrument may be perfectly sound and the finding may simply be true.
 
-> **At least one task must show FULL beating both other arms.** If none does, the
-> transcript never demonstrably helps anywhere in the set, and "removing it is
-> free" is a statement about these tasks and not about agentic repair.
+So it is a gate on *what may be claimed*, not on whether the measurement is valid:
 
-That is an acceptance criterion, not a footnote. If it fails, the honest report
-is *"no task in this set rewards carrying the transcript"* — which is still worth
-knowing, and is not the claim above.
+```
+if neither FULL nor SHAM ever beats DISTILLED or LEDGER:
+    valid   →  "on this workload, retaining the raw transcript
+                showed no observed benefit"
+    forbidden →  "raw transcripts are unnecessary for agentic repair"
+```
+
+The result stands either way; only its scope narrows.
+
+## The outcome worth watching for
+
+Not LEDGER winning. The most consequential pattern would be the **middle** arm:
+
+```
+score:  DISTILLED > LEDGER   and   DISTILLED ≥ SHAM
+cost:   DISTILLED < FULL
+```
+
+which would say: *useful cognition exists, and the raw trajectory is the wrong
+representation of it.* That is a much stronger architectural finding than
+"compression saves tokens", and it feeds every open story —
+
+- **B10 / Smalltalk** — full continuation may be excessive.
+- **B8 / BEAM** — explicit state becomes more plausible.
+- **B12 / Cordis** — component-local state could be externalised into a
+  longer-lived cognitive dependency, which is exactly the escape hatch §7.3 names.
+- **vivarium** — the ledger stays authoritative while distilled cognition becomes
+  a separate, explicitly **non-authoritative** working-memory layer.
+
+Recorded in advance so that finding it later is a prediction confirmed rather
+than a story told afterwards.
 
 ## Reading order
 
 1. **Score first.** If DISTILLED or LEDGER lose score, stop; efficiency is moot.
-2. **Then the FULL-wins check.** If no task rewards the transcript, the rest is
-   about the task set.
-3. **Then efficiency**, with spread. Two runs of B10's identical configuration
+2. **Then `SHAM − FULL`**, which bounds what any other contrast can mean.
+3. **Then the generalisation gate**, to fix the scope of the claim.
+4. **Then efficiency**, net of summarisation, with spread. Two runs of B10's identical configuration
    flipped the sign of its headline quantity, and S2c measured 24% cell
    disagreement at temperature 0 with a fixed seed. A mean without its range is
    not a result here.
