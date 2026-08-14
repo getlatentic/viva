@@ -162,9 +162,59 @@ FROZEN 2026-08-11. No new substrate concepts unless an experiment forces one.
 The next thing that happens is B11, not more architecture."""
 
 [[settled]]
+ref   = "B11 + B12 / state placement"
+claim = "State expected to survive replacement must not live inside the replaceable thing. Implicit state is convenient; explicit state is evolvable."
+result = """The first rule two stories reached independently, from opposite directions and by
+different instruments, which is why it is recorded as settled rather than as
+either story's finding.
+
+  B11, from COGNITION.     Compression works; the restart it requires does not
+                           pay for it. What survives a version boundary usefully
+                           is the named, authoritative record -- not the raw
+                           trajectory, and not a summary of it.
+  B12, from COMPONENT      Cordis reverts and reapplies from a clean slate, so
+       REPLACEMENT.        component-local state does not survive replacement and
+                           rebuilds from nothing. The SAME state one indirection
+                           away, in a longer-lived dependency, survives at zero
+                           cost.
+
+So the distinction vivarium should draw is not durable-vs-volatile but
+
+  COMPONENT STATE   disposable implementation state, dies with its component
+  EVOLUTION STATE   explicitly durable, named OUTSIDE the component that uses it
+
+and the candidates for the second are nameable in advance: agent working memory,
+learned skills, experiment history, provider/model state, long-lived caches,
+identity, goals.
+
+WHAT IT DOES NOT SAY, because two convergent measurements are not a proof: not
+that explicit cognition is universally sufficient. B10 tried to establish that
+and halted. The claim is about state that must CROSS a boundary -- a context
+compression, a component replacement, a process restart, a substrate change --
+and it is silent about state that never crosses one.
+
+THE REASON IT IS ARCHITECTURE AND NOT ADVICE: naming state as a dependency is
+cheap at authoring time and impossible to retrofit at replacement time. The
+component that held it is already gone."""
+
+[[settled]]
 ref   = "B12 / effect boundary"
-claim = "Effect containment and empirical reconciliation are each insufficient alone, and the pair is strictly stronger."
-result = """Measured against cordis 4.0.0-rc.8, the reference implementation, on four
+claim = "Effect containment establishes PROTOCOL COMPLIANCE. It cannot establish SEMANTIC CORRECTNESS. Reconciliation supplies the missing proof obligation."
+result = """The distinction is the result, and it is measured rather than inferred:
+
+  Cordis guarantees    "I executed the recovery protocol registered for this
+                        component."                          PROTOCOL COMPLIANCE
+  vivarium asks        "Did executing that protocol produce the authoritative
+                        expected state?"                     SEMANTIC CORRECTNESS
+
+Different guarantees. The paper is explicit that the implementation TRUSTS the
+inverse a component supplies rather than verifying it (S5.1.1), so the failures
+below are not Cordis bugs. What the experiment shows is that AUTONOMOUS COMPONENT
+GENERATION makes that design assumption far more consequential than it is for a
+human-authored plugin: a discipline problem becomes a correctness problem, and it
+is silent.
+
+Measured against cordis 4.0.0-rc.8, the reference implementation, on four
 variants of one agent-shaped capability run through a complete lifecycle.
 
 CORDIS REPORTS A CLEAN UNLOAD FOR EVERY FAILURE MODE AN AGENT-AUTHORED COMPONENT
@@ -214,7 +264,32 @@ rule from independent measurements.
 
 EFFECT CONTAINMENT DOES NOT SUBSUME EXECUTION CONTAINMENT, now measured rather
 than quoted: ctx.isolate isolates the realm a coeffect KEY resolves in, and a
-component reached ambient state straight through it. B8 keeps its own question."""
+component reached ambient state straight through it. B8 keeps its own question.
+
+THE EFFECT TAXONOMY SURVIVED CONTACT AND EARNED A FIELD. The probe's component
+produced all three classes, which is the point -- "every effect needs an undo" is
+not a sufficient model for an autonomous agent. B12 justifies the shape without
+justifying building it yet:
+
+  Effect { class, inverse?, compensation?, verification? }
+
+  Revertible      the runtime restores the expected state, given a correct
+                  inverse                       tool, listener, policy, handle
+  Compensatable   history cannot be erased; a semantic counter-action exists
+                                                the audit line, a notification
+  Irreversible    neither rollback nor satisfactory compensation
+                                                needs approval or a commit
+                                                barrier BEFORE promotion
+
+`verification` is the field B12 argues for that the taxonomy did not previously
+have: the three failure modes above are exactly what an unverified inverse looks
+like, and the class alone does not distinguish a component that CAN be reverted
+from one that WAS. S6.1 supplies the acquisition/emission boundary this rests on;
+the three-way classification remains VIVARIUM'S and must not be cited to the
+paper. Its warning transfers though: compensating actions compose in the same
+LIFO order as inverses, but the metatheory does not -- commutation is proved
+against the fine equivalence and "has to be re-established against the coarser
+one" (p68). Compensation is not a drop-in extension of the guarantee."""
 
 [[settled]]
 ref   = "B11 / context"
@@ -2464,27 +2539,54 @@ THE TWO STORIES ASK DIFFERENT QUESTIONS, which is why neither subsumes the other
        self-improving system, because process replacement, supervision and hot
        upgrade are native runtime mechanisms rather than harness code?
 
-THEREFORE B10 SEQUENCES THIS STORY, and that is a real scheduling decision rather
-than a note:
-  - if B10 finds A2 ~= B, explicit state is sufficient and BEAM becomes HIGHLY
-    relevant: it is the mature runtime for the model that won, and the question
-    becomes whether supervised evolution makes that model safer or better;
-  - if B10 finds B >> A2, captured computation carries information that
-    externalising loses, and BEAM's underlying persistence philosophy has already
-    lost the more fundamental contest. Axes 1 and 3 below would still be worth
-    measuring for containment and hot upgrade; the persistence argument would not.
-Run B10 first. It costs less and it tells you which of those two probes this is.
+B10 WAS MEANT TO SEQUENCE THIS STORY and could not: it halted without
+identifying the effect, so neither "A2 ~= B" nor "B >> A2" was established. That
+does not block B8 -- it removes a comparator. Nothing here now rests on captured
+computation having been shown better or worse than explicit state, and no claim
+in this probe may assume either.
 
-THEREFORE B10 SEQUENCES THIS STORY, and that is a real scheduling decision rather
-than a note:
-  - if B10 finds A2 ~= B, explicit durable state is sufficient, and BEAM becomes
-    MORE interesting, because it is the mature runtime for exactly that model and
-    supplies supervision for free;
-  - if B10 finds B >> A2, captured computation carries information that
-    externalising loses, and BEAM is pointed the wrong way -- its entire model is
-    explicit-state-plus-restart, so it inherits A2's ceiling and adds nothing to
-    the axis that mattered.
-Run B10 first. It costs less and it tells you whether this probe is worth running.
+---------------------------------------------------------------------------
+AMENDED 2026-08-11, AFTER B12 CLOSED. B12 answered effect containment strongly
+and left execution containment untouched, which sharpens all three axes from
+descriptions into comparisons against a measured baseline:
+
+  AXIS 1  EXECUTION CONTAINMENT   Cordis provably cannot supply it. Measured,
+          not quoted: ctx.isolate isolates the realm a coeffect KEY resolves in,
+          and a probe component reached ambient state straight through it. So
+          axis 1 is the only place this property can come from, and the fault
+          gradient is the whole result.
+
+  AXIS 2  MUTATION IMPEDANCE      SBCL code-as-data against Erlang's source /
+          abstract-format / tooling path. Unchanged by B12 and still the
+          highest-value axis, because it sits on the hot path.
+
+  AXIS 3  STATEFUL REPLACEMENT    now a real comparison rather than a
+          description, because both sides have measured semantics:
+
+            Cordis  RevertAndReapply   old state DISCARDED, effects withdrawn,
+                    new component reapplied from a clean boundary
+            OTP     MigrateState       old process state -> code_change/3 ->
+                    transformed new state
+
+          B12 measured what the first costs: component-local state does not
+          survive replacement and rebuilds from nothing, while the SAME state
+          placed one indirection away in a longer-lived dependency survives at
+          zero cost. So axis 3's question is no longer "does hot upgrade work".
+          It is:
+
+            DOES FORWARD MIGRATION BUY ENOUGH OVER EXPLICIT EXTERNALISED STATE
+            PLUS CLEAN RETRACTION TO JUSTIFY ITS COMPLEXITY?
+
+          That is answerable, and a negative answer is as useful as a positive
+          one: it would say the externalisation rule B11 and B12 converged on is
+          sufficient and code_change/3 is machinery vivarium does not need.
+
+DO NOT RE-ESTABLISH THE THIRD POLICY. CaptureAndContinue was measured in B7 and
+that cell is filled. B8 does not implement Smalltalk again.
+
+DO NOT LET AXIS 3 BECOME AN OTP RELEASE-UPGRADE DEMO. The caveat above stands and
+B12 makes it sharper: the agent drives every upgrade, and the comparator is
+vivarium's own externalised state, not a release script.
 """
 acceptance = [
   "the fault gradient measured, not a verdict: which of process-local exception, runaway loop, atom exhaustion, code-server corruption and bad NIF stay contained, beside SBCL fork's guarantee that all of them do",
