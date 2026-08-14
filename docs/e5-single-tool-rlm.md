@@ -179,26 +179,93 @@ JSON-SEXP --remove the tool-call envelope-------->  RAW-SEXP
 The last row is the prior worth stating in advance: encoding a Lisp AST *as
 JSON* is ceremony, because Lisp already has an AST syntax.
 
-## E5b — action power, only if a dynamic arm survives E5a
+## E5b — action space: dynamic registry against live language
 
-Unlock the language: `let`, `loop`, `mapcar`, `remove-if`, `progn`. Now the
-question is deliberately the big one — **is the programming language a better
-action space than a tool catalogue?**
+**This is the consequential arm, and the one that can invalidate B14's oracle.**
+E5a cannot: it forbids, by design, the very thing that separates a registry from
+a language. Saying otherwise was an error in the first draft of this section —
+the axes were separated above and then quietly recombined in the sequencing.
 
-## E5c — where it becomes self-improvement
-
-Allow `defun`, and the tool boundary disappears:
+Three levels already exist in this repo, and only the first has ever been scored:
 
 ```
-one-shot expression -> the same expression, repeatedly -> the agent names it
--> future requests call the abstraction
+LEVEL 1  FIXED REGISTRY     startup tools only              every run to date
+LEVEL 2  DYNAMIC REGISTRY   install DEFUN -> derive schema  self.lisp:register-tool
+                            -> register -> new tool next    + derive.lisp,
+                            request                          never scored
+LEVEL 3  LANGUAGE           install DEFUN -> call it. No    what E5 is really
+                            registration concept exists      asking about
 ```
 
-That is not "the agent registered a new tool". It is what programmers do:
-discover repeated computation, create an abstraction, add it to the language,
-and reason at the higher level afterwards. **If E5c works, B15's skill-vs-tool
-choice substantially collapses** — which is either a simplification or the loss
-of the choice B15 was built to observe, and is worth knowing before B15 runs.
+| arm | how a new DEFUN becomes usable |
+|---|---|
+| **STATIC** | it cannot — the control |
+| **REGISTER** | `register-tool`: derive a schema, expose it as a named tool |
+| **EVAL** | emit `(diagnose-x ...)` directly |
+
+**Held constant: the same generated function body, the same task, model, context
+and evaluation. The candidate is generated during the episode, never
+preinstalled.** Both dynamic arms emit a plain call — power is equal, exactly as
+in E5a. Only the entry mechanism differs, which is what makes the comparison
+architectural rather than syntactic.
+
+**Do not use `impact_map` for this.** A small task where the agent plainly
+benefits from naming a repeated helper is enough, and keeps B14's oracle
+uncontaminated.
+
+### The metric this arm needs
+
+**Abstraction activation latency** — from DEFUN created to first successful use:
+
+```
+REGISTER   definition -> schema derivation -> registration -> model sees the
+           schema -> call
+EVAL       definition -> call
+```
+
+plus task success, requests, tokens, invalid actions, **could-not-act**, and
+schema/registration failures.
+
+### What each outcome decides
+
+| result | consequence for B14 Gate 3 |
+|---|---|
+| `REGISTER ≈ EVAL` | the registry costs nothing real. Keep `impact_map` as a dynamically acquired **tool** |
+| `EVAL` wins | do **not** run Gate 3 with a tool oracle. The oracle becomes a Lisp abstraction, and CONTROL gets whatever action space E5 established |
+| `REGISTER` wins | a schema with a name, description and typed arguments is *cognitively* different from a function that merely exists — and the skill/tool distinction must **not** be collapsed |
+
+That third row is the one worth wanting. It would mean the registry earns its
+ceremony at the agent level, despite the ceremony.
+
+## E5c — power, and then abstraction
+
+Only after E5b. Unlock `let`, `loop`, `mapcar`, `remove-if`, `progn`, then
+`defun`, and ask whether the programming language is a better action space than a
+catalogue of operations.
+
+## What collapses in B15, stated precisely
+
+The first draft said E5c collapses B15's skill-vs-tool choice. Too broad. What
+may disappear is one specific boundary:
+
+```
+ordinary function   vs   registered tool
+```
+
+which is plausibly a **registry implementation detail inherited from Pi**, not a
+real distinction between kinds of improvement. These stay distinct in any harness:
+
+```
+POLICY / SKILL     "inspect live state when the source looks correct"
+                   "infer a population predicate rather than patching instances"
+ABSTRACTION        (defun impact-map ...)
+HARNESS            how observation, context, evaluation and persistence work
+```
+
+So B15's question becomes cleaner rather than smaller: *should I improve what I
+know to do, what computations I can name cheaply, how my own runtime operates —
+or nothing?* If E5b shows the tool/function boundary is ceremony, B15 sheds a
+category it inherited rather than losing one it needed.
 
 ## Measure errors, not just score
 
@@ -223,3 +290,32 @@ an aggregate score cannot tell them apart. See
 | JSON-SEXP | **missing**, and small — `read-form` already exists, so it is an envelope around it |
 
 E5a is therefore much closer to runnable than the story implies.
+
+## Order of work
+
+```
+B14 corrected Gate 1/2        no oracle built yet -- the result survives
+        |                     either architecture
+        v
+E5a  representation           which encoding for equivalent calls
+        |
+        v
+E5b  action space             dynamic registry vs live language
+        |                     THE decision experiment
+        v
+architectural decision
+        |
+        +-- registry earns it  -> B14 Gate 3 with impact_map as a TOOL
+        |
+        +-- language wins      -> B14 Gate 3 with impact_map as an ABSTRACTION
+        |
+        v
+B15  self-improvement, in the action space the evidence supports
+```
+
+**B14's Gate 1 and Gate 2 run first and are not blocked by any of this.** They
+ask whether the task contains a reliably solvable repeated investigation burden
+under the restricted observational regime, which is true or false regardless of
+how actions are later encoded. Only **Gate 3** — the oracle ceiling — depends on
+the action space, because a ceiling measured in the wrong one is a ceiling
+measured for nothing.
