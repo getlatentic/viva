@@ -1355,6 +1355,45 @@ THE EPISODE BOUNDARY IS PART OF THE INSTRUMENT, not of B15. At every boundary th
 CONVERSATIONAL TRANSCRIPT IS DISCARDED and only what the arm is permitted to
 retain survives. Without that, ordinary transcript accumulation is an untracked
 fifth self-improvement mechanism running inside every arm including the control.
+
+---------------------------------------------------------------------------
+BLOCKER FOUND BEFORE WRITING ANY TASK, 2026-08-11. THE CONTROL TOOL SET CANNOT
+INSPECT LIVE STATE AT ALL, so the sequence as designed would be UNSOLVABLE in
+CONTROL rather than expensive -- which fails proof 4 by construction and would
+have manufactured the result.
+
+Verified against the code rather than assumed. attempt-task builds its agent with
+image-tools:tool-set, which is exactly five tools:
+
+  read_definition   returns SOURCE
+  install           returns "Installed X." and NOTHING ELSE
+  rollback          returns an installation report
+  find_definitions  matches definition NAMES by substring
+  bash              jailed to a scratch directory, cannot reach the image
+
+Nothing returns the VALUE of anything. self.lisp's register-tool and remember
+exist but are NOT in the scored set, so the agent cannot even build an inspector
+by hand. T15 and T16 -- "a defect invisible outside this image" -- were therefore
+passed by reasoning from source and installing a fix, never by looking.
+
+WHAT B14 MUST ADD FIRST, and it is one primitive, not a subsystem:
+
+  inspect_value(form) -> the value of one form, evaluated in the task package
+
+That is the "possible but expensive" floor the story requires: the agent can see
+anything, one form per request, and must correlate the results itself. The oracle
+impact_map then collapses many such calls into one structured answer, which is
+exactly the gradient proof 4 asks for --
+
+  without improvement   possible, N inspections plus manual correlation
+  with improvement      one call returns the structured impact set
+  NOT                   impossible becoming possible
+
+THIS IS NOT AN INVENTION FOR THIS STORY. E5 already proposes "one tool (eval a
+form in the image)" as a research direction of its own, so the primitive is
+consistent with the project's own design rather than added to make B14 work. It
+must be added to the CONTROL set and to every arm equally, and B14's flat
+baseline must be re-established with it present.
 """
 acceptance = [
   "a training sequence and a held-out sequence from one family, both runnable end to end",
