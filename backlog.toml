@@ -75,6 +75,53 @@ The path is: persistent mutation -> ledger first (source/representation, provena
 All three runtime models still need provenance, candidate history, evaluation evidence, rollback knowledge, durable source and promotion decisions, and none of them supplies those. B7 measured that twice from opposite directions: a Smalltalk image is not self-sufficient as source-level memory (move .changes aside and a live method reports #(#arg1 #arg2) with a nil comment while still returning 42.0), and BEAM pushes durability outside the VM entirely (process state is volatile across node death; Mnesia or another store is required). So the ledger is what makes the three runtimes safe enough to COMPARE, and it is the one component no substrate decision can retire."""
 
 [[settled]]
+ref   = "B12 / architecture"
+claim = "The substrate stories are converging on one architecture, not competing for one slot."
+result = """Recorded because it emerged from reading rather than from measuring, and
+because it changes what the remaining stories are FOR. Vivarium's identity is
+propose -> isolate -> evaluate -> select -> promote -> provenance -> reconcile.
+Everything else is a choice it makes ABOUT a promoted change, not a rival to it:
+
+  EVOLUTION CONTROLLER   propose, evaluate, select          vivarium
+        |
+  PROMOTED CHANGE
+        |
+        +-- EXECUTION BOUNDARY   crash, CPU and memory containment
+        |                        BEAM, OS process            -- B8
+        |
+        +-- EFFECT BOUNDARY      own and revert effects,
+        |                        withdraw dependencies
+        |                        Cordis semantics            -- B12
+        |
+        +-- REPLACEMENT POLICY
+        |     RevertAndReapply (Cordis) | MigrateState (OTP)
+        |     | CaptureAndContinue (Smalltalk)
+        |
+        +-- LEDGER  ->  reconciliation                       -- B9
+
+THE TWO BOUNDARIES DO NOT SUBSTITUTE, and the Cordis paper settles it rather
+than us inferring it: S6.3 says language-level component mediation "is
+insufficient" for untrusted code because a malicious component "can reach the
+underlying objects directly", and strong isolation still needs a process,
+runtime or container. Conversely a supervisor restarting a process does not
+withdraw what the dead process registered elsewhere. B8 measures the first, B12
+the second.
+
+THE REPLACEMENT POLICIES ARE ALSO NOT RIVALS -- they answer the same question
+three ways, and which one a given mutation deserves is a decision vivarium is
+positioned to make: Cordis reverts and reapplies from a clean boundary, OTP
+migrates state forward through code_change/3, Smalltalk continues the same
+computational organism. B7 measured the third and B10 could not show it pays on
+the current workload; that is a fact about the workload, not a refutation.
+
+B11 asks the orthogonal question the diagram does not contain: what cognitive
+state should cross a version boundary at all -- ledger only, distilled
+cognition, full transcript, or full continuation.
+
+WHAT THIS IS NOT: a plan to build that architecture. It is the reason the
+remaining stories are worth running in the order they are in."""
+
+[[settled]]
 ref   = "harness"
 claim = "The image is a viable agent world."
 result = "Arm A repairs a broken definition in a running image (TYPE-ERROR to 35, verified by calling it) and extends itself mid-run (7 tools to 8, no restart). 272 assertions green."
@@ -1576,18 +1623,43 @@ through recovery (S4.3.4), ctx.effect as the sole mutation primitive composing
 disposers LIFO (S5.1.1), transactional HMR with rollback (S5.2.2). Four things
 the description did not carry, and the first changes what this story is for.
 
-1. CORDIS DISCARDS THE THING VIVARIUM EXISTS TO PRESERVE. S7.3, comparing against
-   DSU and Erlang/OTP: "Cordis reverts the old component's tracked effects and
-   reapplies the new component's from a clean slate, so A COMPONENT'S OWN
-   IN-MEMORY STATE DOES NOT SURVIVE A RELOAD unless placed in a longer-lived
-   dependency", and layering forward migration on top is named as future work.
-   OTP migrates state forward through code_change/3; Cordis reverts and reapplies.
-   So on B7's axis -- accumulated live state surviving a change -- CORDIS IS THE
-   WEAKER MODEL, and its advantage is elsewhere: no hand-written migration
-   functions, and it can unload a component ENTIRELY and recover its resources
-   rather than only updating one in place.
-   That is not a reason to drop B12. It is the reason to run it: vivarium wants
-   BOTH halves, and the paper is explicit that nobody has combined them.
+1. CORDIS TRADES COMPONENT-LOCAL STATE CONTINUITY FOR STRONG RETRACTION. S7.3,
+   against DSU and Erlang/OTP: "Cordis reverts the old component's tracked
+   effects and reapplies the new component's from a clean slate, so a
+   component's own in-memory state does not survive a reload unless placed in a
+   longer-lived dependency", and layering forward migration on top is named as
+   future work. What it buys instead: no hand-written migration functions, and
+   the ability to unload a component ENTIRELY and recover its resources rather
+   than only update one in place.
+   NOT "Cordis discards what vivarium exists to preserve" -- that was the first
+   draft of this note and it mis-stated vivarium. Vivarium's identity is
+   propose -> isolate -> evaluate -> select -> promote -> provenance ->
+   reconcile. Preserving in-memory state is a HYPOTHESIS B7 tested and B10
+   failed to show valuable on the current workload. So Cordis is not opposite to
+   vivarium; it supplies a lifecycle vivarium lacks AFTER promotion.
+   AND STATE IT NARROWLY: the paper shows Cordis does not currently combine
+   revert-and-reapply with DSU-style forward migration and names that as future
+   work. It does not show that nobody anywhere has combined reversible effects
+   with state migration, and this story should not claim that.
+
+   THE TAXONOMY THIS PRODUCES, which is the useful output even if B12 measures
+   nothing else. Three runtimes answer the same question three ways:
+
+     Cordis      v1 -> revert v1's effects -> clean boundary -> instantiate v2
+                 strength: complete retraction
+     OTP         v1 + S1 -> code_change -> v2 + migrate(S1)
+                 strength: forward continuity
+     Smalltalk   v1 + live objects, stacks, processes -> the same organism
+                 continues
+                 strength: captured computational continuity
+
+   So a promoted mutation needs an explicit REPLACEMENT POLICY rather than a
+   substrate choice:
+
+     ReplacementPolicy = RevertAndReapply | MigrateState | CaptureAndContinue
+
+   Vivarium can sit above all three and decide which change deserves to survive
+   in the first place. Do not implement the abstraction yet; record it.
 
 2. THE INVERSE IS AN AUTHOR OBLIGATION THE RUNTIME DOES NOT CHECK. S5.1.1: "that
    the inverse recovers the effect it accompanies is an obligation on the
@@ -1654,11 +1726,43 @@ what makes a disagreement informative rather than a bug hunt:
     guard (Theorem 63) holds withdrawal back until every consumer has gone. A
     teardown needs the coeffect it is losing -- closing a connection pool hands
     connections back -- which a disposer stack alone would not order correctly.
-  E WRONG INVERSE. Author-supplied, unverified. Install a component whose inverse
-    is subtly incomplete and ask what the runtime reports. Expected: nothing.
-    That is the measurement B9 needs and the paper's own delimitation of the
-    obligation (S6.1) predicts.
-  F LEDGER RECONCILIATION. Then apply B9's rule, which Cordis does not make
+  E WRONG INVERSE -- THE CORDIS/VIVARIUM INTERSECTION, and probably the most
+    valuable case here. Author-supplied, unverified. For a human plugin that is
+    a discipline problem; for an agent writing its own activate and deactivate
+    it is a correctness problem, and the failure is silent:
+
+      activate:    registerTool("search"); subscribe(listener); setPolicy(...)
+      deactivate:  unregisterTool("search"); unsubscribe(listener)
+                   -- setPolicy never undone
+
+    Cordis executes that inverse perfectly and leaves the world wrong. The two
+    layers compose exactly where each is strong:
+
+      Cordis layer     "I executed every registered inverse."
+      vivarium layer   "Did the resulting world MATCH the authoritative one?"
+
+      revert(component); expected = projection(ledger)
+                         actual   = introspection(runtime)
+                         actual != expected  ->  FAILED REVERSION
+
+    Structural rollback from Cordis, empirical verification from B9. Install a
+    component whose inverse is subtly incomplete and ask what the runtime
+    reports; expected, per S5.1.1 and S6.1, is nothing at all.
+  F EFFECT CLASSIFICATION, which S6.1's acquisition/emission split implies and
+    "every effect needs an undo" does not. Acquisition -- open a socket, register
+    a listener, allocate, mount a tool -- sits inside the boundary and reverts.
+    Emission -- send a packet, publish, charge an account -- crosses out and
+    needs withholding or compensation. For an autonomous agent that is three
+    classes, not one:
+
+      Revertible     undo restores observational state    scratch file, tool
+      Compensatable  history stands, semantics restored   notification, charge
+      Irreversible   needs approval or a commit barrier   publishing a secret
+
+    Measure which class each effect of the probe component falls into, and
+    whether the runtime can tell them apart or the author must.
+
+  G LEDGER RECONCILIATION. Then apply B9's rule, which Cordis does not make
     obsolete: expected = projection(ledger), actual = introspection(runtime), any
     difference is a failure. Note S6.3 supplies a genuine gift here -- because
     dependencies are DECLARED, "the complete set of proxy-mediated capabilities a
@@ -1691,7 +1795,7 @@ both, which is a better question than whether Elixir beats Lisp.
 """
 acceptance = [
   "one complete lifecycle run end to end -- propose, install, evaluate, promote, replace or retract, reconcile -- on something shaped like a real vivarium self-edit, not a synthetic plugin",
-  "all six cases measured, with B (failed partial install) and E (wrong inverse) reported whatever they show, since those are the two vivarium has no answer for",
+  "all seven cases measured, with B (failed partial install) and E (wrong inverse) reported whatever they show, since those are the two vivarium has no answer for",
   "the observational boundary stated BEFORE measuring: which locations are bound to keys, and therefore what 'as if it never existed' is allowed to forget",
   "the in-memory-state question answered for vivarium's case: Cordis reverts and reapplies from a clean slate, so state a promoted mutation accumulated does not survive its own replacement unless it was placed in a longer-lived dependency -- measure what that costs a harness whose whole premise is accumulated live state",
   "the minimal semantics vivarium would need extracted as a contract, with everything deliberately NOT taken listed and why",
