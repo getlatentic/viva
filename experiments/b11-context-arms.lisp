@@ -300,7 +300,7 @@ hooks a second time and flush its streams from three processes."
                       :prefix-turns (tasks:bench-requests agent)
                       :prefix-prompt-tokens (car tokens)
                       :prefix-completion-tokens (cdr tokens)
-                      :branches branches)))))))))
+                      :branches branches))))))))
 
 ;;; Reporting
 
