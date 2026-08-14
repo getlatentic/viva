@@ -42,6 +42,7 @@
                              (:file "image")
                              (:file "derive")
                              (:file "image-tools")
+                             (:file "inspect")
                              (:file "self")))))
 
 (defsystem "vivarium/tasks"

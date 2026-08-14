@@ -33,8 +33,17 @@
   (:local-nicknames (#:a #:alexandria)
                     (#:tool #:vivarium.tool)
                     (#:image #:vivarium.image))
-  (:export #:*backend* #:*bash-timeout* #:*system-prompt* #:tool-set
+  (:export #:*backend* #:*bash-timeout* #:*bash-directory* #:*bash-commands*
+           #:*system-prompt* #:tool-set
            #:read-definition #:install #:rollback #:find-definitions #:bash))
+
+(defpackage #:vivarium.inspect
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:tool #:vivarium.tool)
+                    (#:image #:vivarium.image))
+  (:export #:*package-under-inspection* #:*handles* #:*handle-counter*
+           #:begin-inspection-session #:tool-set #:inspect-value))
 
 (defpackage #:vivarium.self
   (:use #:cl)

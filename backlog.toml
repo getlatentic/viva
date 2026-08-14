@@ -1394,6 +1394,89 @@ form in the image)" as a research direction of its own, so the primitive is
 consistent with the project's own design rather than added to make B14 work. It
 must be added to the CONTROL set and to every arm equally, and B14's flat
 baseline must be re-established with it present.
+
+AND IT MUST BE RESTRICTED, WHICH THE FIRST DRAFT OF THIS NOTE GOT WRONG. An
+inspect_value taking an ARBITRARY FORM is too strong and would recreate the
+opposite rigging: the agent writes the whole of impact_map inline in one call,
+gets the same information without persisting anything, and the oracle becomes
+syntactic sugar that saves nothing. A primitive that can execute diagnostic
+programs is not a floor.
+
+THE FLOOR IS ONE OBSERVATION PER CALL:
+
+  target   a special variable, a HANDLE minted by an earlier inspection, or an
+           existing function
+  step     ONE descent -- an index, a hash key, or a slot name
+  args     literals or handles, only when target names an existing function
+
+  forbidden: loops, mapcar and any higher-order traversal, arbitrary evaluation,
+             mutation. Output bounded in depth, length and characters.
+
+So the agent inspects A, B, C, object 1, object 2, and CORRELATES THEM ITSELF,
+and impact_map can legitimately compress 8-15 observations into one reusable
+capability. The gradient B14 needs is the middle line here:
+
+  wanted     possible, repetitive, expensive  ->  same information, cheaper
+  forbidden  impossible                       ->  possible
+  forbidden  arbitrary eval already does it   ->  sugar
+
+THE FORK THIS LEAVES OPEN, and it is E5's. If arbitrary eval turns out to be what
+vivarium agents should have, impact_map is the WRONG improvement target for B14,
+because a one-shot inline program reproduces it. The target would then have to be
+a capability an inline form cannot cheaply reproduce -- PERSISTENT INDEXING,
+INSTRUMENTATION ACROSS TIME, or ACCUMULATED CROSS-CALL STATE. B14 is scoped to
+the restricted primitive deliberately; it does not settle E5 and must not be read
+as having settled it.
+
+---------------------------------------------------------------------------
+ORDER OF WORK, and the three gates come before any episode is written:
+
+  B14.0  the restricted primitive
+  B14.1  GATE 0 observational sufficiency -- one representative repair solvable
+         with baseline tools + inspect_value and NO oracle
+         GATE 1 primitive inconvenience -- median inspect_value calls per repair
+         comfortably above 1, or there is nothing worth abstracting
+         GATE 2 oracle compression -- score not worse, requests or tokens
+         materially lower
+  B14.2  E1-E5 and the held-out pair
+  B14.3  hand-write impact_map
+  B14.4  ceiling and held-out transfer
+
+FLAT BASELINE, STATED PROPERLY. Task costs need not be numerically identical --
+what has to be ruled out is LEARNING ACROSS EPISODES WITHOUT PERSISTENT MUTATION.
+Episodes differ in difficulty, so a fixed order makes ordering look like learning
+or regression. Use one task pool, MULTIPLE SEEDED PERMUTATIONS, fresh
+conversational context per episode, no persistent mutation, and then test whether
+EPISODE INDEX predicts decreasing cost AFTER CONTROLLING FOR TASK IDENTITY. That
+is the real test and a task-1-to-task-5 plot is not.
+
+THE EPISODES, each requiring the same information operation and a different
+repair -- start from a definition or object, enumerate the relevant live
+dependents and values:
+
+  E1  stale class instances    method changed; objects made earlier hold state
+                               derived under the old behaviour
+  E2  closure-captured config  a configuration value changed; existing closures
+                               captured the old one
+  E3  cached derived values    source is correct now; cached values were produced
+                               by the earlier implementation
+  E4  registered handlers      a changed function has wrappers registered around
+                               it, with dependent state
+  E5  workflow state           a transition function changed; live sessions sit
+                               in states generated under the old semantics
+  H1, H2  held out: a DIFFERENT DOMAIN -- scheduler/job or pricing/order rather
+          than the same invoice-shaped world -- and the same abstraction
+
+THE EXTERNALISED ARM STAYS TINY. Not a Pi-like extension ecosystem; only enough
+for B15:
+
+  artifacts/tools/<name>.lisp
+  artifacts/skills/<name>.md
+
+At an episode boundary the loader replays the artifact through THE SAME install
+and register-tool path. The artifact is NOT a second implementation of the
+improvement -- it is the EXACT accepted source of the same mutation, delayed
+across an inheritance boundary. That is what keeps the control fair.
 """
 acceptance = [
   "a training sequence and a held-out sequence from one family, both runnable end to end",
