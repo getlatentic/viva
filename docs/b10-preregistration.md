@@ -711,3 +711,72 @@ calibration on T22/T23
 All outcomes remain informative. If recovery re-runs four diagnostics, that is
 reconstruction tax. If it does not, explicit persisted artifacts were enough. If
 *captured continuation* also re-runs them, the retained state was not useful.
+
+---
+
+## CALIBRATION RESULT — the gate fires. B10 stops here.
+
+10 pairs, all usable, gpt-oss-120b, checkpoint turn 4.
+
+| | T22 (path-dependent) | T23 (path-independent) |
+|---|---|---|
+| score C / S / A1 | 0.7 / 0.9 / 0.8 | 0.5 / 0.6 / 0.6 |
+| `A1 − C` tokens | **−496**  (range −3,556 .. +4,897) | **+466**  (range −7,769 .. +10,820) |
+| `A1 − S` turns | −0.8 | −0.2 |
+
+```
+difference of differences  =  (A1−C on T22) − (A1−C on T23)  =  −962 tokens
+```
+
+Recovery was *marginally cheaper* on the path-dependent task — the opposite of the
+predicted direction — and the means are an order of magnitude smaller than the
+ranges, both of which cross zero. **No measurable repeat work on T22 beyond T23.**
+Recovery scored at or above control on both. Per the pre-registered gate: **stop.**
+
+### Why, and it is not "the effect does not exist"
+
+T22 was supposed to force elimination. It does not, and reading it back shows the
+flaw plainly. The defect is:
+
+```lisp
+(apply-discount (apply-tax (line-subtotal invoice)) discount)
+```
+
+An agent that reads `sum-invoice` **sees tax applied before discount**. The
+ordering is legible in one definition, exactly like T23's surcharge constant.
+T22 is a *reading* task wearing a search task's description. The calibration did
+not fail to detect an effect; it correctly reported that the two arms of a
+matched pair were not actually different.
+
+That is the second time this project mistook a proxy for the property — length
+was not path-dependence, and now "an interaction between two functions" is not
+path-dependence either, because the interaction is written down.
+
+### The structural problem this exposes
+
+**vivarium's agent can read every definition in the image.** So any defect
+expressible in source is discoverable by reading, and reading does not accumulate
+search state worth losing. For elimination to be forced, the answer must not be
+legible in code at all — the search has to be over **data**:
+
+```
+defect in code  →  agent reads it  →  no accumulated state  →  no tax to measure
+defect in a rare data pattern  →  agent must probe 300 records  →  state accumulates
+```
+
+T4 is described as exactly that shape ("discoverable only by scanning live
+data"), and T20 was meant to be and was not. Whether a task can force sustained
+elimination *while the source is fully readable* is now an open question about
+this task set, not a detail of one task.
+
+### Status
+
+**B10 is halted at the calibration gate.** Stage 2 (A2) was never authorised and
+is not now. The pre-registered consequence stands: B10 cannot currently identify
+the value of captured continuation, because no task this project has built makes
+pre-checkpoint search state causally matter.
+
+What that does **not** license: concluding that explicit durable state is
+sufficient, or that Smalltalk's continuation advantage is worthless. Neither was
+measured. What was measured is that the instrument cannot see the effect, twice,
+for two different and now-understood reasons.

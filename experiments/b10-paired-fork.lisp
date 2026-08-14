@@ -36,6 +36,10 @@
 (in-package #:vivarium.cli)
 
 (defparameter *family-d* '(:t18 :t19 :t20))
+(defparameter *calibration* '(:t22 :t23)
+  "The matched pair. T22 is path-dependent, T23 is not, and the quantity of
+interest is the difference between their recovery effects rather than either
+one alone.")
 (defparameter *checkpoint* 4 "Turn ordinal. Pre-registered, not a knob.")
 (defparameter *branch-budget* 8 "Requests each branch gets after the fork.")
 (defparameter *branch-kinds* '(:control :sham :recovery))
@@ -289,7 +293,7 @@ request is how a broken instrument produces a confident number."
     (when (null eligible)
       (format t "~&~%NO USABLE PAIRS. Nothing below would be a measurement.~%")
       (return-from report-stage-1))
-    (dolist (id *family-d*)
+    (dolist (id (remove-duplicates (mapcar (lambda (p) (getf p :task)) pairs)))
       (let ((mine (remove id eligible :key (lambda (p) (getf p :task)) :test-not #'eq)))
         (when mine
           (format t "~2&~a  (~a pairs)~%" id (length mine))
@@ -313,7 +317,7 @@ request is how a broken instrument produces a confident number."
     (format t "~2&Read S-C first. If A1-S sits inside the S-C range, the effect~%")
     (format t "is restart machinery and not lost cognition.~%")))
 
-(defun stage-1 (&key (pairs 5))
+(defun stage-1 (&key (pairs 5) (tasks *family-d*))
   (let ((arm (or (find "gpt-oss-120b" (available-arms) :key #'arm-label :test #'string=)
                  (error "gpt-oss-120b arm unavailable -- is OPENROUTER_API_KEY set?")))
         (out (merge-pathnames "b10-stage1.sexp" (uiop:temporary-directory)))
@@ -321,7 +325,7 @@ request is how a broken instrument produces a confident number."
     (format t "~&arm: ~a  checkpoint: turn ~a  branch budget: ~a  pairs: ~a~%"
             (arm-model arm) *checkpoint* *branch-budget* pairs)
     (dotimes (i pairs)
-      (dolist (id *family-d*)
+      (dolist (id tasks)
         (let ((pair (paired-fork (tasks:find-task id) arm)))
           (push pair collected)
           (report-pair pair)
@@ -334,4 +338,4 @@ request is how a broken instrument produces a confident number."
     (report-stage-1 (reverse collected))
     (format t "~&~%raw: ~a~%" out)))
 
-(stage-1)
+(stage-1 :tasks *calibration*)
