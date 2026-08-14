@@ -19,6 +19,7 @@
   :components ((:module "src/core"
                 :serial t
                 :components ((:file "package")
+                             (:file "wire")
                              (:file "message")
                              (:file "schema")
                              (:file "sexp")
@@ -43,6 +44,24 @@
                              (:file "image-tools")
                              (:file "self")))))
 
+(defsystem "vivarium/tasks"
+  :description "The task set: a live image to repair, and the cases that score it."
+  :depends-on ("vivarium/image")
+  :serial t
+  :components ((:module "src/tasks"
+                :serial t
+                :components ((:file "package")
+                             (:file "service")
+                             (:file "task")
+                             (:file "state")
+                             (:file "live")
+                             (:file "flight")
+                             (:file "capability")
+                             (:file "merge")
+                             (:file "control")
+                             (:file "depth")
+                             (:file "attempt")))))
+
 (defsystem "vivarium/search"
   :description "Forked scored trials, an archive, and selection over it."
   :depends-on ("vivarium/image" "sb-posix")
@@ -53,8 +72,24 @@
                              (:file "trial")
                              (:file "arena")))))
 
+(defsystem "vivarium/cli"
+  :description "One entry point for every run."
+  :depends-on ("vivarium/tasks" "vivarium/search" "uiop" "usocket" "croatoan")
+  :serial t
+  :components ((:module "src/cli"
+                :serial t
+                :components ((:file "package")
+                             (:file "args")
+                             (:file "arms")
+                             (:file "render")
+                             (:file "screen")
+                             (:file "commands")
+                             (:file "attend")
+                             (:file "main")))))
+
 (defsystem "vivarium/tests"
-  :depends-on ("vivarium" "vivarium/image" "vivarium/search" "parachute")
+  :depends-on ("vivarium" "vivarium/image" "vivarium/search" "vivarium/tasks"
+               "vivarium/cli" "parachute")
   :serial t
   :components ((:module "tests"
                 :serial t
@@ -63,8 +98,11 @@
                              (:file "sexp")
                              (:file "provider")
                              (:file "stream")
+                             (:file "wire")
                              (:file "image")
                              (:file "self")
                              (:file "trial")
-                             (:file "merge"))))
+                             (:file "merge")
+                             (:file "tasks")
+                             (:file "render"))))
   :perform (test-op (op c) (symbol-call :parachute :test :vivarium.tests)))

@@ -27,8 +27,10 @@
 
 (in-package #:vivarium.cli)
 
-(defparameter *train* '(:t1 :t4 :t5 :t7 :t9 :t11 :t13 :t14 :t15 :t17)
-  "The train split, per S1's fixed division. The held-out split stays unspent.")
+(defparameter *train* '(:t1 :t4 :t5 :t7 :t9 :t11 :t13 :t14 :t15 :t17
+                        :t18 :t19 :t20)
+  "The train split, per S1's fixed division plus B10's depth tasks. The held-out
+split stays unspent.")
 
 (defun usage-field (usage name)
   "Usage arrives as whatever the provider's JSON decoded to -- a hash table for
