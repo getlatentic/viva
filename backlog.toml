@@ -8,6 +8,11 @@
 #  defend it". A sprint that only builds machinery has shipped nothing.
 #
 #  Every story is in a sprint or has status = "backlog". No orphans.
+#
+#  status = "halted" means the story RAN and stopped without answering its
+#  question, with the reason recorded and a reopen condition stated. It is not
+#  "done" -- nothing was settled -- and not "backlog" -- it is not waiting to
+#  start. B10 is the first.
 
 [meta]
 project   = "vivarium"
@@ -1165,7 +1170,7 @@ id       = "B10"
 sprint   = 0
 title    = "Does preserving live cognition make the agent better?"
 labels   = ["backlog", "experiment", "substrate"]
-status   = "backlog"
+status   = "halted"
 size     = "M"
 depends_on = ["S1"]
 as_a     = "researcher"
@@ -1448,6 +1453,40 @@ one sequences the other:
                contest. B8's containment and hot-upgrade axes stay worth
                measuring; its persistence argument does not.
 Which is why this is the cheaper story to run first.
+
+HALTED 2026-08-11, and the phrasing matters. NOT "explicit state wins" and NOT
+"captured continuation is worthless" -- neither was measured. What was measured:
+
+  B10 COULD NOT IDENTIFY THE VALUE OF CAPTURED CONTINUATION ON THE CURRENT
+  VIVARIUM WORKLOAD.
+
+Two attempts, two different mistakes, both instructive. Stage 1 on family D found
+no reconstruction tax: recovery ran 4.6 turns against control's 6.5 at equal
+score, and A1-S sat inside a sham band spanning -5,522 to +6,615. T18 and T20
+returned IDENTICAL scores in all three arms across all five pairs -- run length
+was not path-dependence. The calibration pair T22/T23 then gave a difference of
+differences of -962 tokens, the wrong sign and an order of magnitude inside the
+noise, because T22 was not path-dependent either: its "ordering interaction" is
+written down in sum-invoice and an agent finds it by READING.
+
+THE STRUCTURAL FINDING, which is the durable part:
+
+  current coding tasks -> source, tests and live state all remain readable
+                       -> the important facts are cheaply reconstructible
+                       -> little measurable value in preserving implicit
+                          search state
+
+Any defect expressible in source is found by reading, and reading accumulates no
+search state worth losing. Forcing elimination needs the answer to be illegible
+in code -- the search must be over DATA. Whether such a task can be built while
+the source stays fully readable is an open question about the task set.
+
+DO NOT REOPEN BY BUILDING MORE SYNTHETIC TASKS. Two rounds of that produced two
+proxies for the property and no measurement of it. Reopen when vivarium meets a
+REAL task carrying expensive, reproducible investigative state -- at which point
+the instrument in experiments/b10-paired-fork.lisp is built, validated and ready.
+
+Total spend across both rounds: ~800k tokens.
 """
 acceptance = [
   "A1 vs A2 run on SBCL alone first, scored -- the benefit of better explicit representation, measured before Smalltalk is a variable",
@@ -1514,6 +1553,99 @@ acceptance = [
   "spread reported, never a bare mean: S2c measured 24% cell disagreement at temperature 0",
 ]
 kills_it = "Distillation and ledger restart match full transcript on score and cost, or the effect only appears on family D. Then B10 stage 1 saw a property of three tasks rather than of agentic repair, and there is nothing to bank."
+
+[[story]]
+id       = "B12"
+sprint   = 0
+title    = "Cordis probe: how does an accepted mutation leave the organism?"
+labels   = ["backlog", "spike", "external"]
+status   = "backlog"
+size     = "M"
+depends_on = []
+as_a     = "researcher"
+i_want   = "one complete mutation lifecycle run through an existing reversible-effects runtime"
+so_that  = "the half of self-evolution vivarium has never modelled is measured against something that already does it"
+notes = """
+PROVENANCE, AND IT MATTERS FOR HOW MUCH TO TRUST THIS STORY AS WRITTEN. Cordis
+was described to the author of this note rather than read: components with
+declared dependencies and provided capabilities, effects paired with accumulated
+inverses, a reactive coeffect model that re-evaluates dependency satisfaction as
+providers appear and disappear, a loader with configuration reconciliation and
+hot module replacement, and observational rather than byte-for-byte equivalence
+as the correctness bar. FIRST TASK OF THIS STORY IS TO VERIFY THAT AGAINST THE
+ACTUAL SYSTEM. If the description is wrong the acceptance criteria below are
+wrong with it.
+
+THE GAP IT NAMES, which is real regardless of what Cordis turns out to be.
+vivarium models mutation ENTERING the organism and has no model of mutation
+LEAVING it:
+
+  have:     propose -> isolate -> evaluate -> reject/promote
+  missing:  promoted v17 -> runs for a while -> superseded or retracted
+            -> remove exactly its contribution -> restore dependents coherently
+
+The ledger records what was installed and what it replaced, so a single
+definition can be rolled back. Nothing models a mutation that registered a tool
+AND a listener AND a service AND allocated owned state, and now has to leave
+without residue. E3 and E4 let an agent do exactly that kind of installation.
+
+ONE LIFECYCLE, NOT A PLUGIN BENCHMARK. Take something structurally equivalent to
+a real vivarium self-edit and run it end to end:
+
+  agent notices a missing capability -> proposes component X -> install X, which
+  registers a tool, registers a listener, provides a service and allocates owned
+  state -> evaluate -> promote -> operate -> replace with X2 or retract
+  -> verify nothing of X remains -> reconcile against the ledger
+
+FIVE THINGS TO MEASURE:
+
+  A CLEAN UNLOAD. After removal, is the runtime observationally equivalent to one
+    where X never existed, within a stated boundary? Note the boundary is the
+    interesting part -- Cordis reportedly does not claim physical reversal, and
+    neither could vivarium.
+  B FAILED INSTALL. Effects A and B install, C fails. Does the system contain
+    none of A/B/C, or a half-mutated runtime? This is the case vivarium has no
+    answer for today and the one an autonomous agent hits most.
+  C REPLACEMENT. X v1 -> X v2. Does v1 disappear cleanly before or as v2 becomes
+    authoritative, or do both exist at once?
+  D DEPENDENCY CASCADE. A provides X, B requires X, C requires B. Remove A and
+    watch B and C. This exercises the reactive model rather than a disposer
+    stack, which is the part a hand-rolled undo would not reproduce.
+  E LEDGER RECONCILIATION. Then apply B9's rule, which Cordis does not make
+    obsolete: expected = projection(ledger), actual = introspection(runtime),
+    any difference is a failure.
+
+THE CONCEPT THIS SHOULD PRODUCE, whatever the measurements say -- a promoted
+mutation needs a lifecycle vivarium currently lacks:
+
+  PROPOSE -> ISOLATE -> EVALUATE -> PROMOTE -> ACTIVATE -> OPERATE
+          -> SUPERSEDE/RETRACT -> DEACTIVATE -> RECONCILE
+
+DO NOT IMPLEMENT CORDIS SEMANTICS IN SBCL YET. Probe first, then extract only the
+minimal contract that measurement justifies -- plausibly no more than
+
+  ComponentMutation { requires, provides, activate() -> EffectSet }
+  Effect { contribution, inverse }
+
+and NOT the calculus, the coeffect system, isolation realms, interception, the
+configuration loader or the HMR engine. Reproducing those turns a useful harness
+into a framework rewrite. Steal what the measurement justifies and nothing else.
+
+SEQUENCING: this runs BEFORE B8, because it sharpens B8's question. BEAM contains
+EXECUTION failure -- a process dies, the supervisor replaces it. Cordis contains
+EFFECT ownership -- a component departs, its contributions are withdrawn and
+dependents react. Those are different boundaries and a self-evolving system
+plausibly needs both, which is a better question than whether Elixir beats Lisp.
+"""
+acceptance = [
+  "the provenance note discharged: Cordis's actual semantics verified against the description above, with any correction recorded before the probe runs",
+  "one complete lifecycle run end to end -- propose, install, evaluate, promote, replace or retract, reconcile -- on something shaped like a real vivarium self-edit, not a synthetic plugin",
+  "all five cases measured, with B (failed partial install) reported whatever it shows, since it is the one vivarium has no answer for",
+  "the observational boundary stated explicitly: what 'as if it never existed' is allowed to exclude",
+  "the minimal semantics vivarium would need extracted as a contract, with everything deliberately NOT taken listed and why",
+]
+kills_it = "Cordis's reversibility turns out to be a disposer stack that vivarium's ledger already matches, or clean unload only holds for components that own nothing but their own registrations. Then effect containment is not a separate primitive, the gap closes with a rollback that walks the ledger backwards, and B8 keeps its original framing."
+
 
 
 [[story]]
@@ -1601,6 +1733,21 @@ reliably does the substrate turn that mistake into observable evidence? Neither
 SBCL nor Smalltalk has been measured on it. B7 measured 15 operations on one
 dialect and found one blocking and two silent-semantic failures; that method
 generalises directly.
+
+B9 MAY BE THE BRIDGE, noted when B12 was filed. Cordis routes every context
+mutation through one effect primitive; vivarium routes every durable mutation
+through one ledger and additionally demands the runtime reconcile against it.
+Composed, that is a shape worth building rather than two competing ones:
+
+  evolution ledger (authoritative intent)
+        -> component mutation
+        -> tracked effects
+        -> live runtime
+        -> introspection
+        -> reconcile back to the ledger
+
+Note which half is vivarium's: the reconciliation arrow. An effect system tracks
+what it was asked to do; it does not check the running world still agrees.
 
 WHY IT IS NOT BLOCKED ON THE SUBSTRATE QUESTION: this is worth doing on SBCL now,
 whatever B8 decides. If B8 sends the project to Smalltalk the invariant is needed
@@ -1720,6 +1867,21 @@ capability with no demonstrated requirement here.
 
 THE DEEPER POINT, which belongs in HANDOFF.md rather than here: the three
 substrates encode three DIFFERENT DEFINITIONS of self-improvement --
+AMENDED after B12 was filed: THERE ARE TWO KINDS OF CONTAINMENT AND THIS STORY
+ONLY ASKED ABOUT ONE.
+
+  EXECUTION CONTAINMENT   bad process -> process dies -> siblings and node
+                          continue.                              BEAM's answer.
+  EFFECT CONTAINMENT      bad or departing component -> its contributions are
+                          withdrawn -> dependents react.         Cordis's answer.
+
+A self-evolving system plausibly needs both, and that is a better question than
+whether Elixir beats Lisp. A supervisor restarting a process does not withdraw
+what the dead process registered elsewhere; withdrawing effects does not stop a
+NIF wedging the scheduler. Run B12 first -- it gives this story a comparator it
+does not currently have, and axis 1 below should then be read as measuring the
+EXECUTION half specifically rather than containment in general.
+
   SBCL      the agent is a program that rewrites programs
             -> does homoiconicity reduce self-improvement impedance?
   Smalltalk the agent is a computational organism that persists
