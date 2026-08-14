@@ -51,7 +51,23 @@ ref   = "E6"
 claim = "What production harnesses fix at turn start versus re-read per request."
 result = "DONE -- all four harnesses read. opencode re-reads prompt AND tools per request (prompt.ts:1088 loop, SessionTools.resolve inside it, LLMRequestPrep.prepare per run) with a plugin hook for rewriting the prompt, so 'resolved at startup' is false in general. But resolveTools is a FILTER that never adds, so no harness can acquire a tool absent at session start. Answered for Codex, Pi and Claude Code. Claude Code's control protocol accepts set_model, set_permission_mode, interrupt, stop_task, rewind_files, mcp_toggle -- no set_system_prompt, no set_tools. mcp_toggle is a PRE-REGISTERED server on/off. opencode remains unread (S2)."
 
+[[settled]]
+ref   = "B7 / substrate"
+claim = "The ledger is a fourth architectural primitive, not vivarium plumbing -- and it survives whichever runtime wins."
+result = """Four primitives, not three runtimes: SBCL makes CODE BECOME DATA, Smalltalk makes CAPTURED COMPUTATION BECOME DURABLE, BEAM makes PROCESSES BECOME DISPOSABLE, and the LEDGER makes HISTORY BECOME AUTHORITATIVE.
 
+CAPTURED computation, not computation: the durable unit is the image and the process state inside it. External resources are NOT carried and have their own restoration semantics, which B7 measured -- a registered ZnServer's listener is re-created on resume, an unregistered one comes back reporting isRunning TRUE and isListening FALSE, and a file stream held open across a snapshot returns closed. Read "durable" as "the captured heap and stacks", never as "sockets, handles and external services survive".
+
+AUTHORITATIVE is a property that has to be ENFORCED, not a description of a component that exists:
+
+  ledger exists  !=  ledger is authoritative
+
+  authoritative = every durable transition passes through it
+                + runtime state can be RECONCILED against it
+
+The path is: persistent mutation -> ledger first (source/representation, provenance, parent version, evidence, intended transition) -> compile and install -> evaluate -> promotion recorded. Anything mutating durable behaviour outside that path must be impossible or detected as divergence. B7's M3 and M5 are what makes this concrete rather than aspirational: a method installed off the path still runs but reports its arguments as (arg1, arg2) with no description, and NOTHING REPORTS THE NAMES MISSING. Enforcement is story B9, and the invariant holds across all three substrates.
+
+All three runtime models still need provenance, candidate history, evaluation evidence, rollback knowledge, durable source and promotion decisions, and none of them supplies those. B7 measured that twice from opposite directions: a Smalltalk image is not self-sufficient as source-level memory (move .changes aside and a live method reports #(#arg1 #arg2) with a nil comment while still returning 42.0), and BEAM pushes durability outside the VM entirely (process state is volatile across node death; Mnesia or another store is required). So the ledger is what makes the three runtimes safe enough to COMPARE, and it is the one component no substrate decision can retire."""
 
 [[settled]]
 ref   = "harness"
@@ -865,7 +881,7 @@ id       = "B7"
 sprint   = 0
 title    = "Smalltalk probe: does the durability advantage show up in outcomes?"
 labels   = ["backlog", "spike", "risk"]
-status   = "backlog"
+status   = "done"
 size     = "M"
 depends_on = []
 as_a     = "researcher"
@@ -900,6 +916,241 @@ measured number here is SBCL-specific.
 
 Pharo is not installed on this machine.
 
+DONE 2026-08-11. Full report: docs/smalltalk-probe.md. Recommendation stands --
+do not switch -- but NOT for the reason the first pass gave, and the case is much
+closer than it first read.
+
+FIRST PASS WAS WRONG ABOUT THE HEADLINE, and the correction matters. Only Pharo
+was run, and the current PHARO/COG VM BUILD cannot reserve its JIT code zone
+under macOS 27's address layout (0/5 starts on stable, 0/5 on latest), so
+everything went through Rosetta and M1 came out as "590 ms vs SBCL's 30 ms, 20x".
+Native ARM64 Smalltalk is FINE: the upstream OpenSmalltalk Cog VM
+(202606270913, macos64ARMv8) starts first time here and runs every probe, JIT and
+all. The failure is one vendor's VM build, not the architecture and not
+Smalltalk. Adding Squeak 6.1 on that VM, plus a Rosetta control on the SAME
+Squeak image, splits the difference cleanly:
+
+    native arm64   209 204 203 206 ms      x86_64/Rosetta  811 651 643 630 ms
+    -> a 3.1x translation penalty, and Pharo/Rosetta (587-823) lands exactly on
+       Squeak/Rosetta (630-811). Held at one architecture the two dialects do the
+       same work at the same speed, so a native Pharo VM would land near 205 ms.
+
+  1. SNAPSHOT UNDER LOAD. Squeak native ARM64: 214/215/214 ms, 51.3 MB image,
+     0 completions during the pause, ZERO in-flight lost (8 per run). Pharo under
+     Rosetta: 587/823/589 ms, 58.7 MB, also ZERO in-flight lost. 48 in-flight
+     requests across six runs on two dialects, none lost. Load costs nothing
+     (idle 203-209 / 577-598).
+     THE GAP IS 7x, NOT 20x -- and it is not a quality gap. Per megabyte Squeak
+     writes its heap at 4.0 ms/MB against SBCL's child at 6.2-11.6. SMALLTALK IS
+     NOT SLOWER AT CHECKPOINTING; IT IS SLOWER AT STAYING AVAILABLE WHILE IT
+     CHECKPOINTS, because it does the work in the process that is serving. That
+     is one technique apart -- fork -- not one architecture apart.
+     And natively the pause hides: a handler asleep in a Delay does not pay for a
+     freeze it slept through, so the penalty is max(0, pause - work still owed).
+     With a 214 ms pause and 300 ms handlers the measured cost was a 25 ms
+     latency tail (max 356 vs 331 baseline). Pharo's Rosetta-inflated 587 ms
+     pause could not hide and cost up to 538 ms.
+  2. RESUME MID-COMPUTATION. YES, exact, on BOTH dialects. Stack-local
+     accumulators resumed at sum=561 (= sum 1..33, Pharo) and sum=630
+     (= sum 1..35, Squeak) and ran on to 7140 and 8515, both arithmetically
+     exact; a 13-deep call chain unwound reporting every frame's OWN marker, so
+     frames entered before the snapshot returned their locals after it; a
+     semaphore-blocked process continued; the main process resumed on the
+     statement AFTER the snapshot rather than at a toplevel. Restore 458-510 ms
+     native, 976-1010 ms under Rosetta. Three independent restores of one
+     checkpoint resumed identically on both -- a checkpoint is a replayable
+     resume point, not a one-shot.
+  3. DERIVED SCHEMA. WORSE, and the second dialect proved it is the SMALLTALK
+     SOURCE MODEL rather than Pharo packaging. Selector keywords are the wrong
+     names: in orderTotal:tax: the first keyword names the OPERATION, not the
+     first argument, so keyword-derived names give {"orderTotal": <line items>}.
+     The usable names are NOT IN THE IMAGE. Move .changes aside and the same
+     live method still returns 42.0 while reporting #(#arg1 #arg2) with a nil
+     comment on Pharo and ('t1' 't2') with a nil comment on Squeak -- each
+     dialect inventing different placeholders, which is a tidy demonstration
+     that nothing real is being recovered. The SBCL control is the other way: a
+     function defined at runtime from a string, saved to a core, run with the
+     source deleted, still reports (LINE-ITEMS &KEY (TAX 0.0)) and its docstring.
+
+THE KILL CRITERION FIRES ON CLAUSE 1, BUT WEAKLY -- weakly enough that the
+recommendation no longer rests on it. B6's 388 ms is a WHOLE-OPERATION number;
+the parent is not stopped for it. Measured here
+(docs/probes/smalltalk-p1-sbcl-comparison.lisp), the parent's worst stall during
+fork-and-save is 31.4/36.0/29.6 ms -- the fork() call -- while the whole
+operation reproduces at 261-461 ms for a 37.2 MB core.
+
+  SBCL stops the serving process for ~30 ms. Native Squeak stops it for 214 ms
+  stop-the-world -- but only 18-75 ms FORKED (M4).
+
+STATED AT THE WIDTH THE EVIDENCE BEARS, and the first draft of this note
+overclaimed it as "strictly dominates": FOR THE CHECKPOINT SEMANTICS TESTED HERE,
+SMALLTALK MATCHES SBCL'S LOW-PAUSE FORK-AND-SAVE WHILE ADDITIONALLY PRESERVING
+CONTROL FLOW. That is not general dominance -- M3 is an axis where SBCL is ahead.
+And M4's claim is narrow on purpose: FORK-AND-IMMEDIATELY-CHECKPOINT APPEARS
+VIABLE, not "forked Pharo processes are safe general-purpose runtime clones". The
+child writes an image and dies; a child that tried to LIVE post-fork would be
+holding inherited mutex state whose owner threads are gone, which is exactly what
+the kevent complaints are evidence of.
+
+Clause 2 does NOT fire: resume-mid-computation is not fragile. Five failure
+modes found, all handleable, two worth naming because they are SILENT:
+  - an unregistered Pharo ZnServer restores reporting isRunning TRUE and
+    isListening FALSE, refusing connections while claiming to serve. Registered
+    via startDefaultOn: it is re-created by the session manager and answers
+    normally -- and Squeak's WebServer came back by itself with no registration.
+  - SQUEAK BLOCKS FOREVER WHEN AN AGENT INSTALLS A METHOD: compile: in a
+    headless image hangs with no error and no output, waiting on the
+    author-initials dialog, until Utilities authorInitials: is set. That is
+    squarely on B7's path -- a harness whose agent defines methods at runtime
+    deadlocks on its first write until someone knows this.
+  - a file stream held open across a snapshot returns closed and raises
+    FileWriteError (loud, therefore safe); and a saved Pharo image restarted
+    without --no-quit prints its usage and dies a second after resuming, which
+    looks exactly like resume not working.
+
+So Smalltalk's advantage is NOT merely architectural: it is real, measurable and
+exact. What holds the recommendation up is now (1) M3, which got STRONGER when
+the second dialect confirmed it, (2) nothing open needing control-flow resume,
+and (3) instrument continuity. Do not switch -- but it is close.
+
+  4. FORK-AND-SNAPSHOT (M4, added after review). YES -- and this removes the
+     runtime objection entirely. fork() via uFFI from inside a Pharo image, child
+     saves and exits, parent keeps serving. 15 forks across two runs while the
+     image served traffic AND churned the heap AND ping-ponged semaphores AND
+     wrote files AND compiled methods (5116 GC churns, 4273 semaphore handoffs,
+     2945 file writes, 2383 methods compiled concurrently).
+       PARENT STALL 18-75 ms, against SBCL's OWN 29.6-36.0 ms -- and that is
+       Pharo under Rosetta, so the number is pessimistic.
+     827/827 requests finished, ZERO in-flight lost, latency across the fork
+     maxed at 307.5 ms against a 490.5 ms baseline: the fork did not even cause
+     the worst gap of the run. All 15 children wrote valid images; every one
+     tested restarts, resumes MID-COMPUTATION and serves -- restored images
+     reported their own checkpoint counters (fork-1 churn=1879, fork-5 churn=3334,
+     fork-10 churn=4977, monotonic in fork order) and kept incrementing.
+     Cost: the forked child's inherited kqueue logs 'kevent: Bad file descriptor';
+     the parent is measurably unaffected and restored images log zero. Limits:
+     Pharo-only, because SQUEAK 6.1 BASE HAS NO FFI AT ALL (no
+     ExternalLibraryFunction, no Alien, no plugin). Probe 4b then hardened the
+     primitive -- child calls _exit directly instead of returning through
+     quitPrimitive, so the VM's shutdown machinery never touches resources it
+     inherited but does not own -- and soaked it under the same load plus forced
+     full GCs. saveAs: was deliberately KEPT rather than dropping to the bare
+     snapshot primitive: its session shutdown/startup hooks are what re-create
+     sockets on resume, and an image that cannot restore is worth nothing however
+     fast it was written.
+     SOAK RESULT, 250 forks at 200 ms spacing -- deliberately faster than sane:
+     0 fork failures, 3134/3134 requests finished, 0 lost, and _exit proved SAFE
+     (images boot, carry checkpoint state, restore their listener, and serve a
+     real HTTP round-trip from inside the restored image -- worth checking,
+     because _exit skips atexit and stdio flushing and could have truncated a
+     buffered image write). THE MECHANISM NEVER FAILED; THE RATE DID. Parent
+     stall min 30 / p50 62 / p90 597 / p99 2723 / max 6405 ms, 45 of 250 over
+     200 ms.
+     PROBE 4C TRIED TO TURN THAT INTO A SATURATION CURVE AND FAILED, WHICH
+     RETRACTS THE OBVIOUS READING. Sweeping the spacing gave a NON-MONOTONIC
+     result -- 3000ms: p50 102 p90 961 max 4828; 1500ms: p50 120 p90 387 max
+     17348; 750ms: p50 56 p90 206 max 1299; 375ms: p50 142 p90 383 max 2822 --
+     with p99 == max in every row, which is the tell that n (40-80) is far too
+     small for a p99. Re-running the SAME 3000ms configuration later gave max
+     560 ms with the forced GC and 440 ms without: an order of magnitude below
+     the same config's 4828 ms.
+     So the seconds-scale outliers are NOT caused by checkpoint rate, are not
+     reproducible at a fixed configuration, and look like machine noise on a
+     contended host. The forced full GC that 4b/4c added and M4 lacked explains
+     part of the SUB-SECOND tail (p90 265 -> 163 without it) and nothing like the
+     multi-second events.
+     WHAT SURVIVES: the median fork stall is small and rate-insensitive (56-142
+     ms across 375-3000 ms spacing, under Rosetta, under load); nothing ever
+     failed (0 fork failures, 0 lost requests across 475 forks); and THE TAIL IS
+     UNATTRIBUTED. Measuring it needs a quiet host, n in the thousands, and an
+     OUT-OF-IMAGE clock -- the in-image bracket around fork() can itself be
+     descheduled by the green-thread scheduler and will charge another process's
+     work to the fork. Read M4's 18-75 ms (n=15) and SBCL's 29.6-36.0 ms (n=3)
+     the same way: both are small-sample, and the honest comparison is SAME ORDER
+     OF MAGNITUDE, not a ranking.
+     Checkpoint-as-resource-with-backpressure (defer or coalesce while a previous
+     writer is still going) remains the right design, but it is design judgement
+     here, not a measured result.
+  5. HEADLESS AUTONOMY AUDIT (M5, added after review). The author-initials hang
+     is real but SHALLOW. Fifteen operations classified OK / RAISED (catchable,
+     therefore data) / BLOCKED, with the watchdog outside the image because a
+     modal dialog cannot report itself. Squeak native: exactly ONE blocked --
+     compiling a method in the image as it ships -- fixed by one message send,
+     Utilities authorInitials:. Malformed source RAISES SyntaxErrorNotification;
+     a debugger in one green process does NOT freeze the image; closed-port
+     connect raises ConnectionRefused; class create/rename/reparent/remove all
+     fine; a 400M-element allocation succeeds. Pharo spot-check: NO blocking
+     hazard at all on the same compiles -- its non-interactive investment shows.
+     THE QUIET HAZARDS MATTER MORE THAN THE LOUD ONE: both dialects compile a
+     method referencing an UNDECLARED VARIABLE silently, so an agent's typo
+     installs clean and fails later; and Squeak binding an already-bound port
+     returned success instead of raising. Neither hangs; both are failures that
+     did not become data, which is the same criterion failing where it is harder
+     to audit. So the audit sorts into THREE classes -- blocking (agent freezes),
+     explicit (agent recovers), and SILENT SEMANTIC (agent believes the change
+     succeeded and corrupts itself). The third deserves its own metric, which
+     neither substrate has been measured on:
+       MUTATION OBSERVABILITY -- when the agent changes itself incorrectly, how
+       reliably does the substrate turn that mistake into observable evidence?
+     Arguably more important than headless autonomy. Note what it does NOT imply:
+     better live mutation mechanics do not remove the need for validation,
+     provenance, rollback, evaluation and selection. vivarium's evaluator earns
+     its place on either substrate.
+
+THREE THINGS THIS SENDS BACK:
+  - B6's kills_it tests the wrong quantity. "The ~400ms fork-and-save pause" is
+    not a pause; the pause is ~30 ms. B6 is much further from firing than it
+    reads.
+  - B6's GENOME/CORE trap is WORSE on Smalltalk, not better. The source an agent
+    installs does not live in the artifact -- it lives in .changes. A
+    per-definition ledger is not merely still needed there; it recovers
+    something SBCL never loses.
+  - M1's own framing was wrong. The difference is FORK vs STOP-THE-WORLD, not
+    Lisp vs Smalltalk: per megabyte Squeak writes its heap at 4.0 ms/MB against
+    SBCL's child at 6.2-11.6. If a Smalltalk image can be made to fork safely --
+    green Processes say yes, the VM's OS-level heartbeat thread says measure it
+    -- the availability argument disappears entirely. Untested; obvious next.
+
+ALSO CORRECTED, in vivarium's own code: derive.lisp's header claimed SBCL yields
+(FUNCTION (LIST &KEY (:TAX SINGLE-FLOAT) ...)) with no help. On 2.6.7, via both
+eval and compile-file, it yields (FUNCTION (T &KEY (:TAX T)) (VALUES NUMBER
+&OPTIONAL)) -- the RETURN type is derived, argument types are T unless declared.
+Nothing downstream is wrong (json-type maps that to "any" and build-parameters
+refuses to guess), but the comment overstated the input; now fixed. The
+derived-schema claim rests on NAMES, ARITY KINDS and the DOCSTRING, precisely
+the set SBCL keeps in the image and Smalltalk keeps in a side file.
+
+TRIGGER -- what would make switching correct. NECESSARY, AND NOW MEASURABLE:
+continuation persistence has to improve OUTCOMES. B7 has very nearly finished
+proving Smalltalk CAN preserve live computation; it has not shown the capability
+makes an agent better, and that is the difference between an elegant runtime
+property and an agent capability. Spun out as story B8 -- an A/B with one
+variable (reconstruct state from the ledger vs resume the exact live
+computation), which needs the task set and a scored loop that B7's terms of
+reference excluded. If B wins, the recommendation flips; if A matches B, live
+continuation is decoration on a sufficient ledger and the question closes for
+good. An adjacent form of the same trigger, if it arrives first: an experiment
+whose subject is an agent turn that OUTLIVES ITS PROCESS.
+
+RETIRED: the availability trigger. The first pass set it at "a native arm64 VM
+under ~50 ms", against a number that was mostly Rosetta. Measured natively the
+pause is 214 ms, costs a 25 ms latency tail on a 300 ms workload and loses
+nothing. The availability objection is no longer a reason not to switch; it is a
+budget line -- one checkpoint per 214 ms of frozen service, against vivarium's
+28-32 ms forked trials. A request SHORTER than the pause would make it visible
+again, so re-measure if the workload changes shape.
+
+SUFFICIENT, either: (a) E5's single-tool RLM winning, after which there is no
+schema to derive and M3 evaporates -- and with M1 no longer disqualifying that
+would leave instrument continuity as the ONLY argument against, which is a
+reason to defer rather than to refuse; (b) Smalltalk source moving into the
+image (Tonel or anything that keeps method source and comments reachable from
+the image alone) -- worth checking before assuming, since the finding here is
+about .changes and sourcePointer, not about what a package format could do.
+
+Conversely, if SBCL ever gains control-flow resume by representing in-flight
+work as DATA rather than as a stack -- which B6 already gestures at -- Smalltalk's
+one genuine advantage is gone and the question closes permanently.
 """
 acceptance = [
   "a number for the snapshot pause under load, beside SBCL's 388ms fork-and-save",
@@ -908,6 +1159,324 @@ acceptance = [
   "a recommendation with a trigger: what result would make switching correct",
 ]
 kills_it = "Pharo's snapshot pause under load is no better than SBCL's, or resume-mid-computation is fragile in practice. Then Smalltalk's advantage is architectural rather than measurable and the substrate question closes in vivarium's favour."
+
+[[story]]
+id       = "B10"
+sprint   = 0
+title    = "Does preserving live cognition make the agent better?"
+labels   = ["backlog", "experiment", "substrate"]
+status   = "backlog"
+size     = "M"
+depends_on = ["S1"]
+as_a     = "researcher"
+i_want   = "an A/B on checkpoint semantics, with everything except the resume mechanism held fixed"
+so_that  = "continuation persistence is judged as an agent capability rather than as an elegant runtime property"
+notes = """
+SPUN OUT OF B7, which proved the CAPABILITY and could not test the OUTCOME --
+B7's terms of reference excluded the task set and a scored loop, and this needs
+both.
+
+B7 established, measured: a Smalltalk image resumes exact live computation across
+a restart (stack locals, a 13-frame call chain, semaphore-blocked processes),
+deterministically, and can do it via fork with an 18-75 ms serving pause against
+SBCL's 30-36 ms. So Smalltalk CAN preserve live cognition at SBCL-class cost.
+Nothing shows it makes an agent BETTER, and that gap is the whole remaining
+argument for switching substrate.
+
+THREE ARMS, NOT TWO, AND THE ORDER MATTERS. Comparing SBCL against Smalltalk
+directly would confound two different effects: a Smalltalk win could simply mean
+the SBCL checkpoint schema was not rich enough. So the first comparison is
+SBCL AGAINST ITSELF, and Smalltalk only enters once the explicit arm is at its
+best:
+
+  A1  NAIVE RECONSTRUCTION.  Persist goal, history, artifacts, current task.
+      The agent works out where it was.
+  A2  EXPLICIT DURABLE COGNITION.  Persist goal, current hypothesis, current
+      subproblem, candidate set, rejected candidates, tool results, next action,
+      unresolved branches, partial computations, evaluation state.
+  B   CAPTURED COMPUTATION.  The image resumes: stack, frame, locals, green
+      process, instruction position.
+
+    A1 -> A2   measures the benefit of BETTER EXPLICIT REPRESENTATION
+    A2 -> B    measures the benefit of CAPTURING COMPUTATION ITSELF
+
+Each step then asks exactly one question, and A1->A2 is runnable on SBCL alone
+before Smalltalk is introduced as a variable at all.
+
+THE QUESTION, precisely: WHAT INFORMATION, IF ANY, EXISTS IN AN AGENT'S RUNNING
+COMPUTATION THAT IS EXPENSIVE OR LOSSY TO EXTERNALISE INTO EXPLICIT DURABLE STATE?
+
+SUCCESS RATE IS NOT THE OUTCOME -- a vector is, because the interesting result is
+success(A2) ~= success(B) with everything else worse for A2:
+
+  final task score            capability
+  total LLM tokens            reconstruction cost
+  tool calls                  duplicated work
+  wall time                   operational effect
+  lost / repeated steps       continuation fidelity
+  state serialization size    the explicit-state burden
+  harness code complexity     the implementation burden
+  recovery failures           robustness
+
+RUN IT IN STAGES. A1 -> A2 FIRST, ON SBCL ALONE, and do not add arm B until the
+A2 representation and the reconstruction-tax instrument have both been validated.
+If A1 shows substantial reconstruction tax and A2 drives it to ~zero, that is a
+result worth having with no Smalltalk involved at all -- and if the instrument
+cannot show that cleanly, it is not ready to adjudicate the harder comparison.
+
+RECONSTRUCTION TAX, defined formally rather than as an impression:
+
+  work performed after recovery whose only purpose is to recover information,
+  decisions, intermediate results, or execution position that was already
+  available immediately before the checkpoint.
+
+AND IT NEEDS A COUNTERFACTUAL, because the concept is partly semantic and will
+otherwise be labelled by intuition. "The agent re-read file X after restart" is
+NOT automatically reconstruction: it might have re-read X anyway. So measure by
+PAIRED RUNS rather than by classifying operations:
+
+  same task, same seed, same model, same checkpoint location
+    CONTROL       continue uninterrupted past the checkpoint
+    RECOVERY ARM  restart and resume from it
+  compare POST-CHECKPOINT behaviour between the two.
+
+The difference is the tax, and it falls out as extra tool calls, extra reads,
+extra reasoning tokens, repeated experiments, repeated rejected candidates, lost
+hypotheses and wall-clock delay -- none of which requires anyone to decide by eye
+what a given operation "was for".
+
+  Quantify as reconstruction_tokens, reconstruction_tool_calls,
+  reconstruction_wall_time, repeated_observations, repeated_experiments,
+  repeated_failed_candidates, lost_hypotheses.
+
+  RECONSTRUCTION TAX RATIO = reconstruction work after restore / total work after
+  restore -- interpretable across tasks of different sizes. A run can succeed and
+  still burn 2,800 tokens, 4 tool calls and 17 seconds rediscovering where it was,
+  which is exactly the effect a success rate hides.
+
+STATE-AUTHORING TAX, the metric that keeps the comparison fair. Explicit durable
+state is not free: forcing the agent to externalise every useful implicit thought
+into (:current-hypothesis ...) (:next-action ...) (:pending-experiment ...)
+(:candidate-rejected ...) reduces reconstruction tax by RAISING the cost of
+ordinary execution -- tokens spent narrating state, harness code maintaining the
+machine, serialisation on every transition. Smalltalk's implicit continuation
+does not require any of it. So the honest comparison is:
+
+  EXPLICIT PERSISTENCE     while running: externalise state, maintain the state
+                           machine, serialise transitions
+                           after recovery: small reconstruction
+
+  COMPUTATIONAL CAPTURE    while running: almost nothing
+                           at checkpoint: capture a larger computational world
+
+  DURABILITY TAX = state-authoring overhead + checkpoint overhead
+                 + reconstruction overhead
+
+That is the number with real bite, and neither substrate has one. Note what it
+implies for tuning A2: THE STRONGEST A2 IS NOT THE ONE WITH THE LOWEST
+RECONSTRUCTION TAX. It is the one minimising TOTAL durability tax without hurting
+task score -- an A2 that externalises everything will win on recovery and lose on
+every ordinary turn, and reporting only the first half would manufacture a result.
+
+MEASUREMENT VALIDITY IS PART OF THIS STORY, NOT A PRELIMINARY TO IT. B7's own
+history is the argument: four confident claims there turned out wrong under a
+better instrument -- a 20x figure that was mostly Rosetta, an "arm64 never starts"
+that was one vendor's VM build, a smoke test that false-positived because crash
+dumps contain the digits 42, and a saturation curve that was machine noise. Every
+one was caught by CHANGING THE INSTRUMENT rather than by running more of the same
+measurement. Reconstruction tax and state-authoring tax are both easy to measure
+badly and hard to measure well, and a confident number from a bad instrument would
+be worse here than no number at all.
+
+Arm A is what SBCL can do today and what a file harness approximates. Arm B is
+what only an image can do. The interesting quantity is not whether B is faster --
+it will be -- but whether B ARRIVES SOMEWHERE A CANNOT, i.e. whether work in
+flight at checkpoint time carries information the ledger does not.
+
+WHY THIS IS THE DECIDING EXPERIMENT. If B consistently wins, continuation
+semantics become a reason to move and B7's recommendation flips. If A matches B,
+live continuation is decoration on a ledger that was already sufficient, and the
+substrate question closes for good. Either result is worth more than any further
+microbenchmark, and both are cheap relative to a port.
+
+STARTING FROM, because B7's session state is gone and should be: the source of
+truth is the main checkout plus the committed probe files. NOT the worktree, not
+the scratchpad VM installs, not any interactive environment state -- all of which
+were wiped twice during B7 and cost nothing, because the reproducible artifact was
+the recipe rather than the live environment. Which is the project's own thesis
+arriving from an unexpected direction, and worth noticing before running an
+experiment about what live state is worth.
+
+DESIGN TRAP, from B7's M3 and M5 together: arm A must reconstruct from the LEDGER,
+not from a saved core. A saved core carries data-but-not-control-flow and would
+make arm A artificially weak, which is the same overclaim B7's first pass made.
+
+Runnable on SBCL alone -- arm B needs no Smalltalk if in-flight work is
+represented as DATA rather than as a stack, which B6 already gestures at. That is
+the cheap version and it should be tried first: if representing in-flight work as
+data closes the gap, Smalltalk's one genuine advantage is gone without a port.
+
+WHAT THIS IS REALLY ASKING, and why it outgrew B7. There are two ways to make an
+agent persistent, and they are different philosophies rather than different
+implementations:
+
+  PERSISTENCE BY STATE-MACHINE DESIGN     computation -> explicit state ->
+                                          checkpoint -> new process ->
+                                          state transition continues
+                                          (Erlang, Temporal, durable execution,
+                                          LangGraph-style checkpointing, actor
+                                          persistence)
+
+  PERSISTENCE BY COMPUTATIONAL CAPTURE    computation itself -> capture ->
+                                          restore -> same computation continues
+                                          (Smalltalk)
+
+Essentially every modern agent system has chosen the first, and converts control
+flow into explicit durable state as a matter of course. Nobody appears to have
+measured what that conversion COSTS, because on the usual substrates the second
+option does not exist. B7 established that it does exist and is operationally
+affordable. So B8 is not one more Smalltalk test: it decides which of two models
+of persistent agents this project needs, and the answer generalises past the
+substrate question that produced it.
+
+If explicit ~= native, the finding is that FOR THIS CLASS OF SELF-IMPROVING AGENT,
+DURABLE COGNITION IS BETTER MODELLED AS EXPLICIT DATA THAN AS PRESERVED EXECUTION
+STATE -- which retires Smalltalk's largest unique advantage for vivarium.
+
+AND IT DECIDES B8, THE BEAM PROBE. There are three persistence philosophies, not
+two: SBCL rewrites programs, Smalltalk persists a computational organism, BEAM
+replaces supervised members. BEAM is NOT a fourth arm here -- and be precise about
+what it does supply, because it is easy to over-credit: BEAM gives SUPERVISED
+REPLACEMENT AROUND EXPLICIT STATE as a runtime primitive, NOT durability. Process
+state is volatile across node death; a supervisor recreates children from scratch;
+durability needs Mnesia or another external store. So BEAM supplies the
+replacement half of arm A2 and leaves the durable half in the ledger, where
+vivarium already has it.
+
+The two stories therefore ask different questions -- B10: what does externalising
+cognition into data COST? B8: IF explicit state is sufficient, does a runtime with
+native process replacement, supervision and hot upgrade run it better? -- and this
+one sequences the other:
+  A2 ~= B  ->  explicit state is sufficient, and BEAM becomes HIGHLY relevant: the
+               mature runtime for the model that won. Run B8.
+  B >> A2  ->  captured computation carries what externalising loses, and BEAM's
+               persistence philosophy has already lost the more fundamental
+               contest. B8's containment and hot-upgrade axes stay worth
+               measuring; its persistence argument does not.
+Which is why this is the cheaper story to run first.
+"""
+acceptance = [
+  "A1 vs A2 run on SBCL alone first, scored -- the benefit of better explicit representation, measured before Smalltalk is a variable",
+  "the instrument validated before arm B is built: paired control runs that continue uninterrupted past the checkpoint, so reconstruction tax is a measured difference rather than operations labelled by eye",
+  "the full outcome vector, not a success rate -- score, tokens, tool calls, wall time, repeated steps, state size, harness complexity, recovery failures",
+  "reconstruction tax and its ratio, quantified per the definition in the notes, for every arm",
+  "state-authoring tax measured, so the explicit arm is charged for what it costs while running and not only for what it saves on recovery",
+  "a statement of whether any in-flight information exists that the ledger cannot carry",
+  "if B wins, the specific tasks it wins on -- a mean is not an answer here",
+]
+kills_it = "A2 matches B on durability tax, not merely on score -- reconstruction tax near zero and no state-authoring premium large enough to cancel it. Then live continuation is decoration on a sufficient ledger, Smalltalk's remaining advantage buys nothing measurable, and the substrate question closes in vivarium's favour for good."
+
+[[story]]
+id       = "B9"
+sprint   = 0
+title    = "Mutation observability: every self-modification becomes evidence"
+labels   = ["backlog", "invariant", "safety"]
+status   = "backlog"
+depends_on = []
+size     = "M"
+as_a     = "researcher"
+i_want   = "one transactional write path for every persistent self-modification, and a metric for what escapes it"
+so_that  = "an agent that changes itself incorrectly produces evidence rather than a silently wrong world"
+notes = """
+GENERALISED OUT OF B7, where it showed up twice on Smalltalk and turned out not to
+be a Smalltalk property at all.
+
+B7's M5 sorted runtime failures into three classes, and the third is the one that
+matters for a self-improving system:
+
+  BLOCKING          author-initials dialog -- agent freezes, nothing to catch
+  EXPLICIT          SyntaxErrorNotification, ConnectionRefused -- agent recovers
+  SILENT SEMANTIC   undeclared variable accepted; port bound twice -- THE AGENT
+                    BELIEVES THE CHANGE SUCCEEDED AND CORRUPTS ITSELF
+
+Blocking is loud and was fixed by one message send. Silent semantic failure is the
+dangerous one, and B7's M3 found the same defect in another place: a method
+installed outside the ledger path still runs, but reports its arguments as
+(arg1, arg2) with no description, and NOTHING REPORTS THE NAMES MISSING.
+
+So the framing is not "Smalltalk reflection is deficient". It is WRITE-PATH
+INTEGRITY, and the invariant is substrate-independent:
+
+  every persistent self-modification
+                |
+          mutation transaction
+                |
+    source -- provenance -- candidate
+                |
+             compile
+                |
+             validate
+                |
+             evaluate
+                |
+             promote
+
+Anything bypassing that path is unsafe in any language. Direct compile: -- or its
+Lisp equivalent -- becomes analogous to writing into a database's storage files:
+technically possible, architecturally forbidden.
+
+THE BROADER POINT, and the reason this is its own story rather than a note in B7:
+THE DANGEROUS OPERATION IS NOT CODE GENERATION, IT IS UNOBSERVED STATE TRANSITION.
+The write path has to cover all of it --
+
+  code modification          memory modification
+  schema changes             learned policy changes
+  tool registration          prompt modification
+  capability installation
+
+-- which is a bigger surface than the ledger currently guards, and every item on
+it is something E3/E4 lets an agent do at runtime.
+
+TWO HALVES, AND ONLY THE FIRST IS OBVIOUS. A closed write path does not by itself
+make the ledger authoritative:
+
+  authoritative = every durable transition passes through the ledger
+                + RUNTIME STATE CAN BE RECONCILED AGAINST IT
+
+The second half is what catches the bypass path that the first half failed to
+close, and it is executable rather than aspirational:
+
+  expected = projection(ledger)
+  actual   = introspection(live system)
+  divergence = actual - expected
+
+DIVERGENCE IS A FIRST-CLASS FAILURE, NOT A LOG LINE. A non-zero divergence fails
+the run the way a failing test does -- otherwise it becomes a warning nobody
+reads, which is the same silent-semantic failure mode this story exists to
+remove, relocated one level up. Without this half, "the ledger is authoritative"
+is a claim about intent rather than a property of the running system.
+
+METRIC: MUTATION OBSERVABILITY -- when the agent changes itself incorrectly, how
+reliably does the substrate turn that mistake into observable evidence? Neither
+SBCL nor Smalltalk has been measured on it. B7 measured 15 operations on one
+dialect and found one blocking and two silent-semantic failures; that method
+generalises directly.
+
+WHY IT IS NOT BLOCKED ON THE SUBSTRATE QUESTION: this is worth doing on SBCL now,
+whatever B8 decides. If B8 sends the project to Smalltalk the invariant is needed
+MORE, because M3 showed the image's own account of itself degrades off the ledger
+path.
+"""
+acceptance = [
+  "an enumeration of every runtime path by which vivarium's agent can persistently change its own world, and which of them currently bypass the ledger",
+  "the ledger made the only sanctioned write path for the ones that matter, with the bypass either closed or made loud",
+  "a mutation-observability score for SBCL: for each mutation class, does an incorrect change produce blocking, explicit, or silent-semantic failure",
+  "the silent-semantic cases converted to explicit ones, or a written argument for why a given one cannot be",
+  "a reconciliation check -- expected = projection(ledger), actual = introspection(live system) -- wired so that non-zero divergence FAILS the run rather than logging a warning",
+]
+kills_it = "Every mutation path already produces explicit evidence and nothing silent-semantic is found on SBCL. Then the invariant is already enforced in practice, the metric measures nothing, and this collapses back into a footnote on B7."
+
+
 
 [[story]]
 id       = "B8"
@@ -939,22 +1508,71 @@ against image-single-tool" -- at larger scale.
 
 THREE QUESTIONS, each with an SBCL number already measured to compare against:
 
-  1. CONTAINMENT. Have an agent install code that wrecks the runtime -- exhaust
-     the atom table, wedge the code server, spin in a NIF. Does supervision
-     contain it, or does the node go down? SBCL's fork contains ANY child
+Read them as THREE INCREASINGLY DEEP BOUNDARIES, not three unrelated benchmarks.
+
+  1. THE FAULT BOUNDARY. Have an agent install code that wrecks the runtime.
+     Does only the process die, or the node? SBCL's fork contains ANY child
      failure by construction (E1: a child that corrupts its heap cannot touch
      the parent) at 28-32ms per trial. BEAM process isolation is INTRA-VM and
      may be weaker for this specific failure, which is the opposite of the
-     conventional reading.
-  2. CODE-GENERATION IMPEDANCE. Time and error rate for an agent to generate,
-     compile and load a function at runtime. Erlang has no homoiconicity:
-     abstract format is tagged tuples, not the language's own literals. This is
-     BEAM's weakest cell AND the operation that happens every single turn, so it
-     carries the most information. Compare against install: read one form,
-     compile into the image, done.
-  3. HOT UPGRADE WITH STATE. code_change/3 migrating a gen_server's state --
-     the direct analogue of T3, which neither model has solved in vivarium.
-     Does the runtime making it first-class change the outcome?
+     conventional reading. Pick failures that deliberately cross different
+     boundaries, so "let it crash" is measured rather than recited:
+
+       ordinary exception      should be process-local
+       infinite Erlang loop    the scheduler should cope (reductions preempt)
+       atom-table exhaustion   VM-GLOBAL
+       code-server corruption  VM-global-ish
+       blocking or bad NIF     can take the scheduler, and the node, with it
+
+     The gradient is the result. A substrate that contains the first two and
+     nothing else is telling you where its real boundary is.
+
+  2. MUTATION IMPEDANCE -- the highest-value axis, because it is on the HOT PATH.
+     Measure the WHOLE MUTATION TRANSACTION, not "Lisp forms versus Erlang
+     tuples":
+
+       propose -> representation -> parse -> transform -> compile -> load ->
+       locate the affected process -> activate the new behaviour -> inspect
+
+     Two outcomes would each be worth knowing and they point opposite ways:
+       (a) Erlang's non-homoiconicity is architecturally ugly but barely matters,
+           because the model writes SOURCE TEXT either way and the abstract
+           format never reaches the LLM;
+       (b) SBCL's structural representation materially reduces errors when the
+           agent is TRANSFORMING AN EXISTING PROGRAM rather than generating a
+           function from scratch.
+     So separate the two workloads and score them apart. Generation and
+     transformation are different jobs and vivarium does both; a single
+     "code-gen impedance" number would average them into noise.
+
+  3. STATEFUL REPLACEMENT -- and split it in two, because only the second half is
+     where BEAM's model is genuinely different:
+
+       MODULE REPLACEMENT         v1 -> load v2
+       PROCESS-STATE MIGRATION    code_change(oldVsn, state, extra)
+
+     The interesting experiment is not loading v2. It is an agent process holding
+     current_goal, candidates, evidence, partial_result, GENERATING ITS OWN v2,
+     and migrating its state representation through code_change/3 without dying.
+     That is close to Smalltalk's live evolution, except BEAM deliberately keeps
+     code and process state separate -- which is the whole comparison.
+
+     CAVEAT THAT DECIDES WHETHER THIS AXIS MEASURES ANYTHING: OTP HOT UPGRADE IS
+     NOT ARBITRARY SELF-MODIFICATION. code_change/3 is a controlled migration
+     hook inside a release upgrade, with old/new module coexistence supplied by
+     the runtime. Vivarium's agent does something more aggressive: observe
+     failure -> invent code -> compile candidate -> install -> evaluate ->
+     possibly replace itself again, repeatedly, with no release engineer in the
+     loop. This probe must not accidentally prove "OTP release upgrades work"
+     when the question is "does BEAM make REPEATED AGENT-GENERATED MUTATION
+     better". Design the runs so the agent, not a release script, drives every
+     upgrade -- which is also why axis 2 carries more weight than this one.
+
+WEIGHTING, if the probe has to be cut short: AXIS 2 CARRIES THE MOST INFORMATION.
+Code generation sits on the agent's HOT PATH -- it happens every single turn --
+whereas supervision only matters when something has already gone wrong. A
+substrate weakness on the hot path compounds; one on the failure path is
+amortised over how rarely it fires.
 
 DO NOT MEASURE: throughput, distribution, syntax. E1 already showed parallel
 fan-out barely beats sequential (28.3 vs 31.8ms), so distribution is a
@@ -963,8 +1581,12 @@ capability with no demonstrated requirement here.
 THE DEEPER POINT, which belongs in HANDOFF.md rather than here: the three
 substrates encode three DIFFERENT DEFINITIONS of self-improvement --
   SBCL      the agent is a program that rewrites programs
+            -> does homoiconicity reduce self-improvement impedance?
   Smalltalk the agent is a computational organism that persists
+            -> does preserving computation itself improve outcomes?
   BEAM      the agent is a society that survives by replacing members
+            -> if cognition is explicit state, does supervised evolution make
+               the system safer or better?
 The headline question presupposes the first two. Erlang's framing is not another
 implementation of it; it is another question. That choice has never been made
 explicitly and should be.
@@ -973,10 +1595,68 @@ Asymmetry worth keeping in view when reading the result: supervision, isolation,
 restart and versioning are PATTERNS you can build -- this project already has
 fork isolation, a ledger, and rollback. Homoiconicity is not obtainable as a
 library.
+
+FOURTH QUESTION, added after B7 finished and B10 was written. The three above are
+PROPERTY questions. B7 turned the substrate argument into a PERSISTENCE question,
+and BEAM answers it a third way:
+
+  SBCL       explicit data + restart          the agent is a program that
+                                              rewrites programs
+  Smalltalk  capture live computation         the agent is a computational
+                                              organism that persists
+  BEAM       replace disposable processes     the agent is a society that
+             from durable state               survives by replacing members
+
+  process dies -> durable state survives elsewhere -> supervisor starts a
+  replacement -> the new process continues FROM EXPLICIT STATE.
+
+So BEAM is not a fourth arm of B10. But state the proof it actually supplies
+precisely, because the first draft of this note over-claimed it and contradicted
+something B6 already recorded:
+
+  BEAM IS AN INDUSTRIAL EXISTENCE PROOF OF SUPERVISED REPLACEMENT AROUND EXPLICIT
+  STATE -- NOT OF DURABLE STATE ITSELF.
+
+A gen_server owns its state, a supervisor restarts the process, and code_change/3
+transforms that state across a release upgrade. None of that survives NODE DEATH:
+process state is volatile, the supervision tree recreates children from scratch,
+and durability requires Mnesia, DETS or another external store. B6 says exactly
+this -- Erlang pushes durability OUTSIDE the VM and pairs it with let-it-crash.
+So BEAM supplies the REPLACEMENT half of arm A2 as a runtime primitive and leaves
+the DURABLE half where vivarium already has it, in the ledger.
+
+THE TWO STORIES ASK DIFFERENT QUESTIONS, which is why neither subsumes the other:
+  B10  what does externalising cognition into data COST?
+  B8   IF explicit state is sufficient, is BEAM a better substrate for running a
+       self-improving system, because process replacement, supervision and hot
+       upgrade are native runtime mechanisms rather than harness code?
+
+THEREFORE B10 SEQUENCES THIS STORY, and that is a real scheduling decision rather
+than a note:
+  - if B10 finds A2 ~= B, explicit state is sufficient and BEAM becomes HIGHLY
+    relevant: it is the mature runtime for the model that won, and the question
+    becomes whether supervised evolution makes that model safer or better;
+  - if B10 finds B >> A2, captured computation carries information that
+    externalising loses, and BEAM's underlying persistence philosophy has already
+    lost the more fundamental contest. Axes 1 and 3 below would still be worth
+    measuring for containment and hot upgrade; the persistence argument would not.
+Run B10 first. It costs less and it tells you which of those two probes this is.
+
+THEREFORE B10 SEQUENCES THIS STORY, and that is a real scheduling decision rather
+than a note:
+  - if B10 finds A2 ~= B, explicit durable state is sufficient, and BEAM becomes
+    MORE interesting, because it is the mature runtime for exactly that model and
+    supplies supervision for free;
+  - if B10 finds B >> A2, captured computation carries information that
+    externalising loses, and BEAM is pointed the wrong way -- its entire model is
+    explicit-state-plus-restart, so it inherits A2's ceiling and adds nothing to
+    the axis that mattered.
+Run B10 first. It costs less and it tells you whether this probe is worth running.
 """
 acceptance = [
-  "containment measured: does a runtime-wrecking mutation take the node down, beside SBCL fork's guarantee that it cannot",
-  "code-generation impedance measured as time and error rate, beside install",
+  "the fault gradient measured, not a verdict: which of process-local exception, runaway loop, atom exhaustion, code-server corruption and bad NIF stay contained, beside SBCL fork's guarantee that all of them do",
+  "mutation impedance measured over the whole transaction (propose to inspect) and scored SEPARATELY for generating new code and for transforming existing code -- one averaged number would hide the effect",
+  "process-state migration driven by the AGENT rather than by a release script, so the result is about repeated self-modification and not about OTP release upgrades working",
   "a recommendation with a trigger: what result would make BEAM the right substrate",
   "no task-set port -- if the probe starts porting tasks it has become a rewrite and should stop",
 ]

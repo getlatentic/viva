@@ -10,8 +10,12 @@
 ;;;;     schema to author. That is what makes capability injection ([E3]) usable
 ;;;;     by an agent rather than only by a person editing the harness.
 ;;;;
-;;;; SBCL derives argument types even without declarations, so ORDER-TOTAL above
-;;;; yields (FUNCTION (LIST &KEY (:TAX SINGLE-FLOAT) ...)) with no help.
+;;;; The names, the required/&optional/&key structure and the docstring are the
+;;;; load-bearing three; SBCL keeps all of them in the image, and a core carries
+;;;; them with no source file in existence. Types are the weak input: an
+;;;; undeclared ORDER-TOTAL yields (FUNCTION (T &KEY (:TAX T)) (VALUES NUMBER
+;;;; &OPTIONAL)) -- the return type is derived, the argument types are not, and
+;;;; JSON-TYPE reports "any" rather than guessing. Measured in [B7].
 
 (in-package #:vivarium.derive)
 

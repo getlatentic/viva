@@ -23,6 +23,30 @@ that kills it. They are independent unless a dependency is named.
 | [E5](e5-single-tool-rlm.md) | single-tool RLM | one tool (`eval` a form in the image) beats a fixed tool schema | open |
 | [E6](e6-harness-teardown.md) | production harness teardown | read how Codex and Claude Code actually assemble a request | partial |
 | [harness](harness-lineage.md) | `vivarium` — Pi's loop ported, then diverged | shared substrate for E3–E5 | **arm A repairs a live image and extends itself; 40 tests green** |
+| [B7](smalltalk-probe.md) | Smalltalk probe (spinoff) | Smalltalk is the better substrate for a live-image harness | **done — no execution-model reason left to reject it. A Pharo image forks and keeps serving: 475 forks, 0 failures, 0 requests lost, every child's image resumes mid-computation. Fork stalls are the same order of magnitude as SBCL's, not better or worse — both figures are small-sample and the in-image clock is entangled with the scheduler. What remains is source-level self-description (the ledger's job, now [B9](../backlog.toml)) and one unanswered question ([B10](../backlog.toml))** |
+| [B10](../backlog.toml) | does live continuation improve outcomes? | resuming exact live computation beats reconstructing state from the ledger | **the deciding experiment — B7 proved the capability, not the benefit. Three arms: naive reconstruction → explicit durable cognition → captured computation, so a Smalltalk win cannot just mean the SBCL schema was too thin. Sequences B8** |
+| [B8](../backlog.toml) | BEAM probe | supervision contains a bad mutation better than fork, and hot upgrade beats reconstruction | **queued behind B10. Third persistence philosophy: replace supervised members from durable state — the industrial existence proof of B10's arm A2, not a fourth arm** |
+| [B9](../backlog.toml) | mutation observability | every persistent self-modification produces evidence | **generalised out of B7 — the dangerous operation is unobserved state transition, not code generation** |
+
+## The substrate investigation, as three falsifiable questions
+
+"What is the best language for a self-improving agent?" is not answerable and was
+never asked here. The substrate work decomposes into three questions that each
+have a kill criterion, plus a fourth primitive that outlives all of them:
+
+| substrate | what it makes possible | the question |
+|---|---|---|
+| **SBCL** | code can become data | does homoiconicity reduce self-improvement impedance? |
+| **Smalltalk** | *captured* computation can become durable | does preserving computation itself improve outcomes? |
+| **BEAM** | processes can become disposable | if cognition is explicit state, does supervised evolution make the system safer or better? |
+| **the ledger** | history can become authoritative | — it is not a competitor; all three runtimes need it |
+
+Answered in dependency order rather than as a bake-off. [B7](smalltalk-probe.md)
+asked whether computational capture *works* and found that it does.
+[B10](../backlog.toml) asks whether it is *useful* — and sequences
+[B8](../backlog.toml), because BEAM supplies supervised replacement around
+explicit state, which is the model B10's arm A2 tests. [B9](../backlog.toml) runs
+independently of all of it.
 
 ## Prior art, settled
 
