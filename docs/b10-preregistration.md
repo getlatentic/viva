@@ -136,13 +136,12 @@ transcript before run 1 — not to authorise the spend, which B3 already did, bu
 because it is the cheapest possible check that the harness produces a usable
 transcript at all.
 
-**One eligibility risk to settle from existing data, not by spending.** S2c
-measured a mean of 6.7 requests per attempt. A checkpoint at ordinal 4 therefore
-lands with roughly 2–3 turns of *typical* remaining work, and on the tasks
-gpt-oss-120b solves at 1.00 it may not land at all
-(`completed_before_checkpoint`). Count the ineligible tasks from S2c's stored
-trajectories first. If too many, the **global** ordinal moves before scored
-execution — never per task.
+**The eligibility probe.** S2c persisted only its aggregate table, not its
+trajectories, so the turn-count distribution has to be measured rather than
+recovered. One *unscored* pass over the 10 train tasks, recording turns to
+completion and `assistant-message-usage`, feeds the formula above and doubles as
+the transcript sanity check. Unscored and content-blind: it reads lengths and
+token counts, never what the agent did.
 
 The per-branch budget is 8 post-checkpoint requests, well above the ~2.7 typically
 used, so a recovery arm that needs longer is measured rather than censored by the
@@ -150,17 +149,40 @@ cap.
 
 ### Checkpoint rule — declared before any trace is seen
 
-> **The checkpoint fires immediately after the 4th tool result is appended to the
-> context, before the 5th request is issued. Exactly one checkpoint per run.**
+> **The checkpoint fires immediately after the Nth assistant turn completes —
+> when `bench-requests` reaches N — before the (N+1)th request is issued.
+> Exactly one checkpoint per run.**
 
-Content-independent and deterministic. It is not "at a natural milestone" and not
-"halfway", because both of those are chosen after seeing the trace, and
+**Corrected before any run, from "the 4th tool result" to a turn ordinal.**
+`execute-batch` runs every tool call in a turn, so one request can produce several
+tool results: "the 4th tool result" lands inside request 1 or 2 when the model
+batches and inside request 4 when it does not. That makes the checkpoint position
+a function of the model's batching behaviour — precisely the content-dependence a
+fixed ordinal exists to remove — and it is not comparable to S2c's mean of 6.7,
+which counts requests. A turn ordinal fires at `should-stop-after-turn`, an
+existing hook, and is counted by an existing counter.
+
+Content-independent and mechanically enforceable. It is not "at a natural
+milestone" and not "halfway", because both are chosen after seeing the trace, and
 reconstruction tax varies enormously depending on whether the interruption lands
-just after a decision or in the middle of a multi-step investigation. A fixed
-ordinal is the least gameable rule available.
+just after a decision or mid-investigation.
 
-4 of 12 leaves 8 requests of runway, so a recovering agent has room to be slower
-without simply hitting the cap.
+**N is set by a formula declared here, before the probe that feeds it runs:**
+
+```
+N = clamp(floor(median turns to completion / 2), 2, 4)
+```
+
+measured over one unscored pass of the 10 train tasks. The formula fixes the
+choice in advance; the probe only supplies the number. Choosing N after inspecting
+run *lengths* is legitimate — choosing it after inspecting run *content* is not,
+and this cannot do the latter because content is never consulted.
+
+Why a formula rather than the flat 4 first written: S2c measured a mean of 6.7
+turns, so an ordinal of 4 leaves ~2.7 turns of typical work — thin runway, and a
+high `completed_before_checkpoint` rate on the tasks gpt-oss-120b solves at 1.00.
+The midpoint balances "enough cognition accumulated to lose" against "enough
+runway left to observe the loss".
 
 **The ordinal is immutable per run.** When it produces a bad experimental
 checkpoint the run is *recorded* as such, never relocated:
