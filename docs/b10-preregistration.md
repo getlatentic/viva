@@ -91,24 +91,40 @@ baseline and a 20B model risks floor effects on T15 and T7.
 The spend arithmetic below is retained because staging is still right, but it is
 now a sanity check rather than a gate:
 
-**Fork three ways, not two.** The sham and A1 share a prefix *and* share a control
-branch — "continue uninterrupted" is the same treatment in both — so running them
-as separate conditions pays for the same prefix twice and measures the noise floor
-on different runs from the ones it is supposed to calibrate:
+**Fork three ways, and make the third branch do work.** An earlier version had the
+sham as `CONTROL vs CONTROL'` — continue twice — which measures fork and sampling
+noise but *not* the cost of restarting. That conflates two different things inside
+a single delta. The sham should exercise the restart machinery while **retaining**
+cognition:
 
 ```
-        one run, turns 1..4
-                │
-              fork()
-        ┌───────┼───────┐
-   CONTROL   CONTROL'  RECOVERY
-        └── sham ──┘       │
-        └──── A1 tax ──────┘
+                identical, quiescent turn-4 state
+                              │
+              ┌───────────────┼───────────────┐
+              │               │               │
+              C               S               A1
+           CONTROL          SHAM           RECOVERY
+              │               │               │
+        keep context    restart the      destroy context,
+        and continue    machinery, but   rebuild from the
+                        keep cognition   ledger, resume
 ```
 
-`CONTROL vs CONTROL'` is the sham; `CONTROL vs RECOVERY` is the A1 tax. Both come
-off the *same* prefix, so the floor is measured on exactly the runs it calibrates,
-and it is measured on every pair rather than on "a small number" of separate ones.
+which decomposes the effect into three quantities instead of one ambiguous delta:
+
+```
+restart / plumbing cost  =  S − C
+reconstruction tax       =  A1 − S      ← the quantity B10 exists to measure
+total recovery effect    =  A1 − C
+```
+
+**If A1 is slower than control but indistinguishable from the sham, the
+measurement was of restart machinery and not of lost cognition.** That is the
+failure the two-way version could not have detected. For A2 later, substitute A2
+for A1 and retain both C and S.
+
+All three come off the *same* prefix, so the floor is measured on exactly the runs
+it calibrates, on every pair rather than on a handful of separate ones.
 
 A2 cannot share A1's prefix — the agent authors state from turn 1, so A2's whole
 run differs, which is the state-authoring tax. It forks two ways.
@@ -215,10 +231,38 @@ This changes what the sham test is for. It is not a checkbox expected to read
 zero; it is **the measurement of the noise floor**, and a reconstruction tax that
 does not exceed that floor is not a finding.
 
+### The checkpoint is a quiescent boundary, not a counter reaching 4
+
+`should-stop-after-turn` firing is necessary but not sufficient. The fork happens
+only when all of this holds:
+
+```
+model request 4 returns
+        ↓
+every batched tool call completes          ← execute-batch runs them in parallel
+        ↓
+every tool result is appended to context
+        ↓
+every side effect is committed
+        ↓
+the ledger is flushed
+        ↓
+no request 5 has started
+        ↓
+                    FORK HERE
+```
+
+> **Invariant: at the checkpoint there are no in-flight tools, no partially
+> committed ledger operations, and no model request in progress.**
+
+Without it B10 measures replay and transaction semantics rather than cognition
+loss — forking mid-batch would hand one child a half-applied world, and the
+resulting delta would be a fact about the harness's crash-consistency.
+
 ### The paired control — the part that makes the metric a measurement
 
 Not two independent runs compared. **One run to the checkpoint, then a fork into
-two arms that share an identical world and an identical prefix.**
+arms that share an identical world and an identical prefix.**
 
 ```
         one run, turns 1..4
@@ -313,6 +357,22 @@ own — it may have re-read X anyway. Only the paired difference counts.
 its cognition: tokens spent authoring state, added latency, and the harness code
 that maintains and serialises it.
 
+**A2's control branch has already paid it before the fork.** By turn 4 an A2 run
+has been externalising hypotheses, rejected candidates and next actions for four
+turns, so its prefix costs more than A1's prefix does. Comparing only
+`A1 recovery` against `A2 recovery` and concluding A2 wins because it resumes
+cheaply would ignore the four turns it already spent buying that. The comparison
+must be:
+
+```
+total durability tax = pre-checkpoint state-authoring tax
+                     + checkpoint / restart cost
+                     + post-checkpoint reconstruction tax
+```
+
+which is why A2 is measured against its *own* C and S, and why the prefix token
+count is recorded per arm rather than assumed shared.
+
 **Durability tax** — the number that decides the arm:
 
 ```
@@ -332,12 +392,12 @@ first half would manufacture a result.
 
 Each rung tests one thing, and each must clear before the next is trusted.
 
-| rung | comparison | expected |
+| rung | quantity | expected |
 |---|---|---|
-| **sham** | continue vs **continue** — the third branch of every A1 fork | Δ ≈ 0, and whatever is left **is the noise floor** |
-| **T14** | continue vs recovery on a task with nothing broken | ≈ zero reconstruction tax |
-| **A1** | continue vs naive recovery | a tax that **exceeds the sham floor** |
-| **A2** | continue vs explicit-state recovery | that tax reduced, without raising durability tax |
+| **sham** | `S − C` — restart machinery exercised, cognition retained | small; whatever it is **is the plumbing cost**, and it is not cognition loss |
+| **A1** | `A1 − S` — the same restart, cognition destroyed | a tax that **exceeds `S − C`**, or B10 measured plumbing |
+| **total** | `A1 − C` | should reconcile: `(S−C) + (A1−S)` |
+| **A2** | `A2 − S` | that tax reduced, without raising total durability tax |
 
 The **sham** is the rung that was missing and it is the most important one. It
 forks at the checkpoint and lets *both* branches continue uninterrupted, so it
@@ -413,6 +473,36 @@ the ones B10 is not allowed to touch.
 **Resolved by commissioning family D** — three train-split tasks built so that a
 run accumulates in-flight state before any plausible checkpoint. See the second
 probe below.
+
+## AMENDMENT 1 (2026-08-11) — population changed before any treatment data
+
+Recorded as an amendment rather than folded in silently. The first probe
+established, *before any scored fork*, that the original train split could not
+identify the effect B10 exists to measure: 4.5-turn runs leave nothing in flight
+to lose. Changing the design at that point is what a pre-registration is for; the
+thing it forbids is changing it after seeing treatment results, and there are
+none.
+
+What changed: the population is family D (T18–T20), not the whole train split.
+What did not change: the formula, the clamp, the metrics, the paired design.
+
+**Statistical consequence, and it is a real cost.** T18–T20 were *constructed for
+depth* and then *observed* to run 9/12/12 turns. That makes them
+instrument-development tasks, not pristine confirmation tasks — they can
+establish whether the instrument can see reconstruction tax at all, and they
+cannot carry the confirmatory claim on their own, because their depth was
+selected for.
+
+```
+T18–T20   develop and validate the instrument; establish A1 → A2 behaviour
+T21       held out; confirmation of direction
+```
+
+That makes **T21 more important than it looked when it was added as a census
+formality.** One held-out task is thin for a general claim, but it is enough to
+stop B10's first result being circular. If B10 eventually makes a strong general
+claim, *that* is when independent depth tasks get built — not now, because
+building them now with the effect unknown risks selecting for it.
 
 ## Second probe (2026-08-11), after family D was added
 
