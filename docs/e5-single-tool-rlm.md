@@ -121,3 +121,105 @@ paradigm. The headroom is unproven in both directions.
 - Single-tool works only with a large context budget, because results must stay
   addressable. If context pressure forces payload inlining, the design collapses
   back into ordinary tool calls.
+
+---
+
+# E5 redesigned — two variables were hiding inside one question
+
+**Amended 2026-08-11.** Everything above compares a JSON envelope against an
+s-expression envelope over the *same fixed registry*. That is a question about
+**representation**. The story's headline claim — one `eval` tool beats a fixed
+schema — is a question about **action power**. Running them as one arm would
+answer neither: if Lisp wins, nothing distinguishes
+
+```
+{"function":"shipping-cost","args":[5,":remote"]}      a better representation
+```
+from
+```
+(loop for q in *quotes* unless ... collect ...)        a vastly larger action space
+```
+
+So the variables are separated, and **E5a holds power constant while varying
+representation only.**
+
+## E5a — representation, at equal power
+
+| arm | what the model emits | how it executes |
+|---|---|---|
+| **FIXED** | named JSON tools | registered callbacks |
+| **JSON-AST** | `{"function": ..., "args": [...]}` | harness builds the form, applies it |
+| **JSON-SEXP** | `{"form": "(shipping-cost 5 :remote)"}` | reader → apply |
+| **RAW-SEXP** | `(shipping-cost 5 :remote)` | reader → apply |
+
+**THE RULE THAT MAKES IT INTERPRETABLE: every dynamic arm is restricted to a
+plain function-call expression.** No `loop`, `let`, `lambda`, `setf`, `progn`,
+`defun`, no nesting that computes. One operator, literal arguments. Any arm that
+gets more computational power than the others is measuring power, not shape.
+
+That restriction is not new work: it is exactly the discipline
+[inspect.lisp](../src/image/inspect.lisp) already enforces — one lookup or one
+call of an existing function, literals or handles as arguments, expressions
+refused with *"This tool does not evaluate expressions."*
+
+### The progression reads cleanly
+
+```
+JSON-AST  --remove the hand-rolled AST encoding-->  JSON-SEXP
+JSON-SEXP --remove the tool-call envelope-------->  RAW-SEXP
+```
+
+| result | conclusion |
+|---|---|
+| all three alike | syntax does not matter; keep JSON |
+| `JSON-SEXP > JSON-AST` | Lisp representation matters, structured calling is fine |
+| `RAW-SEXP > JSON-SEXP` | the tool-call envelope itself has measurable impedance |
+| `JSON-SEXP ≈ RAW-SEXP > JSON-AST` | **keep provider-native JSON, put Lisp inside it** |
+
+The last row is the prior worth stating in advance: encoding a Lisp AST *as
+JSON* is ceremony, because Lisp already has an AST syntax.
+
+## E5b — action power, only if a dynamic arm survives E5a
+
+Unlock the language: `let`, `loop`, `mapcar`, `remove-if`, `progn`. Now the
+question is deliberately the big one — **is the programming language a better
+action space than a tool catalogue?**
+
+## E5c — where it becomes self-improvement
+
+Allow `defun`, and the tool boundary disappears:
+
+```
+one-shot expression -> the same expression, repeatedly -> the agent names it
+-> future requests call the abstraction
+```
+
+That is not "the agent registered a new tool". It is what programmers do:
+discover repeated computation, create an abstraction, add it to the language,
+and reason at the higher level afterwards. **If E5c works, B15's skill-vs-tool
+choice substantially collapses** — which is either a simplification or the loss
+of the choice B15 was built to observe, and is worth knowing before B15 runs.
+
+## Measure errors, not just score
+
+Per arm: task score, requests, tokens, wall time, **invalid action rate, parse
+failures, schema failures, wrong argument shape, runtime errors**, actions per
+successful repair, and **action-expression complexity** — how much
+representation the model must emit for equivalent work.
+
+One category is added from B14's experience and is not optional: **"could not
+act"**, distinct from "acted wrongly". In B14 an agent installed a correct repair
+and had no way to run it; that is neither a parse failure nor a wrong answer, and
+an aggregate score cannot tell them apart. See
+[b14-preregistration.md](b14-preregistration.md).
+
+## State of play — three of four arms already exist
+
+| arm | status |
+|---|---|
+| FIXED | built; every scored run to date |
+| RAW-SEXP | **built** — `sexp.lisp` `read-form` + `call-arguments` map a form onto the same arguments table JSON produces, and it is restricted to a call form by construction |
+| JSON-AST | **built by accident**, as `call_function` in `inspect.lisp`: `{"name", "args"}` → `(apply symbol args)`. Needs keyword arguments to be a full arm |
+| JSON-SEXP | **missing**, and small — `read-form` already exists, so it is an envelope around it |
+
+E5a is therefore much closer to runnable than the story implies.
