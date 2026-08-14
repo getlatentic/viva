@@ -365,3 +365,51 @@ Also holding throughout:
 Choosing checkpoint locations after seeing traces; changing A2's representation
 after seeing A2's results; comparing unpaired runs; reporting reconstruction tax
 without state-authoring tax; or letting the held-out split into the loop.
+
+---
+
+## Pre-run probe result (2026-08-11) — and the problem it found
+
+`experiments/b10-eligibility.lisp`, gpt-oss-120b, one unscored attempt per train
+task, content-blind:
+
+| task | T1 | T4 | T5 | T7 | T9 | T11 | T13 | T14 | T15 | T17 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **turns** | 5 | 5 | **2** | 5 | 4 | **10** | **2** | 4 | 4 | 5 |
+
+```
+median 4.5  →  N = clamp(floor(4.5 / 2), 2, 4) = 2
+tokens 38,100 over 10 attempts = 3,810 per attempt, 828 per turn
+ineligible at N=2 (complete in ≤ 2 turns): T5, T13
+```
+
+**Cost is confirmed a non-issue.** Stage 1's ~605 requests at 828 tokens/turn is
+roughly 500k tokens. B3's "cheap enough to ignore" holds, measured rather than
+assumed, and the spend gate can be retired.
+
+**But the formula returned N = 2, and that is not a tuning problem.** Two things
+the probe establishes that the design assumed otherwise:
+
+1. **Runs are much shorter than S2c's 6.7.** Median 4.5, mean 4.6 on the train
+   split. S2c's figure spans all 17 tasks and both models; the harder held-out
+   tasks were carrying it.
+2. **At 4–5 turns there is very little in-flight cognition to lose.** A checkpoint
+   at turn 2 leaves the agent barely started, so a near-floor reconstruction tax
+   would be an artefact of run length rather than evidence that explicit state is
+   sufficient. Checkpointing at 3 leaves ~1.5 turns of runway instead.
+
+**This is a validity threat, not a parameter.** The task set was built for S1 —
+can a harness let an agent repair a live image — and short decisive runs are a
+*virtue* there. B10 asks what interrupting an agent mid-thought costs, which needs
+runs with enough accumulated state to lose. Those are different requirements and
+the set was optimised for the first.
+
+Note where the long runs are: T11 at 10 turns is the only train task with real
+depth, and the set's hardest task by S2c's own measurement is **T12 — three
+independent defects, neither model reliably fixing all three — which is in the
+held-out split and must stay unspent.** The tasks best suited to B10 are largely
+the ones B10 is not allowed to touch.
+
+**Not resolved here, because every resolution changes what B10 measures.** Taking
+N = 2 as the formula returned is the only move that requires no further decision,
+and it is recorded as the standing value unless the scope changes first.
