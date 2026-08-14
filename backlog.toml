@@ -1461,6 +1461,62 @@ acceptance = [
 kills_it = "A2 matches B on durability tax, not merely on score -- reconstruction tax near zero and no state-authoring premium large enough to cancel it. Then live continuation is decoration on a sufficient ledger, Smalltalk's remaining advantage buys nothing measurable, and the substrate question closes in vivarium's favour for good."
 
 [[story]]
+id       = "B11"
+sprint   = 0
+title    = "Does context distillation beat carrying the transcript?"
+labels   = ["backlog", "experiment", "harness"]
+status   = "backlog"
+size     = "S"
+depends_on = ["S1"]
+as_a     = "researcher"
+i_want   = "the ledger-restart result from B10 tested as a claim in its own right"
+so_that  = "an accidental finding about prompt quality is either banked or discarded rather than left in a footnote"
+notes = """
+FELL OUT OF B10 STAGE 1, which was measuring something else and is halted. This
+is not a substrate question and does not depend on B10 resuming.
+
+MEASURED, 15 pairs on family D: an agent restarted from a COMPACT LEDGER RECAP
+finished in 4.6 turns against 6.5 for one carrying its full transcript, at
+indistinguishable score. Per-turn context differed by only ~10%, so the gap is
+fewer turns rather than cheaper turns -- the restarted agent did LESS WORK, not
+the same work more cheaply.
+
+THE CLAIM WORTH TESTING, stated so it can fail: for agentic repair, accumulated
+conversational context carries enough irrelevant exploratory history that
+deliberate compression improves performance. If true it is immediately useful and
+has nothing to do with Smalltalk.
+
+THREE ARMS, one variable:
+  FULL        carry the whole transcript, as every harness does today
+  DISTILLED   periodically replace the transcript with a structured summary
+  LEDGER      restart from the ledger recap alone, as B10's A1 arm did
+
+MEASURE: task score first -- the B10 observation is only interesting if score
+holds -- then turns, tokens, and repeated tool calls.
+
+WHY IT IS NOT ALREADY ANSWERED BY B10: B10's A1 arm was built as a BASELINE for
+something else and was never optimised or varied. It is one point, observed
+incidentally, on tasks chosen for a different property. A one-point observation
+is a reason to run an experiment, not a result.
+
+CAUTION FROM B10, and it is the whole reason this is a story rather than a
+conclusion: B10 twice mistook a proxy for a property -- run length for
+path-dependence, then a legible interaction for a search. The obvious failure
+here is the mirror image: family D tasks may simply be ones where the transcript
+adds nothing, in which case this measures the task set. Run it on tasks OUTSIDE
+family D, and make the control arm's transcript demonstrably useful somewhere
+before believing that removing it is free.
+"""
+acceptance = [
+  "three arms over a task set chosen for this question, not inherited from B10, with score reported before efficiency",
+  "the B10 observation reproduced or not reproduced on the original family D tasks, stated either way",
+  "at least one task where carrying the transcript demonstrably helps, or a written argument that none exists -- otherwise the result is about the tasks",
+  "spread reported, never a bare mean: S2c measured 24% cell disagreement at temperature 0",
+]
+kills_it = "Distillation and ledger restart match full transcript on score and cost, or the effect only appears on family D. Then B10 stage 1 saw a property of three tasks rather than of agentic repair, and there is nothing to bank."
+
+
+[[story]]
 id       = "B9"
 sprint   = 0
 title    = "Mutation observability: every self-modification becomes evidence"
