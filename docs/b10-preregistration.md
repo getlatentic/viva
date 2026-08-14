@@ -65,22 +65,51 @@ to suppress, not to sample.
 does not follow from the first. The criterion is whether **B10 itself** has an
 acceptable bounded maximum, which does not need B3's full cost model:
 
-```
-pessimistic request ceiling for the A1→A2 stage
-  20 requests per pair    (4 shared prefix + 8 control + 8 recovery, at the cap)
-× 5 pairs per task
-× 10 train tasks
-× 3 conditions            (sham, A1, A2)
-= 3,000 requests, worst case
+**Fork three ways, not two.** The sham and A1 share a prefix *and* share a control
+branch — "continue uninterrupted" is the same treatment in both — so running them
+as separate conditions pays for the same prefix twice and measures the noise floor
+on different runs from the ones it is supposed to calibrate:
 
-expected, at S2c's measured mean of 6.7 requests per attempt: ≈ 1,400
 ```
+        one run, turns 1..4
+                │
+              fork()
+        ┌───────┼───────┐
+   CONTROL   CONTROL'  RECOVERY
+        └── sham ──┘       │
+        └──── A1 tax ──────┘
+```
+
+`CONTROL vs CONTROL'` is the sham; `CONTROL vs RECOVERY` is the A1 tax. Both come
+off the *same* prefix, so the floor is measured on exactly the runs it calibrates,
+and it is measured on every pair rather than on "a small number" of separate ones.
+
+A2 cannot share A1's prefix — the agent authors state from turn 1, so A2's whole
+run differs, which is the state-authoring tax. It forks two ways.
+
+```
+STAGE 1   A1 + sham, three-way fork
+          4 prefix + 2.7 × 3 branches ≈ 12 requests/pair   × 5 pairs × 10 tasks
+          ≈ 605 expected          (1,400 at the 12-request cap)
+
+STAGE 2   A2, two-way fork — AUTHORISED ONLY IF STAGE 1 CLEARS THE LADDER
+          4 prefix + 2.7 × 2 branches ≈ 9.4 requests/pair  × 5 pairs × 10 tasks
+          ≈ 470 expected            (1,000 at the cap)
+```
+
+Expected figures use S2c's measured mean of 6.7 requests per attempt over 102
+attempts, which also recorded that "models stop well short of the request budget
+rather than exhausting it" — so the cap is a bound, not a forecast.
+
+**Spend is staged, not authorised up front.** If stage 1 shows no A1 tax above the
+sham floor, A2 is pointless and stage 2 is never bought. Only stage 1 is
+authorised now.
 
 **The gate, executed before run 1 and not after:** run one *unscored* pilot pair,
 read `assistant-message-usage` off the transcript for tokens per request, multiply
-by 3,000, price at the account's current rate, compare to budget. Acceptable →
-run. Not acceptable → substitute the model **before the first scored run**. A
-model substitution after run 1 discards every run made before it.
+by stage 1's ceiling, price at the account's current rate, compare to budget.
+Acceptable → run. Not acceptable → substitute the model **before the first scored
+run**. A substitution after run 1 discards every run made before it.
 
 ### Checkpoint rule — declared before any trace is seen
 
@@ -246,7 +275,7 @@ Each rung tests one thing, and each must clear before the next is trusted.
 
 | rung | comparison | expected |
 |---|---|---|
-| **sham** | continue vs **continue** — fork twice, neither arm destroys context | Δ ≈ 0, and whatever is left **is the noise floor** |
+| **sham** | continue vs **continue** — the third branch of every A1 fork | Δ ≈ 0, and whatever is left **is the noise floor** |
 | **T14** | continue vs recovery on a task with nothing broken | ≈ zero reconstruction tax |
 | **A1** | continue vs naive recovery | a tax that **exceeds the sham floor** |
 | **A2** | continue vs explicit-state recovery | that tax reduced, without raising durability tax |

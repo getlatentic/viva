@@ -1324,11 +1324,24 @@ came out of re-reading S2c rather than out of design:
 
   MODEL STAYS FROZEN (DeepSeek, temperature 0). "B3 is not done" and "use a
   cheaper model" are different questions. The gate is whether B10 ITSELF has an
-  acceptable bounded maximum: 3,000 requests worst case (20 per pair x 5 pairs x
-  10 tasks x 3 conditions), ~1,400 expected at S2c's measured 6.7 requests per
-  attempt. Sample tokens/request from one UNSCORED pilot pair via
-  assistant-message-usage, price it, decide before run 1. A substitution after
-  run 1 discards every run before it.
+  acceptable bounded maximum.
+  CORRECTED after review: the first figure was 3,000 requests, and it was
+  inflated by a DESIGN mistake rather than by arithmetic. Two errors. Treating
+  the sham as a full third condition over all 10 tasks, when its job is to
+  calibrate a floor. And forking two ways, when the sham and A1 share both a
+  prefix AND a control branch -- "continue uninterrupted" is the same treatment
+  in both. FORK THREE WAYS: control, control', recovery. control vs control' is
+  the sham, control vs recovery is the A1 tax, off the SAME prefix, so the floor
+  is measured on exactly the runs it calibrates and on every pair rather than on
+  a handful of separate ones. Cheaper and methodologically better.
+  AND SPEND IS STAGED, NOT AUTHORISED UP FRONT:
+    stage 1  A1 + sham, three-way   ~605 expected, 1,400 at the cap
+    stage 2  A2, two-way            ~470 expected, 1,000 at the cap
+             -- bought only if stage 1 clears the ladder. If A1 shows no tax
+             above the sham floor, A2 is pointless and is never paid for.
+  Only stage 1 is authorised. Sample tokens/request from one UNSCORED pilot pair
+  via assistant-message-usage, price against stage 1's ceiling, decide before
+  run 1. A substitution after run 1 discards every run before it.
 
   CHECKPOINT ORDINAL IS IMMUTABLE PER RUN. Solved-before-4 or terminal-at-4 is
   recorded as checkpoint_status = ineligible with a reason, never relocated to
