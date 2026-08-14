@@ -1632,6 +1632,22 @@ here is the mirror image: family D tasks may simply be ones where the transcript
 adds nothing, in which case this measures the task set. Run it on tasks OUTSIDE
 family D, and make the control arm's transcript demonstrably useful somewhere
 before believing that removing it is free.
+
+PRE-REGISTERED 2026-08-11 in docs/b11-preregistration.md, before any scored run.
+Shorter than B10's because the instrument exists and is validated -- same
+quiescent turn-4 fork, same paired control, same repeat and spread discipline.
+Only the arms change: FULL keeps the transcript, DISTILLED replaces it with a
+HARNESS-PRODUCED summary of hypotheses, conclusions and unresolved work, LEDGER
+is B10's recovery arm unchanged.
+
+Harness-produced rather than agent-authored ON PURPOSE: that isolates "is the
+raw transcript worth its tokens" from "should the agent author its own state",
+which is B10's A2 and is not this experiment. The summariser call is charged to
+DISTILLED -- a compression costing more than it saves has improved nothing.
+
+  distillation benefit = DISTILLED - FULL
+  compression floor    = LEDGER - FULL
+  does structure pay   = DISTILLED - LEDGER
 """
 acceptance = [
   "three arms over a task set chosen for this question, not inherited from B10, with score reported before efficiency",
