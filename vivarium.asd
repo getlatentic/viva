@@ -62,6 +62,8 @@
                              (:file "control")
                              (:file "depth")
                              (:file "search")
+                             (:file "impact")
+                             (:file "burden")
                              (:file "attempt")))))
 
 (defsystem "vivarium/search"

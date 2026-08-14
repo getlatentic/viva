@@ -144,3 +144,59 @@
     (let ((result (call-tool* image-tools:install "source" "(defun nope () 1)")))
       (true (tool:tool-result-error-p result))
       (true (search "backend" (tool:tool-result-output result))))))
+
+;;; The shell guard
+;;;
+;;; Calibration caught a scored agent running `cat src/tasks/control.lisp` --
+;;; the file holding the cases it was being scored on -- and writing
+;;; verification scripts into the repository. A working-directory jail does not
+;;; stop that, because an absolute path ignores the working directory.
+
+(define-test "a scored shell refuses paths outside its own directory"
+  (let ((jail #p"/tmp/vivarium-jail-test/"))
+    (is equal '() (image-tools::escaping-paths "ls -la" jail))
+    (is equal '() (image-tools::escaping-paths "cat /tmp/vivarium-jail-test/x.lisp" jail))
+    (is equal '() (image-tools::escaping-paths "/usr/bin/env sbcl --version" jail))
+    (true (image-tools::escaping-paths
+           "cat /Users/dev/workspace/vivarium/src/tasks/control.lisp" jail))
+    (true (image-tools::escaping-paths
+           "echo x > /Users/dev/workspace/vivarium/verify-tmp.lisp" jail))))
+
+(define-test "with no directory set the guard does not fire"
+  ;; Interactive use outside a scored run keeps the ordinary shell.
+  (is equal '() (image-tools::escaping-paths "cat /etc/hosts" nil)))
+
+(define-test "a definition is findable by its package, not only its bare name"
+  ;; The first real prompt exposed this: searching "DEPOT" found nothing while
+  ;; DEFUN DEPOT::IN-STOCK-P existed, because the filter also required the
+  ;; SYMBOL name to match. Every benchmark task names its function outright, so
+  ;; none of them ever reached it.
+  (let ((backend (make-instance 'image:sbcl-image :package "VIVARIUM.TESTS.FINDING")))
+    (service:fresh-package "VIVARIUM.TESTS.FINDING")
+    (image:install-definition backend "(defun in-stock-p (sku) sku)")
+    (true (member "DEFUN VIVARIUM.TESTS.FINDING::IN-STOCK-P"
+                  (image:find-targets backend "FINDING") :test #'string=))
+    (true (member "DEFUN VIVARIUM.TESTS.FINDING::IN-STOCK-P"
+                  (image:find-targets backend "in-stock") :test #'string=))
+    (is equal '() (image:find-targets backend "NOTHING-LIKE-THIS"))))
+
+(define-test "reading a live variable reports its value, not a shrug"
+  ;; The image's whole advantage: what the data IS, not what the source says.
+  ;; Without this an agent asked about *STOCK*, was told nothing, guessed a hash
+  ;; table, and installed a GETHASH against a list of plists.
+  (let ((backend (make-instance 'image:sbcl-image :package "VIVARIUM.TESTS.LIVE")))
+    (service:fresh-package "VIVARIUM.TESTS.LIVE")
+    (let ((symbol (intern "*STOCK*" "VIVARIUM.TESTS.LIVE")))
+      (setf (symbol-value symbol) (list (list :sku "A1" :count 4))))
+    (let ((report (image:definition-source backend "VIVARIUM.TESTS.LIVE::*STOCK*")))
+      (true report)
+      (true (search ":SKU" report))
+      (true (search "A1" report)))))
+
+(define-test "an enormous live value is clipped rather than flooding the context"
+  (let ((backend (make-instance 'image:sbcl-image :package "VIVARIUM.TESTS.BIG")))
+    (service:fresh-package "VIVARIUM.TESTS.BIG")
+    (let ((symbol (intern "*HUGE*" "VIVARIUM.TESTS.BIG")))
+      (setf (symbol-value symbol) (loop for i from 0 below 100000 collect i)))
+    (let ((report (image:definition-source backend "VIVARIUM.TESTS.BIG::*HUGE*")))
+      (true (< (length report) 2000)))))

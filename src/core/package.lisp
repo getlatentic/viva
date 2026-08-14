@@ -16,6 +16,10 @@
            #:tool-result-message-error-p
            #:tool-calls-in #:text-of))
 
+(defpackage #:vivarium.wire
+  (:use #:cl)
+  (:export #:present #:field #:text-field #:reasoning-field #:+reasoning-keys+))
+
 (defpackage #:vivarium.schema
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria))
@@ -55,6 +59,7 @@
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:jzon #:com.inuoe.jzon)
+                    (#:wire #:vivarium.wire)
                     (#:msg #:vivarium.message))
   (:export #:collect #:consume #:absorb #:payload-of
            #:accumulator #:make-accumulator #:assistant-message))
@@ -74,6 +79,7 @@
   (:local-nicknames (#:a #:alexandria)
                     (#:jzon #:com.inuoe.jzon)
                     (#:dex #:dexador)
+                    (#:wire #:vivarium.wire)
                     (#:msg #:vivarium.message)
                     (#:schema #:vivarium.schema)
                     (#:tool #:vivarium.tool)

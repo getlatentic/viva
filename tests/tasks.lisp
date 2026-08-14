@@ -19,6 +19,13 @@
                  (let ((price (event-price event)))
                    (if price (* (event-qty event) price) 0)))
           :initial-value 0))"))
+    (:e24 . ("(defparameter *quotes*
+  (mapcar (lambda (q)
+            (if (gethash (getf q :id) *negotiated*)
+                q
+                (list :id (getf q :id) :weight (getf q :weight) :zone (getf q :zone)
+                      :cost (shipping-cost (getf q :weight) (getf q :zone)))))
+          *quotes*))"))
     (:t2 . ("(defun price-of (key)
   (let ((raw (gethash key *cache*)))
     (if raw (- raw *discount*) 0)))"))
@@ -143,12 +150,20 @@ closes over the world it will compare against."
 ;;; The two properties
 
 (define-test "every task is registered exactly once, with a fixed split"
-  (is = 23 (length (tasks:all-tasks)))
-  (is = 15 (length (tasks:tasks-in :train)))
+  (is = 24 (length (tasks:all-tasks)))
+  (is = 16 (length (tasks:tasks-in :train)))
   (is = 8 (length (tasks:tasks-in :held-out)))
   ;; Both halves must carry every family, or the held-out set measures
   ;; something different from the training set rather than the same thing.
-  (is = 8 (length (tasks:task-families))))
+  ;; E-IMPACT is the exception WHILE B14.1 RUNS: E24 is the representative
+  ;; repair the three gates are measured on, and its held-out counterpart is
+  ;; B14.2's work. If the gates pass and no held-out E-IMPACT task exists, the
+  ;; family is incomplete and this exemption must come out, not be extended.
+  (is = 9 (length (tasks:task-families)))
+  (is = 1 (length (remove-if-not (lambda (task) (eq :e-impact (tasks:task-family task)))
+                                 (tasks:tasks-in :train))))
+  (is = 0 (length (remove-if-not (lambda (task) (eq :e-impact (tasks:task-family task)))
+                                 (tasks:tasks-in :held-out)))))
 
 (define-test "a task set up twice from scratch scores identically"
   ;; Without this the whole instrument is unusable for an A/B: a difference

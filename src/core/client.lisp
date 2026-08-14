@@ -93,37 +93,39 @@ malformed one must not take the run down with it."
     (error () (make-hash-table :test #'equal))))
 
 (defun parse-tool-call (json)
-  (let ((function (gethash "function" json)))
-    (msg:make-tool-call :id (or (gethash "id" json) "")
-                        :name (or (gethash "name" function) "")
-                        :arguments (parse-arguments (gethash "arguments" function)))))
+  (let ((function (wire:field json "function")))
+    (msg:make-tool-call :id (or (wire:text-field json "id") "")
+                        :name (or (wire:text-field function "name") "")
+                        :arguments (parse-arguments (wire:text-field function "arguments")))))
 
 (defun parse-content (message)
-  "Reasoning models put chain-of-thought in `reasoning_content` and leave
-`content` empty until they are done thinking. Dropping it loses the only
-evidence of what a run that produced no answer actually did -- and with a small
-token budget that is every run. It becomes a THINKING block, which MESSAGE-JSON
-does not echo back on the next request."
-  (let ((text (gethash "content" message))
-        (reasoning (gethash "reasoning_content" message))
-        (calls (gethash "tool_calls" message)))
-    (append (when (and reasoning (plusp (length reasoning)))
-              (list (msg:make-thinking reasoning)))
-            (when (and text (plusp (length text))) (list (msg:make-text text)))
-            (when calls (map 'list #'parse-tool-call calls)))))
+  "Reasoning models put chain-of-thought beside `content` and leave `content`
+itself empty until they are done thinking. Dropping it loses the only evidence
+of what a run that produced no answer actually did -- and with a small token
+budget that is every run. It becomes a THINKING block, which MESSAGE-JSON does
+not echo back on the next request.
+
+Every field here goes through WIRE: a message that is entirely tool calls has a
+`content` of JSON null, not an absent key."
+  (let ((text (wire:text-field message "content"))
+        (reasoning (wire:reasoning-field message))
+        (calls (wire:field message "tool_calls")))
+    (append (when reasoning (list (msg:make-thinking reasoning)))
+            (when text (list (msg:make-text text)))
+            (when (vectorp calls) (map 'list #'parse-tool-call calls)))))
 
 (defun parse-response (body)
   (let* ((json (jzon:parse body))
-         (choices (gethash "choices" json)))
-    (when (or (null choices) (zerop (length choices)))
+         (choices (wire:field json "choices")))
+    (when (or (not (vectorp choices)) (zerop (length choices)))
       (error 'client-error :detail (format nil "no choices in response: ~a" body)))
     (let* ((choice (aref choices 0))
-           (message (gethash "message" choice))
+           (message (wire:field choice "message"))
            (content (parse-content message))
-           (reason (stop-reason (gethash "finish_reason" choice))))
+           (reason (stop-reason (wire:text-field choice "finish_reason"))))
       (msg:make-assistant-message
        :content content
-       :usage (gethash "usage" json)
+       :usage (wire:field json "usage")
        ;; :LENGTH must survive even when tool calls are present -- it is exactly
        ;; the case where those calls carry truncated arguments, and the loop
        ;; fails the whole batch on it.

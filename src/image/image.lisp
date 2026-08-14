@@ -70,8 +70,15 @@ not be able to run arbitrary code through the install path."
                 (format nil "~a::~a" (package-name (symbol-package name)) (symbol-name name))
                 (princ-to-string name)))))
 
-(defun evaluate-collecting-warnings (form)
-  "Evaluate FORM, returning (values ok-p warnings error-text).
+(defun evaluate-collecting-warnings (form package-name)
+  "Evaluate FORM in PACKAGE-NAME, returning (values ok-p warnings error-text).
+
+Reading in the image's package is not enough. A definition that DERIVES names --
+DEFSTRUCT's constructor and accessors, most obviously -- interns them at
+macroexpansion time using whatever *PACKAGE* is bound to then. Evaluate outside
+the image's package and the definition lands correctly while every symbol it
+generated lands somewhere else, which surfaces later as a function that plainly
+exists being reported absent.
 
 WITH-COMPILATION-UNIT :OVERRIDE T is what makes an undefined callee visible.
 SBCL defers those style warnings to the end of the enclosing compilation unit,
@@ -85,8 +92,9 @@ agent needs told about."
                                     (push (princ-to-string warning) warnings)
                                     (a:when-let ((restart (find-restart 'muffle-warning warning)))
                                       (invoke-restart restart)))))
-            (with-compilation-unit (:override t)
-              (eval form)))
+            (let ((*package* (find-package package-name)))
+              (with-compilation-unit (:override t)
+                (eval form))))
           (values t (nreverse warnings) nil))
       (error (condition)
         (values nil (nreverse warnings) (princ-to-string condition))))))
@@ -101,7 +109,8 @@ agent needs told about."
 (defmethod install-definition ((backend sbcl-image) source &key note)
   (let* ((form (read-one-form source (image-package backend)))
          (target (form-target form)))
-    (multiple-value-bind (ok-p warnings error-text) (evaluate-collecting-warnings form)
+    (multiple-value-bind (ok-p warnings error-text)
+        (evaluate-collecting-warnings form (image-package backend))
       (when ok-p
         (ledger:record (image-ledger backend) target source :note note :outcome "installed"))
       (make-installation :target target :warnings warnings :error error-text))))
@@ -159,13 +168,36 @@ silently picking one."
           (find-symbol (subseq name (+ separator (if (search "::" name) 2 1))) package))
         (find-symbol name *package*))))
 
+(defvar *value-print-limit* 1200
+  "How much of a live value to show. Enough to see the shape of real data.")
+
+(defun live-value-report (symbol)
+  "The current value of a variable, which is the thing a file cannot tell you.
+
+Asked for `*STOCK*` and told only that no source was recorded, an agent guessed
+it was a hash table and installed a GETHASH against a list of plists. The value
+was sitting in the image the whole time. Reporting it is not a convenience --
+seeing the data as it actually is, rather than as the source suggests, is the
+capability this whole project is about."
+  (let ((value (symbol-value symbol)))
+    (format nil ";; not installed by this run; live value~%~a = ~a"
+            symbol
+            (let ((*print-length* 24) (*print-level* 4) (*print-readably* nil))
+              (let ((text (handler-case (prin1-to-string value)
+                            (error () "#<unprintable>"))))
+                (if (> (length text) *value-print-limit*)
+                    (concatenate 'string (subseq text 0 *value-print-limit*) " ...")
+                    text))))))
+
 (defun source-from-introspection (target)
-  "A definition never installed by us still has a lambda list worth reporting."
+  "A definition never installed by us is still visible in the running image: a
+function has a lambda list, and a variable has a value."
   (a:when-let ((symbol (definition-symbol target)))
-    (when (fboundp symbol)
-      (format nil ";; not installed by this run; live signature only~%(~a ~a)"
-              symbol
-              (or (ignore-errors (sb-introspect:function-lambda-list symbol)) "")))))
+    (cond ((fboundp symbol)
+           (format nil ";; not installed by this run; live signature only~%(~a ~a)"
+                   symbol
+                   (or (ignore-errors (sb-introspect:function-lambda-list symbol)) "")))
+          ((boundp symbol) (live-value-report symbol)))))
 
 (defmethod rollback-definition ((backend sbcl-image) target)
   (let* ((target (or (canonical-target backend target) target))
@@ -204,9 +236,15 @@ the rollback. Only the forms this backend can install are handled."
         (found '()))
     (dolist (entry (ledger:entries (image-ledger backend)))
       (pushnew (ledger:entry-target entry) found :test #'string=))
+    ;; Collect every definition in the package and let the one filter below
+    ;; decide. Matching the SYMBOL NAME here as well meant a search could only
+    ;; succeed on the bare name: asking for "DEPOT" found nothing while
+    ;; "DEFUN DEPOT::IN-STOCK-P" sat right there, because no symbol is named
+    ;; DEPOT. Every benchmark task names its function outright, so none of them
+    ;; ever exercised it -- the first real prompt did, and it cost the agent two
+    ;; of its requests.
     (do-symbols (symbol (find-package (image-package backend)))
       (when (and (fboundp symbol)
-                 (search needle (symbol-name symbol))
                  (eq (symbol-package symbol) (find-package (image-package backend))))
         (pushnew (format nil "DEFUN ~a::~a" (package-name (symbol-package symbol))
                          (symbol-name symbol))

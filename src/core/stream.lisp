@@ -17,25 +17,6 @@
 
 (in-package #:vivarium.stream)
 
-(defun present (value)
-  "NIL for a missing key or a JSON null, however the parser spells it.
-
-Not defensiveness for its own sake: llama.cpp's final usage chunk carries
-`choices: null`, and a delta routinely has null where a field is simply absent
-this tick. Reading those as values fails deep inside the accumulator with an
-error that says nothing about streaming."
-  (cond ((null value) nil)
-        ((eq value :null) nil)
-        ((and (symbolp value) (string= "NULL" (symbol-name value))) nil)
-        (t value)))
-
-(defun field (table key)
-  (and (hash-table-p table) (present (gethash key table))))
-
-(defun text-field (table key)
-  (let ((value (field table key)))
-    (and (stringp value) (plusp (length value)) value)))
-
 (defstruct (accumulator (:conc-name acc-))
   (text (make-string-output-stream))
   (reasoning (make-string-output-stream))
@@ -58,32 +39,32 @@ error that says nothing about streaming."
   (unless (vectorp deltas) (return-from absorb-tool-calls))
   (map nil
        (lambda (delta)
-         (let* ((index (or (field delta "index") 0))
+         (let* ((index (or (wire:field delta "index") 0))
                 (partial (call-at accumulator index))
-                (function (field delta "function")))
-           (a:when-let ((id (text-field delta "id")))
+                (function (wire:field delta "function")))
+           (a:when-let ((id (wire:text-field delta "id")))
              (setf (partial-id partial) id))
            (when function
-             (a:when-let ((name (text-field function "name")))
+             (a:when-let ((name (wire:text-field function "name")))
                (setf (partial-name partial) name))
-             (a:when-let ((fragment (text-field function "arguments")))
+             (a:when-let ((fragment (wire:text-field function "arguments")))
                (write-string fragment (partial-arguments partial))))))
        deltas))
 
 (defun absorb (accumulator chunk)
   "Fold one parsed SSE payload into ACCUMULATOR. Returns the delta, or NIL for a
 chunk that carries no choice -- a usage summary, or a keep-alive."
-  (let ((choices (field chunk "choices")))
+  (let ((choices (wire:field chunk "choices")))
     (when (and (vectorp choices) (plusp (length choices)))
       (let* ((choice (aref choices 0))
-             (delta (or (field choice "delta") (make-hash-table :test #'equal))))
-        (a:when-let ((reason (text-field choice "finish_reason")))
+             (delta (or (wire:field choice "delta") (make-hash-table :test #'equal))))
+        (a:when-let ((reason (wire:text-field choice "finish_reason")))
           (setf (acc-finish-reason accumulator) reason))
-        (a:when-let ((text (text-field delta "content")))
+        (a:when-let ((text (wire:text-field delta "content")))
           (write-string text (acc-text accumulator)))
-        (a:when-let ((reasoning (text-field delta "reasoning_content")))
+        (a:when-let ((reasoning (wire:reasoning-field delta)))
           (write-string reasoning (acc-reasoning accumulator)))
-        (a:when-let ((calls (field delta "tool_calls")))
+        (a:when-let ((calls (wire:field delta "tool_calls")))
           (absorb-tool-calls accumulator calls))
         delta))))
 

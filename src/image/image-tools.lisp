@@ -79,10 +79,26 @@ version it replaced."
 
 (defvar *bash-timeout* 120)
 
+(defvar *bash-directory* nil
+  "Working directory for BASH, or NIL for the process's own.
+
+Scored runs must set this. An agent given a shell on the machine that holds the
+benchmark will find the benchmark: in a calibration run one listed /, found the
+scratch verification scripts in /private/tmp, then ran `ps` and located the
+calibration process driving it. A harness that can read its own answer key is
+not measuring anything.")
+
+(defvar *bash-commands* nil
+  "When bound to a list, every command run is pushed onto it. Scored runs bind
+it so a trajectory can be audited for exactly the reach described above.")
+
 (defun run-shell (command)
+  (when (listp *bash-commands*)
+    (push command *bash-commands*))
   (let* ((output (make-string-output-stream))
          (process (sb-ext:run-program "/bin/sh" (list "-c" command)
                                       :output output :error output
+                                      :directory *bash-directory*
                                       :wait nil :search nil))
          (deadline (+ (get-universal-time) *bash-timeout*)))
     (loop while (eq :running (sb-ext:process-status process))
@@ -95,14 +111,55 @@ version it replaced."
     (values (or (sb-ext:process-exit-code process) 1)
             (get-output-stream-string output))))
 
+(defparameter +shell-allowed-prefixes+ '("/usr/" "/bin/" "/sbin/" "/opt/" "/dev/null")
+  "Absolute paths a scored command may still name: the tools themselves.")
+
+(defun absolute-paths-in (command)
+  (let ((paths '()) (start 0))
+    (loop for slash = (position #\/ command :start start)
+          while slash
+          do (let ((end (or (position-if (lambda (c) (member c '(#\Space #\Tab #\Newline #\" #\' #\; #\|)))
+                                         command :start slash)
+                            (length command))))
+               (push (subseq command slash end) paths)
+               (setf start end)))
+    paths))
+
+(defun escaping-paths (command directory)
+  "Absolute paths the command names that lie outside DIRECTORY."
+  (when directory
+    (let ((jail (namestring directory)))
+      (remove-if (lambda (path)
+                   (or (a:starts-with-subseq jail path)
+                       (some (lambda (ok) (a:starts-with-subseq ok path))
+                             +shell-allowed-prefixes+)))
+                 (absolute-paths-in command)))))
+
 (tool:define-tool bash (args context)
-  :description "Run a shell command and return its combined output."
+  :description "Run a shell command and return its combined output. It runs in a
+scratch directory of its own and cannot reach the rest of the filesystem."
   :parameters (("command" :string "The command to run" :required-p t))
-  (multiple-value-bind (code output) (run-shell (gethash "command" args))
-    (let ((text (if (plusp (length output)) output "(no output)")))
-      (if (zerop code)
-          text
-          (tool:make-tool-result :output (format nil "exit ~d~%~a" code text) :error-p t)))))
+  (let* ((command (gethash "command" args))
+         (escaping (escaping-paths command *bash-directory*)))
+    ;; Refused rather than sandboxed, because the sandbox is not the point. A
+    ;; scored agent that reads the machine hosting its own benchmark has read
+    ;; the exam: calibration caught one doing `cat src/tasks/control.lisp` --
+    ;; the file holding the very cases it was being scored on -- and writing
+    ;; verification scripts into the repository. The cwd jail alone does not
+    ;; stop it, because an absolute path ignores the cwd.
+    (if escaping
+        (tool:make-tool-result
+         :output (format nil "Refused: this shell only reaches its own directory.~
+~%Outside it: ~{~a~^ ~}~%Nothing you need for this task lives elsewhere, and a ~
+fresh process cannot see the running image in any case."
+                         escaping)
+         :error-p t)
+        (multiple-value-bind (code output) (run-shell command)
+          (let ((text (if (plusp (length output)) output "(no output)")))
+            (if (zerop code)
+                text
+                (tool:make-tool-result :output (format nil "exit ~d~%~a" code text)
+                                       :error-p t)))))))
 
 (defun tool-set ()
   "Arm A's fixed tool set, in the order Pi lists its own."
