@@ -52,17 +52,35 @@ checkpoint on a task with no defect should show **near-zero reconstruction tax i
 both arms**. If it does not, the instrument is measuring restart overhead rather
 than lost cognition, and the run is invalid.
 
-### Model
+### Model, and a spend gate rather than a cheaper model
 
 `DEEPSEEK_MODEL` via the configured DeepSeek endpoint, **temperature 0**,
-`bench-limit` 12 requests, unchanged across arms.
+`bench-limit` 12 requests, unchanged across arms. Frozen.
 
-*Assumption, flagged rather than resolved:* a frontier model is used because
-`docs/README.md` reserves local models for "high-volume low-stakes roles" and
-says arms that decide something get a frontier model — and B10 decides a
-substrate question. B3 (cost model) is still open, so the spend is not bounded by
-a measured estimate. If the owner would rather cap cost, the substitution to make
-is the model, and it must be made **before** the first scored run, not after.
+Temperature 0 is an experimental setting, not a determinism claim — see the noise
+floor below. B10 measures a *treatment* effect, so sampling variance is something
+to suppress, not to sample.
+
+"B3 is not done" and "use a cheaper model" are different questions, and the second
+does not follow from the first. The criterion is whether **B10 itself** has an
+acceptable bounded maximum, which does not need B3's full cost model:
+
+```
+pessimistic request ceiling for the A1→A2 stage
+  20 requests per pair    (4 shared prefix + 8 control + 8 recovery, at the cap)
+× 5 pairs per task
+× 10 train tasks
+× 3 conditions            (sham, A1, A2)
+= 3,000 requests, worst case
+
+expected, at S2c's measured mean of 6.7 requests per attempt: ≈ 1,400
+```
+
+**The gate, executed before run 1 and not after:** run one *unscored* pilot pair,
+read `assistant-message-usage` off the transcript for tokens per request, multiply
+by 3,000, price at the account's current rate, compare to budget. Acceptable →
+run. Not acceptable → substitute the model **before the first scored run**. A
+model substitution after run 1 discards every run made before it.
 
 ### Checkpoint rule — declared before any trace is seen
 
@@ -77,6 +95,37 @@ ordinal is the least gameable rule available.
 
 4 of 12 leaves 8 requests of runway, so a recovering agent has room to be slower
 without simply hitting the cap.
+
+**The ordinal is immutable per run.** When it produces a bad experimental
+checkpoint the run is *recorded* as such, never relocated:
+
+```
+checkpoint_status = ineligible
+reason            = completed_before_checkpoint   ; solved by tool call 3
+                  | terminal_at_checkpoint        ; nothing cognitively left
+```
+
+Moving to "tool result #3 instead, just for this task" would reintroduce exactly
+the researcher discretion the fixed ordinal exists to remove. If too many train
+tasks turn out ineligible at ordinal 4, **the global rule changes and every task
+moves with it, before scored execution** — never one task at a time.
+
+### Repeats and the noise floor — S2c already measured this and it is not small
+
+S2c re-measured all 17 tasks and found that **two identical sweeps disagreed on 6
+of 25 cells — 24% — at temperature 0 with a fixed seed.** Hosted providers are not
+deterministic. Its conclusion is binding here: *a single sample per cell cannot
+support a comparison*, and `attempt-repeatedly` / `fraction-summary` exist for
+exactly this.
+
+So: **5 pairs per task per condition, and spread is reported, never a bare mean.**
+The arms are not deterministic and must not be described as such — the fork fixes
+the *prefix* exactly, and temperature 0 reduces post-fork divergence, but neither
+eliminates it.
+
+This changes what the sham test is for. It is not a checkbox expected to read
+zero; it is **the measurement of the noise floor**, and a reconstruction tax that
+does not exceed that floor is not a finding.
 
 ### The paired control — the part that makes the metric a measurement
 
@@ -118,6 +167,19 @@ Rebuilt from what the harness already has, with no cooperation from the agent:
 
 That is all. Notably the ledger already carries what was *done*; A1 tests whether
 that is sufficient without what was *thought*.
+
+**A1 is exactly vivarium's existing ledger recovery semantics, and must not move
+in either direction during implementation.** Not weakened into a strawman, and —
+the likelier failure — not quietly enriched because B10 turns out to want some
+field. The moment a field is added for B10's benefit, A1 stops being the baseline
+(*what the project has today*) and becomes a B10-specific reconstruction, at which
+point the A1 → A2 delta measures nothing. Deliberate externalisation belongs in
+A2, which is what A2 is for.
+
+```
+A1  =  current vivarium recovery semantics        (fixed)
+A2  =  A1 + authored cognition                    (the treatment)
+```
 
 ### A2 — explicit durable cognition
 
@@ -178,19 +240,37 @@ first half would manufacture a result.
 
 ---
 
-## Validity checks, which are acceptance criteria and not preliminaries
+## The validity ladder — acceptance criteria, not preliminaries
 
-1. **The instrument detects a tax that exists.** A1 must show a measurable
-   reconstruction tax. If A1 shows none, the instrument is not sensitive enough to
-   adjudicate anything and no A2 number means anything.
-2. **The control task shows near-zero tax in both arms.** T14 has no defect; a
-   large tax there means restart overhead is being counted as lost cognition.
-3. **Paired runs are genuinely paired.** Same fork, same prefix, same seed, same
-   model, same checkpoint ordinal — verified per run, not assumed.
-4. **Contamination discards, never marks down.** `attempt.lisp` already detects
-   commands reaching for the harness; a contaminated run is dropped from both arms
-   of its pair, so a pair is never half-present.
-5. **Arm B stays unbuilt** until 1–4 hold and A1/A2 are frozen.
+Each rung tests one thing, and each must clear before the next is trusted.
+
+| rung | comparison | expected |
+|---|---|---|
+| **sham** | continue vs **continue** — fork twice, neither arm destroys context | Δ ≈ 0, and whatever is left **is the noise floor** |
+| **T14** | continue vs recovery on a task with nothing broken | ≈ zero reconstruction tax |
+| **A1** | continue vs naive recovery | a tax that **exceeds the sham floor** |
+| **A2** | continue vs explicit-state recovery | that tax reduced, without raising durability tax |
+
+The **sham** is the rung that was missing and it is the most important one. It
+forks at the checkpoint and lets *both* branches continue uninterrupted, so it
+tests whether forking and branch execution alone manufacture the apparent
+treatment effect. Given S2c's measured 24% cell disagreement, it will not read
+zero — and that is its value: **it establishes the floor every treatment effect
+must clear to count as one.** A reconstruction tax inside the sham band is noise
+with a story attached.
+
+T14 remains, but as one rung rather than the whole check: it can only tell you
+whether the instrument manufactures tax in a trivially easy condition.
+
+Also holding throughout:
+
+- **Paired runs are genuinely paired.** Same fork, same prefix, same model, same
+  checkpoint ordinal — verified per run, not assumed.
+- **Contamination discards, never marks down.** `attempt.lisp` already detects
+  commands reaching for the harness; a contaminated run drops *both* arms of its
+  pair, so a pair is never half-present.
+- **Arm B stays unbuilt** until the sham, T14, A1 and A2 all behave as
+  pre-registered. Not until A1 and A2 have *numbers* — until they behave.
 
 ## What would invalidate the whole thing
 

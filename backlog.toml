@@ -1306,6 +1306,42 @@ after seeing a trace), the paired-control design, both representations, and ever
 metric definition. Frozen means frozen: if one has to change, the runs made under
 the old version are discarded rather than reinterpreted.
 
+AMENDED the same day, before any scored run, with five rules and one finding that
+came out of re-reading S2c rather than out of design:
+
+  S2C ALREADY MEASURED THE NOISE FLOOR AND IT IS NOT SMALL -- two identical sweeps
+  disagreed on 6 OF 25 CELLS, 24%, at temperature 0 with a fixed seed. Hosted
+  providers are not deterministic. So B10 runs 5 PAIRS per task per condition via
+  attempt-repeatedly and reports SPREAD, never a bare mean, and the arms must not
+  be described as deterministic: the fork fixes the PREFIX exactly, temperature 0
+  reduces post-fork divergence, neither eliminates it.
+
+  That in turn changes what the SHAM test is for. Continue-vs-continue -- fork
+  twice, neither branch destroying context -- is not a checkbox expected to read
+  zero. It MEASURES THE FLOOR every treatment effect must clear. A reconstruction
+  tax inside the sham band is noise with a story attached. The validity ladder is
+  therefore sham -> T14 -> A1 -> A2, each rung testing one thing.
+
+  MODEL STAYS FROZEN (DeepSeek, temperature 0). "B3 is not done" and "use a
+  cheaper model" are different questions. The gate is whether B10 ITSELF has an
+  acceptable bounded maximum: 3,000 requests worst case (20 per pair x 5 pairs x
+  10 tasks x 3 conditions), ~1,400 expected at S2c's measured 6.7 requests per
+  attempt. Sample tokens/request from one UNSCORED pilot pair via
+  assistant-message-usage, price it, decide before run 1. A substitution after
+  run 1 discards every run before it.
+
+  CHECKPOINT ORDINAL IS IMMUTABLE PER RUN. Solved-before-4 or terminal-at-4 is
+  recorded as checkpoint_status = ineligible with a reason, never relocated to
+  "tool result 3 just for this task" -- that is the researcher discretion the
+  fixed ordinal exists to remove. If too many train tasks are ineligible, the
+  GLOBAL rule changes and every task moves with it, before scored execution.
+
+  A1 = CURRENT VIVARIUM RECOVERY SEMANTICS, and must not move in either
+  direction. Not weakened into a strawman, and -- the likelier failure -- not
+  quietly enriched because B10 wants some field. Add a field for B10's benefit
+  and A1 stops being the baseline, at which point the A1 -> A2 delta measures
+  nothing. Deliberate externalisation belongs in A2.
+
 The paired control forks at the checkpoint (E1: 28-32 ms, full isolation) so both
 arms inherit the SAME live image, ledger and 4-turn prefix -- the fork is the
 control here, not an optimisation. And note what the checkpoint destroys: THE
