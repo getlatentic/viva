@@ -620,3 +620,94 @@ hypothesis formed before the checkpoint and expensive to re-derive. That is a
 harder thing to build than a long task, and it is close enough to "construct a
 task where losing state is expensive" — the thing family D's own header forbids —
 that it needs deciding rather than assuming.
+
+---
+
+## AMENDMENT 2 — the line, restated, and a calibration gate before A2
+
+Stage 1's result **stands** and is not reinterpreted. It established three things:
+
+1. On T18–T20, A1 showed no detectable reconstruction penalty.
+2. A compact ledger restart may *outperform* transcript continuation — 4.6 turns
+   against 6.5 at equal score. That is a prompt-quality result, not a B10 result.
+3. **Run length is not a valid proxy for path-dependence.**
+
+Stage 2 remains halted. What follows is a **calibration phase**, recorded as such
+so that a redesigned family D is not quietly reported as the same confirmatory
+experiment.
+
+### The line was drawn too strongly, and is now drawn where it belongs
+
+Family D's original header said tasks must not be built so that losing state is
+expensive. Read literally that forbids path-dependence altogether, which leaves
+B10 with **no statistical power at all**: a task whose outcome does not depend on
+accumulated investigation cannot measure what accumulated investigation is worth.
+
+> **A task MAY require accumulated investigative state. Recovery MUST remain
+> possible from the persistent world. No task may make pre-checkpoint
+> information unavailable, privilege a particular persistence arm, or require
+> retained hidden state for correctness.**
+
+What that forbids is **treatment by construction**:
+
+```
+turn 2: a tool returns secret X exactly once
+checkpoint
+after restart: X can never be queried again
+  → captured continuation knows X, explicit recovery cannot
+```
+
+which proves nothing — it manufactures an information-loss trap. What it permits:
+
+```
+candidates A B C D E; the agent eliminates A, C, E and suspects B
+checkpoint
+after recovery: every diagnostic can be re-run, nothing is unavailable
+  → the only question is whether re-eliminating costs something
+```
+
+Nothing is withheld. Recovery is never doomed, only possibly made to pay again.
+**Designing for sensitivity to the phenomenon is legitimate experimental design;
+designing the answer into the task is not.**
+
+### The property to target: counterfactual path-dependence
+
+> preserving the pre-checkpoint search state changes the amount of work needed to
+> reach the same result
+
+Not length. `src/tasks/search.lisp` targets it with a **matched pair**, because
+"A1 is slower than control" cannot separate lost cognition from generic restart
+behaviour and a difference of differences can:
+
+| | T22 | T23 |
+|---|---|---|
+| | six suspects, five innocent, defect is an **ordering interaction** | same six-definition pipeline, defect **visible in one definition** |
+| progress by | elimination | reading |
+| valuable state lives in | rejected hypotheses — *not in the ledger* | installs — *in the ledger* |
+| expected recovery cost | possibly higher | should match control |
+
+```
+quantity of interest = recovery effect on T22 − recovery effect on T23
+```
+
+If recovery costs the same on both, restart machinery explains it. If it costs
+more on T22 alone, the thing lost was the elimination.
+
+### The gate
+
+```
+calibration on T22/T23
+        │
+        ├── no measurable repeat work on T22 beyond T23
+        │     → B10 cannot currently identify the value of captured
+        │       continuation on any task this project can build.  STOP.
+        │
+        └── measurable
+              → freeze tasks and instrument
+              → A1 → A2
+              → only then B
+```
+
+All outcomes remain informative. If recovery re-runs four diagnostics, that is
+reconstruction tax. If it does not, explicit persisted artifacts were enough. If
+*captured continuation* also re-runs them, the retained state was not useful.

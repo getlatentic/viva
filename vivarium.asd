@@ -60,6 +60,7 @@
                              (:file "merge")
                              (:file "control")
                              (:file "depth")
+                             (:file "search")
                              (:file "attempt")))))
 
 (defsystem "vivarium/search"

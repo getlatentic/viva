@@ -93,6 +93,12 @@
              "(defun round-to-cent (amount) (round amount))"))
     (:t20 . ("(defun adjust-estimated (reading value)
   (if (eq (getf reading :status) :estimated) (* value 9/10) value))"))
+    (:t22 . ("(defun sum-invoice (invoice)
+  (round-cents
+   (convert-currency
+    (apply-tax (apply-discount (line-subtotal invoice) (getf invoice :discount)))
+    (getf invoice :rate))))"))
+    (:t23 . ("(defun surcharge-for (express) (if express 10 5))"))
     (:t21 . ("(defun signed-amount (entry)
   (let ((amount (getf entry :amount)))
     (cond ((null amount) 0)
@@ -137,8 +143,8 @@ closes over the world it will compare against."
 ;;; The two properties
 
 (define-test "every task is registered exactly once, with a fixed split"
-  (is = 21 (length (tasks:all-tasks)))
-  (is = 13 (length (tasks:tasks-in :train)))
+  (is = 23 (length (tasks:all-tasks)))
+  (is = 15 (length (tasks:tasks-in :train)))
   (is = 8 (length (tasks:tasks-in :held-out)))
   ;; Both halves must carry every family, or the held-out set measures
   ;; something different from the training set rather than the same thing.

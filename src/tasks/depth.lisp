@@ -9,14 +9,33 @@
 ;;;; that explicit durable state is sufficient. That is the failure mode that
 ;;;; would be actively misleading, because a null result reads as a finding.
 ;;;;
-;;;; WHAT THESE GUARANTEE AND WHAT THEY MUST NOT. They guarantee that a run
-;;;; accumulates in-flight state before any plausible checkpoint: work is
-;;;; ordered, or plural, or spent on hypotheses that turn out wrong. They must
-;;;; NOT be built so that losing that state is expensive by construction --
-;;;; whether it is expensive is exactly what B10 measures, and a task tuned to
-;;;; make recovery costly would measure this file rather than the substrate.
-;;;; The line is: these decide that there IS something in flight, never what
-;;;; losing it costs.
+;;;; THE LINE, restated after stage 1 -- the first version was too strong.
+;;;; "Never design for path-dependence" would leave B10 with no statistical power
+;;;; at all, because a task whose outcome does not depend on accumulated
+;;;; investigation cannot measure what accumulated investigation is worth.
+;;;; Designing for SENSITIVITY TO THE PHENOMENON is legitimate; designing the
+;;;; ANSWER into the task is not. So:
+;;;;
+;;;;   A task MAY require accumulated investigative state. Recovery MUST remain
+;;;;   possible from the persistent world. No task may make pre-checkpoint
+;;;;   information unavailable, privilege a particular persistence arm, or
+;;;;   require retained hidden state for correctness.
+;;;;
+;;;; What that forbids is TREATMENT BY CONSTRUCTION -- a tool that returns a
+;;;; secret once and never again, so captured continuation knows it and explicit
+;;;; recovery cannot. That proves nothing; it manufactures an information-loss
+;;;; trap. What it permits is a task where every piece of evidence stays
+;;;; obtainable and the only question is whether re-obtaining it costs
+;;;; something. That is reconstruction tax, and it is the thing being measured.
+;;;;
+;;;; STAGE 1 FOUND THESE THREE INSUFFICIENT, and the reason is worth keeping
+;;;; here rather than only in the report: T18 and T20 returned identical scores
+;;;; in all three arms across all five pairs. They are long and they are not
+;;;; path-dependent. LENGTH WAS THE WRONG PROXY -- a task can run twelve turns
+;;;; with its outcome fixed by turn two. The property actually needed is
+;;;; COUNTERFACTUAL PATH-DEPENDENCE: preserving pre-checkpoint search state
+;;;; changes the amount of work needed to reach the same result. See
+;;;; search.lisp, which targets it directly.
 ;;;;
 ;;;; One family, three reasons a run gets long -- ordered work, plural work, and
 ;;;; work spent on hypotheses that turn out wrong. Three are train-split so B10
