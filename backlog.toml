@@ -162,6 +162,52 @@ FROZEN 2026-08-11. No new substrate concepts unless an experiment forces one.
 The next thing that happens is B11, not more architecture."""
 
 [[settled]]
+ref   = "B8 + B12 / the author obligation"
+claim = "Every containment and recovery mechanism in both runtimes is declared by the component being contained. An agent authoring the component can decline it."
+result = """Three independent measurements, two runtimes, one shape. Recorded as settled
+because the third instance is what turns it from a Cordis observation into a
+property of the class of mechanism.
+
+  B12    the inverse        author-supplied, unverified   silent bad unload --
+                                                          Cordis reports DISPOSED
+                                                          with no error
+  B8/3   code_change/3      author-supplied, unverified   silent bad migration --
+                                                          the process keeps
+                                                          serving and says nothing
+  B8/1   the dirty-NIF      author-declared, unenforced   a node that ignores
+         scheduler flag                                   SIGTERM
+
+The last one is the sharpest because the mitigation demonstrably WORKS. The same
+non-yielding busy loop wedges the node on normal schedulers and merely degrades
+it on dirty ones -- measured, both directions. What decides which happens is a
+flag in the NIF's own ErlNifFunc table, set by the code being contained, with no
+VM option to force it.
+
+WHY THIS IS NOT A CRITICISM OF EITHER RUNTIME. Both designs are sound for the
+author they were built for: a person, writing a component, subject to review.
+Cordis says as much (S5.1.1). The assumption only becomes load-bearing when the
+author IS the system, and then it inverts -- the entity whose mistakes the
+mechanism exists to contain is the entity asked to configure the containment.
+
+WHAT FOLLOWS, and it is the same conclusion by three roads:
+
+  1. RECONCILIATION IS SUBSTRATE-INDEPENDENT and cannot be delegated to a
+     runtime. Expected = projection(ledger), actual = introspection(runtime).
+     Neither Cordis's effect tracking nor OTP's code_change establishes that the
+     running system still matches its history.
+  2. A PRE-INSTALL REVIEW GATE IS CHEAPER THAN A POST-HOC DETECTOR where the
+     declaration is checkable -- refuse a NIF without the dirty flag, refuse a
+     component whose declared contributions and tracked effects disagree. B12
+     measured the limit of this: it catches OMISSION and is defeated by a
+     component that declares the right thing and does another. So it is a filter,
+     never a proof, and B9 remains necessary underneath it.
+  3. THE ONLY BOUNDARY THAT HELD FOR EVERY FAULT CLASS TESTED is the one E1
+     measured and vivarium already uses: a separate OS process. Both
+     language-level answers -- effect containment and intra-VM execution
+     containment -- are partial, and partial in ways an autonomous author
+     controls."""
+
+[[settled]]
 ref   = "B11 + B12 / state placement"
 claim = "State expected to survive replacement must not live inside the replaceable thing. Implicit state is convenient; explicit state is evolvable."
 result = """The first rule two stories reached independently, from opposite directions and by
@@ -2362,7 +2408,7 @@ id       = "B8"
 sprint   = 0
 title    = "BEAM probe: does supervision beat fork for containing a bad mutation?"
 labels   = ["backlog", "spike", "risk"]
-status   = "backlog"
+status   = "done"
 size     = "M"
 depends_on = []
 as_a     = "researcher"
@@ -2587,6 +2633,78 @@ that cell is filled. B8 does not implement Smalltalk again.
 DO NOT LET AXIS 3 BECOME AN OTP RELEASE-UPGRADE DEMO. The caveat above stands and
 B12 makes it sharper: the agent drives every upgrade, and the comparator is
 vivarium's own externalised state, not a release script.
+
+---------------------------------------------------------------------------
+RESULT 2026-08-11, docs/beam-probe.md, probes at docs/probes/beam/.
+Erlang/OTP 29 (erts 17.0.3), Elixir 1.20.2, macOS arm64. No task-set port.
+
+AXIS 1, THE FAULT GRADIENT, and it went worst -- which matters because
+containment is the reason anyone reaches for BEAM. Instrument is a supervised
+BYSTANDER ticking every 10ms to a file, so its progress is readable even when the
+node dies without reporting. Baseline ~110 ticks.
+
+  CONTAINED   ordinary exception            108 ticks, victim restarted once
+              runaway Erlang loop           110 ticks, reduction counting
+                                            preempts it -- SBCL has no equivalent
+              heap alloc + max_heap_size     106 ticks, killed on first chunk
+  NOT         binary alloc, no cap           3.25 GB unopposed
+  NOT         binary alloc + max_heap_size   4.29 GB -- THE CAP NEVER FIRED
+  NOT         code server killed             node dead in 0.95s
+  NOT         atom exhaustion                node dead in 0.53s
+  NOT         non-yielding NIF               WEDGED, and IGNORED SIGTERM
+  PARTLY      the same NIF on DIRTY schedulers  survived at 58/110 ticks
+
+Against E1's baseline, SBCL's fork contains all ten by construction because the
+child is a separate OS process. BEAM contains three outright.
+
+TWO CORRECTIONS THE PROBE FORCED ON ITSELF, both worth keeping because the first
+reading was wrong in each. (1) max_heap_size bounds the process HEAP and binaries
+over 64 bytes are refc-allocated OUTSIDE it, so BEAM's only per-process memory
+ceiling does not bound the allocation an agent is most likely to make; the three
+memory arms separate this cleanly. (2) An earlier victim re-crashed on every
+restart, exhausted the supervisor's intensity limit within a second and reported
+"node died" for a fault that was perfectly contained. The fault now fires ONCE.
+
+THE UNKILLABLE NODE IS MEASURED, NOT INFERRED: a node with every scheduler in
+native code survived SIGTERM and ran 4m43s against a 15s limit, then died
+instantly on SIGKILL. The driver records this as exit 137 against 124.
+
+AXIS 2, MUTATION IMPEDANCE. Generation costs nothing -- the agent writes SOURCE
+TEXT, three library calls install it, the abstract format never reaches it, which
+is the story's outcome (a) confirmed structurally. Transformation is lossy:
+without debug_info NOTHING is recoverable from the runtime, and with it the agent
+gets the ABSTRACT FORMAT -- transformable and reprintable, but not what it wrote.
+STATED AS NARROWLY AS MEASURED: this is availability and fidelity. Outcome (b),
+that structural representation reduces agent ERRORS on transformation, is NOT
+tested -- it needs the harness pointed at both substrates on matched tasks, which
+this story's own acceptance criterion forbids porting to get. Real open gap.
+
+AXIS 3, STATEFUL REPLACEMENT, and this is the strongest result. Agent-driven
+throughout: module source generated as text at runtime, compiled, loaded, and
+migrated through sys:suspend/change_code/resume -- no release script.
+
+                       steps  identity   serves  runtime said  reconciliation
+  migrate correct        7    preserved   yes      nothing      matches
+  migrate WRONG          7    preserved   yes      NOTHING      FAILED
+  externalise correct    8    replaced    yes      nothing      matches
+  externalise WRONG      8    replaced    yes      NOTHING      FAILED
+
+OTP TRUSTS code_change/3 EXACTLY AS CORDIS TRUSTS THE INVERSE. Two runtimes with
+nothing in common, same silent failure, and only the ledger comparison catches
+it. So the B12 gap is not a property of Cordis: it belongs to every runtime that
+delegates its own transition to the component being replaced, and reconciliation
+is substrate-independent.
+
+ANSWER TO THE AXIS: NO. Forward migration costs one step fewer and preserves
+process identity -- worth something where identity is load-bearing -- and buys
+NOTHING on correctness while requiring a bespoke transformation function per
+shape change. The externalised arm is the route B11+B12 already implied.
+
+RECOMMENDATION: do not switch. Take two things anyway -- reduction counting is a
+real property SBCL lacks (an argument for keeping trials forked, not for
+switching), and one_for_one restart-the-child-leave-the-siblings is worth copying
+at harness level, which is B12's per-component terminal failure reached
+independently by a second runtime.
 """
 acceptance = [
   "the fault gradient measured, not a verdict: which of process-local exception, runaway loop, atom exhaustion, code-server corruption and bad NIF stay contained, beside SBCL fork's guarantee that all of them do",

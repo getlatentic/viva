@@ -27,8 +27,8 @@ that kills it. They are independent unless a dependency is named.
 | [B10](b10-preregistration.md) | does live continuation improve outcomes? | resuming exact live computation beats reconstructing state from the ledger | **halted — not identifiable on this workload. Two rounds, two proxies mistaken for the property: run length, then a legible interaction. Any defect expressible in source is found by *reading*, and reading accumulates no search state worth losing. Reopen on a real task with expensive reproducible investigative state; the instrument is built and validated. See also — B7 proved the capability, not the benefit. Three arms: naive reconstruction → explicit durable cognition → captured computation, so a Smalltalk win cannot just mean the SBCL schema was too thin** |
 | [B11](b11-preregistration.md) | context distillation | a distilled or ledger-only context beats carrying the full transcript | **done — compression works; the restart it requires does not pay for it. 34 pairs: dropping the transcript saves ~2,400 tokens, the restart it needs costs ~3,000, net +600 against simply continuing, with score flat throughout. The pre-registered middle-arm prediction is disconfirmed on 3 clauses of 4 — the distilled summary is *worse* than the transcript it replaces. And B10's observation was a property of family D: `LEDGER − FULL` is −2,229 where B10 measured it and +1,774 everywhere else** |
 | [B12](cordis-probe.md) | Cordis probe | reversible effects solve the half of self-evolution vivarium never modelled | **done — take the contract, not the framework. Run against the real `cordis` 4.0.0-rc.8. The guard is genuinely more than a disposer stack (proved with a control where LIFO and the guard disagree), and failed activations install nothing, spare their siblings and are withheld rather than retried. But **Cordis reports a clean unload for every failure mode an agent-authored component exhibits** — wrong inverse, untracked mutation, and a label registered without the deed. Reconciliation catches all three; the pre-unload check catches one. Neither layer is sufficient alone** |
-| [B8](../backlog.toml) | BEAM probe | supervision contains a bad mutation better than fork, and hot upgrade beats reconstruction | **next. Third persistence philosophy: replace supervised members from durable state — the industrial existence proof of B10's arm A2, not a fourth arm. B12 sharpened it and did not subsume it: `ctx.isolate` isolates a coeffect key, and a component reached ambient state straight through it, so effect containment leaves execution containment unanswered** |
-| [B9](../backlog.toml) | mutation observability | every persistent self-modification produces evidence | **generalised out of B7 — the dangerous operation is unobserved state transition, not code generation. Independent of the B12 → B8 order** |
+| [B8](beam-probe.md) | BEAM probe | supervision contains a bad mutation better than fork, and hot upgrade beats reconstruction | **done — both halves fail. Containment is the reason to reach for BEAM and it is the axis that went worst: 3 of 10 fault classes contained outright against fork's 10, and a non-yielding NIF produces a node that **ignores SIGTERM** (4m43s against a 15s limit, died on SIGKILL). `max_heap_size` never fires on binaries. And OTP trusts `code_change/3` exactly as Cordis trusts the inverse — a wrong migration keeps serving and reports nothing** |
+| [B9](../backlog.toml) | mutation observability | every persistent self-modification produces evidence | **next, and B8 raised its value again. Generalised out of B7 — the dangerous operation is unobserved state transition, not code generation. Three probes have now found the same shape: every containment mechanism in both runtimes is declared by the component being contained** |
 | [B13](../backlog.toml) | in-place compaction | the transcript can be compacted without rebuilding the agent | **filed, not sequenced. B11 coupled compression to restart through the *mechanism*, not by necessity. Predicts ~2,400 tokens saved with none of the +3,000 restart tax — or refutes B11's decomposition. Does not run before B12** |
 
 ## The substrate investigation, as three falsifiable questions
@@ -54,16 +54,24 @@ transcript is ephemeral working cognition, and runtime continuation was never an
 arm — so Smalltalk still has no workload-level reason to migrate, and BEAM stays
 live because explicit state has not been shown inadequate.
 
-That is why the order was [B12](cordis-probe.md) → [B8](../backlog.toml). B12
+That is why the order was [B12](cordis-probe.md) → [B8](beam-probe.md). B12
 attacked a capability vivarium genuinely lacks — how a promoted change leaves —
 rather than another representation hypothesis, and it answered: the missing
 lifecycle is four behaviours, not a framework, and the layer that catches an
 agent-authored component's actual failures is the ledger vivarium already has.
-It also settled B8's framing by measurement rather than by quotation —
-`ctx.isolate` isolates a coeffect key and a component reached ambient state
-straight through it, so execution containment is still open.
-[B9](../backlog.toml) runs independently of all of it, and B12 raised its value:
-reconciliation is now the only check shown to catch all three failure modes.
+B8 then measured the other boundary and found it partial: BEAM contains three of
+ten fault classes outright, and the one available mitigation for the worst of
+them is a flag the generated component sets on itself.
+
+**All four substrate questions are now answered, and none of them selects a
+substrate.** What they select is [B9](../backlog.toml), which three probes have
+independently made the load-bearing story: every containment and recovery
+mechanism measured — Cordis's inverse, OTP's `code_change/3`, BEAM's dirty-NIF
+flag — is *declared by the component being contained*. Sound when the author is a
+person under review; inverted when the author is the system. So reconciliation
+against the ledger is not a vivarium quirk but the one check no runtime supplies,
+and the only boundary that held for every fault class is the separate OS process
+[E1](e1-trial-isolation.md) already measured.
 
 ## Prior art, settled
 
