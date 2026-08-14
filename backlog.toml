@@ -1429,18 +1429,49 @@ the restricted primitive deliberately; it does not settle E5 and must not be rea
 as having settled it.
 
 ---------------------------------------------------------------------------
-ORDER OF WORK, and the three gates come before any episode is written:
+ORDER OF WORK, and the three gates come before any episode is written.
+PRE-REGISTERED 2026-08-11 in docs/b14-preregistration.md, with every threshold
+frozen there BEFORE any gate ran -- same discipline as B10 and B11, and it
+matters more here because an experiment reports a false effect while AN
+INSTRUMENT MANUFACTURES ONE AND THEN REPORTS IT FOREVER.
 
-  B14.0  the restricted primitive
-  B14.1  GATE 0 observational sufficiency -- one representative repair solvable
-         with baseline tools + inspect_value and NO oracle
-         GATE 1 primitive inconvenience -- median inspect_value calls per repair
-         comfortably above 1, or there is nothing worth abstracting
-         GATE 2 oracle compression -- score not worse, requests or tokens
-         materially lower
+  B14.0  the restricted primitive                              DONE AND FROZEN
+  B14.1  GATE 1 sufficiency -- CONTROL solves it with no oracle. Not efficiency:
+         the information is observable and the repair achievable. A task CONTROL
+         cannot solve is DISCARDED, because impossible-becomes-possible
+         manufactures the result.
+         GATE 2 inconvenience -- and raw call count is the WRONG measure, since
+         five inspections inside one request may cost less than three that each
+         need their own reasoning cycle. The bottleneck is INVESTIGATIVE
+         INTERACTION:
+             observation burden = inspect_value calls
+                                + investigation-only requests
+         where an investigation-only request installs and rolls back nothing.
+         FROZEN THRESHOLD: median observation burden >= 6 on solved CONTROL
+         attempts.
+         GATE 3 compression -- impact_map must consume THE SAME OBSERVABLE
+         INFORMATION at a better abstraction level, never privileged facts
+         CONTROL could not retrieve. Score not worse, median burden >= 40%
+         lower, requests or tokens lower in the same direction, and the held-out
+         sequence preserves the gain.
   B14.2  E1-E5 and the held-out pair
   B14.3  hand-write impact_map
   B14.4  ceiling and held-out transfer
+
+B14.0 IS CLOSED TO ADDITIONS for the duration. inspect_value is measurement
+apparatus, not a tool that happens to be useful: the silent-truncation defect
+found while exercising it would have made the baseline look cheaper than it is
+and the oracle's compression smaller than it is. A gate that fails is a result
+about the sequence, not a request to strengthen the primitive.
+
+CAPABILITY AMORTISATION, frozen now because it becomes B15's central quantity and
+a metric invented after seeing results is not a measurement. Per capability:
+creation cost, adoption cost measured from the arm's OWN mechanism, per-episode
+savings, BREAK-EVEN EPISODE = ceil(creation / savings), total sequence gain,
+held-out gain. A capability costing 8k and saving 1.5k per episode breaks even at
+episode 6 -- and that is what gives HYBRID a concrete reason to exist rather than
+an attractive-sounding one, since LIVE's benefit starts THIS episode,
+EXTERNALISED's starts NEXT, and HYBRID claims both.
 
 FLAT BASELINE, STATED PROPERLY. Task costs need not be numerically identical --
 what has to be ruled out is LEARNING ACROSS EPISODES WITHOUT PERSISTENT MUTATION.
