@@ -1303,6 +1303,58 @@ once written down.
 
 WHAT THIS STORY DOES NOT DO: it does not let the agent modify anything. It builds
 and calibrates the ruler. B15 does the experiment.
+
+---------------------------------------------------------------------------
+THE SEQUENCE, fixed 2026-08-11: LIVE IMPACT DISCOVERY.
+
+Every episode presents a DIFFERENT defect, and every one requires working out how
+a definition or value propagates through the LIVE system before the repair is
+safe. The repeated operation is finding the live impact set; the repair itself
+never repeats.
+
+  symptom -> identify the live definition -> discover what depends on it
+          -> inspect the affected live values -> repair a defect unique to
+             this episode
+
+  E1  a changed tax function invalidates existing invoices
+  E2  changed slot semantics leave existing instances stale
+  E3  a changed parser invalidates cached parsed objects
+  E4  a changed pricing rule affects closure-captured values
+  E5  a changed registry function leaves dependent handlers stale
+  held out: the same need to discover live impact, different package,
+            different defects
+
+THE ORACLE CAPABILITY, hand-written in this story and never shown to B15's arms:
+
+  impact_map(symbol) -> callers, referencing classes, live instances,
+                        the current values those produced
+
+IT MUST GIVE STRUCTURE AND NEVER THE ANSWER. `find_live_dependents(definition)`
+is the shape; `fix_task_17()` is the anti-shape. A tool that encodes the repair
+would manufacture the win and fail proof 3 below by construction.
+
+FOUR THINGS THIS STORY MUST PROVE, and any one failing kills the sequence:
+
+  1 THE NO-RETENTION BASELINE IS FLAT. With the transcript discarded at every
+    episode boundary, episode 5 must not be cheaper than episode 1. If it falls
+    on its own, something other than retention is teaching and the instrument is
+    measuring that instead.
+  2 THERE IS A REAL CEILING. Baseline sequence against oracle-tool sequence:
+    score same or better, requests and tokens MATERIALLY lower. If the oracle
+    saves almost nothing there is no self-improvement opportunity to discover and
+    the sequence is not an instrument.
+  3 THE GAIN TRANSFERS. The same oracle tool must help the HELD-OUT sequence,
+    whose defects differ but whose underlying operation does not. This is the
+    protection against an answer-key tool and it is the most important of the
+    four.
+  4 THE TOOL IS NOT MANDATORY FOR CORRECTNESS. The baseline must still SOLVE the
+    tasks, expensively. Wanted: "possible but expensive" becoming "easier".
+    Forbidden: "impossible" becoming "possible", which manufactures the result.
+
+THE EPISODE BOUNDARY IS PART OF THE INSTRUMENT, not of B15. At every boundary the
+CONVERSATIONAL TRANSCRIPT IS DISCARDED and only what the arm is permitted to
+retain survives. Without that, ordinary transcript accumulation is an untracked
+fifth self-improvement mechanism running inside every arm including the control.
 """
 acceptance = [
   "a training sequence and a held-out sequence from one family, both runnable end to end",
@@ -1344,10 +1396,39 @@ FOUR ARMS, and the third and fourth are the comparison that matters:
                what wins. Live modification as exploration, artifacts as
                inheritance.
 
-B11 ALREADY PRICED THE EXTERNALISED ARM'S HANDICAP: the restart it requires cost
-+2,989 tokens, positive in 31 of 34 pairs. That is not a reason to expect LIVE to
-win -- it is the number the externalised arm's advantages have to beat, and
-having it in advance is what makes this a comparison rather than a demonstration.
+DO NOT ASSIGN B11's RESTART COST TO THE EXTERNALISED ARM IN ADVANCE. B11 measured
+a specific treatment -- restart AND reconstruct conversational context -- and
++2,989 tokens is the price of THAT. An externalised skill, prompt or tool source
+may be adopted by a loader at episode start with no process restart and no
+context reconstruction at all. EACH ARM'S ADOPTION COST IS MEASURED FROM THE
+MECHANISM IT ACTUALLY USES. B11's number stays as context for what a
+reconstruct-context restart costs and explicitly not as this arm's price tag.
+
+THE ARMS MUST DIFFER IN ONE VARIABLE: WHEN THE CHANGE BECOMES EFFECTIVE. Not
+language, not tooling, not engineering quality.
+
+  LIVE          install -> register-tool -> callable on the NEXT REQUEST,
+                same episode
+  EXTERNALISED  install -> serialise to an artifact -> callable only after the
+                NEXT EPISODE's loader has run
+
+THIS IS A REAL RIGGING RISK AND IT HAS TO BE MANAGED. src/image/self.lisp already
+implements the live arm and has been tested for months; its own header says an
+agent that installs a DEFUN "has a new capability on its very next request -- no
+schema written, no restart, no file". The externalised arm does not exist at all:
+vivarium ported PI'S LOOP, not Pi's extension model, and has no SKILL.md, no
+system-prompt file, no extension loader. Building the control from scratch to
+race a mature treatment is precisely the confound harness-lineage.md already
+warns about ("do not compare file-Pi against image-single-tool"). Both arms
+therefore go through the SAME install path and the SAME derived-schema
+mechanism, and differ only in adoption timing and persistence medium. Using real
+Pi as the externalised arm would trade this confound for a worse one -- different
+language, tools and model plumbing.
+
+THE EPISODE BOUNDARY, and it applies to EVERY arm including CONTROL: the
+conversational transcript is DISCARDED between episodes and only what the arm is
+permitted to retain survives. Otherwise transcript accumulation is an untracked
+fifth self-improvement mechanism operating inside the control.
 
 FOUR SURFACES, AND THE AGENT CHOOSES:
 
@@ -1360,10 +1441,28 @@ Choosing the FORM of improvement is part of the problem and must not be taken
 away by running four separate scripted experiments. "Do nothing" stays available;
 an agent that correctly declines to modify itself has not failed.
 
-START WITH TOOLS AND SKILLS. They are the cleanest test and the cheapest to
-evaluate and roll back. Prompt and harness are later levels of the same ladder --
-skill, tool, prompt, harness, and finally the improvement machinery itself. The
-last rung is the genuinely recursive case and NOTHING HERE REQUIRES REACHING IT.
+STAGED, AND THE FIRST RUN EXPOSES ONLY THREE CHOICES:
+
+  B15a   do nothing | skill | tool          <- this story
+  B15b   + prompt                            after a1 shows retained improvement
+  B15c   + harness                           after b1
+
+The calibrated opportunity in B14 is procedural and capability-shaped. A
+system-prompt mutation can cheaply encode a task-family HINT and a harness
+mutation has a far larger action space; either could muddy the question before
+basic retained improvement has been demonstrated at all. This is increasing DEPTH
+of self-improvement rather than asking the first experiment to solve recursive
+self-redesign. Nothing here requires reaching the last rung.
+
+THE PRIMARY METRIC IS A FRACTION, which is what B14's ceiling buys:
+
+  available improvement = CONTROL cost - ORACLE cost
+  captured improvement  = CONTROL cost - ARM cost
+  FRACTION CAPTURED     = captured / available
+
+so the result reads "the agent autonomously discovered and retained 63% of the
+reusable gain known to be available" rather than "the live arm used 12% fewer
+tokens", which has no scale and cannot be wrong.
 
 THE META-TOOLSET the agent gets, and it is small on purpose:
   inspect_self, propose_change, install_candidate, run_evaluation,
@@ -1398,12 +1497,14 @@ DISCIPLINE INHERITED FROM B10 AND B11, non-negotiable:
     and the only evidence that counts is later-task performance
 """
 acceptance = [
-  "four arms over B14's sequence, from an identical starting state, with later-task score reported before any efficiency number",
-  "the result stated as a fraction of B14's hand-written ceiling, so 'improved' has a scale",
+  "four arms over B14's sequence, from an identical starting state, with later-episode score reported before any efficiency number",
+  "the result stated as FRACTION CAPTURED of B14's hand-written ceiling, so 'improved' has a scale",
   "held-out transfer reported separately from training-sequence improvement, whatever it shows",
   "the agent's CHOICE of surface recorded per mutation, including the times it chose to do nothing",
-  "improvement latency measured for the live and externalised arms, against B11's +2,989-token restart",
-  "regressions reported -- a promoted change that broke a previously passing task counts against the arm",
+  "each arm's adoption cost MEASURED FROM ITS OWN MECHANISM -- B11's +2,989 is context, not this arm's price",
+  "the transcript discarded at every episode boundary in every arm, control included, and that shown to hold",
+  "regressions reported -- a promoted change that broke a previously passing episode counts against the arm",
+  "the live and externalised arms shown to share the install path and schema derivation, so the single variable is adoption timing rather than engineering effort",
   "pre-registered before the first scored run, as B10 and B11 were",
 ]
 kills_it = "No arm beats CONTROL on the later tasks. Then self-modification does not produce self-improvement on this workload, the four substrate probes were answering a question that does not arise, and that is the most valuable negative result the project could produce."
