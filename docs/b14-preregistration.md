@@ -73,12 +73,41 @@ installs or rolls back nothing. It is a turn spent finding out rather than
 changing.
 
 **Frozen threshold: median observation burden ≥ 6 across solved CONTROL
-attempts.**
+attempts, at a solve rate ≥ 0.6.**
 
 Six because the sequence's premise is that impact discovery spans several
 distinct live locations — the definition, its callers, the instances, the values
 those produced — and a median of 1–2 would mean the evidence sits in one place
 and there is nothing to abstract. Frozen now, before any oracle result exists.
+
+### Both numbers are reported, and neither substitutes for the other
+
+A median computed over successes alone is survivorship-biased, and **an unsolved
+attempt is never recorded as burden 0** — it is not a cheap solve, it is not a
+solve. So two figures, always together:
+
+```
+solve rate                 correct repairs / attempts
+observation burden | solved   median over the correct ones only
+```
+
+**Frozen: `solved` means every case passes.** Partial credit is not a solve, so
+that this cannot be argued about after the numbers exist.
+
+**Frozen: solve rate ≥ 0.6** — a correct repair in at least 3 of 5 repeats. Below
+that, the median is computed over a minority of lucky runs and the *possible* leg
+of the shape has not been established at all.
+
+The two together are what distinguish the wanted shape from the failure that
+looks like it:
+
+```
+wanted    possible + repetitive + expensive
+failure   expensive because the agent is lost
+```
+
+High burden at a low solve rate is confusion, not a reusable bottleneck. It fails
+Gate 1 before Gate 2 gets to see it.
 
 ### Gate 3 — compression ceiling
 
@@ -105,24 +134,45 @@ Required, all of them:
 the agent to discover, and any arm that appeared to improve would be measuring
 something else.
 
-## Capability amortisation, recorded from Gate 3 onward
+## Two separate accounts: the ceiling, and the economics
 
-Frozen now because it becomes the central quantity in B15, and a metric invented
-after seeing results is not a measurement.
+Keeping these apart is what stops B14 from handing B15 an unrealistically cheap
+estimate of self-improvement.
+
+**B14 measures a ceiling only.** The hand-written `impact_map` establishes what
+recurring gain is *available*:
 
 ```
-creation cost        tokens to write the capability
-adoption cost        tokens to make it usable, per arm's own mechanism
-per-episode savings  burden and tokens saved once it is in use
-BREAK-EVEN EPISODE   ceil(creation / per-episode savings)
-total sequence gain  over the training sequence
-held-out gain        over the held-out sequence
+available reusable gain  =  CONTROL recurring cost  -  ORACLE recurring cost
 ```
 
-A capability costing 8,000 tokens and saving 1,500 per episode breaks even at
-episode 6. **That is the quantity longitudinal self-improvement is actually
-about**, and it is what gives HYBRID a concrete reason to exist rather than an
-attractive-sounding one:
+**The human authoring cost of `impact_map` does not enter this, and does not
+enter B15's economics either.** An engineer writing the oracle with full
+knowledge of the sequence is not a model of an agent discovering it, and charging
+the agent that price — or crediting it that discount — would measure neither.
+
+**B15 measures the economics, with the agent's own costs.** What a self-improving
+agent actually pays:
+
+```
+agent improvement cost  =  reasoning that notices the pattern
+                        +  tool or skill design
+                        +  implementation
+                        +  testing and evaluation
+                        +  adoption
+
+BREAK-EVEN EPISODE      =  ceil( agent improvement cost
+                                 / recurring per-episode saving )
+```
+
+Per capability, recorded: agent improvement cost, adoption cost measured from the
+arm's own mechanism, per-episode savings, break-even episode, total sequence
+gain, held-out gain.
+
+A capability costing the agent 8,000 tokens and saving 1,500 per episode breaks
+even at episode 6. **That is the quantity longitudinal self-improvement is
+actually about**, and it is what gives HYBRID a concrete reason to exist rather
+than an attractive-sounding one:
 
 ```
 LIVE          creation 8k   adoption ~immediate   benefit starts THIS episode
