@@ -410,6 +410,45 @@ independent defects, neither model reliably fixing all three — which is in the
 held-out split and must stay unspent.** The tasks best suited to B10 are largely
 the ones B10 is not allowed to touch.
 
-**Not resolved here, because every resolution changes what B10 measures.** Taking
-N = 2 as the formula returned is the only move that requires no further decision,
-and it is recorded as the standing value unless the scope changes first.
+**Resolved by commissioning family D** — three train-split tasks built so that a
+run accumulates in-flight state before any plausible checkpoint. See the second
+probe below.
+
+## Second probe (2026-08-11), after family D was added
+
+| task | T1 | T4 | T5 | T7 | T9 | T11 | T13 | T14 | T15 | T17 | **T18** | **T19** | **T20** |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **turns** | 4 | 5 | 2 | 5 | 4 | 7 | 2 | 3 | 8 | 5 | **9** | **12** | **12** |
+
+```
+73,844 tokens over 13 attempts = 5,680 per attempt, 947 per turn
+```
+
+The depth tasks do what they were built to do: 9, 12 and 12 turns against 2–8 for
+the originals. **But the formula's answer depends on which population it is
+applied to**, and after the scope change there are two candidates:
+
+```
+whole train split (13 tasks)   median 5    →  N = clamp(floor(5/2),  2, 4) = 2
+family D only     (3 tasks)    median 12   →  N = clamp(floor(12/2), 2, 4) = 4
+```
+
+Ten short tasks outvote three long ones, so the whole-split median says almost
+nothing about the runs B10 would actually interrupt.
+
+**B10's population is family D, and N = 4.** This is not the formula being
+re-chosen after seeing its output — the population was decided when the depth
+tasks were commissioned, *before* this probe ran, precisely because the first
+probe established the original tasks are too short to interrupt meaningfully.
+Running B10 on tasks already known to be unsuitable would contradict that
+decision. The formula is unchanged and is applied to the population B10 uses.
+
+Two things recorded rather than fixed:
+
+- **The clamp's upper bound is now binding.** `[2, 4]` was chosen when runs were
+  assumed to be ~6.7 turns, where 4 is roughly the midpoint. On a 12-turn run the
+  unclamped value would be 6, and 4 is a third of the way in rather than half.
+  The clamp stays because it was declared in advance; that it now binds is a fact
+  about the range, not a licence to widen it.
+- **Three tasks is thin.** Mitigated by 5 pairs each — 15 pairs, and the sham
+  rides on every one — and by T21, held out, for confirming anything found.
