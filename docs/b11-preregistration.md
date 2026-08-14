@@ -54,16 +54,33 @@ continuing one throws away B10's best methodological lesson.
 - **LEDGER** — B10's `recovery` arm unchanged: authoritative external facts and
   actions, nothing else.
 
-**Every contrast is taken against SHAM, not FULL**, so the restart is on both
-sides of every subtraction and cancels:
+### Two families of contrast, named separately
+
+They answer different questions and must not be mixed in one claim.
+
+**Primary — causal.** Taken against SHAM, so the restart sits on both sides and
+cancels. These say what *distillation* does:
 
 ```
-restart / plumbing effect          =  SHAM      − FULL
-effect of distillation itself      =  DISTILLED − SHAM
-effect of discarding the transcript=  LEDGER    − SHAM
-value of distilled cognition
-  beyond authoritative facts       =  DISTILLED − LEDGER
+restart / plumbing effect     =  SHAM      − FULL
+effect of distillation        =  DISTILLED − SHAM
+effect of discarding it       =  LEDGER    − SHAM
+distilled cognition beyond
+  authoritative facts         =  DISTILLED − LEDGER
 ```
+
+**Secondary — practical.** Taken against FULL, which is what a harness does
+today. These say whether the *whole procedure* — summarise, restart, continue —
+is worth adopting:
+
+```
+is compress-and-restart worth it  =  DISTILLED − FULL
+is ledger-restart worth it        =  LEDGER    − FULL
+```
+
+A secondary contrast may contain restart effects and cannot carry a causal
+claim. A primary contrast is causally clean but does not tell you whether to
+change the harness. Report both; never substitute one for the other.
 
 ### The summariser is frozen too
 
@@ -122,15 +139,28 @@ The result stands either way; only its scope narrows.
 
 ## The outcome worth watching for
 
-Not LEDGER winning. The most consequential pattern would be the **middle** arm:
+Not LEDGER winning. The most consequential pattern would be the **middle** arm,
+and it decomposes into three claims of increasing strength rather than one:
 
 ```
-score:  DISTILLED > LEDGER   and   DISTILLED ≥ SHAM
-cost:   DISTILLED < FULL
+score        DISTILLED ≥ SHAM  and  DISTILLED > LEDGER
+causal cost  DISTILLED < SHAM      after charging summarisation
+practical    DISTILLED < FULL
 ```
 
-which would say: *useful cognition exists, and the raw trajectory is the wrong
-representation of it.* That is a much stronger architectural finding than
+```
+DIST < SHAM       →  compression itself helps
+DIST < FULL       →  the whole compress-and-restart procedure beats
+                     ordinary continuation
+DIST > LEDGER
+  on score        →  useful cognitive information exists beyond the
+                     authoritative external facts
+```
+
+Each can hold without the others. `DIST < SHAM` with `DIST > FULL` would mean
+compression helps but not enough to pay for the restart it requires — worth
+knowing, and not the same finding. Together they would say: *useful cognition
+exists, and the raw trajectory is the wrong representation of it.* That is a much stronger architectural finding than
 "compression saves tokens", and it feeds every open story —
 
 - **B10 / Smalltalk** — full continuation may be excessive.
@@ -145,10 +175,14 @@ than a story told afterwards.
 
 ## Reading order
 
-1. **Score first.** If DISTILLED or LEDGER lose score, stop; efficiency is moot.
+1. **Score first, against SHAM** — the treatment control. If DISTILLED or LEDGER
+   lose score *to SHAM*, stop; efficiency is moot. A score difference against
+   FULL is reported too, but it may contain restart effects and cannot end the
+   experiment on its own.
 2. **Then `SHAM − FULL`**, which bounds what any other contrast can mean.
 3. **Then the generalisation gate**, to fix the scope of the claim.
-4. **Then efficiency**, net of summarisation, with spread. Two runs of B10's identical configuration
+4. **Then efficiency**, causal first (`DIST − SHAM`, net of summarisation) and
+   practical second (`DIST − FULL`), with spread. Two runs of B10's identical configuration
    flipped the sign of its headline quantity, and S2c measured 24% cell
    disagreement at temperature 0 with a fixed seed. A mean without its range is
    not a result here.
