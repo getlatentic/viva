@@ -1322,9 +1322,30 @@ came out of re-reading S2c rather than out of design:
   tax inside the sham band is noise with a story attached. The validity ladder is
   therefore sham -> T14 -> A1 -> A2, each rung testing one thing.
 
-  MODEL STAYS FROZEN (DeepSeek, temperature 0). "B3 is not done" and "use a
-  cheaper model" are different questions. The gate is whether B10 ITSELF has an
-  acceptable bounded maximum.
+  MODEL: gpt-oss-120b via OpenRouter, temperature 0. The first freeze picked
+  DeepSeek and that was wrong on the project's own record. B3 already says
+  "OpenRouter's gpt-oss-120b is cheap enough to ignore; DeepSeek is not, for a
+  full sweep" -- so the spend gate was built to bound the wrong model. It is also
+  one of S2c's two calibration models, so B10 inherits a MEASURED per-task
+  baseline over all 17 tasks instead of starting blind, which is what makes
+  "score does not regress" a number rather than a hope. And docs/README.md's own
+  rule points here: frontier models are for arms that decide something, but a
+  model HELD CONSTANT ACROSS ARMS is fine for "does harness B beat harness A" --
+  which is exactly what A1 vs A2 is, both on SBCL. Reading B10 as "decides a
+  substrate question" confused the STAKES of the conclusion with the SHAPE of the
+  comparison.
+  Train-split baseline to hold runs against (gpt-oss-120b, S2c): T1 1.00, T4 1.00,
+  T5 0.94, T7 0.83, T9 1.00, T11 1.00, T13 1.00, T14 1.00, T15 0.67, T17 1.00.
+  Fallback if cost ever bites: local gpt-oss-20b on llama-server, which also has
+  real seed control -- not chosen now, no S2c baseline and a 20B risks floor
+  effects on T15 and T7.
+  ELIGIBILITY RISK, settleable from stored trajectories rather than by spending:
+  S2c's mean was 6.7 requests, so an ordinal-4 checkpoint lands with only ~2-3
+  turns of typical work left, and on tasks solved at 1.00 it may not land at all.
+  Count the ineligible tasks from S2c's trajectories BEFORE run 1; if too many,
+  the GLOBAL ordinal moves. Per-branch budget is 8 post-checkpoint requests, well
+  above the ~2.7 typically used, so a slow recovery arm is measured rather than
+  censored.
   CORRECTED after review: the first figure was 3,000 requests, and it was
   inflated by a DESIGN mistake rather than by arithmetic. Two errors. Treating
   the sham as a full third condition over all 10 tasks, when its job is to

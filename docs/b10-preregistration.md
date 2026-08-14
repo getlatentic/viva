@@ -52,18 +52,44 @@ checkpoint on a task with no defect should show **near-zero reconstruction tax i
 both arms**. If it does not, the instrument is measuring restart overhead rather
 than lost cognition, and the run is invalid.
 
-### Model, and a spend gate rather than a cheaper model
+### Model
 
-`DEEPSEEK_MODEL` via the configured DeepSeek endpoint, **temperature 0**,
-`bench-limit` 12 requests, unchanged across arms. Frozen.
+**`openai/gpt-oss-120b` via OpenRouter**, temperature 0, unchanged across arms.
+Frozen.
 
 Temperature 0 is an experimental setting, not a determinism claim — see the noise
 floor below. B10 measures a *treatment* effect, so sampling variance is something
 to suppress, not to sample.
 
-"B3 is not done" and "use a cheaper model" are different questions, and the second
-does not follow from the first. The criterion is whether **B10 itself** has an
-acceptable bounded maximum, which does not need B3's full cost model:
+Three reasons this is the right model rather than a cheaper substitute for a
+better one:
+
+1. **B3 already settled the cost question and I had it backwards.** Its note reads
+   "OpenRouter's gpt-oss-120b is cheap enough to ignore; DeepSeek is not, for a
+   full sweep." The spend gate below was built to bound the wrong model.
+2. **It is one of S2c's two calibration models**, so B10 inherits a measured
+   per-task baseline over all 17 tasks rather than starting blind — including what
+   "score does not regress" means numerically, per task.
+3. **The repo's own rule points here.** `docs/README.md` reserves frontier models
+   for arms that decide something and says a model *held constant across arms* is
+   fine for "does harness B beat harness A". B10's comparison is A1 against A2,
+   both on SBCL, model held constant — that is squarely the second case. Reading
+   B10 as "decides a substrate question" and reaching for a frontier model
+   confused the *stakes* of the conclusion with the *shape* of the comparison.
+
+**Measured train-split baseline (gpt-oss-120b, S2c).** Any A1 or A2 run whose score
+falls materially below its task's cell here is a regression, not a result:
+
+| T1 | T4 | T5 | T7 | T9 | T11 | T13 | T14 | T15 | T17 |
+|---|---|---|---|---|---|---|---|---|---|
+| 1.00 | 1.00 | 0.94 | 0.83 | 1.00 | 1.00 | 1.00 | 1.00 | 0.67 | 1.00 |
+
+Fallback if cost ever does bite: `gpt-oss-20b` on the local llama-server, which
+additionally offers real seed control. Not chosen now, because it has no S2c
+baseline and a 20B model risks floor effects on T15 and T7.
+
+The spend arithmetic below is retained because staging is still right, but it is
+now a sanity check rather than a gate:
 
 **Fork three ways, not two.** The sham and A1 share a prefix *and* share a control
 branch — "continue uninterrupted" is the same treatment in both — so running them
@@ -105,11 +131,22 @@ rather than exhausting it" — so the cap is a bound, not a forecast.
 sham floor, A2 is pointless and stage 2 is never bought. Only stage 1 is
 authorised now.
 
-**The gate, executed before run 1 and not after:** run one *unscored* pilot pair,
-read `assistant-message-usage` off the transcript for tokens per request, multiply
-by stage 1's ceiling, price at the account's current rate, compare to budget.
-Acceptable → run. Not acceptable → substitute the model **before the first scored
-run**. A substitution after run 1 discards every run made before it.
+Still run the *unscored* pilot pair and read `assistant-message-usage` off the
+transcript before run 1 — not to authorise the spend, which B3 already did, but
+because it is the cheapest possible check that the harness produces a usable
+transcript at all.
+
+**One eligibility risk to settle from existing data, not by spending.** S2c
+measured a mean of 6.7 requests per attempt. A checkpoint at ordinal 4 therefore
+lands with roughly 2–3 turns of *typical* remaining work, and on the tasks
+gpt-oss-120b solves at 1.00 it may not land at all
+(`completed_before_checkpoint`). Count the ineligible tasks from S2c's stored
+trajectories first. If too many, the **global** ordinal moves before scored
+execution — never per task.
+
+The per-branch budget is 8 post-checkpoint requests, well above the ~2.7 typically
+used, so a recovery arm that needs longer is measured rather than censored by the
+cap.
 
 ### Checkpoint rule — declared before any trace is seen
 
