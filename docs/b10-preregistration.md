@@ -253,7 +253,16 @@ no request 5 has started
 ```
 
 > **Invariant: at the checkpoint there are no in-flight tools, no partially
-> committed ledger operations, and no model request in progress.**
+> committed ledger operations, no model request in progress, and no shared
+> external connection state.**
+
+The fourth clause was added after the first stage-1 run returned 90 memory faults
+and zero usable branches. Dexador pools connections, so the parent held live TLS
+sockets that satisfied all three original clauses — the request had finished and
+the socket was parked for reuse — and three children using the same descriptors
+faulted inside the TLS layer. The pool is cleared in the *parent* before forking
+rather than in each child: a child closing an inherited socket sends a FIN on a
+connection the parent still believes it owns.
 
 Without it B10 measures replay and transaction semantics rather than cognition
 loss — forking mid-batch would hand one child a half-applied world, and the

@@ -53,7 +53,19 @@
   (let ((threads (sb-thread:list-all-threads)))
     (unless (= 1 (length threads))
       (error "~a: not quiescent -- ~a threads live: ~{~a~^, ~}"
-             where (length threads) (mapcar #'sb-thread:thread-name threads)))))
+             where (length threads) (mapcar #'sb-thread:thread-name threads))))
+  ;; The fourth clause, learned the hard way. Dexador pools connections, so at
+  ;; the fork boundary the parent holds live TLS sockets that are neither an
+  ;; in-flight request nor an uncommitted write -- the request finished and the
+  ;; socket was parked for reuse. Three children inheriting the same descriptors
+  ;; and using them concurrently faults inside the TLS layer: the first stage-1
+  ;; run produced 90 memory faults and zero usable branches.
+  ;;
+  ;; Cleared in the PARENT rather than in each child on purpose. A child that
+  ;; closes an inherited socket sends a FIN on a connection the parent still
+  ;; believes it owns, so clearing here makes the invariant true instead of
+  ;; patching around it: there is nothing shared left to inherit.
+  (dex:clear-connection-pool))
 
 ;;; Accounting
 
@@ -252,11 +264,31 @@ headline quantity."
       (format t "~&  ~14a mean ~8,1f   range ~8,1f .. ~8,1f~%" label (float mean)
               (float low) (float high)))))
 
+(defun pair-usable-p (pair)
+  "Every branch ran and none errored. A pair with a failed branch is dropped
+whole, never half-counted -- averaging a delta over a branch that never made a
+request is how a broken instrument produces a confident number."
+  (and (eq (getf pair :status) :eligible)
+       (every (lambda (b) (and (null (getf b :error)) (plusp (getf b :turns))))
+              (getf pair :branches))))
+
 (defun report-stage-1 (pairs)
-  (let ((eligible (remove :eligible pairs :key (lambda (p) (getf p :status)) :test-not #'eq)))
+  (let* ((eligible (remove :eligible pairs :key (lambda (p) (getf p :status)) :test-not #'eq))
+         (broken (remove-if #'pair-usable-p eligible))
+         (eligible (remove-if-not #'pair-usable-p eligible)))
     (format t "~2&~60,,,'=a~%" "")
-    (format t "STAGE 1: ~a pairs, ~a eligible, ~a ineligible~%"
-            (length pairs) (length eligible) (- (length pairs) (length eligible)))
+    (format t "STAGE 1: ~a pairs, ~a usable, ~a ineligible, ~a dropped for branch failure~%"
+            (length pairs) (length eligible)
+            (count :ineligible pairs :key (lambda (p) (getf p :status)))
+            (length broken))
+    (when broken
+      (format t "~&DROPPED -- these are not results:~%")
+      (dolist (p broken)
+        (format t "  ~a: ~{~a~^; ~}~%" (getf p :task)
+                (remove nil (mapcar (lambda (b) (getf b :error)) (getf p :branches))))))
+    (when (null eligible)
+      (format t "~&~%NO USABLE PAIRS. Nothing below would be a measurement.~%")
+      (return-from report-stage-1))
     (dolist (id *family-d*)
       (let ((mine (remove id eligible :key (lambda (p) (getf p :task)) :test-not #'eq)))
         (when mine
