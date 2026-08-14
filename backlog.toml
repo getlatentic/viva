@@ -1299,6 +1299,20 @@ live continuation is decoration on a ledger that was already sufficient, and the
 substrate question closes for good. Either result is worth more than any further
 microbenchmark, and both are cheap relative to a port.
 
+PRE-REGISTERED 2026-08-11 in docs/b10-preregistration.md, before any scored run:
+tasks (train split only, held-out unspent), model, temperature, checkpoint rule
+(after the 4th tool result, one per run, fixed ordinal so it cannot be chosen
+after seeing a trace), the paired-control design, both representations, and every
+metric definition. Frozen means frozen: if one has to change, the runs made under
+the old version are discarded rather than reinterpreted.
+
+The paired control forks at the checkpoint (E1: 28-32 ms, full isolation) so both
+arms inherit the SAME live image, ledger and 4-turn prefix -- the fork is the
+control here, not an optimisation. And note what the checkpoint destroys: THE
+AGENT'S CONTEXT, NOT THE IMAGE. The agent's process dies, the world it was working
+on persists, and the question is what resuming costs. Destroying the image instead
+would measure something vivarium never does.
+
 STARTING FROM, because B7's session state is gone and should be: the source of
 truth is the main checkout plus the committed probe files. NOT the worktree, not
 the scratchpad VM installs, not any interactive environment state -- all of which
