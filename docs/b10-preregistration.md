@@ -551,3 +551,72 @@ Two things recorded rather than fixed:
   about the range, not a licence to widen it.
 - **Three tasks is thin.** Mitigated by 5 pairs each — 15 pairs, and the sham
   rides on every one — and by T21, held out, for confirming anything found.
+
+---
+
+## STAGE 1 RESULT (2026-08-11) — the ladder fails at its own first rung
+
+15 pairs, 15 usable, 0 ineligible, 0 dropped. gpt-oss-120b, checkpoint turn 4,
+branch budget 8, family D.
+
+| | control | sham | recovery |
+|---|---|---|---|
+| score, mean | 0.5 | 0.5 | 0.5 |
+| turns, mean | 6.5 | 6.8 | **4.6** |
+| prompt tokens/turn | 1,155 | 1,464 | 1,048 |
+
+```
+plumbing    S − C  =  +2,709 tokens   range  −5,522 .. +6,615
+recon tax   A1 − S =  −5,278 tokens   range −10,250 .. −2,112
+total       A1 − C =  −2,569 tokens   range −15,385 ..   +985
+```
+
+**No reconstruction tax was detected. Recovery was cheaper and shorter than both
+control and sham, at indistinguishable score.**
+
+### Why this is not "explicit state is sufficient"
+
+The pre-registered rung 1 says A1 must show a tax exceeding the sham floor, and
+that if it shows none *the instrument is not sensitive enough to adjudicate
+anything and no A2 number would mean anything*. It shows none. **Stage 2 is not
+authorised.** Four reasons the result cannot be read as a finding about
+durable cognition:
+
+1. **The sham band swamps everything.** `S − C` ranges from −5,522 to +6,615 and
+   crosses zero. At n=5 the plumbing cost is not distinguishable from nothing, so
+   nothing measured against it is either.
+2. **`A1 − S` sits inside that band**, which is precisely the pre-registered
+   condition for "the effect is restart machinery, not lost cognition".
+3. **The cheapness is turns, not context.** Recovery's per-turn context is only
+   ~10% smaller than control's, so the token gap is not an accounting artifact —
+   recovery genuinely finishes in 4.6 turns against 6.5. A plausible reading is
+   that **the ledger recap is a better prompt than the transcript**: a compact
+   "here is what was installed and what it replaced" beats four turns of the
+   agent's own exploration. If so, A1 is not *recovering* — it is restarting with
+   a cleaner brief, which is a finding about prompt quality and says nothing
+   about whether captured computation carries information.
+4. **Score direction is inconsistent.** T18 recovery worse (0.4 vs 0.6), T19
+   better (0.6 vs 0.4), T20 identical. And T18 and T20 produced *zero variance*
+   across 5 pairs each — the same score every time, in every arm.
+
+### What the zero-variance rows say about family D
+
+That last observation is the sharper one. The depth tasks were built so runs
+would be *long*, and they are — 9/12/12 turns. But T18 and T20 return the same
+score in all three arms on all five pairs, which means their outcome is not
+sensitive to what the agent knew at turn 4.
+
+**Length was the wrong proxy for path-dependence.** A task can run twelve turns
+and still have its result fixed by turn two. Family D delivered runs long enough
+to interrupt and not runs where interruption changes anything, and those are
+different properties — the same class of error as reading S2c's 6.7 as a fact
+about the train split.
+
+### Not resolved here
+
+Fixing this means changing the task design again, and this time the target is
+path-dependence rather than length: a task whose *outcome* depends on a
+hypothesis formed before the checkpoint and expensive to re-derive. That is a
+harder thing to build than a long task, and it is close enough to "construct a
+task where losing state is expensive" — the thing family D's own header forbids —
+that it needs deciding rather than assuming.
