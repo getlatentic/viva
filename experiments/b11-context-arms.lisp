@@ -239,9 +239,20 @@ hooks a second time and flush its streams from three processes."
             (push (cons pid path) children))))
     (dolist (child children)
       (sb-posix:waitpid (car child) 0))
+    ;; A child that dies before writing leaves no file. Reading it blind killed
+    ;; a 23-pair run at pair 24 and threw away every pair before it, so a
+    ;; missing result is a failed branch rather than an exception.
     (mapcar (lambda (child)
-              (with-open-file (in (cdr child)) (read in)))
+              (or (ignore-errors
+                   (with-open-file (in (cdr child) :if-does-not-exist nil)
+                     (and in (read in))))
+                  (list :kind :unknown :scores '() :turns 0
+                        :prompt-tokens 0 :completion-tokens 0 :elapsed-ms 0
+                        :error "child produced no result")))
             (nreverse children))))
+
+(defun branches-all-failed-p (branches)
+  (every (lambda (b) (or (getf b :error) (zerop (getf b :turns)))) branches))
 
 ;;; One pair
 
@@ -271,11 +282,25 @@ hooks a second time and flush its streams from three processes."
               (list :task (tasks:task-id task) :status :ineligible
                     :reason :completed-before-checkpoint
                     :turns (tasks:bench-requests agent))
-              (list :task (tasks:task-id task) :status :eligible
-                    :prefix-turns (tasks:bench-requests agent)
-                    :prefix-prompt-tokens (car tokens)
-                    :prefix-completion-tokens (cdr tokens)
-                    :branches (fork-branches task arm backend cases context))))))))
+              (let ((branches (fork-branches task arm backend cases context)))
+                ;; A whole pair failing has happened -- 92 of 92 branches once,
+                ;; every one reporting the same memory fault, with the harness
+                ;; running clean on the same tasks in isolation immediately
+                ;; before and after. Unexplained, so: clear the pool, retry the
+                ;; fork once, and record that it was retried rather than
+                ;; quietly presenting a second attempt as a first.
+                (when (branches-all-failed-p branches)
+                  (dex:clear-connection-pool)
+                  (sleep 2)
+                  (let ((again (fork-branches task arm backend cases context)))
+                    (unless (branches-all-failed-p again)
+                      (setf branches again))))
+                (list :task (tasks:task-id task) :status :eligible
+                      :retried (branches-all-failed-p branches)
+                      :prefix-turns (tasks:bench-requests agent)
+                      :prefix-prompt-tokens (car tokens)
+                      :prefix-completion-tokens (cdr tokens)
+                      :branches branches)))))))))
 
 ;;; Reporting
 

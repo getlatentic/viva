@@ -338,4 +338,4 @@ request is how a broken instrument produces a confident number."
     (report-stage-1 (reverse collected))
     (format t "~&~%raw: ~a~%" out)))
 
-(stage-1 :tasks *calibration*)
+(stage-1 :tasks (list :t18) :pairs 1)
