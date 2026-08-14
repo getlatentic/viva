@@ -3,6 +3,43 @@
 Project overview is in [../HANDOFF.md](../HANDOFF.md). This file is the index and
 the measured results.
 
+## Course correction, 2026-08-11
+
+**The question is now: does an agent that can alter itself while working, and
+keep what worked, become measurably better over time?**
+
+Everything below answered a *different* question — what substrate semantics make
+self-modification safe, durable and reversible. That is the mechanism, not the
+objective, and five stories ran on it: can code change ([B7](smalltalk-probe.md)),
+can state survive ([B10](b10-preregistration.md), [B11](b11-preregistration.md)),
+can changes be reverted ([B12](cordis-probe.md)), can faults be contained
+([B8](beam-probe.md)). All useful. **None measures whether the agent got better.**
+
+The drift is structural, not just a matter of emphasis: **every task in the set is
+scored independently, in a fresh package, from a fresh checkpoint.** There is no
+experiment here in which something the agent did in task N could affect task N+1.
+Self-improvement is a between-episode property and every instrument built so far
+is single-episode. It is not a weak measurement — it is an incapable one.
+
+So the substrate work is demoted to **supporting machinery**, and it earned that
+place rather than being set aside:
+
+| what the new experiment needs | which probe supplies it |
+|---|---|
+| the live arm's install semantics | [B7](smalltalk-probe.md), [B12](cordis-probe.md) |
+| the price of the externalised arm's restart — **+2,989 tokens, 31/34 pairs** | [B11](b11-preregistration.md) |
+| why the ledger stays: no runtime verifies a component's own account of itself | [B12](cordis-probe.md), [B8](beam-probe.md) |
+
+Next: **B14** builds an instrument that can measure across episodes and
+calibrates a ceiling; **B15** runs four arms — control, externalised, live,
+hybrid — and lets the agent choose *which* of prompt, skill, tool or harness to
+change. Both in [../backlog.toml](../backlog.toml). No further substrate story
+runs until B15 has a result.
+
+---
+
+## The substrate investigation, as completed
+
 Six separable experiments on one question: what does an agent harness gain when
 the agent's world is a live Lisp image rather than a directory of files?
 
@@ -31,11 +68,11 @@ that kills it. They are independent unless a dependency is named.
 | [B9](../backlog.toml) | mutation observability | every persistent self-modification produces evidence | **next, and B8 raised its value again. Generalised out of B7 — the dangerous operation is unobserved state transition, not code generation. Three probes have now found the same shape: every containment mechanism in both runtimes is declared by the component being contained** |
 | [B13](../backlog.toml) | in-place compaction | the transcript can be compacted without rebuilding the agent | **filed, not sequenced. B11 coupled compression to restart through the *mechanism*, not by necessity. Predicts ~2,400 tokens saved with none of the +3,000 restart tax — or refutes B11's decomposition. Does not run before B12** |
 
-## The substrate investigation, as three falsifiable questions
+### Its three falsifiable questions, all now answered
 
 "What is the best language for a self-improving agent?" is not answerable and was
-never asked here. The substrate work decomposes into three questions that each
-have a kill criterion, plus a fourth primitive that outlives all of them:
+never asked here. The substrate work decomposed into three questions that each
+had a kill criterion, plus a fourth primitive that outlives all of them:
 
 | substrate | what it makes possible | the question |
 |---|---|---|

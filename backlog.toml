@@ -16,20 +16,53 @@
 
 [meta]
 project   = "vivarium"
-question  = "What does an agent harness gain when the agent's world is a running image rather than a directory of files?"
-updated   = "2026-08-08"
+question  = "Does an agent that can alter itself while working, and keep what worked, become measurably better over time?"
+updated   = "2026-08-11"
 source    = "HANDOFF.md is the prose; this file is the order of work."
 sizing    = "size, not due dates: an experiment's length is unknown until its instrument exists. Time-box at sprint planning instead."
+
+# COURSE CORRECTION 2026-08-11, and the reason the question above was rewritten.
+#
+# The old question -- "what does a harness gain when the agent's world is a
+# running image?" -- is a question about SELF-MODIFICATION. It is the mechanism
+# and not the objective, and five consecutive stories answered variants of it:
+# can code change (B7), can state survive (B7, B10, B11), can changes be
+# reverted (B12), can processes be replaced and faults contained (B8). All
+# useful. None of them measures whether the agent GOT BETTER.
+#
+# THE DRIFT IS VISIBLE IN THIS FILE. S6, S7, S8 and S9 are the improvement
+# stories and have been "blocked" throughout, while B7 -> B10 -> B11 -> B12 -> B8
+# all ran past them.
+#
+# IT IS ALSO STRUCTURAL IN THE INSTRUMENT, which is the more serious half. Every
+# task in the set is scored INDEPENDENTLY, in a fresh package, from a fresh
+# checkpoint. There is no experiment here in which something the agent did in
+# task N could affect its score in task N+1. Self-improvement is a BETWEEN-
+# EPISODE property and every instrument built so far is single-episode. The
+# measurement is not weak; it is structurally incapable.
+#
+# T9 and T10 are the closest thing to an exception and their own family header
+# already states the limit: they check that a tool schema COULD be derived from
+# what the agent installed, not that the agent registered it, called it, and was
+# better off for it afterwards.
+#
+# THE SUBSTRATE WORK IS NOT DISCARDED -- it is demoted to supporting machinery
+# and it calibrated the comparison that now matters. B11 priced the restart that
+# artifact-based evolution requires at ~3,000 tokens, positive in 31 of 34 pairs,
+# which is the handicap the externalised arm has to overcome. B7 and B12 supply
+# the live arm's install semantics. B12 and B8 established that no runtime
+# verifies the component's own account of itself, which is why the ledger stays.
 
 # The spine. Sprints are slices of this, in order.
 journey = [
   "1. a question with kill criteria                 -- done",
   "2. a harness that can act in the world           -- done",
-  "3. an instrument that measures outcomes          -- done, S1",
+  "3. an instrument that measures outcomes          -- done, S1, SINGLE-EPISODE",
   "4. a control honest enough to compare against    -- next, S5",
   "5. verdicts on the cheap experiments             -- next, S3 and S4",
-  "6. verdicts on the headline experiments          -- blocked on 4",
-  "7. evidence the result survives outside the lab  -- blocked on 6",
+  "6. an instrument that measures ACROSS episodes   -- B14, the precondition",
+  "7. does self-modification produce improvement?   -- B15, the objective",
+  "8. evidence the result survives outside the lab  -- blocked on 7",
 ]
 
 # ---------------------------------------------------------------------------
@@ -1201,6 +1234,179 @@ acceptance = [
   "if it cannot be done, the thesis narrowed in the docs rather than left implied",
 ]
 kills_it = "The ~400ms fork-and-save pause is unacceptable under real traffic, or a green-threaded server cannot carry the load the threaded one does. Then the trade is real and live state is ephemeral in any serving configuration."
+
+# ===========================================================================
+#  THE CENTRE, after the 2026-08-11 course correction. B14 is the instrument
+#  and B15 is the experiment. Everything below them -- B7, B8, B10, B11, B12 --
+#  is now SUPPORTING MACHINERY: findings that inform the implementation of these
+#  two, not a roadmap of their own. No further substrate story runs until B15
+#  has a result.
+# ===========================================================================
+
+[[story]]
+id       = "B14"
+sprint   = 0
+title    = "A task sequence where a capability discovered early pays later"
+labels   = ["instrument", "blocker"]
+status   = "ready"
+size     = "M"
+depends_on = ["S1"]
+as_a     = "researcher"
+i_want   = "an instrument that can measure a between-episode effect at all"
+so_that  = "the self-improvement question stops being unanswerable for structural reasons"
+notes = """
+THE PRECONDITION, and the reason B15 cannot simply be run. Every task in the
+current set is scored INDEPENDENTLY, in a fresh package, from a fresh
+checkpoint. Nothing the agent does in task N can reach task N+1. Self-improvement
+is a between-episode property, so the existing instrument cannot measure it --
+not weakly, but structurally.
+
+WHAT IS NEEDED: a SEQUENCE with shared latent structure. Tasks 1..N drawn from
+one problem family, non-identical, where a capability discovered while solving
+the early ones genuinely reduces the work in the later ones. Plus a HELD-OUT
+SEQUENCE from the same family that no arm has seen, to separate improvement from
+memorisation of specific answers.
+
+THE FAILURE MODE THIS STORY EXISTS TO AVOID IS B10's, TWICE OVER. B10 built
+family D to be path-dependent and it was not; it then built T22/T23 for a
+"search" property and the search turned out to be reading. The analogous trap
+here is a sequence where the shared structure is real to the DESIGNER and
+invisible to the agent, or where the repeated work is cheap enough that no tool
+is worth writing. Either produces a null result that says nothing about
+self-improvement.
+
+SO THE ACCEPTANCE BAR IS A CALIBRATION, NOT A DESIGN ARGUMENT. Before any arm
+runs, demonstrate on the sequence itself that:
+
+  1. THE REPEATED WORK IS REAL. Measure the same agent, no self-modification
+     allowed, across the sequence. If per-task cost does not stay flat -- if it
+     falls on its own -- the sequence is teaching through the transcript and the
+     later tasks are easier for a reason that has nothing to do with retention.
+  2. THE CAPABILITY IS WORTH BUILDING. Hand-write the tool or skill a competent
+     engineer would write, install it, and measure the later tasks with it. That
+     number is the CEILING. If the hand-written ceiling is not clearly above the
+     no-modification baseline, no arm can win and the sequence is not an
+     instrument.
+  3. IT IS NOT ONE TASK IN DISGUISE. The held-out sequence must benefit from the
+     same capability. If only the training tasks improve, the capability is an
+     answer key.
+
+THE CEILING IS THE MOST IMPORTANT NUMBER HERE and it must be measured BEFORE the
+arms run, so that B15 reports "the agent captured X% of an available gain"
+rather than "the agent improved", which is unfalsifiable without a scale.
+
+DOMAIN: stay in the existing live-image repair domain rather than inventing a
+new one. The point is a sequence, not a new subject. A plausible shape is a
+family of defects that all require locating live dependents of a definition
+before the fix is safe -- work that is tedious by hand every time and mechanical
+once written down.
+
+WHAT THIS STORY DOES NOT DO: it does not let the agent modify anything. It builds
+and calibrates the ruler. B15 does the experiment.
+"""
+acceptance = [
+  "a training sequence and a held-out sequence from one family, both runnable end to end",
+  "the flat baseline measured: no self-modification, per-task cost across the sequence, with spread -- and if it is not flat, the sequence is rejected and why is written down",
+  "the CEILING measured with a hand-written capability installed, on both sequences, before any arm runs",
+  "the gap between baseline and ceiling stated as the scale B15's result will be read against",
+  "a written argument for why the shared structure is visible to the agent and not only to the designer, with the calibration numbers backing it rather than the design intent",
+]
+kills_it = "The hand-written ceiling is not clearly above the flat baseline, or the baseline is not flat. Then the sequence cannot measure a between-episode effect and B15 must not be run on it -- which is a real outcome and cheaper to find here than after four arms have burned a budget."
+
+[[story]]
+id       = "B15"
+sprint   = 0
+title    = "Live self-modification against externalised artifacts, over a sequence"
+labels   = ["experiment", "headline"]
+status   = "blocked"
+size     = "L"
+depends_on = ["B14"]
+as_a     = "researcher"
+i_want   = "the agent to choose how to improve itself, and the improvement measured on later tasks"
+so_that  = "the project answers whether self-modification produces self-improvement, which is what it was for"
+notes = """
+THE OBJECTIVE. Not "can the agent change itself" -- B7, B8 and B12 answered that
+from three directions -- but:
+
+  performs tasks -> notices a recurring weakness -> changes itself ->
+  future tasks use the change -> MEASURED PERFORMANCE IMPROVES ->
+  the improvement persists and TRANSFERS to tasks it has not seen
+
+FOUR ARMS, and the third and fourth are the comparison that matters:
+
+  CONTROL      no persistent self-modification. The flat baseline from B14.
+  EXTERNALISED artifacts a successor reads -- a skill file, a tool source file,
+               an edited prompt. What every current coding harness does. THE
+               CHANGE COSTS A RESTART.
+  LIVE         compile and register into the running organism. Immediately
+               usable, no restart, no artifact.
+  HYBRID       mutate live, evaluate cheaply in-process, and EXTERNALISE only
+               what wins. Live modification as exploration, artifacts as
+               inheritance.
+
+B11 ALREADY PRICED THE EXTERNALISED ARM'S HANDICAP: the restart it requires cost
++2,989 tokens, positive in 31 of 34 pairs. That is not a reason to expect LIVE to
+win -- it is the number the externalised arm's advantages have to beat, and
+having it in advance is what makes this a comparison rather than a demonstration.
+
+FOUR SURFACES, AND THE AGENT CHOOSES:
+
+  prompt    its own operating instructions
+  skill     a reusable written procedure
+  tool      a new callable primitive
+  harness   the loop's own behaviour
+
+Choosing the FORM of improvement is part of the problem and must not be taken
+away by running four separate scripted experiments. "Do nothing" stays available;
+an agent that correctly declines to modify itself has not failed.
+
+START WITH TOOLS AND SKILLS. They are the cleanest test and the cheapest to
+evaluate and roll back. Prompt and harness are later levels of the same ladder --
+skill, tool, prompt, harness, and finally the improvement machinery itself. The
+last rung is the genuinely recursive case and NOTHING HERE REQUIRES REACHING IT.
+
+THE META-TOOLSET the agent gets, and it is small on purpose:
+  inspect_self, propose_change, install_candidate, run_evaluation,
+  promote_change, rollback_change
+
+THE CENTRAL METRIC: improvement on LATER tasks attributable to RETAINED
+self-generated changes, read against B14's hand-written ceiling so that a number
+means something. Reported before any efficiency figure, exactly as B11 reported
+score before tokens.
+
+SECONDARY, and each is a real question:
+  transfer          does the held-out sequence improve, or only the training one
+  regressions       did a promoted change break something that worked
+  survival          what fraction of proposed changes survived evaluation
+  choice            which surface the agent picked, and whether it picked well
+  IMPROVEMENT LATENCY  turns between "I need capability X" and X changing
+                    behaviour. LIVE can close this within a task; EXTERNALISED
+                    cannot close it before the next invocation. This is where
+                    B11's restart tax is paid.
+
+THE FRAMING THAT MAKES THE ARMS NON-EXCLUSIVE, and the reason HYBRID exists:
+live state is the PHENOTYPE and external artifacts are the GENOTYPE. The organism
+is where a change is cheap to try; the artifact is how it is inherited. If HYBRID
+wins, the answer is not "live" or "external" but "explore live, inherit
+external", and every substrate finding slots in underneath as mechanism.
+
+DISCIPLINE INHERITED FROM B10 AND B11, non-negotiable:
+  - paired arms from an identical checkpoint, spread reported, never a bare mean
+  - sign consistency across pairs carries the result, not the means
+  - pre-register the prediction before the first scored run
+  - a proxy is not the property: "the agent wrote a tool" is not improvement,
+    and the only evidence that counts is later-task performance
+"""
+acceptance = [
+  "four arms over B14's sequence, from an identical starting state, with later-task score reported before any efficiency number",
+  "the result stated as a fraction of B14's hand-written ceiling, so 'improved' has a scale",
+  "held-out transfer reported separately from training-sequence improvement, whatever it shows",
+  "the agent's CHOICE of surface recorded per mutation, including the times it chose to do nothing",
+  "improvement latency measured for the live and externalised arms, against B11's +2,989-token restart",
+  "regressions reported -- a promoted change that broke a previously passing task counts against the arm",
+  "pre-registered before the first scored run, as B10 and B11 were",
+]
+kills_it = "No arm beats CONTROL on the later tasks. Then self-modification does not produce self-improvement on this workload, the four substrate probes were answering a question that does not arise, and that is the most valuable negative result the project could produce."
 
 [[story]]
 id       = "B7"
