@@ -1,0 +1,12 @@
+{
+  "name": "vivarium-b12-cordis-probe",
+  "private": true,
+  "type": "module",
+  "description": "B12: one mutation lifecycle run through Cordis, measured as it exists",
+  "scripts": {
+    "probe": "node run.mjs"
+  },
+  "dependencies": {
+    "cordis": "4.0.0-rc.8"
+  }
+}

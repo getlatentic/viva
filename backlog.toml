@@ -162,6 +162,61 @@ FROZEN 2026-08-11. No new substrate concepts unless an experiment forces one.
 The next thing that happens is B11, not more architecture."""
 
 [[settled]]
+ref   = "B12 / effect boundary"
+claim = "Effect containment and empirical reconciliation are each insufficient alone, and the pair is strictly stronger."
+result = """Measured against cordis 4.0.0-rc.8, the reference implementation, on four
+variants of one agent-shaped capability run through a complete lifecycle.
+
+CORDIS REPORTS A CLEAN UNLOAD FOR EVERY FAILURE MODE AN AGENT-AUTHORED COMPONENT
+EXHIBITS -- a faithful component, one whose inverse reverts nothing, one that
+never called ctx.effect, and one that registers the right label with no deed all
+come back DISPOSED, no error, no retained effects. That is correct behaviour:
+S5.1.1 says the inverse's correctness "is an obligation on the component author
+rather than a property the runtime verifies". It is also exactly the class B9
+exists for.
+
+The pre-unload introspection surface does not close the gap. getEffects() catches
+OMISSION -- the untracked variant shows 2 effects where the others show 5 -- but
+EffectMeta carries {label, children} and the label is a free author-supplied
+string, so a no-op under the missing label restores the appearance. Only
+reconciliation catches all three.
+
+  Cordis alone           detects none of the three
+  reconciliation alone   detects all three, but withdraws nothing correctly --
+                         no guard, no ordering, no per-fiber failure isolation
+  the pair               structural rollback plus empirical verification
+
+WHAT CORDIS SUPPLIES THAT VIVARIUM WOULD NOT HAVE BUILT, and each was verified
+against the paper before being measured:
+
+  THE GUARD (Theorem 63). A provider withdraws a binding only after every
+  consumer that resolved it has gone, so a teardown can still use the coeffect it
+  is losing. Proved to be the guard and not LIFO by registering the provision
+  LAST, where pure LIFO would revert it FIRST: the trace is byte-identical.
+
+  TERMINAL PER-COMPONENT FAILURE (L-Raise). A failed activation installs nothing,
+  leaves siblings running, and is WITHHELD rather than retried against an
+  unchanged environment.
+
+  STANDING DECLARATIONS. A consumer whose provider leaves lands in PENDING, not
+  DISPOSED, and reactivates unaided when the key returns.
+
+THE GUARANTEE IS CONDITIONAL ON EXPRESSING THE DEPENDENCY AS A COEFFECT. The
+guard orders along coeffects and not along the fiber tree (p35), and the same
+shape as a parent-held resource gets no ordering at all -- measured. A generated
+component must be constrained to the protected form; it does not inherit it.
+
+STATE THAT MUST CROSS A VERSION BOUNDARY MUST BE NAMED AS A DEPENDENCY RATHER
+THAN HELD. Component-local state does not survive replacement; the same state one
+indirection away does, at zero cost. B11 reached the same shape from the other
+direction, which is the first time two of these stories have converged on one
+rule from independent measurements.
+
+EFFECT CONTAINMENT DOES NOT SUBSUME EXECUTION CONTAINMENT, now measured rather
+than quoted: ctx.isolate isolates the realm a coeffect KEY resolves in, and a
+component reached ambient state straight through it. B8 keeps its own question."""
+
+[[settled]]
 ref   = "B11 / context"
 claim = "Compression of an agent's conversational context is worth doing; the restart used to deliver it is not."
 result = """Measured, 34 usable pairs across 7 tasks and 6 families. The two effects are
@@ -1808,7 +1863,7 @@ id       = "B12"
 sprint   = 0
 title    = "Cordis probe: how does an accepted mutation leave the organism?"
 labels   = ["backlog", "spike", "external"]
-status   = "backlog"
+status   = "done"
 size     = "M"
 depends_on = []
 as_a     = "researcher"
@@ -2027,6 +2082,77 @@ untrusted code because "a malicious component with access to the host runtime ca
 reach the underlying objects directly", and strong isolation still needs a
 process, runtime or container boundary. A self-evolving system plausibly needs
 both, which is a better question than whether Elixir beats Lisp.
+
+---------------------------------------------------------------------------
+RESULT 2026-08-11, docs/cordis-probe.md, probe at docs/probes/cordis/.
+cordis 4.0.0-rc.8 from npm (cordiverse/cordis) on Node 24.13.0. Eight cases,
+deterministic, byte-identical across runs. Every paper claim tested was
+verified against the PDF BEFORE the probe was written -- L-Raise p38, the
+author obligation p56, Theorem 63 pp34-35, the broker split p68, the
+coeffect-projection boundary p23 -- and all five hold verbatim.
+
+STAGE 1, CORDIS ALONE. The controls pass: clean unload leaves no residue inside
+the declared boundary and the registry goes 1 -> 0. Partial activation failure
+confirms all four L-Raise predictions, including the two vivarium would not have
+thought to build -- failure is recorded PER FIBER so siblings keep running, and
+the lifecycle is NOT re-entered from an error outcome, so a failed component is
+withheld rather than retried. Replacement costs one forced consumer reload under
+exclusive binding and zero behind a broker.
+
+DEPENDENCY WITHDRAWAL IS MORE THAN A DISPOSER STACK, and the discriminating
+control is what shows it. Registering the provision LAST makes pure LIFO revert
+it FIRST; the trace is BYTE-IDENTICAL to registering it first, and in both the
+consumer's teardown resolves the binding and hands its connections back. The
+ordering came from Theorem 63's guard. Two further behaviours vivarium lacks: a
+consumer lands in PENDING rather than DISPOSED, and re-providing the key
+reactivates it unaided.
+
+THE GUARANTEE IS CONDITIONAL, and sharply. p35 says the guard orders along
+COEFFECTS and not along the fiber tree. Measured: the same dependency expressed
+as a parent-held resource the child closes over gets NO ordering -- the parent's
+inverse ran first and the child's teardown saw it closed. An agent will reach for
+whichever is convenient and only one of the two is protected.
+
+STATE CONTINUITY, S7.3 confirmed: component-local state does not survive
+replacement (v2 rebuilds the whole index); the same state in a longer-lived
+dependency survives at zero cost. The escape hatch is one indirection. Read as a
+rule -- state that must cross a version boundary must be NAMED AS A DEPENDENCY
+rather than held -- which is the same shape B11 reached from the other side.
+
+STAGE 2, THE INTERSECTION, and this is the result. Four variants of one
+capability through the full lifecycle:
+
+                        getEffects matches   CORDIS       RECONCILIATION
+  faithful              yes                  clean        matches ledger
+  incomplete inverse    yes                  clean        FAILED REVERSION
+  out of band           no                   clean        FAILED REVERSION
+  disguised             yes                  clean        FAILED REVERSION
+
+CORDIS REPORTS A CLEAN UNLOAD FOR ALL FOUR -- DISPOSED, no error, no retained
+effects. It is right to: it executed every inverse it was given. Whether the
+world now matches the history is a question it does not ask.
+
+And the pre-unload check is worth less than it looks. Cordis's introspection can
+see the out-of-band mutation while the component is active (2 tracked effects vs
+5), so a declared-vs-tracked check catches OMISSION. But EffectMeta carries
+{label, children} and the label is a free string the author passes, so the
+DISGUISED variant -- a no-op registered under the missing label -- is
+indistinguishable from faithful on that surface, and the INCOMPLETE INVERSE never
+was distinguishable there at all. Reconciliation catches all three; nothing else
+catches more than one. Not a Cordis defect: it never claims getEffects witnesses
+anything. It bounds what a pre-unload check can be worth, which vivarium needed
+to know before building one.
+
+ISOLATION, measured not assumed: ctx.isolate isolates the realm a coeffect KEY
+resolves in; a component reached ambient state straight through it. That is S6.3
+as written, and it is what SEPARATES B12 from B8 rather than an argument for it.
+
+RECOMMENDATION: adopt the contract, keep reconciliation, do not adopt Cordis.
+Take ComponentMutation/Effect plus four behaviours -- the guard, per-component
+terminal failure, consumers as standing declarations, and dependencies-not-held
+state. Do not take the calculus, coeffect algebra, realms, interception, the
+config loader, the HMR engine or the broker. Do NOT take parent/child as an
+ordering primitive: it is the one shape that looks protected and is not.
 """
 acceptance = [
   "one complete lifecycle run end to end -- propose, install, evaluate, promote, replace or retract, reconcile -- on something shaped like a real vivarium self-edit, not a synthetic plugin",
