@@ -66,9 +66,18 @@ version it replaced."
   (report-installation (image:rollback-definition (backend) (gethash "target" args))))
 
 (tool:define-tool find-definitions (args context)
-  :description "Find definitions whose name contains a substring."
-  :parameters (("pattern" :string "Substring to look for, case-insensitive" :required-p t))
-  (let ((targets (image:find-targets (backend) (gethash "pattern" args))))
+  :description "List definitions in the running image. Called with no pattern it
+lists EVERY definition, which is how you discover state you were not told about;
+with a pattern it lists those whose name contains it."
+  ;; Optional, and the description says what omitting it does. Required-with-no-
+  ;; enumeration made E24 unsolvable: the only way to reach *NEGOTIATED* was to
+  ;; guess the substring "negotiated", a word absent from the prompt and from
+  ;; every definition the agent could read. Five runs scored `exposure NONE` and
+  ;; I read that as the agent failing to search widely, when the tool surface
+  ;; had no wide search in it. My own feasibility path used the empty pattern --
+  ;; knowledge I had from reading FIND-TARGETS and the model did not.
+  :parameters (("pattern" :string "Substring to look for, case-insensitive. Omit to list everything." :required-p nil))
+  (let ((targets (image:find-targets (backend) (or (gethash "pattern" args) ""))))
     (if targets
         (format nil "~{~a~%~}" targets)
         (format nil "Nothing matches ~s." (gethash "pattern" args)))))
