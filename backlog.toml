@@ -118,8 +118,48 @@ B11 asks the orthogonal question the diagram does not contain: what cognitive
 state should cross a version boundary at all -- ledger only, distilled
 cognition, full transcript, or full continuation.
 
+ATTRIBUTION, and it matters if any of this is ever written up. BOTH TAXONOMIES
+ABOVE ARE VIVARIUM'S SYNTHESIS, NOT CORDIS'S:
+
+  ReplacementPolicy = RevertAndReapply | MigrateState | CaptureAndContinue
+    Cordis, OTP and Smalltalk motivate the three cells. None of them presents
+    the taxonomy; it is ours, assembled from three systems that each occupy one
+    cell without naming the others.
+
+  Effect = Revertible | Compensatable | Irreversible
+    Cordis S6.1 supplies the acquisition/emission boundary and discusses
+    inversion, withholding and compensation. It does NOT present these three as
+    a formal classification. The categories are ours.
+
+Cite the paper for the boundary and the mechanisms; do not cite it for either
+taxonomy.
+
+WHAT THE ARCHITECTURE BUYS, and the reason to stop editing it: four questions
+that were previously one.
+
+  1 SHOULD THIS CHANGE SURVIVE?      propose, isolate, evaluate, select,
+                                     promote                        vivarium
+  2 HOW DOES AN ACCEPTED CHANGE      own effects, withdraw dependencies,
+    LEAVE?                           revert or compensate                B12
+  3 WHAT CROSSES FROM OLD VERSION    the replacement policy
+    TO NEW?                          RevertAndReapply | MigrateState |
+                                     CaptureAndContinue                  B8
+  4 WHAT COGNITION SHOULD SURVIVE?   ledger | distilled | transcript |
+                                     full continuation                   B11
+
+with B9 underneath all four: evolutionary history -> authoritative ledger ->
+expected projection -> compare against runtime introspection -> divergence is a
+failure. Neither Cordis's effect tracking, nor OTP supervision, nor Smalltalk
+continuity establishes that the running system still matches its history.
+
+State continuity, effect cleanup, execution containment and evolutionary
+selection were being treated as one problem. They are four.
+
 WHAT THIS IS NOT: a plan to build that architecture. It is the reason the
-remaining stories are worth running in the order they are in."""
+remaining stories are worth running in the order they are in.
+
+FROZEN 2026-08-11. No new substrate concepts unless an experiment forces one.
+The next thing that happens is B11, not more architecture."""
 
 [[settled]]
 ref   = "harness"
