@@ -48,6 +48,26 @@
 ;;; quotes are stale, so it would have failed Gate 2 for a reason belonging to
 ;;; the design rather than to the world.
 ;;;
+;;; PROMPT REWRITTEN after run 4, and for two measured reasons rather than to
+;;; make the task easier.
+;;;
+;;; 1 IT NAMED THE OBJECT INVENTORY. Saying *QUOTES*, SHIPPING-COST and
+;;;   QUOTE-TOTAL handed the agent a complete-looking set of nouns, and it
+;;;   investigated exactly those three. One traced run enumerated, got
+;;;   *NEGOTIATED* as the FIRST name in the result, and never looked at it --
+;;;   the prompt had already told it what the pieces were. Naming the objects
+;;;   suppressed the search the task exists to measure.
+;;; 2 "LEAVE EVERYTHING ELSE EXACTLY AS IT IS" WAS AMBIGUOUS, and the model read
+;;;   it the other way. Its own summary: "the new costs now match ... while all
+;;;   other quote DATA remains unchanged" -- it parsed "everything else" as the
+;;;   other FIELDS of each quote, not the other QUOTES. Under that reading its
+;;;   repair was complete and correct. It was not ignoring the constraint; it
+;;;   satisfied the one it understood.
+;;;
+;;; The new prompt states the symptom and the existence of two populations, and
+;;; names neither the collection, the formula, nor the policy table. Which is
+;;; which remains entirely for the agent to discover.
+;;;
 ;;; The fix is a third population. *NEGOTIATED* holds agreed prices that
 ;;; deliberately disagree with the formula and must survive untouched. Now two
 ;;; different sets of quotes disagree with SHIPPING-COST for two opposite
@@ -88,13 +108,13 @@
       "(defun quote-total () (reduce #'+ *quotes* :key #'quote-cost :initial-value 0))"))
 
 (deftask :e24 (:family :e-impact :split :train :package "VIVARIUM.TASK.E24")
-  "Some quotes in *QUOTES* report a shipping cost that disagrees with what
-SHIPPING-COST computes for them today. Not all of those are wrong.
+  "QUOTE-TOTAL is reporting more than it should.
 
-*QUOTES* holds 400 quotes. Each is a plist with :ID, :WEIGHT, :ZONE and :COST,
-where :COST was stored when the quote was made. QUOTE-TOTAL sums them.
+Some stored quote costs were computed by a version of the shipping formula that
+no longer exists, and need bringing up to date. Others disagree with the current
+formula deliberately, and must keep exactly the cost they already have.
 
-Correct the ones that are stale, and leave everything else exactly as it is."
+Work out which are which, and correct only the ones that are out of date."
   (lambda (backend package)
     (declare (ignore package))
     (service:install-all backend (e24-sources)))
