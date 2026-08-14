@@ -1,0 +1,997 @@
+#  vivarium backlog
+#
+#  Ordered by dependency, not by cost. The list is short at the top on purpose:
+#  one story unblocks five, and nothing below it can start.
+#
+#  A sprint here is a vertical slice of the research journey, so the test of a
+#  sprint is not "code shipped" but "the researcher can state one more claim and
+#  defend it". A sprint that only builds machinery has shipped nothing.
+#
+#  Every story is in a sprint or has status = "backlog". No orphans.
+
+[meta]
+project   = "vivarium"
+question  = "What does an agent harness gain when the agent's world is a running image rather than a directory of files?"
+updated   = "2026-08-08"
+source    = "HANDOFF.md is the prose; this file is the order of work."
+sizing    = "size, not due dates: an experiment's length is unknown until its instrument exists. Time-box at sprint planning instead."
+
+# The spine. Sprints are slices of this, in order.
+journey = [
+  "1. a question with kill criteria                 -- done",
+  "2. a harness that can act in the world           -- done",
+  "3. an instrument that measures outcomes          -- done, S1",
+  "4. a control honest enough to compare against    -- next, S5",
+  "5. verdicts on the cheap experiments             -- next, S3 and S4",
+  "6. verdicts on the headline experiments          -- blocked on 4",
+  "7. evidence the result survives outside the lab  -- blocked on 6",
+]
+
+# ---------------------------------------------------------------------------
+#  Already answered. Recorded so nobody re-researches it, not as work.
+# ---------------------------------------------------------------------------
+
+[[settled]]
+ref   = "E1"
+claim = "An isolated trial in a live image costs milliseconds."
+result = "Holds. Fork 28-32ms, saved core 75ms, cold start 2600ms, in-process 0.12ms. SBCL refuses to fork multi-threaded, so a zygote is mandatory and the serving image can never fork. Parallel fan-out barely beats sequential."
+
+[[settled]]
+ref   = "E2 claim 2"
+claim = "A Pareto frontier beats greedy keep-best."
+result = "Holds, narrowly: the frontier converts a hard trap into a budget question at a measured 10x price. Greedy frozen at n=12 at every budget; Pareto reaches the global optimum at 600. NOT 'Pareto wins at equal budget'."
+
+[[settled]]
+ref   = "E3 mechanism"
+claim = "Mutating a live agent object changes what it can do on the next request."
+result = "Built and tested: prompt and tool set read per request; abort-in-flight measured at 1,927ms vs 323,875ms. Whether it improves OUTCOMES is story S6."
+
+[[settled]]
+ref   = "E6"
+claim = "What production harnesses fix at turn start versus re-read per request."
+result = "DONE -- all four harnesses read. opencode re-reads prompt AND tools per request (prompt.ts:1088 loop, SessionTools.resolve inside it, LLMRequestPrep.prepare per run) with a plugin hook for rewriting the prompt, so 'resolved at startup' is false in general. But resolveTools is a FILTER that never adds, so no harness can acquire a tool absent at session start. Answered for Codex, Pi and Claude Code. Claude Code's control protocol accepts set_model, set_permission_mode, interrupt, stop_task, rewind_files, mcp_toggle -- no set_system_prompt, no set_tools. mcp_toggle is a PRE-REGISTERED server on/off. opencode remains unread (S2)."
+
+
+
+[[settled]]
+ref   = "harness"
+claim = "The image is a viable agent world."
+result = "Arm A repairs a broken definition in a running image (TYPE-ERROR to 35, verified by calling it) and extends itself mid-run (7 tools to 8, no restart). 272 assertions green."
+
+# ===========================================================================
+#  SPRINT 1 -- The instrument
+# ===========================================================================
+
+[[sprint]]
+id    = 1
+name  = "The instrument"
+goal  = "Make outcomes measurable at all."
+ships = "A benchmark on which a file-based harness structurally cannot score full marks -- and the honest statement of what it does and does not cover."
+why   = "Every open experiment is blocked on the same missing object. The project has three prompts over two functions and one numeric landscape; everything else is machinery operating on a toy."
+
+[[story]]
+id       = "S1"
+sprint   = 1
+title    = "A task set where imageness is load-bearing"
+labels   = ["user-story", "risk"]
+status   = "done"
+size     = "L"
+depends_on = []
+blocks   = ["S3", "S4", "S5", "S6", "S7", "S8"]
+as_a     = "researcher"
+i_want   = "a set of tasks in a live image, each with a starting state and a score computed by calling into the image"
+so_that  = "a win over a file-based harness means something instead of being an artefact of the task I happened to write"
+notes    = """
+BUILT 2026-08-08 -- vivarium/tasks, 913 lines, 14 tasks, 42 cases, 357 assertions
+green. Each task is pinned by two tests: it FAILS before a fix and PASSES
+completely under a known-good one, with the answer key in tests/ so nothing on
+the agent path can reach it. Scored through a forked trial at 43-62ms.
+
+docs/task-set.md holds the decision record: 14 tasks, the interface,
+the held-out split, and what the set does not cover. Build against that.
+
+This is the root and the whole project waits on it. The design risk is bigger than
+the build risk: if the tasks are 'write a pure function from a docstring', files do
+fine and the headline question gets no answer.
+
+CORRECTION to this story as first written. It listed four imageness dimensions;
+three of them collapse into one root. A file harness cannot observe or preserve
+STATE THAT EXISTS ONLY IN THE RUNNING PROCESS and was never produced by loading
+source. 'Diagnose from runtime-only information' is that state; 'keep serving' is
+how that state dies. So: one task-level asymmetry with three faces, plus one
+separate harness-level asymmetry (acquiring a capability mid-run). Four families,
+two roots.
+
+Honest caveat that must not be quietly dropped: give a file harness a
+REPL-over-socket tool and the distinction dissolves -- but that harness is an image
+harness with extra steps, which is the thesis rather than a counterexample. What
+must never happen is granting the control that tool and reporting a null result.
+
+FORCED BY E1, and nearly missed: check-zygote errors unless exactly one thread is
+running, so a task whose setup spawns a thread cannot be scored in a forked trial
+at all. The 'keep serving' family therefore models in-flight work as runtime state
+-- half-completed operations, captured closures -- rather than running concurrent
+traffic. The whole set is single-threaded and that is a constraint, not a taste.
+
+Build it inside vivarium, NOT against genera-lab. E1 already settled that argument:
+the zygote's warm state is loaded code and fixtures, not the serving image's live
+sessions, so genera-lab's realism does not survive the fork. Paying an external,
+un-versioned dependency buys nothing on the path that scores. genera-lab is the
+external-validity check later (S9), not the starting point.
+"""
+acceptance = [
+  "14 tasks per docs/task-set.md, each with a live starting state established before the agent runs",
+  "every score is computed by calling into the image; no score reads the agent's report -- the fabricated-REPL-transcript failure must be impossible by construction",
+  "scores are per case, never a scalar -- a single number makes a Pareto frontier impossible and silently collapses the search into greedy",
+  "at least one scoring dimension a file-based harness cannot score full marks on, and a written argument for why it cannot",
+  "candidates can carry MORE THAN ONE definition -- this is the specific gap that makes E2 claim 1 unmeasurable today",
+  "a held-out split is fixed now and recorded, before anything is tuned against the training half",
+  "tasks are seeded and a repeat run reproduces its scores",
+  "each of the four families has at least two tasks, including a conflict task and a clean-merge task for E2 claim 1",
+  "no task setup spawns a thread -- check-zygote would refuse to fork the trial",
+  "every case returns a number in [0,1], so scores are comparable across tasks",
+  "a written statement of what the set does NOT cover",
+]
+tasks = [
+  "design the scenarios and the scoring interface, and get them reviewed, before writing the module",
+  "src/tasks/ -- a task is (setup, prompt, cases); a case returns a number or signals",
+  "wire it to trial:run-trial, whose ((name . thunk) ...) shape already fits",
+  "fix the held-out split and commit it",
+  "record the file-harness argument in docs/",
+]
+kills_it = "The file-based control scores full marks on every dimension. Then the task set is measuring coding ability, not the substrate, and it has to be redesigned before anything downstream is worth running."
+
+[[story]]
+id       = "S2"
+sprint   = 1
+title    = "Read opencode, the last unread harness"
+labels   = ["spike"]
+status   = "done"
+size     = "S"
+depends_on = []
+blocks   = ["S6"]
+as_a     = "researcher"
+i_want   = "to know whether opencode re-reads its prompt or tool set per request"
+so_that  = "E3's claim is stated against every production harness on this machine, not most of them"
+notes    = """
+DONE 2026-08-08, and it DID narrow E3 -- the third time. opencode is the only
+one of the four that re-reads both prompt and tool set per request:
+prompt.ts:1088 is a plain while(true), one request plus its tool batch per
+iteration; SessionTools.resolve runs INSIDE it (prompt.ts:1226); and
+LLMRequestPrep.prepare rebuilds the system prompt on every LLM.run
+(llm/request.ts:56). There is even a plugin hook, experimental.chat.system.transform,
+whose only purpose is letting an external party rewrite the prompt per request.
+
+So "prompt and tools are resolved at startup" describes Pi and Codex, NOT every
+production harness. That version of E3's claim was too broad and is retracted.
+
+What survives, and it is sharper: re-reading is not acquiring. resolveTools is
+Record.filter over a registry assembled upstream (llm/request.ts:208) -- it
+removes what permission disabled and never adds. Same shape as Claude Code's
+mcp_toggle. No harness lets an agent acquire a capability that was nowhere at
+session start, with the schema derived from the thing it just wrote. That is now
+the only part of the claim standing, and it is what S6 tests.
+
+Independent of S1, so it can run alongside. Vendored at
+~/workspace/harness-test/vendor/opencode, 137 MB of TypeScript, never opened.
+Time-boxed: request assembly and turn boundaries only, no further.
+
+Do this BEFORE designing S6, not after. If opencode already mutates capability
+mid-run, E3's claim narrows for the third time and S6 is a different experiment.
+Note that vendor/ is one repo holding the trees as plain directories -- a commit
+read inside opencode is harness-test's, not upstream's.
+"""
+acceptance = [
+  "one paragraph in docs/e6-harness-teardown.md: what opencode fixes at turn start and what it re-reads",
+  "E3's baseline table updated, or explicitly confirmed unchanged",
+  "a decision recorded: does this narrow E3's claim?",
+]
+tasks = [
+  "find the loop and the request-assembly path",
+  "answer the one question; stop there",
+]
+kills_it = "opencode mutates prompt or tool set mid-run. Then capability injection is not unclaimed and E3 needs restating."
+
+[[story]]
+id       = "S2d"
+sprint   = 1
+title    = "One entry point for every run"
+labels   = ["infra"]
+status   = "done"
+size     = "M"
+depends_on = ["S1"]
+blocks   = []
+as_a     = "researcher"
+i_want   = "a single command that runs any experiment, with the arms, repeats and output shape in one place"
+so_that  = "a run is reproducible from its command line and an experiment cannot rot unnoticed"
+notes    = """
+DONE 2026-08-08. bin/vivarium + src/cli (package, args, arms, commands, main).
+Four subcommands: check, tasks, calibrate, compare. .env is loaded by the
+launcher so no run depends on the caller having sourced it.
+
+The rot guard was VERIFIED rather than asserted: planting the exact
+`*provider*:queued-agent` breakage that killed e5-wire-format.lisp makes
+`check` print FAIL and exit non-zero. compile-file is the right instrument --
+it catches reader and package errors without executing the experiment or
+touching the network.
+
+`compare` turns the hand-rolled two-sweep diff into a command, and --repeats
+defaults to 3 rather than 1.
+
+Absorbs the old S2b (experiment-rot guard): one entry point that can load and
+compile every experiment IS the guard, and a separate story for it would be a
+second thing to forget.
+
+Not speculative -- this is friction paid repeatedly while building S1 and S2c.
+Every run is currently `set -a && . ./.env && set +a; sbcl --non-interactive
+--load experiments/X.lisp`, each experiment re-implements the quicklisp
+bootstrap, env loading, arm construction and reporting, there is no way to run a
+subset without hand-writing a scratch file (done twice during calibration), and
+`--eval` silently evaluates only the FIRST form in its string, which cost a
+debugging round on its own.
+
+experiments/e5-wire-format.lisp had been dead since the provider refactor and
+nobody noticed, because nothing ever loaded it.
+
+Repeats belong here too: calibration measured a 24% cell-flip rate at n=1, so
+`--repeats` should be a flag with a default that is not 1, not something each
+experiment remembers to do.
+"""
+acceptance = [
+  "one command runs a named experiment: arms, task subset, repeat count, output path",
+  "it loads .env itself rather than depending on the caller having sourced it",
+  "a `check` mode compiles every experiment without a model server or network, and fails loudly on a broken one",
+  "results are written in a structured form as well as printed, so a later run can be diffed against an earlier one",
+  "the two-sweep comparison done by hand during calibration becomes a command",
+]
+tasks = [
+  "bin/vivarium with subcommands; keep the argument parsing boring",
+  "move arm construction out of the experiment scripts and into one place",
+  "--repeats defaulting to 3, with spread reported",
+]
+
+[[story]]
+id       = "S2c"
+sprint   = 1
+title    = "Calibrate the instrument against a real model"
+labels   = ["user-story", "risk"]
+status   = "done"
+size     = "M"
+depends_on = ["S1"]
+blocks   = ["S3", "S5", "S6"]
+as_a     = "researcher"
+i_want   = "a baseline pass rate for every task, from a real model rather than from my own reference fixes"
+so_that  = "I know the instrument can tell two harnesses apart before I spend a sprint assuming it can"
+notes    = """
+DONE, and RE-MEASURED CLEAN 2026-08-11 on all 17 tasks: 102 attempts, zero
+contaminated, zero transport failures, mean 6.7 requests of a 12 cap. Verdict
+holds and is now trustworthy: THE SET DISCRIMINATES -- five tasks separate the
+two models, two are tied-partial, ten are solved by both, NONE by neither. T12
+is the hardest (0.22 / 0.44) and models stop well short of the request budget
+rather than exhausting it. Table in docs/task-set.md.
+
+Superseding the first sweep: across the 28 shared cells 11 moved and 8 moved UP,
+which is the shape of the harness fixes (find-by-package, live-value reading)
+rather than of noise -- and understated, since a cell at 1.00 can only fall.
+Three things changed at once, so it is direction, not measurement.
+
+Original verdict below, from the contaminated run. 14 tasks x 2 models, mean 8.3
+requests of a 12 cap. Five tasks separate the models, none is solved by neither.
+Eight are solved by both, which is not waste -- where model capability is not the
+bottleneck a failing harness is failing for harness reasons. Table in
+docs/task-set.md.
+
+Two things it caught. T9 scored zero for both models and it was the TASK's fault:
+the prompt never named the function the cases check, and told the agent to "call
+it" with a tool set that cannot call anything. Fixed, now 1.00/1.00.
+
+And the finding that constrains everything downstream: two identical sweeps
+disagreed on 6 OF 25 CELLS -- 24% -- at temperature 0 with a fixed seed. Hosted
+providers are not deterministic. A single sample per cell cannot support a
+comparison. attempt-repeatedly/fraction-summary exist for this; S3, S5 and S6
+must use them and report spread, not just a mean. One casualty already: a
+first-sweep observation that gpt-oss-120b broke T14's correct definition did not
+reproduce.
+
+Delivered the shared runner S3, S5 and S6 all need and none of them owned:
+src/tasks/attempt.lisp -- set up, build cases, let an agent act, score the image.
+The ordering is the correctness argument: cases must be built before the agent
+runs, because a case closes over the world it will later compare against.
+
+CONTAMINATION, found after the sweep and it invalidates deepseek's column on
+12 of 14 rows. A scored agent with bash reads the machine hosting the benchmark:
+`cat src/tasks/control.lisp` -- the file with its own scoring cases -- and it
+wrote verification scripts into the repo root. A cwd jail does not stop it
+because absolute paths ignore cwd. bash now refuses paths outside its scratch
+directory, and reaching commands are recorded in the results file. The
+DISCRIMINATES verdict survives (visible in both sweeps, independent of those
+rows); the numbers do not.
+
+Open question this raises for S5: across every trace, not one bash call verified
+anything about the live image, because a fresh process cannot see it. In an image
+harness bash may be pure liability, and Pi parity is the only argument for
+keeping it.
+
+This measures the MODEL, not the harness -- every arm runs the same harness and
+tool set. Harness comparisons are S3 and S5.
+"""
+acceptance = [
+  "every task attempted by at least two models through the real agent loop",
+  "per-task and per-case scores reported, not just a total",
+  "tasks stuck at floor or at ceiling across all models are named",
+  "a stated verdict: does the set discriminate, and which tasks need reworking",
+  "the runner is reusable by S3, S5 and S6 rather than living in an experiment script",
+]
+tasks = [
+  "src/tasks/attempt.lisp -- the shared runner",
+  "experiments/s1-calibration.lisp -- the sweep",
+  "rework or retire any task pinned at floor or ceiling",
+]
+kills_it = "Every task lands at floor or at ceiling for every model. Then the set cannot discriminate and S1 is not done after all -- the tasks need redesigning before any experiment runs on them."
+
+# ===========================================================================
+#  SPRINT 2 -- Cheap verdicts
+# ===========================================================================
+
+[[sprint]]
+id    = 2
+name  = "Cheap verdicts"
+goal  = "Spend the new instrument on the two questions that need no honest control."
+ships = "Two verdicts: whether the single-tool arm is worth building at all, and whether merging is free."
+why   = "Both are within-harness or no-model comparisons, so neither waits on S5. Getting them first means S5's cost is only paid for questions that survive."
+
+[[story]]
+id       = "S3"
+sprint   = 2
+title    = "Measure the Lisp-quality gap on its own"
+labels   = ["user-story"]
+status   = "ready"
+size     = "M"
+depends_on = ["S1"]
+blocks   = ["S7"]
+as_a     = "researcher"
+i_want   = "to know whether a model writes materially worse Common Lisp as a form than it writes as a JSON tool call"
+so_that  = "I do not build E5's single-tool arm against a failure mode that was already fatal"
+notes    = """
+E5's own kill criterion says to measure this first, alone, before building arm B.
+What exists is one prompt, one shot, printed for a human to eyeball, with a single
+observation -- a malformed reduce. That is an anecdote.
+
+This is a WITHIN-harness comparison: same harness, same tasks, two wire formats. It
+does not need S5's honest control, which is why it comes before it.
+
+Three models now available and the differences matter: GBNF is llama.cpp-only, so
+the grammar-constrained arm can only run against local gpt-oss-20b. Hosted models
+can run the unconstrained arm. Hold the model constant within a comparison and say
+which one produced each number.
+"""
+acceptance = [
+  "every S1 task run through both wire formats, same model, same seed",
+  "REPEATED: n>=3 per cell with mean and spread reported -- calibration measured a 24% cell-flip rate at n=1, so a single-sample verdict here would be noise",
+  "scored on whether the definition compiles and passes its cases -- not on whether it looked reasonable",
+  "a per-model number, because the local 20B may be at a floor",
+  "an explicit verdict written into docs/e5-single-tool-rlm.md: build arm B, or do not",
+  "the escaping-tax figure restated or retired -- +3.6% was never an argument for anything",
+]
+tasks = [
+  "extend experiments/e5-wire-format.lisp from one prompt to the S1 set",
+  "score compile + cases, not eyeball",
+  "run against gpt-oss-20b local, gpt-oss-120b, deepseek-v4-flash",
+]
+kills_it = "The Lisp arm's pass rate is materially below the JSON arm's across models. Then E5's arm B is dead and S7 is cancelled, which is a result worth having cheaply."
+
+[[story]]
+id       = "S4"
+sprint   = 2
+title    = "Settle E2 claim 1 on a landscape that can express it"
+labels   = ["user-story"]
+status   = "ready"
+size     = "M"
+depends_on = ["S1"]
+blocks   = []
+as_a     = "researcher"
+i_want   = "a conflict census over candidates that touch different definitions"
+so_that  = "I know whether per-definition merge is genuinely free or whether the git systems' merge layer was load-bearing"
+notes    = """
+The docs explain the missing verdict as 'the search converges before complementary
+specialists appear'. The real reason is structural and worse: experiments/e2-selection.lisp
+gives every candidate exactly one definition, always the same target --
+
+    :definitions (list (cons \"DEFUN KNOBS::KNOB\" ...))
+
+A genome of size one cannot produce a complementary pair or a merge conflict that
+means anything. merge-candidates can never union two disjoint definition sets
+because there are none. Claim 1 is not unmeasured on that landscape, it is
+unmeasurable, and no budget fixes it. This is why S1's acceptance criteria demand
+multi-definition candidates.
+
+The machinery is already built and tested: conflicts-between, merge-candidates,
+complementary-pair. T12 now supplies the shape they need, and the clean-merge
+half is already demonstrated -- two lineages fixing different definitions, each
+leading a different case, conflicts-between empty, merge carrying both and
+scoring both. What remains is the census at scale, and the conflict half via T11.
+"""
+acceptance = [
+  "a landscape where two lineages genuinely specialise on different definitions",
+  "the census reports a real count of pairs, not zero-for-lack-of-pairs",
+  "a stated rate: how often do two winners touch the same definition with neither body subsuming the other",
+  "verdict written into docs/e2-archive-tree.md",
+]
+tasks = [
+  "build the landscape from S1's multi-definition tasks",
+  "run experiments/e2-merge.lisp against it",
+]
+kills_it = "Two winners routinely touch the same definition with neither subsuming the other. Then merging is not free and the textual-merge layer was doing real work."
+
+# ===========================================================================
+#  SPRINT 3 -- An honest control
+# ===========================================================================
+
+[[sprint]]
+id    = 3
+name  = "An honest control"
+goal  = "Make every comparative claim attributable."
+ships = "A number showing the ported loop and real Pi land within noise -- or the size of the gap."
+why   = "harness-lineage.md is explicit: without this, every downstream result carries an unquantified 'or my port is just different'. It has never been run, because it needs a task set."
+
+[[story]]
+id       = "S5"
+sprint   = 3
+title    = "Fidelity check: the ported loop against real Pi"
+labels   = ["user-story", "risk"]
+status   = "ready"
+size     = "L"
+depends_on = ["S1"]
+blocks   = ["S6", "S7"]
+as_a     = "researcher"
+i_want   = "the Lisp loop and unmodified Pi to produce the same trajectories and pass rates on the same tasks"
+so_that  = "a later win is attributable to the substrate rather than to my reimplementation"
+notes    = """
+The method is already written down at docs/harness-lineage.md:214 and has simply
+never been executed. Port the FILE tools too, including edit-diff.ts's fuzzy
+matcher, run both on the same task set with the same model and seed, confirm they
+land within noise, then swap the image tools back in for the experiments.
+
+The trap is named in the same document: do not compare file-Pi against
+image-single-tool and call it a result. That confounds tool semantics with tool
+cardinality and is uninterpretable. Arm A is Pi's STRUCTURE carrying the image's
+equivalents; only cardinality and mutability may differ between arms.
+
+Large, and the least glamorous story here. It is also the one whose absence
+silently discounts everything in sprints 4 and 5.
+"""
+acceptance = [
+  "Pi's file tools ported, including the fuzzy diff matcher",
+  "both harnesses run the same tasks, same model, same seed",
+  "REPEATED: n>=3 per cell -- 'within noise' is the actual verdict being tested, so the noise has to be measured rather than assumed",
+  "trajectories and pass rates reported with a noise estimate, not asserted equal",
+  "a number in docs/harness-lineage.md, replacing the plan",
+  "if they diverge: the divergence is characterised before any comparative experiment runs",
+]
+tasks = [
+  "port harness/tools/{read,write,edit,bash}.ts and edit-diff.ts",
+  "a file-tool task set matching S1's, or S1 tasks in file form",
+  "run both, report",
+]
+kills_it = "The port diverges materially and cannot be reconciled. Then the control has to be real Pi driven over RPC, and every comparative story gets more expensive."
+
+# ===========================================================================
+#  SPRINT 4 -- The headline claims
+# ===========================================================================
+
+[[sprint]]
+id    = 4
+name  = "The headline claims"
+goal  = "Answer the question the project exists to ask."
+ships = "Whether capability injection improves outcomes, and whether one tool beats five."
+why   = "These are the experiments. Everything before this sprint exists to make their answers survive scrutiny."
+
+[[story]]
+id       = "S6"
+sprint   = 4
+title    = "Does capability injection improve outcomes?"
+labels   = ["user-story"]
+status   = "blocked"
+size     = "L"
+depends_on = ["S1", "S2", "S5"]
+blocks   = ["S8"]
+as_a     = "researcher"
+i_want   = "to compare an agent whose prompt and tool set can change mid-run against the same agent with both frozen"
+so_that  = "E3 is a result rather than a demonstration"
+notes    = """
+The mechanism is built, tested and measured. What is missing is the only part that
+was ever the experiment: whether it changes outcomes.
+
+S2 must land first. Claude Code sets the bar at set_model and mcp_toggle over
+pre-registered servers -- it can swap the model mid-session but not the prompt, and
+can gate tools it already had but not acquire one. If opencode goes further, this
+experiment is scoped differently.
+
+Two of E3's three kill criteria are cheap and should be checked before the full run:
+trajectory coherence under a mid-turn prompt change, and the prompt-caching penalty
+for mutating a prefix.
+"""
+acceptance = [
+  "mutable-object arm against frozen-object arm, same tasks, same model, same seed",
+  "REPEATED: n>=3 per cell with spread reported",
+  "requests-to-effect for a CAPABILITY change, against the file-harness baseline of 'never, without a restart'",
+  "trajectory coherence measured, not assumed -- a mid-turn prompt change must not make the model contradict its own earlier reasoning",
+  "the prompt-cache cost of a changed prefix measured on llama-server's slot visibility",
+  "verdict in docs/e3-subturn-steering.md",
+]
+tasks = [
+  "the two cheap kill checks first",
+  "then the full comparison",
+]
+kills_it = "Turns-to-effect is 1 anyway, so the boundary is where the change would have landed regardless -- then this is a rename of queue-and-resume. Or caching penalties erase the gain."
+
+[[story]]
+id       = "S7"
+sprint   = 4
+title    = "One tool against five"
+labels   = ["user-story"]
+status   = "blocked"
+size     = "L"
+depends_on = ["S1", "S3", "S5"]
+blocks   = []
+as_a     = "researcher"
+i_want   = "a single eval-a-form tool compared against the hand-designed tool set"
+so_that  = "E5 has an answer rather than a wire format"
+notes    = """
+Conditional on S3. If the Lisp-quality gap is fatal this story is cancelled, and
+that is the cheap outcome worth wanting.
+
+Read Codex's code-mode and code-mode-runtime crates before building: Codex appears
+to have its own answer to the single-tool question and it is vendored.
+
+Watch E5's third kill criterion, which is about context rather than quality: if
+results must be inlined rather than held as references, the design collapses back
+into ordinary tool calls.
+"""
+acceptance = [
+  "Codex's code-mode crates read and summarised first",
+  "arm B built only if S3 cleared it",
+  "task success and token spend, model held constant",
+  "an auditability judgement: can an operator reconstruct the session from the ledger without reading Lisp",
+  "verdict in docs/e5-single-tool-rlm.md",
+]
+tasks = [
+  "read code-mode",
+  "build arm B",
+  "run both arms on S1",
+]
+kills_it = "Free-form eval makes trajectories unauditable, or context pressure forces payload inlining."
+
+# ===========================================================================
+#  SPRINT 5 -- The meta level
+# ===========================================================================
+
+[[sprint]]
+id    = 5
+name  = "The meta level"
+goal  = "Let the agent edit its own object and see whether it gets better."
+ships = "Whether a self-editing agent beats a fixed one on held-out tasks."
+why   = "Scoring one meta-change means running a whole object-level campaign, so this is only affordable once the objective is cheap and trusted."
+
+[[story]]
+id       = "S8"
+sprint   = 5
+title    = "A self-editing agent object against a frozen one"
+labels   = ["user-story"]
+status   = "blocked"
+size     = "L"
+depends_on = ["S1", "S4", "S6"]
+blocks   = []
+as_a     = "researcher"
+i_want   = "an agent with write access to its own prompt slot, tool method set and policy methods, measured against the same agent frozen"
+so_that  = "I know whether a live object buys anything over prime-agent's file-backed approximation"
+notes    = """
+The held-out split has to come from S1 and must never have been tuned against --
+which is why S1 fixes it up front rather than retrofitting one here.
+
+Both guardrails already exist: the immutable floor is built (base prompt and base
+tools are out of reach of register_tool and remember), and the control plane stays
+outside the image.
+"""
+acceptance = [
+  "self-editing arm against frozen arm on the training half",
+  "both re-run on the held-out half, and the comparison reported on THAT",
+  "a check for the expected failure: does it converge on editing its own scorer rather than its competence",
+  "for every surviving edit, a statement of whether it was trivially portable to a static prompt file",
+  "verdict in docs/e4-self-editing-object.md",
+]
+tasks = [
+  "object level first",
+  "meta level only if the object level pays",
+]
+kills_it = "Self-edits win on training and lose on held-out. Or every surviving edit was portable to a static prompt file, meaning the live object bought nothing."
+
+# ===========================================================================
+#  SPRINT 6 -- Does it survive outside the lab
+# ===========================================================================
+
+[[sprint]]
+id    = 6
+name  = "Outside the lab"
+goal  = "Check the results against a real serving image."
+ships = "Whether fixture-scored winners survive live traffic."
+why   = "Everything before this is scored against fixtures in a forked child. If winners do not survive real traffic, fixture scoring was the wrong objective."
+
+[[story]]
+id       = "S9"
+sprint   = 6
+title    = "Fixture-scored winners against genera-lab's live traffic"
+labels   = ["user-story"]
+status   = "blocked"
+size     = "M"
+depends_on = ["S6"]
+blocks   = []
+as_a     = "researcher"
+i_want   = "candidates that won on fixtures promoted into a real serving image and watched"
+so_that  = "the whole programme is not an artefact of the fixtures I wrote"
+notes    = """
+genera-lab is at ~/workspace/genera-lab and is NOT under git -- put it under version
+control before promoting anything into it.
+
+E1 forced the split this story tests: the zygote's warm state is loaded code and
+fixtures, not live sessions, so fixture scoring and live-traffic scoring are two
+different mechanisms. Live-traffic scoring is the per-session CLOS variant path,
+not a fork.
+"""
+acceptance = [
+  "genera-lab under version control first",
+  "winning ledger entries replayed into the serving image via install",
+  "a live-traffic score reported beside the fixture score for the same candidate",
+  "a statement of whether fixture rank predicts live rank",
+]
+tasks = [
+  "git init genera-lab",
+  "promotion path from arena to serving image",
+]
+kills_it = "Fixture winners do not survive live traffic. Then fixture scoring is the wrong objective and the per-session variant path is the only real one."
+
+# ===========================================================================
+#  BACKLOG -- not scheduled. Triage at sprint planning.
+# ===========================================================================
+
+[[story]]
+id       = "B1"
+sprint   = 0
+title    = "Frontier-size-aware breeding schedule"
+labels   = ["backlog"]
+status   = "backlog"
+size     = "S"
+depends_on = ["S4"]
+as_a     = "researcher"
+i_want   = "a schedule that does not dilute the leading candidate as the frontier grows"
+so_that  = "the frontier's measured 10x price comes down"
+notes    = "Round-robin over the frontier sets the rate, so progress dilutes as the frontier grows. The obvious lever and untried. Only worth pulling in once a real landscape exists to measure it on."
+acceptance = ["a schedule measured against round-robin on the same landscape and budget"]
+
+[[story]]
+id       = "B2"
+sprint   = 0
+title    = "Extract the Claude Code CLI bundle"
+labels   = ["backlog", "spike"]
+status   = "backlog"
+size     = "M"
+depends_on = ["S2"]
+as_a     = "researcher"
+i_want   = "the internal loop of the Bun-compiled CLI"
+so_that  = "I know whether it re-reads anything the control protocol does not expose"
+notes = """
+Downgraded from the E6 plan and probably never needed. The host side already
+answered the mutability question from open source -- the SDK and the desktop app's
+Electron bundle both enumerate the control protocol. This only adds whether the
+INTERNAL loop differs from what the protocol exposes. Pull it in only if S2 leaves
+a gap.
+"""
+acceptance = ["a statement of what the internal loop re-reads per request, or a decision that the protocol answer was sufficient"]
+
+[[story]]
+id       = "B4"
+sprint   = 0
+title    = "A run report: what changed in the image, and what improved"
+labels   = ["backlog", "infra"]
+status   = "backlog"
+size     = "M"
+depends_on = ["S2d"]
+as_a     = "researcher"
+i_want   = "a page per run showing the ledger diff, the trajectory, and the per-case score movement side by side"
+so_that  = "I can see what the agent changed and whether it helped, without reading a log"
+notes = """
+Static HTML written by the CLI, NOT a TUI and not a server. Runs are batch and
+take tens of minutes, so nobody watches them live and a TUI's one advantage is
+moot; a static artifact is diffable, archivable and can sit beside the claim it
+supports, which is this project's actual currency.
+
+It earns its place on evidence, not taste:
+- E5's SECOND KILL CRITERION cannot be settled by a number. "Free-form eval makes
+  trajectories unauditable -- an operator cannot tell what the agent did without
+  reading Lisp." Someone has to read a reconstructed session and judge it, and
+  that needs the session reconstructed.
+- T9's defect was found by dumping a trace to a terminal and reading it -- the
+  highest-value five minutes of calibration, and entirely ad hoc.
+- The 24% variance finding came from hand-diffing two log files in Python.
+
+The data model already exists: the ledger records target, source,
+previous-source, note and outcome per entry, so "the modification" is a query
+rather than new instrumentation. "The improvement" is the per-case vector before
+and after.
+
+Pull into sprint 2 alongside S3 -- that is where a human first has to judge
+trajectories rather than read totals.
+"""
+acceptance = [
+  "per attempt: every ledger entry as previous-source -> source, with its note",
+  "the trajectory: tool calls and results in order",
+  "the per-case score vector, before and after, not just the total",
+  "runs are comparable side by side, since single runs are inside the noise",
+]
+
+[[story]]
+id       = "B6"
+sprint   = 0
+title    = "How does a SERVING image keep its improvements?"
+labels   = ["backlog", "risk"]
+status   = "backlog"
+size     = "L"
+depends_on = []
+as_a     = "researcher"
+i_want   = "a way for a multi-threaded serving image to survive a restart with its accumulated state"
+so_that  = "the advantage this whole project measures is not lost the moment the process exits"
+notes = """
+MEASURED 2026-08-11, and it is a hole in the thesis rather than a chore.
+
+Two persistence mechanisms exist and they solve opposite halves:
+
+  LEDGER      carries CODE across processes. Replay (target, source) into a
+              fresh image and the definitions come back. Verified. Small,
+              selective, and works while the image keeps serving.
+              But the STATE DOES NOT CROSS -- replaying into a fresh process
+              gave back the function and left *EVENTS* empty. That is exactly
+              what a directory of files already gives you, so on its own the
+              ledger buys nothing over the file world.
+
+  SAVED CORE  carries EVERYTHING. Verified: definitions, 5000 accumulated
+              events, and a CLOSURE over a runtime value (returned 42 from a
+              captured 41) -- the one thing no source can reconstruct, and T8's
+              whole premise. 58 MB, and a new process starts from it in 0.06s,
+              matching E1's measured 75ms.
+              But save-lisp-and-die REQUIRES A SINGLE THREAD (same constraint as
+              fork) and the name is literal: IT KILLS THE PROCESS. A serving
+              image cannot checkpoint itself and stay up.
+
+So: durability and availability currently trade against each other, and the
+thing the benchmark says is the image's advantage -- accumulated live state --
+cannot survive a restart in the one configuration that matters, a serving image.
+
+docs/README.md already concedes the adjacent half: "the zygote's warm state is
+loaded code and fixtures, not the serving image's live sessions." This measures
+what that concession costs.
+
+SOLVED IN PRINCIPLE 2026-08-11, by asking what Smalltalk does.
+
+Pharo has snapshot:andQuit:false -- backupImageInFileNamed: "continues
+evaluation in the original image after saving". Smalltalk simply does not have
+this problem, and the reason is not magic: ITS CONCURRENCY LIVES INSIDE THE
+IMAGE. Processes are objects scheduled by the VM within one OS thread, so the OS
+process is always single-threaded, checkpointing is always available, and
+suspended Processes are saved as objects and resume on load. SBCL's threads are
+OS threads, which cannot be serialised into a heap -- which is exactly why
+save-lisp-and-die demands exactly one.
+
+SBCL CAN RECONSTRUCT IT, measured:
+
+  fork, then let the CHILD save-lisp-and-die while the PARENT continues.
+  Copy-on-write gives the child the whole heap. Verified end to end --
+  parent kept running with its 5000 events and its closure intact,
+  child wrote a 35 MB core, whole operation 388 ms, and the restored
+  core had the events, the closure (still returning 42 from a captured
+  41) and the function.
+
+CORRECTED, and the first version of this note overclaimed. A restored core
+preserves DATA, not CONTROL FLOW. Measured: a snapshot taken mid-loop at step 5
+restores with counter=5 and 5 steps logged -- the data as of that instant is
+exact -- and then does NOT continue the loop. It starts at :toplevel. Smalltalk
+resumes suspended Processes because a Process is an object in the image carrying
+its own stack; SBCL has no equivalent, so anything in flight at snapshot time is
+simply not in flight afterwards.
+
+For accumulated state -- events, sessions, caches, the closures in *DEFERRED* --
+this costs nothing, and it is exactly what the task set models, because E1's
+no-threads constraint already forced in-flight work to be represented as DATA
+rather than as running threads. For a server with requests actually in progress
+it is a real loss and has to be designed around: drain before snapshot, or
+accept that in-flight requests die and are retried.
+
+So this is not a limitation of the substrate. It is a CONSTRAINT ON THE SERVER:
+green threads or an event loop keeps the OS process single-threaded, and then
+snapshot-while-serving is available for ~400ms. OS threads buy conventional
+concurrency and cost both fork and checkpointing. E1's "SBCL refuses to fork
+with more than one thread" was read as a fact forcing the zygote; it is better
+read as a design choice about how the server does concurrency.
+
+The other half is worth keeping in view, because Smalltalk pays for its
+durability. Because the image persists everything forever it becomes
+unreproducible and unmergeable -- image rot, "works in my image", and the whole
+Monticello/Metacello/Tonel lineage exists to claw source back out into files.
+THE LEDGER IS AN ANSWER TO EXACTLY THAT: per-definition records with previous
+source, replayable, reviewable, merging per definition rather than per line.
+
+PRIOR ART, checked from source and docs -- do not re-research:
+
+  SMALLTALK (Pharo)  snapshot:andQuit:false, and it resumes MID-COMPUTATION. Concurrency is INSIDE the image:
+                     Processes are objects scheduled by the VM in one OS thread,
+                     so checkpointing is always available and suspended
+                     processes resume on load. Durability: YES.
+                     Price: the artifact is a binary heap -- image rot,
+                     unreproducible, hard to diff or merge. Monticello,
+                     Metacello and Tonel all exist to claw source back into
+                     files.
+
+  ERLANG/OTP         Hot code upgrade with TWO live versions of a module, and
+                     code_change/3 migrating a gen_server's state in place --
+                     a direct analogue of CLOS update-instance-for-redefined-class
+                     and therefore of T3. Live state survives the CHANGE.
+                     But the docs are explicit that PROCESS STATE DOES NOT
+                     SURVIVE A NODE RESTART: it is volatile, and the supervision
+                     tree recreates processes from scratch. Durability is pushed
+                     OUTSIDE the VM (Mnesia, DETS, external stores) and paired
+                     with let-it-crash.
+
+So Erlang is the industrial existence proof of B6's third option -- declare live
+state ephemeral and put durability elsewhere. It is a real choice, not a
+cop-out, and it should be argued against rather than ignored.
+
+DESIGN TRAP worth naming now. A core cannot be merged. If a variant became a
+core rather than a set of ledger entries, E2 claim 1 dies and Smalltalk's exact
+weakness comes back. Keep the two separate:
+  GENOME = ledger entries -- heritable, mergeable, reviewable, tiny
+  CORE   = checkpoint     -- complete, durable, unmergeable, 35-58 MB
+Lineage branches the genome. A core is a restore point, orthogonal to lineage.
+
+Neither Smalltalk nor Erlang has both halves. This project could.
+"""
+acceptance = [
+  "a serving image that survives a restart with its accumulated state -- the fork-and-save mechanism is demonstrated, so what remains is doing it under a green-threaded server that is actually serving",
+  "the cost measured: checkpoint time, core size, and whether the server stays up during it",
+  "if it cannot be done, the thesis narrowed in the docs rather than left implied",
+]
+kills_it = "The ~400ms fork-and-save pause is unacceptable under real traffic, or a green-threaded server cannot carry the load the threaded one does. Then the trade is real and live state is ephemeral in any serving configuration."
+
+[[story]]
+id       = "B7"
+sprint   = 0
+title    = "Smalltalk probe: does the durability advantage show up in outcomes?"
+labels   = ["backlog", "spike", "risk"]
+status   = "backlog"
+size     = "M"
+depends_on = []
+as_a     = "researcher"
+i_want   = "three measurements on Pharo, not a port"
+so_that  = "the substrate question is decided by evidence rather than by which architecture diagram reads better"
+notes = """
+SPINOFF, deliberately outside the main line. Runs in its own session and must not
+consume the vivarium track.
+
+Smalltalk is more genuinely an image than SBCL is, and the project's question is
+about images -- so the substrate choice deserves evidence rather than loyalty.
+What makes it a probe and not a port: three questions, no task set, no harness.
+
+  1. SNAPSHOT UNDER LOAD. Pharo's snapshot:andQuit:false while something is
+     actually serving. How long is the pause, and are in-flight requests lost?
+     SBCL's fork-and-save costs ~388ms and loses control flow entirely.
+  2. RESUME MID-COMPUTATION. Start a long computation, snapshot, restore,
+     confirm it CONTINUES. This is the one thing SBCL provably cannot do:
+     a core taken mid-loop at step 5 restores with counter=5 and then starts
+     at toplevel rather than finishing the loop.
+  3. DERIVED SCHEMA. Read a tool schema off a live method -- selector keywords
+     give argument names, reflection gives the rest. The load-bearing claim of
+     this whole project, tested on the other substrate.
+
+WHY NOT SWITCH NOW, so the spinoff does not turn into a migration: nothing
+currently open depends on B6. Trials are ephemeral by design (fork, score,
+_exit) and E4's self-edits need to survive a TURN, not a process death. And the
+ledger would still be needed on Pharo -- image rot, unreproducible artifacts and
+the whole Monticello/Metacello/Tonel lineage are what a per-definition ledger
+answers. Switching restarts the INSTRUMENT, which is the scarce thing: every
+measured number here is SBCL-specific.
+
+Pharo is not installed on this machine.
+
+"""
+acceptance = [
+  "a number for the snapshot pause under load, beside SBCL's 388ms fork-and-save",
+  "resume-mid-computation demonstrated or shown not to work in practice",
+  "a tool schema derived from a live method, or a written reason it cannot be",
+  "a recommendation with a trigger: what result would make switching correct",
+]
+kills_it = "Pharo's snapshot pause under load is no better than SBCL's, or resume-mid-computation is fragile in practice. Then Smalltalk's advantage is architectural rather than measurable and the substrate question closes in vivarium's favour."
+
+[[story]]
+id       = "B8"
+sprint   = 0
+title    = "BEAM probe: does supervision beat fork for containing a bad mutation?"
+labels   = ["backlog", "spike", "risk"]
+status   = "backlog"
+size     = "M"
+depends_on = []
+as_a     = "researcher"
+i_want   = "three measurements on Erlang/Elixir, against SBCL numbers that already exist"
+so_that  = "the strongest argument against this substrate is tested rather than admired"
+notes = """
+SPINOFF, sibling to B7. A PROPERTY PROBE, NOT A TASK-SET PORT.
+
+The case for BEAM is real and was under-weighted: self-improvement's
+characteristic failure mode is that a component eventually emits bad code, and
+OTP is the runtime built around exactly that. Hot code loading keeps two module
+versions live and code_change/3 migrates state -- both parts of the execution
+model rather than bolted on.
+
+WHY NOT "THE SAME TASKS ON ALL THREE". The task set is Lisp-specific BY
+CONSTRUCTION: T3 is update-instance-for-redefined-class, T8 is closures over
+runtime values, T16 turns on REMOVE-DUPLICATES defaulting to EQL, T17 is the
+ledger's introspection fallback. Porting them produces ANALOGOUS tasks, and then
+two different benchmarks get compared and called a substrate result. That is the
+confound harness-lineage.md already warns about -- "do not compare file-Pi
+against image-single-tool" -- at larger scale.
+
+THREE QUESTIONS, each with an SBCL number already measured to compare against:
+
+  1. CONTAINMENT. Have an agent install code that wrecks the runtime -- exhaust
+     the atom table, wedge the code server, spin in a NIF. Does supervision
+     contain it, or does the node go down? SBCL's fork contains ANY child
+     failure by construction (E1: a child that corrupts its heap cannot touch
+     the parent) at 28-32ms per trial. BEAM process isolation is INTRA-VM and
+     may be weaker for this specific failure, which is the opposite of the
+     conventional reading.
+  2. CODE-GENERATION IMPEDANCE. Time and error rate for an agent to generate,
+     compile and load a function at runtime. Erlang has no homoiconicity:
+     abstract format is tagged tuples, not the language's own literals. This is
+     BEAM's weakest cell AND the operation that happens every single turn, so it
+     carries the most information. Compare against install: read one form,
+     compile into the image, done.
+  3. HOT UPGRADE WITH STATE. code_change/3 migrating a gen_server's state --
+     the direct analogue of T3, which neither model has solved in vivarium.
+     Does the runtime making it first-class change the outcome?
+
+DO NOT MEASURE: throughput, distribution, syntax. E1 already showed parallel
+fan-out barely beats sequential (28.3 vs 31.8ms), so distribution is a
+capability with no demonstrated requirement here.
+
+THE DEEPER POINT, which belongs in HANDOFF.md rather than here: the three
+substrates encode three DIFFERENT DEFINITIONS of self-improvement --
+  SBCL      the agent is a program that rewrites programs
+  Smalltalk the agent is a computational organism that persists
+  BEAM      the agent is a society that survives by replacing members
+The headline question presupposes the first two. Erlang's framing is not another
+implementation of it; it is another question. That choice has never been made
+explicitly and should be.
+
+Asymmetry worth keeping in view when reading the result: supervision, isolation,
+restart and versioning are PATTERNS you can build -- this project already has
+fork isolation, a ledger, and rollback. Homoiconicity is not obtainable as a
+library.
+"""
+acceptance = [
+  "containment measured: does a runtime-wrecking mutation take the node down, beside SBCL fork's guarantee that it cannot",
+  "code-generation impedance measured as time and error rate, beside install",
+  "a recommendation with a trigger: what result would make BEAM the right substrate",
+  "no task-set port -- if the probe starts porting tasks it has become a rewrite and should stop",
+]
+kills_it = "Supervision does not contain a runtime-wrecking mutation any better than fork already does, and code-generation impedance is materially worse. Then BEAM's advantages are ones this project can build, and the substrate question closes."
+
+[[story]]
+id       = "B3"
+sprint   = 0
+title    = "Cost model for scored runs"
+labels   = ["backlog", "infra"]
+status   = "backlog"
+size     = "S"
+depends_on = ["S1"]
+as_a     = "researcher"
+i_want   = "an estimate of tokens and money per sweep before I start one"
+so_that  = "a run does not die halfway through on an exhausted balance"
+notes = "DeepSeek's balance was $9.24 at setup. OpenRouter's gpt-oss-120b is cheap enough to ignore; DeepSeek is not, for a full sweep. Trivial to fold into the first experiment runner that loops."
+acceptance = ["a per-sweep estimate printed before the sweep runs"]
