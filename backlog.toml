@@ -162,6 +162,64 @@ FROZEN 2026-08-11. No new substrate concepts unless an experiment forces one.
 The next thing that happens is B11, not more architecture."""
 
 [[settled]]
+ref   = "B11 / context"
+claim = "Compression of an agent's conversational context is worth doing; the restart used to deliver it is not."
+result = """Measured, 34 usable pairs across 7 tasks and 6 families. The two effects are
+separable and point opposite ways:
+
+  compression itself   USEFUL      LEDGER - SHAM  =  -2,400 tokens, 25/34
+  restart itself       EXPENSIVE   SHAM   - FULL  =  +3,000 tokens, 31/34
+                                                     -------------
+  the combination lost             LEDGER - FULL  =    +600 tokens, 22/34
+
+Score is flat throughout -- FULL +0.016, DISTILLED -0.010, LEDGER -0.057
+against SHAM -- so nothing is bought or lost there and the efficiency numbers
+mean something.
+
+THE OPERATIONAL RULE, available to any harness today and independent of
+substrate: DO NOT RESTART IN ORDER TO COMPRESS. If a restart is happening
+anyway, reconstruct from the ledger rather than replaying the full transcript;
+it costs about 0.06 of score.
+
+DISTILLATION AS SPECIFIED LOST TO THE TRANSCRIPT IT REPLACED: +1,698 tokens
+against SHAM before the restart is even counted, +4,687 against continuing, at
+6.18 turns against FULL's 2.68 -- with the summariser's own call charged to it,
+which is what made the loss visible instead of flattering. Scope: ONE FROZEN
+SUMMARISER, one prompt, one call, untuned by construction. A result about that
+distillation, not about distillation. Tuning it until it wins and still calling
+it B11 is forbidden; B13 is where the separable question goes.
+
+WHAT THIS DOES NOT SETTLE. Not "the ledger is sufficient cognition" -- FULL
+still wins sometimes. Not anything about full computational continuation, which
+was never an arm. The layered model that survives is: LEDGER authoritative,
+TRANSCRIPT ephemeral working cognition, RUNTIME CONTINUATION not shown
+necessary. B7's capability still has no workload-level reason to migrate, B8
+stays live because explicit state has not been shown inadequate, and B12 is
+untouched -- B11 says nothing about removing a promoted change cleanly."""
+
+[[settled]]
+ref   = "B11 / method"
+claim = "A harness optimisation observed on tasks designed for another property needs cross-family replication before it becomes architecture."
+result = """Stronger than "benchmarks matter", and B11 supplies the demonstration rather
+than the warning. B10 stage 1 noticed ledger restart finishing in 4.6 turns
+against 6.5 -- incidental, on family D, which had been built to test
+path-dependence and was then shown not to have it. B11 deliberately did not
+inherit that task set. The observation split:
+
+  LEDGER - FULL   family D, B10's original ground   -2,229   cheaper 7/10
+                  the five tasks outside it         +1,774   cheaper 5/24
+
+IT REPLICATES EXACTLY WHERE IT WAS FIRST SEEN AND REVERSES EVERYWHERE ELSE. Had
+B11 reused B10's tasks it would have confirmed a local property as a general
+one, with a pre-registration and a paired control lending it false weight.
+
+The rule generalises past this instance: an effect noticed while measuring
+something else is a hypothesis about the tasks in front of you until it is
+re-measured on tasks chosen for it. It also cost nothing to apply here -- the
+cross-family spread was one line of the pre-registration and it turned a wrong
+architectural conclusion into a measured boundary."""
+
+[[settled]]
 ref   = "harness"
 claim = "The image is a viable agent world."
 result = "Arm A repairs a broken definition in a running image (TYPE-ERROR to 35, verified by calling it) and extends itself mid-run (7 tools to 8, no restart). 272 assertions green."
@@ -1591,7 +1649,7 @@ id       = "B11"
 sprint   = 0
 title    = "Does context distillation beat carrying the transcript?"
 labels   = ["backlog", "experiment", "harness"]
-status   = "backlog"
+status   = "done"
 size     = "S"
 depends_on = ["S1"]
 as_a     = "researcher"
@@ -1675,6 +1733,67 @@ rather than a story told afterwards: the most consequential outcome is not
 LEDGER winning but the MIDDLE arm -- DISTILLED > LEDGER and DISTILLED >= SHAM at
 lower cost than FULL, which would say useful cognition exists and the raw
 trajectory is the wrong representation of it.
+
+---------------------------------------------------------------------------
+RESULT 2026-08-11, docs/b11-preregistration.md. 35 pairs, 34 usable, 1
+ineligible, 0 dropped, 0 faults, 0 retries. gpt-oss-120b, checkpoint turn 4,
+7 tasks across 6 families. Sign consistency across the 34 pairs carries this,
+not the means.
+
+SCORE FIRST, against SHAM: FULL +0.016, DISTILLED -0.010, LEDGER -0.057. No arm
+loses enough to end the experiment, so efficiency is meaningful. LEDGER's
+-0.057 is small but one-sided -- worse in six pairs, better in one.
+
+THE FINDING IS THE DECOMPOSITION, not "ledger beats transcript":
+
+  dropping the transcript saves     ~2,400 tokens   LEDGER - SHAM,  25/34
+  the restart it requires costs     ~3,000 tokens   SHAM   - FULL,  31/34
+                                    -------------
+  net against just continuing         ~+600 tokens  LEDGER - FULL,  22/34
+
+COMPRESSION GENUINELY WORKS. THE RESTART IT REQUIRES COSTS MORE THAN THE
+COMPRESSION SAVES. So the operational rule is: do not restart in order to
+compress; if a restart is happening anyway, reconstruct from the ledger rather
+than replaying the full transcript. That is a harness decision available today.
+
+THE PRE-REGISTERED PREDICTION IS DISCONFIRMED, 3 clauses of 4. DIST < SHAM
+fails (+1,698), DIST < FULL fails (+4,687), DIST >= SHAM on score fails
+(-0.010); only DIST > LEDGER on score holds (+0.047). Distillation is WORSE
+than the raw transcript it replaces, at 6.18 turns against FULL's 2.68, with
+the summariser's own call charged to it -- which is why it was charged.
+
+THE FOUR-ARM DESIGN PAID FOR ITSELF: the ~3,000-token restart cost is exactly
+what three arms would have buried inside "ledger restart is cheaper".
+
+B10's OBSERVATION WAS A PROPERTY OF FAMILY D. LEDGER - FULL is -2,229 on family
+D, where B10 measured it (cheaper in 7/10), and +1,774 on the five tasks
+outside it (cheaper in only 5/24). It replicates exactly where B10 looked and
+reverses everywhere else -- the mirror-image failure this story was written to
+catch, now measured rather than feared.
+
+GENERALISATION GATE PASSES, NARROWLY: keeping the transcript beat dropping it
+in 4 of 34 pairs, T18 (3/5) and T11 (1/5). The broad claim is not forbidden. It
+is also not comfortable -- on five of seven tasks the transcript never once
+earned its place.
+
+SCOPE, and this bounds the claim: ONE FROZEN SUMMARISER. A single prompt, one
+call, untuned by construction. This is a result about THAT distillation, not
+about distillation. FROZEN -- do not tune the summariser until it wins and keep
+calling the result B11; a better-targeted summariser is a different experiment
+and its honest form pre-registers the prompt again.
+
+WHAT IT DOES NOT ESTABLISH, stated because the temptation is to over-read it.
+Not "the ledger is sufficient cognition" -- FULL still wins sometimes and
+LEDGER loses slightly on aggregate score. Not that full computational
+continuation is unnecessary; B11 never tested continuation. What survives is a
+layered model: ledger AUTHORITATIVE, transcript EPHEMERAL working cognition,
+runtime continuation NOT SHOWN NECESSARY. So B7's capability still has no
+workload-level reason to migrate, B8 stays live because explicit state has not
+been shown inadequate, and B12 is untouched -- B11 says nothing about clean
+removal of promoted changes.
+
+THE COUPLING B11 EXPOSED, filed as B13 and deliberately NOT run now:
+compression and restart were coupled by the MECHANISM, not by necessity.
 """
 acceptance = [
   "three arms over a task set chosen for this question, not inherited from B10, with score reported before efficiency",
@@ -1785,8 +1904,8 @@ component X, installs it registering a tool and a listener and a service and
 allocating owned state, evaluates, promotes, operates, then replaces or retracts
 it, and reconciles.
 
-SIX THINGS TO MEASURE. The paper supplies the expected answer for each, which is
-what makes a disagreement informative rather than a bug hunt:
+SEVEN THINGS TO MEASURE. The paper supplies the expected answer for each, which
+is what makes a disagreement informative rather than a bug hunt:
 
   A CLEAN UNLOAD, against S3.3.2's bar and not a stricter one. Two states are
     equivalent when their COEFFECT PROJECTIONS agree -- "the part of a state that
@@ -1852,10 +1971,43 @@ what makes a disagreement informative rather than a bug hunt:
     component requires is known before it runs", which is a stronger pre-install
     review surface than vivarium currently has.
 
+AMENDED 2026-08-11, AFTER B11 CLOSED. Two changes, neither cosmetic.
+
+WHICH CASES ARE LOAD-BEARING. Seven cases is a description of the surface, not a
+plan for what to do when the probe runs long. Four carry the result:
+
+  B  FAILED PARTIAL INSTALL   do already-installed effects actually disappear
+  D  DEPENDENCY WITHDRAWAL    is this more than a disposer stack
+  E  WRONG INVERSE            Cordis says clean, reconciliation says otherwise
+  A + C  CLEAN UNLOAD AND REPLACEMENT   the CONTROLS -- without them B, D and E
+         have no baseline and a failure cannot be told from a probe that never
+         worked
+
+F (effect classification) and G (ledger reconciliation) are recorded from what
+the other five produce; they do not need their own runs. If time is short, A, B,
+C, D, E is the set.
+
+MEASURE CORDIS AS IT EXISTS. Do not improve it with vivarium ideas on the first
+pass, and do not go looking for the intersection before the boundary is located.
+The order is:
+
+  1. establish where the ACTUAL Cordis boundary lies -- what it retracts, what
+     it leaves, what it reports, on B, D and the two controls
+  2. ONLY THEN case E, where the incomplete inverse can show whether
+     CORDIS + RECONCILIATION is stronger than either layer alone
+
+Backwards, E measures a strawman: layering B9's reconciliation on a runtime
+whose own guarantees have not been characterised produces a finding about
+vivarium's checker, not about the composition. The composition claim needs both
+halves measured separately first.
+
 THE CONCEPT THIS SHOULD PRODUCE, whatever the measurements say:
 
   PROPOSE -> ISOLATE -> EVALUATE -> PROMOTE -> ACTIVATE -> OPERATE
           -> SUPERSEDE/RETRACT -> DEACTIVATE -> RECONCILE
+
+B12 enters that lifecycle at SUPERSEDE/RETRACT. Everything left of it exists in
+vivarium already; nothing right of it does.
 
 DO NOT IMPLEMENT CORDIS SEMANTICS IN SBCL YET. Probe first, then extract only
 what measurement justifies -- plausibly no more than
@@ -2216,6 +2368,64 @@ acceptance = [
   "no task-set port -- if the probe starts porting tasks it has become a rewrite and should stop",
 ]
 kills_it = "Supervision does not contain a runtime-wrecking mutation any better than fork already does, and code-generation impedance is materially worse. Then BEAM's advantages are ones this project can build, and the substrate question closes."
+
+[[story]]
+id       = "B13"
+sprint   = 0
+title    = "In-place compaction: the compression saving without the restart tax"
+labels   = ["backlog", "experiment", "harness", "not-sequenced"]
+status   = "backlog"
+size     = "S"
+depends_on = ["B11"]
+as_a     = "researcher"
+i_want   = "the transcript replaced by a compact representation WITHOUT rebuilding the agent"
+so_that  = "the one saving B11 measured is available without the cost B11 measured beside it"
+notes = """
+FILED, NOT SEQUENCED. It does not run before B12 and must not derail the frozen
+order. Recorded now only because B11 makes the question precise and the reason
+for it will be harder to reconstruct later.
+
+B11 MEASURED TWO SEPARATE THINGS AND FOUND THEM COUPLED BY THE MECHANISM RATHER
+THAN BY NECESSITY:
+
+  compression itself   USEFUL      LEDGER - SHAM  =  -2,400 tokens, 25/34
+  restart itself       EXPENSIVE   SHAM   - FULL  =  +3,000 tokens, 31/34
+                                                     -------------
+  so the combination lost          LEDGER - FULL  =    +600 tokens, 22/34
+
+Every compressed arm in B11 was also a RESTARTED arm, because the instrument
+was B10's fork-and-rebuild harness and compression was expressed by handing a
+different context to a rebuilt agent. Nothing in the finding requires that. An
+agent can keep running -- same object, same tools, same in-flight state -- and
+have its accumulated conversational history replaced in place.
+
+  FULL                  vs   IN-PLACE COMPACTION
+  keep the transcript        keep the agent, replace the history
+
+THE PREDICTION, recorded now so it is a prediction: about -2,400 tokens of
+compression saving with none of the +3,000 restart tax. If that holds it is the
+combination B11 could not produce. If in-place compaction ALSO costs ~3,000,
+the restart was never the cause and B11's decomposition is wrong -- which is the
+result worth having either way.
+
+WHAT IT MUST NOT INHERIT FROM B11:
+  - the summariser. B11's frozen summariser was measured and lost; reusing it
+    would test the same losing distillation through a new mechanism. Compact to
+    the LEDGER representation, which is the arm that actually saved tokens.
+  - the task set alone. B11 found LEDGER - FULL reversing sign between family D
+    and everything else. Spread across families or the result is about tasks.
+
+WHY IT IS NOT FREE: this needs a harness that can rewrite an agent's history
+mid-run without a fork, which vivarium's E3 mechanism (prompt and tools re-read
+per request) makes plausible but does not supply. That machinery is the story.
+"""
+acceptance = [
+  "in-place compaction measured against FULL on the same tasks and checkpoint discipline as B11, so the two results are comparable",
+  "the restart tax shown absent or present -- if in-place compaction costs the same ~3,000 tokens, B11's decomposition is refuted and that is the finding",
+  "spread reported and sign consistency across pairs, never a bare mean",
+  "cross-family, with the family-D contrast reported separately as B11 did",
+]
+kills_it = "In-place compaction costs what the restart cost, or the saving evaporates once the agent keeps its own state. Then compression and restart were never separable in this harness and B11's operational rule stands unchanged as the final word."
 
 [[story]]
 id       = "B3"

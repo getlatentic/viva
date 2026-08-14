@@ -292,3 +292,32 @@ construction. This is a result about *that* distillation, not about distillation
 A cheaper or better-targeted summariser is a different experiment, and the honest
 version of it would pre-register the prompt again rather than tune until the
 arm wins.
+
+**What it does not establish.** Not that the ledger is sufficient cognition —
+FULL still wins sometimes and LEDGER loses slightly on aggregate score. Not
+anything about full computational continuation, which was never an arm. What
+survives is a layered model: the ledger **authoritative**, the transcript
+**ephemeral working cognition**, runtime continuation **not shown necessary**.
+[B7](smalltalk-probe.md) keeps a demonstrated capability with no workload-level
+reason to migrate; B8 stays live because explicit state has not been shown
+inadequate; B12 is untouched, because nothing here concerns removing a promoted
+change cleanly.
+
+**Frozen.** The result stands as measured. Tuning the summariser until it wins
+and continuing to call it B11 is not available.
+
+## The follow-up this exposes — filed as B13, not run
+
+Compression and restart were coupled by the **mechanism**, not by necessity.
+Every compressed arm here was also a restarted arm, because the instrument was
+B10's fork-and-rebuild harness.
+
+```
+FULL   vs   IN-PLACE COMPACTION
+            keep the agent running, replace the history
+```
+
+Predicted: the ~2,400-token compression saving without the ~3,000-token restart
+tax — the combination B11 could not produce. If in-place compaction costs the
+same ~3,000, the restart was never the cause and the decomposition above is
+wrong, which is worth knowing either way. It does not run before B12.

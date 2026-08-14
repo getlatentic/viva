@@ -24,11 +24,12 @@ that kills it. They are independent unless a dependency is named.
 | [E6](e6-harness-teardown.md) | production harness teardown | read how Codex and Claude Code actually assemble a request | partial |
 | [harness](harness-lineage.md) | `vivarium` — Pi's loop ported, then diverged | shared substrate for E3–E5 | **arm A repairs a live image and extends itself; 40 tests green** |
 | [B7](smalltalk-probe.md) | Smalltalk probe (spinoff) | Smalltalk is the better substrate for a live-image harness | **done — no execution-model reason left to reject it. A Pharo image forks and keeps serving: 475 forks, 0 failures, 0 requests lost, every child's image resumes mid-computation. Fork stalls are the same order of magnitude as SBCL's, not better or worse — both figures are small-sample and the in-image clock is entangled with the scheduler. What remains is source-level self-description (the ledger's job, now [B9](../backlog.toml)) and one unanswered question ([B10](../backlog.toml))** |
-| [B10](../backlog.toml) | does live continuation improve outcomes? | resuming exact live computation beats reconstructing state from the ledger | **halted — not identifiable on this workload. Two rounds, two proxies mistaken for the property: run length, then a legible interaction. Any defect expressible in source is found by *reading*, and reading accumulates no search state worth losing. Reopen on a real task with expensive reproducible investigative state; the instrument is built and validated. See also — B7 proved the capability, not the benefit. Three arms: naive reconstruction → explicit durable cognition → captured computation, so a Smalltalk win cannot just mean the SBCL schema was too thin. Sequences B8** |
-| [B8](../backlog.toml) | BEAM probe | supervision contains a bad mutation better than fork, and hot upgrade beats reconstruction | **queued behind B10. Third persistence philosophy: replace supervised members from durable state — the industrial existence proof of B10's arm A2, not a fourth arm** |
-| [B11](../backlog.toml) | context distillation | a distilled or ledger-only context beats carrying the full transcript | **fell out of B10 stage 1: ledger restart ran 4.6 turns vs 6.5 at equal score. Next up — it improves the harness regardless of substrate** |
-| [B12](../backlog.toml) | Cordis probe | reversible effects solve the half of self-evolution vivarium never modelled | **how an *accepted* mutation leaves the organism. Runs before B8, which it re-frames: execution containment vs effect containment** |
-| [B9](../backlog.toml) | mutation observability | every persistent self-modification produces evidence | **generalised out of B7 — the dangerous operation is unobserved state transition, not code generation** |
+| [B10](b10-preregistration.md) | does live continuation improve outcomes? | resuming exact live computation beats reconstructing state from the ledger | **halted — not identifiable on this workload. Two rounds, two proxies mistaken for the property: run length, then a legible interaction. Any defect expressible in source is found by *reading*, and reading accumulates no search state worth losing. Reopen on a real task with expensive reproducible investigative state; the instrument is built and validated. See also — B7 proved the capability, not the benefit. Three arms: naive reconstruction → explicit durable cognition → captured computation, so a Smalltalk win cannot just mean the SBCL schema was too thin** |
+| [B11](b11-preregistration.md) | context distillation | a distilled or ledger-only context beats carrying the full transcript | **done — compression works; the restart it requires does not pay for it. 34 pairs: dropping the transcript saves ~2,400 tokens, the restart it needs costs ~3,000, net +600 against simply continuing, with score flat throughout. The pre-registered middle-arm prediction is disconfirmed on 3 clauses of 4 — the distilled summary is *worse* than the transcript it replaces. And B10's observation was a property of family D: `LEDGER − FULL` is −2,229 where B10 measured it and +1,774 everywhere else** |
+| [B12](../backlog.toml) | Cordis probe | reversible effects solve the half of self-evolution vivarium never modelled | **next. How an *accepted* mutation leaves the organism — the one lifecycle stage vivarium has no answer for, and the one B11 says nothing about. Four load-bearing cases: partial activation failure, dependency withdrawal, wrong inverse, plus clean unload and replacement as controls. Measure Cordis as it exists before layering reconciliation on it. Runs before B8, which it re-frames: execution containment vs effect containment** |
+| [B8](../backlog.toml) | BEAM probe | supervision contains a bad mutation better than fork, and hot upgrade beats reconstruction | **queued behind B12. Third persistence philosophy: replace supervised members from durable state — the industrial existence proof of B10's arm A2, not a fourth arm. Still live: B11 did not show explicit state inadequate** |
+| [B9](../backlog.toml) | mutation observability | every persistent self-modification produces evidence | **generalised out of B7 — the dangerous operation is unobserved state transition, not code generation. Independent of the B12 → B8 order** |
+| [B13](../backlog.toml) | in-place compaction | the transcript can be compacted without rebuilding the agent | **filed, not sequenced. B11 coupled compression to restart through the *mechanism*, not by necessity. Predicts ~2,400 tokens saved with none of the +3,000 restart tax — or refutes B11's decomposition. Does not run before B12** |
 
 ## The substrate investigation, as three falsifiable questions
 
@@ -45,9 +46,18 @@ have a kill criterion, plus a fourth primitive that outlives all of them:
 
 Answered in dependency order rather than as a bake-off. [B7](smalltalk-probe.md)
 asked whether computational capture *works* and found that it does.
-[B10](../backlog.toml) asks whether it is *useful* — and sequences
-[B8](../backlog.toml), because BEAM supplies supervised replacement around
-explicit state, which is the model B10's arm A2 tests. [B9](../backlog.toml) runs
+[B10](b10-preregistration.md) asked whether it is *useful* and could not identify
+the effect on this workload. [B11](b11-preregistration.md) then measured what
+cognitive state should cross a version boundary at all, and its answer leaves the
+substrate question exactly where it was: the ledger is authoritative, the
+transcript is ephemeral working cognition, and runtime continuation was never an
+arm — so Smalltalk still has no workload-level reason to migrate, and BEAM stays
+live because explicit state has not been shown inadequate.
+
+That is why the order is now [B12](../backlog.toml) → [B8](../backlog.toml).
+B12 attacks a capability vivarium genuinely lacks — how a promoted change leaves
+— rather than another representation hypothesis, and it re-frames B8 as effect
+containment against execution containment. [B9](../backlog.toml) runs
 independently of all of it.
 
 ## Prior art, settled
