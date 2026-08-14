@@ -33,7 +33,11 @@ would measure the cap rather than the burden.")
   (and (null (tasks:attempt-error attempt))
        (null (tasks:attempt-contamination attempt))
        (let ((scores (tasks:attempt-scores attempt)))
-         (and scores (every (lambda (pair) (>= (cdr pair) 1)) scores)))))
+         ;; A case that SIGNALLED scores NIL, not 0 -- the agent left the world
+         ;; in a state the case could not even be evaluated against. That is
+         ;; further from a solve than a plain failure, never closer.
+         (and scores (every (lambda (pair) (and (numberp (cdr pair)) (>= (cdr pair) 1)))
+                            scores)))))
 
 (defun b14-run (&key (attempts *b14-attempts*) oracle (label "CONTROL"))
   (let ((arm (or (find "gpt-oss-120b" (available-arms) :key #'arm-label :test #'string=)
@@ -103,7 +107,10 @@ would measure the cap rather than the burden.")
     (let ((tally (make-hash-table :test #'equal)))
       (dolist (row operational)
         (loop for (name . score) in (getf row :scores)
-              unless (>= score 1) do (incf (gethash name tally 0))))
+              unless (and (numberp score) (>= score 1))
+                do (incf (gethash (if (numberp score) name
+                                      (concatenate 'string name " [SIGNALLED]"))
+                                  tally 0))))
       (if (zerop (hash-table-count tally))
           (format t "        none~%")
           (maphash (lambda (name n)

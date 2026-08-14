@@ -175,6 +175,10 @@ definition may be correct while objects, caches, registries or other values
 created earlier are stale. Use the inspection tools when runtime state may be
 part of the failure.
 
+Installing a definition DEFINES it; it does not run it. If your repair is a
+function that has to execute -- to update stored data, rebuild a cache, migrate
+instances -- you must call it after installing it.
+
 Read a definition before you replace it. Install exactly one top level form at a
 time. If a change does not do what you expected, roll it back rather than
 installing a second fix on top of it. Verify from outside the image where you

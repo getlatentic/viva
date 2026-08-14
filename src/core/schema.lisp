@@ -21,11 +21,24 @@
 ;;; TYPE is :STRING :INTEGER :NUMBER :BOOLEAN :OBJECT, (:ARRAY <type>), or NIL
 ;;; for "any", which is emitted as a schema with no type rather than a guess.
 
+(defparameter +scalar-types+ '(:string :integer :number :boolean :object))
+
 (defun type-schema (type)
+  "Refuses a type it does not recognise rather than downcasing it into a schema.
+
+The permissive version emitted a bare :ARRAY as {\"type\": \"array\"} with no
+items -- structurally incomplete, silently sent, and invisible locally because
+TYPE-MATCHES-P has its own cond that did not match it either, so validation
+passed and only the model saw the damage. A typo in a parameter spec has to fail
+here, at load time, rather than become a malformed tool schema."
   (cond ((null type) (obj))
         ((and (consp type) (eq :array (first type)))
          (obj "type" "array" "items" (type-schema (second type))))
-        (t (obj "type" (string-downcase (symbol-name type))))))
+        ((member type +scalar-types+) (obj "type" (string-downcase (symbol-name type))))
+        ((eq type :array)
+         (error "Parameter type :ARRAY needs an element type, e.g. (:array :string)."))
+        (t (error "Unknown parameter type ~s. Expected ~{~s~^, ~}, (:array <type>), or NIL for any."
+                  type +scalar-types+))))
 
 (defun parameter-json (spec)
   (destructuring-bind (name type description &key required-p enum default) spec

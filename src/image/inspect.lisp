@@ -200,7 +200,12 @@ no arithmetic. To relate several values, look at each one and compare them
 yourself. Large values come back as a handle you can pass as target to descend."
   :parameters (("target" :string "A variable or function name, e.g. \"*EVENTS*\" or \"ORDER-TOTAL\", or a handle like \"#h3\"" :required-p t)
                ("step" :string "One step inside it: a list index, a hash key, or a slot name" :required-p nil)
-               ("args" :array "Arguments, when target names a function. Literals or handles only." :required-p nil))
+               ;; (:ARRAY :STRING), not a bare :ARRAY. SCHEMA:TYPE-SCHEMA tests
+               ;; (and (consp type) (eq :array (first type))), so a bare keyword
+               ;; falls through to the scalar branch and ships {"type":"array"}
+               ;; with NO items. Local validation still passed, which is exactly
+               ;; how it survived a unit exercise and broke on the wire.
+               ("args" (:array :string) "Arguments, when target names a function. Literals or handles only." :required-p nil))
   (handler-case
       (render (observe (gethash "target" args)
                        (gethash "step" args)
@@ -208,4 +213,40 @@ yourself. Large values come back as a handle you can pass as target to descend."
     (error (condition)
       (tool:make-tool-result :output (princ-to-string condition) :error-p t))))
 
-(defun tool-set () (list inspect-value))
+;;; Running what you installed.
+;;;
+;;; THE MISSING PRIMITIVE, found by tracing one live attempt rather than by
+;;; reading scores. Twice the model wrote a correct generic repair -- a DEFUN
+;;; looping over the population -- installed it, and announced the task done. It
+;;; never ran it, because nothing in the tool set runs anything, and the system
+;;; prompt says an image is changed "by compiling one definition into it".
+;;;
+;;; That is TRUE when the repair is correcting a definition, which is every task
+;;; from T1 to T23, and FALSE when the repair is mutating stored data. The whole
+;;; of E24's evidence was collected against a tool set that could not express the
+;;; solution the model kept reaching for.
+;;;
+;;; Deliberately NOT folded into INSPECT_VALUE, which can technically funcall an
+;;; fbound symbol. A tool named "inspect" that mutates the world is a lie, and it
+;;; would corrupt Gate 2 -- a call that changes state is not an observation, and
+;;; must not be counted as one.
+
+(tool:define-tool call-function (args context)
+  :description "Call a function you have installed, to actually run it. Installing
+a definition only defines it; nothing happens until something calls it. Arguments
+are literals or handles, never expressions."
+  :parameters (("name" :string "The function to call, e.g. \"REPAIR-QUOTES\"" :required-p t)
+               ("args" (:array :string) "Arguments as literals or handles" :required-p nil))
+  (handler-case
+      (let* ((text (gethash "name" args))
+             (symbol (or (resolve-symbol text)
+                         (error "Nothing named ~a in this image." text))))
+        (unless (fboundp symbol)
+          (error "~a is not a function." text))
+        (let ((value (apply symbol (mapcar #'read-literal
+                                           (coerce (or (gethash "args" args) '()) 'list)))))
+          (format nil "Called ~a.~%Returned: ~a" text (render value))))
+    (error (condition)
+      (tool:make-tool-result :output (princ-to-string condition) :error-p t))))
+
+(defun tool-set () (list inspect-value call-function))
