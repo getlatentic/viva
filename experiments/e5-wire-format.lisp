@@ -75,7 +75,7 @@ with a one line note.")
 
 (defun json-arm ()
   (format t "~&~%=== JSON arm: native function calling ===~%")
-  (let* ((agent (make-instance 'agent :provider *provider*:queued-agent
+  (let* ((agent (make-instance 'agent:queued-agent :provider *provider*
                                :model "gpt-oss-20b" :reasoning-effort "low"
                                :system-prompt "Use your tools." :tools (list install-tool)
                                :max-tokens 2048))
@@ -94,7 +94,7 @@ with a one line note.")
 (defun sexp-arm ()
   (format t "~&~%=== Lisp arm: one GBNF-constrained s-expression ===~%")
   (let* ((grammar (sexp:grammar-for "install" *parameters* :prefix provider:+harmony-output-prefix+))
-         (agent (make-instance 'agent :provider *provider*:queued-agent
+         (agent (make-instance 'agent:queued-agent :provider *provider*
                                :model "gpt-oss-20b" :reasoning-effort "low"
                                :grammar grammar
                                :system-prompt

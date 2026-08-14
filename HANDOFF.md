@@ -19,14 +19,16 @@ say so.
 
 ## What is real, and what it does
 
-`~/workspace/vivarium` — 2,283 source lines, 242 tests green, SBCL 2.6.7 / macOS
-ARM64. Three ASDF systems with dependencies pointing inward:
+`~/workspace/vivarium` — 424 tests green, SBCL 2.6.7 / macOS ARM64. Five ASDF
+systems with dependencies pointing inward:
 
 | system | what it is |
 |---|---|
 | `vivarium` | the harness: messages, tools, schemas, agent, loop, providers |
 | `vivarium/image` | one task domain: a live Lisp image to read, change and undo |
+| `vivarium/tasks` | the benchmark: 17 tasks, their fixtures, and the cases that score them |
 | `vivarium/search` | forked scored trials, an archive, selection over it |
+| `vivarium/cli` | `bin/vivarium` — one entry point for every run |
 
 The split is tested, not aspirational: `(ql:quickload :vivarium)` leaves
 `VIVARIUM.IMAGE` and `VIVARIUM.TRIAL` absent from the world.
@@ -88,10 +90,17 @@ body subsuming the other.
 
 *Mutating a live agent object changes what the agent can do on its next request.*
 
-The claim narrowed twice under evidence. Pi already polls steering at the end of
-every inner iteration, so "content steering below the turn boundary" was not
-unclaimed. What no harness does is change the **system prompt or tool set** mid-run —
-both are startup-resolved in Pi and Codex. That works here and is tested.
+The claim has narrowed **three times** under evidence. Pi already polls steering at
+the end of every inner iteration, so "content steering below the turn boundary" was
+never unclaimed. Then opencode turned out to rebuild *both* prompt and tool set on
+every request, with a plugin hook existing purely to rewrite the prompt — so
+"startup-resolved" describes Pi and Codex, not every harness.
+
+What survives, and it is sharper: **no harness lets an agent acquire a capability that
+did not exist at startup.** opencode's `resolveTools` is a filter that never adds;
+Claude Code's `mcp_toggle` gates a pre-registered server. Both re-evaluate *which* of a
+known set is live. Installing a `DEFUN` and deriving a tool from the resulting function
+is the tier none of them reach, and it is tested here.
 
 Streaming then added a tier neither has: **abort in flight**. Measured on one prompt,
 `ABORTED after 1,927 ms / 0 deltas` against `STOP after 323,875 ms / 1,352 deltas`.
@@ -132,14 +141,53 @@ guarantee JSON gets automatically. Three findings, one against the case:
 **Kills it:** that Lisp-quality gap, measured on its own before building arm B; or
 free-form eval making trajectories unauditable.
 
-### E6 — production harness teardown · **partial**
+### E6 — production harness teardown · **largely answered**
 
-Not a build, a read. Codex is vendored and was read from source — the steering
-findings came from there. Claude Code's binary is confirmed extractable
-(`~/.local/share/claude/versions/<ver>`, Bun-compiled, plaintext JS bundle) but not
-yet read. One question only: **what is fixed at turn start versus re-read per
-request.** That is E3's baseline, and it is a fact about those programs rather than
-something to reason out.
+Not a build, a read, with one question: **what is fixed at turn start versus re-read
+per request.** Answered for Codex and Pi from source, and for Claude Code from its
+control protocol — which is open source in the Agent SDK and again in the desktop
+app's Electron bundle, so the Bun-compiled CLI never had to be reverse-engineered.
+
+Every control request a running Claude Code session accepts: `initialize, interrupt,
+stop_task, set_model, set_permission_mode, rewind_files, mcp_toggle, mcp_status,
+mcp_reconnect, get_context_usage`. **No `set_system_prompt`, no `set_tools`.** The
+model can change mid-session; the prompt cannot. `mcp_toggle` is `(serverName,
+enabled)` — a *pre-registered* server on or off — so the tool list can move without a
+new tool ever being introduced. That is the exact line E3 claims to cross.
+
+opencode was the last one read, and it moved the answer — see E3. Its turn loop
+(`prompt.ts:1088`) re-resolves the tool set every iteration and rebuilds the system
+prompt on every request. But `resolveTools` is `Record.filter`: it removes what
+permission disabled and never adds.
+
+## An unresolved choice, stated rather than implied
+
+The question at the top presupposes an answer it never argued for. Three runtimes
+support live change, and each encodes a **different definition of self-improvement**:
+
+| | the agent is | strongest at |
+|---|---|---|
+| **SBCL** | a program that rewrites programs | code is data, so generating and installing a definition has almost no impedance |
+| **Smalltalk** | a computational organism that persists | snapshot resumes mid-computation; stacks are objects |
+| **BEAM** | a society that survives by replacing members | a bad mutation dies and is supervised away, and two module versions run at once |
+
+"What does a harness gain when the agent's world is a running image" quietly assumes
+the first two. **Erlang's framing is not another implementation of that question; it is
+a different question** — and one whose failure mode ("a component will eventually emit
+bad code") is arguably the one self-improvement actually has.
+
+This has never been chosen explicitly. Two probes exist to inform it —
+[B7](backlog.toml) on Pharo, [B8](backlog.toml) on BEAM — both deliberately scoped as
+property probes rather than task-set ports, because the task set is Lisp-specific by
+construction and porting it would compare two benchmarks while calling the result a
+substrate comparison.
+
+The asymmetry to weigh when they report: supervision, isolation, restart and
+versioning are **patterns** — this project already has fork isolation, a ledger and
+rollback. Homoiconicity is not obtainable as a library. And fork's containment is
+stronger than it looks: BEAM's process isolation is intra-VM, so a mutation that wrecks
+the runtime takes the node, whereas E1's forked child cannot touch its parent by
+construction.
 
 ## What is settled, so nobody re-researches it
 
@@ -196,16 +244,44 @@ evidence invented.
 
 ## Where to pick up
 
-1. **E5's Lisp-quality gap**, measured alone. It is cheap, it is the likeliest reason
-   the single-tool arm loses, and it needs no new machinery.
-2. **E2 claim 1** on a landscape where lineages actually specialise, so the conflict
-   census has pairs to count.
-3. **A real task** instead of a constructed trap. Everything in E2 so far shows greedy
-   failing where theory says it must; none of it shows that definition-search
-   landscapes have that shape.
-4. **E6's remaining half** — extract the Claude Code bundle, answer the one question.
+[backlog.toml](backlog.toml) holds the order of work and is the source of truth for
+it. The summary, and the one thing that reorders everything:
 
-Local model runs use `llama-server` rather than ollama: seeds, GBNF, parallel slots
-and slot-level cache visibility, all of which specific kill criteria depend on. A
-local 20B is fine for A/B comparisons held constant across arms, but watch for floor
-effects — and for "does this work at all", it measures the model, not the harness.
+**It starts with the task set.** Every open experiment is blocked on the same missing
+object. The whole project's task content is three prompts over two functions, plus a
+numeric landscape with no code in it; everything else is machinery operating on a toy.
+That is why there are 272 green tests and no results.
+
+1. **Sprint 1 — the instrument.** A task set where imageness is load-bearing, scored
+   by calling into the image. Alongside it, opencode read (independent, and it has to
+   land before E3's experiment is *designed*, not after), and a guard so experiment
+   files stop rotting silently.
+2. **Sprint 2 — cheap verdicts.** E5's Lisp-quality gap and E2's claim 1. Both are
+   within-harness or no-model comparisons, so neither waits on a trustworthy control.
+3. **Sprint 3 — an honest control.** The fidelity check against real Pi, which
+   [harness-lineage.md](docs/harness-lineage.md) specifies and which has never run
+   because it needs a task set. Until it does, every comparative result carries an
+   unquantified *or my port is just different*.
+4. **Sprints 4–6** — E3's and E5's real experiments, then E4, then genera-lab.
+
+Two corrections to the order this list used to give. E5's quality gap does *not* need
+"no new machinery" — it needs tasks, like everything else. And E2 claim 1 is not merely
+unmeasured: every candidate in the current landscape carries exactly one definition,
+always the same target, so a complementary pair cannot exist and no budget fixes it.
+
+## Models, and which arm each is honest for
+
+`llama-server` locally, never ollama: seeds, GBNF, parallel slots and slot-level cache
+visibility, all of which specific kill criteria depend on. Credentials for the hosted
+two are in `.env`, which is gitignored — keep them out of every committed file.
+
+| | reach | good for | not for |
+|---|---|---|---|
+| gpt-oss-20b, local | `llama-server`, port 8099 | anything needing a **grammar** — E5's constrained arm cannot run anywhere else — plus seeds and cache measurements | "does this work at all"; it measures the model |
+| `openai/gpt-oss-120b` | OpenRouter | volume A/B where both arms are held constant; 131k context, ~$0.037/$0.17 per M | grammar-constrained sampling; GBNF is llama.cpp-only |
+| `deepseek-v4-flash` | DeepSeek **direct**, not OpenRouter | the arm that has to be strong enough to decide something | unbudgeted sweeps — the balance is small |
+
+Both hosted servers work through the existing `openai-provider` with only `:endpoint`
+and `:api-key` differing. A local 20B is fine for A/B held constant across arms, but
+watch for floor effects: a model too weak to use either harness shows no difference,
+and that is not evidence of none.

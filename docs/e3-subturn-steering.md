@@ -26,11 +26,44 @@ iterations (lines 232–245).
 So "content steering below the turn boundary" is **not** an unclaimed tier. Pi has
 it for messages.
 
+**Claude Code sets the bar for capability change, and stops short of it.** Read from
+the Agent SDK and the desktop app's control protocol ([E6](e6-harness-teardown.md)):
+a running session accepts `set_model`, `set_permission_mode`, `interrupt`,
+`stop_task`, `rewind_files` and `mcp_toggle`. There is **no `set_system_prompt` and no
+`set_tools`**. `mcp_toggle` carries `(serverName, enabled)`, so the tool list can move
+mid-session — but only by switching a **pre-registered** server on or off. No request
+introduces a tool that did not exist when the session began.
+
+So the baseline is sharper than "resolved at startup": the strongest production
+harness on this machine can swap the *model* mid-session but not the prompt, and can
+gate tools it already had but not acquire one.
+
+**opencode re-reads both per request, and that narrows the claim a third time.** Read
+from source ([E6](e6-harness-teardown.md)): its turn loop is a plain `while (true)`
+(`prompt.ts:1088`) that re-resolves the tool set every iteration
+(`SessionTools.resolve`, `prompt.ts:1226`) and rebuilds the system prompt on every
+request (`LLMRequestPrep.prepare`, `llm/request.ts:56`) — with a plugin hook,
+`experimental.chat.system.transform`, existing purely so an external party can rewrite
+that prompt per request.
+
+So "resolved at startup" describes Pi and Codex. It does not describe every production
+harness, and the earlier version of this claim was too broad.
+
 ## Claim
 
-What no harness mutates mid-run is the **system prompt and the tool set**. Both are
-resolved at startup in Pi, and steering can only append messages — it cannot give the
-agent a capability it did not start with.
+What no harness does is let an agent **acquire a capability that did not exist at
+startup**.
+
+The distinction survives opencode because re-reading is not acquiring. `resolveTools`
+is `Record.filter` over a registry assembled upstream (`llm/request.ts:208`) — it
+removes what permission disabled and never adds. Claude Code's `mcp_toggle` gates a
+pre-registered server. Both re-evaluate *which* of a known set is live; neither can
+introduce a tool that was nowhere at session start.
+
+In a live image the agent installs a `DEFUN` and the tool's schema is read off the
+resulting function — nothing pre-registered, no schema authored, nothing restarted.
+That is the tier to test, and it is now the only part of the original claim left
+standing.
 
 In a live image the agent is a CLOS object. If request assembly reads the prompt slot
 and the tool method set at call time, an external mutation changes what the agent

@@ -170,10 +170,30 @@ fresh process cannot see the running image in any case."
 There are no files to edit and nothing restarts; state in the image is preserved
 across your changes.
 
+Source definitions and live runtime state are both evidence. An existing
+definition may be correct while objects, caches, registries or other values
+created earlier are stale. Use the inspection tools when runtime state may be
+part of the failure.
+
 Read a definition before you replace it. Install exactly one top level form at a
 time. If a change does not do what you expected, roll it back rather than
 installing a second fix on top of it. Verify from outside the image where you
 can -- a shell command that exercises the running program proves more than
 calling the function yourself."
   "Kept under Pi's sub-1000-token budget on purpose: arm A is a control, and a
-larger prompt would confound tool cardinality with prompt size.")
+larger prompt would confound tool cardinality with prompt size.
+
+AMENDED for B14 after E24's Gate 1 failed 0 of 5. The second paragraph is new.
+The tool set had gained INSPECT_VALUE while this prompt still described a world
+of reading source and installing replacements, so five runs used it 0, 0, 1, 0
+and 1 times and every one left the world unrepaired.
+
+Stated as narrowly as it was measured: ON E24, EXPOSING INSPECT_VALUE IN THE
+TOOL SET WAS INSUFFICIENT TO MAKE THE AGENT USE LIVE-STATE EVIDENCE WHILE THE
+PROMPT CONTINUED TO FRAME THE TASK AS SOURCE REPAIR. Not the broad claim that
+registering a tool never confers a capability.
+
+The new paragraph describes the execution model and what a baseline tool is for.
+It names no variable, no defect and no strategy: a prompt saying which values to
+compare would be an answer key and would destroy Gate 2 exactly as a blanket
+recompute destroyed the first E24.")

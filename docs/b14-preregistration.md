@@ -185,6 +185,106 @@ Each arm's adoption cost is measured **from the mechanism it actually uses**.
 B11's +2,989 priced restart-and-reconstruct-context and is not this arm's price
 tag.
 
+## Reading order, frozen before the run
+
+**Do not inspect individual trajectories before reading the aggregate verdict**,
+unless the run failed operationally. Reading them first makes it far too easy to
+explain a median of 4 away — *the model found a clever shortcut on these three
+runs* — and **a shortcut is evidence that the task failed the gate**, not an
+excuse for the number.
+
+```
+1. operational validity   all intended runs completed, no contamination,
+                          no tool failures
+2. Gate 1                 solve rate
+3. Gate 2                 the frozen verdict, as returned
+4. only then              trajectories, to understand WHY it passed or failed
+```
+
+### What a pass does and does not license
+
+A solve rate of 0.9 at a median burden of 8 establishes exactly one thing:
+
+> E24 contains a reliably solvable repeated observational burden.
+
+It does **not** establish that `impact_map` is useful. That is Gate 3's job, and
+Gate 3 can still fail on a task that passed Gate 2 — nine observations that do
+not compress into a reusable abstraction are nine observations, not a ceiling.
+
+## Amendment 1 — the baseline did not know what it could do
+
+**First Gate 1 run: 0 of 5 solved. Retained, not discarded.** Operationally
+clean — 5 completed, 0 errored, 0 contaminated — so it is a result about the
+baseline rather than a broken measurement.
+
+Every attempt scored exactly 0.6667, which is precisely the **no-repair** score
+measured before the run. The world was left unchanged five times. The tool calls
+say why:
+
+```
+inspect_value calls per attempt   0, 0, 1, 0, 1
+recurring shape                   find_definitions -> read_definition -> install
+attempt 1                         eleven consecutive installs, hit the cap
+```
+
+`inspect_value` had been added to the tool set while `*system-prompt*` still
+described a world of reading source and installing replacements. **Stated as
+narrowly as it was measured:**
+
+> On E24, exposing `inspect_value` in the tool set was insufficient to make the
+> agent use live-state evidence while the system prompt continued to frame the
+> task as source repair.
+
+Not the broad claim that registering a tool never confers a capability.
+
+**This is a baseline defect, not the effect B14 is trying to measure.** CONTROL
+must understand the capabilities it starts with, so the generic prompt gains one
+paragraph describing the execution model — that source and live state are both
+evidence, that a correct definition can coexist with stale values, and that the
+inspection tools are for that case. It names no variable, no defect and no
+strategy; a prompt saying which values to compare would be an answer key.
+
+Applies to **every arm equally**. Earlier task-set numbers were taken under the
+old prompt and are not comparable to runs after this amendment.
+
+### Feasibility, checked before paying for the rerun
+
+A reference fix proving an omniscient repair exists is not evidence the *agent*
+can get there. So a legal diagnostic path was constructed using only permitted
+`inspect_value` operations, with no privileged knowledge in any query:
+
+```
+find_definitions ""    -> *NEGOTIATED* and *QUOTES* both surface
+inspect *QUOTES*       -> 20 quotes at once, all four fields visible
+inspect a quote        -> (:ID 4 :WEIGHT 5 :ZONE :REMOTE :COST 75)
+inspect *NEGOTIATED*   -> "24 entries, keys include 0 17 34 51 68 85 102 119"
+inspect SHIPPING-COST  -> 27 for (5 :REMOTE), against the stored 75
+```
+
+**7 observations against a 16-request budget.** Nothing requires walking quotes
+one at a time, so CONTROL is operationally capable and not merely theoretically
+so — which also means the oracle ceiling, when Gate 3 measures it, will not be an
+artifact of an impossible baseline.
+
+### Sequence before the rerun
+
+```
+failed Gate 1 run     retained as a capability-discoverability finding
+      |
+prompt amendment      generic, live-state, no answer key
+      |
+per-case scores       so the next diagnosis needs no pre-run inference
+      |
+feasibility proven    7 of 16 -- DONE
+      |
+rerun Gate 1          from scratch
+      |
+only if reliably solved -> Gate 2, at the unchanged frozen thresholds
+```
+
+**Neither frozen threshold moves.** The amendment changes what CONTROL knows
+about itself, not what counts as a pass.
+
 ## Order
 
 ```

@@ -1,0 +1,8 @@
+#!/bin/sh
+# One entry point for every run. Loads .env itself so no run depends on the
+# caller having sourced it -- forgetting to was a repeated cost while building
+# the task set.
+set -eu
+root=$(cd "$(dirname "$0")/.." && pwd)
+if [ -f "$root/.env" ]; then set -a; . "$root/.env"; set +a; fi
+exec sbcl --script "$root/bin/entry.lisp" "$@"

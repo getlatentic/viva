@@ -2,3 +2,6 @@
 *.core
 *.log
 .DS_Store
+.env
+.env.*
+system-index.txt

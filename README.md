@@ -5,27 +5,93 @@ directory of files. The agent reads a definition, compiles a replacement into th
 live process, rolls it back if it was wrong, and can hand itself a new tool
 mid-run — with nothing restarting at any point.
 
-Verified on SBCL 2.6.7 / macOS ARM64. **242 tests green.**
-
-```bash
-sbcl --eval '(ql:quickload :vivarium/image)'
-```
+Verified on SBCL 2.6.7 / macOS ARM64. **424 tests green.**
 
 New here? Read [HANDOFF.md](HANDOFF.md) — the question this answers, the six
 experiments, what has been settled, and the mistakes already paid for.
+[backlog.toml](backlog.toml) is the order of work.
 
-## Three layers, dependencies pointing inward
+## Running it
+
+Everything goes through one entry point, which loads `.env` itself so no run
+depends on the caller having sourced it.
+
+```bash
+./bin/vivarium test          # the whole suite; exits non-zero if anything fails
+./bin/vivarium check         # compile every experiment, no network, no model
+./bin/vivarium tasks         # the 17 tasks, their families and the held-out split
+```
+
+Those three need no credentials. The rest need at least one arm in `.env`
+(`OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, or a `VIVARIUM_LOCAL_ENDPOINT` with
+something actually listening — an arm nothing answers on is not offered).
+
+**Watch one task, and steer it while it runs:**
+
+```bash
+./bin/vivarium attend T13 --model deepseek-flash
+```
+
+Trajectory on the left, the image's current state on the right — every
+definition changed, as it was and as it now is — with scores and a `steer>`
+line at the bottom. Type a line and it lands in the request already running,
+aborting it rather than waiting for the next one. `--plain` drops the screen and
+keeps the transcript, which is what piping or CI gets automatically.
+
+**Point it at your own code, with your own prompt** — this is the general case;
+a benchmark task is just a session someone pre-registered:
+
+```bash
+vivarium run "IN-STOCK-P returns a count, not a boolean. Fix it." \
+  --package DEPOT --load inventory.lisp
+
+vivarium run --file prompt.txt --system my-app --package MY-APP
+echo "what is slow in here?" | vivarium run --system my-app
+```
+
+`--system` quickloads and `--load` loads a file first, so there is live code to
+work on. Nothing is scored — there are no cases — so the ledger is the report.
+The shell runs in your working directory, because it is your project; scored runs
+are the opposite case and jail themselves.
+
+Reading a definition that was loaded rather than installed still works: a function
+reports its lambda list and **a variable reports its live value**. That last one is
+the point of the whole project — an agent asked what `*STOCK*` was, got nothing,
+guessed a hash table, and installed a `GETHASH` against a list of plists. The data
+was in the image the whole time.
+
+**Score models against the task set:**
+
+```bash
+./bin/vivarium calibrate --repeats 3 --out results.json
+./bin/vivarium calibrate --tasks T13,T14 --models deepseek-flash --repeats 1
+./bin/vivarium compare before.json after.json
+```
+
+`--repeats` defaults to 3 on purpose: two identical sweeps once disagreed on
+**24% of cells** at temperature 0 with a fixed seed, so a single sample per cell
+cannot support a comparison. `compare` reports that noise floor between any two
+runs.
+
+A scored agent's shell runs in an empty scratch directory and refuses paths
+outside it. That is not hygiene — one read `src/tasks/control.lisp`, the file
+holding the very cases it was being scored on. See [docs/task-set.md](docs/task-set.md).
+
+## Five systems, dependencies pointing inward
 
 | system | what it is | knows about |
 |---|---|---|
 | `vivarium` | the harness: messages, tools, schemas, an agent, a loop, providers | nothing task-specific |
 | `vivarium/image` | one task domain: a live Lisp image to read, change and undo | the harness |
-| `vivarium/search` | scored trials in forked children, an archive, selection | both |
+| `vivarium/tasks` | the benchmark: 17 tasks, their fixtures and the cases that score them | the image |
+| `vivarium/search` | scored trials in forked children, an archive, selection | the image |
+| `vivarium/cli` | one entry point for every run | everything |
 
 The split is load-bearing, not decorative: `(ql:quickload :vivarium)` brings up the
-harness with no `VIVARIUM.IMAGE` or `VIVARIUM.TRIAL` package in the world, so a
-second task domain does not have to be bolted onto the first. There is a test for
-exactly that.
+harness with no `VIVARIUM.IMAGE`, `VIVARIUM.TASKS` or `VIVARIUM.TRIAL` package in
+the world, so a second task domain does not have to be bolted onto the first. There
+is a test for exactly that. Search does **not** depend on the task set either --
+`run-trial` takes thunks and does not care where they came from.
 
 ## The harness
 
@@ -108,9 +174,12 @@ per-line, and there is no textual merge anywhere.
 ## Layout
 
 ```
-src/core/    message schema sexp tool agent provider stream client loop
+bin/         vivarium -- the launcher, and the bootstrap it runs
+src/core/    message wire schema sexp tool agent provider stream client loop
 src/image/   ledger image derive image-tools self
+src/tasks/   service task + one file per task family, attempt
 src/search/  trial arena
+src/cli/     args arms render screen commands attend main
 tests/       one file per module, plus live-*.lisp needing a running server
 experiments/ questions with an answer, not tests
 ```

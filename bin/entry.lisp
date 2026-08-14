@@ -1,0 +1,28 @@
+;;;; Bootstrap for bin/vivarium. Outside the ASDF system on purpose: it is what
+;;;; brings the system up, so it cannot be part of it.
+
+(require :sb-posix)
+(require :sb-introspect)
+(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+
+(let ((root (uiop:pathname-parent-directory-pathname
+             (uiop:pathname-directory-pathname *load-truename*))))
+  (push root (symbol-value (find-symbol "*LOCAL-PROJECT-DIRECTORIES*" "QL")))
+  (sb-posix:setenv "VIVARIUM_ROOT" (namestring root) 1))
+
+(handler-bind ((warning #'muffle-warning))
+  (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/cli :silent t))
+
+;; Ctrl-C should stop a long run, not print two hundred frames of backtrace --
+;; frames that include the Authorization header, so a crash leaks the API key
+;; to the terminal.
+(sb-sys:enable-interrupt
+ sb-unix:sigint
+ (lambda (&rest ignored)
+   (declare (ignore ignored))
+   (format *error-output* "~&interrupted~%")
+   (finish-output *error-output*)
+   (sb-ext:exit :code 130 :abort t)))
+
+(sb-ext:exit :code (funcall (find-symbol "MAIN" "VIVARIUM.CLI")
+                            (rest sb-ext:*posix-argv*)))
