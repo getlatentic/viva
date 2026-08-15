@@ -309,3 +309,87 @@ One task pool, **multiple seeded permutations**, fresh conversational context pe
 episode, no persistent mutation — then test whether **episode index predicts
 decreasing cost after controlling for task identity**. A task-1-to-task-5 plot is
 not that test.
+
+---
+
+# The three things, separated
+
+**2026-08-11.** B14 was built on a conflation, and E24 is where it surfaced. The
+agent rewriting live code looked like evidence for self-improvement because the
+*mechanism* is identical. It is not one activity, it is three:
+
+```
+1  IMPROVE THE TASK        edit the code/files it was given access to.
+                           The SUBJECT changes. E24's REPAIR-QUOTES fixes the
+                           data and is useless afterwards.
+
+2  IMPROVE ITSELF TO SOLVE build a capability BECAUSE it is needed NOW.
+   THE TASK                Within-episode. Inherently LIVE -- a tool that
+                           arrives after the episode is no help to it.
+
+3  IMPROVE ITSELF FROM     after solving, keep what the episode taught.
+   WHAT IT LEARNED         Across-episode. Inherently INHERITANCE -- an
+                           artifact, a retained definition, a policy.
+```
+
+**In an image, all three are the same act:** compile a definition in. That is
+vivarium's actual claim, and it is why the distinction has to be enforced by the
+experiment rather than by the machinery -- a file-based harness separates them by
+ceremony, and an image does not separate them at all.
+
+## Why this reshapes B15
+
+B15 asked one question: *which surface should the agent improve -- prompt, skill,
+tool, or nothing?* That assumed a single decision. There are **two decision
+points**, and they can come apart:
+
+```
+DURING the task    "should I build something to help me finish this?"     (2)
+AFTER the task     "should I keep anything from what just happened?"      (3)
+```
+
+An agent may be good at 2 and never think to do 3 -- build an excellent helper,
+then discard it. Or bad at 2 and good at 3 -- solve it the hard way, then extract
+the lesson. **Those are different failures with different fixes**, and one
+"choose your surface" prompt cannot tell them apart.
+
+It also maps the arms onto something real rather than stipulated:
+
+```
+LIVE          is where 2 must happen; benefit starts this episode
+EXTERNALISED  is where 3 lands; benefit starts next episode
+HYBRID        do 2, then decide 3 -- which is why it is not merely attractive
+```
+
+## What E24 actually is, stated honestly
+
+**Case 1 only.** A repair task. It proved the harness works, the tools are
+usable, and four harness bugs were real. It is not evidence about
+self-improvement and was wrong to be framed as a step toward it: nothing in it
+rewards building a capability, and nothing rewards keeping one.
+
+Its failure mode makes the point. gpt-oss lost it for want of one sentence --
+*check whether a second table marks some data exempt* -- which is a POLICY, not a
+computation. No `impact_map` supplies that. So Gate 3's oracle would have been
+built for a bottleneck the task does not have.
+
+**B14 stops before Gate 3.** Not because a gate failed, but because the ceiling
+it would measure is the wrong ceiling.
+
+## What the sequence has to look like instead
+
+A task whose **best solution is itself a reusable capability**, so no artificial
+"now improve yourself" phase is needed:
+
+```
+episode 1   a value goes wrong somewhere in a multi-stage pipeline. The
+            efficient route is to write TRACE-VALUE and instrument the stages.
+            That code SOLVES episode 1.                                    (2)
+episode 2   different bug, same pipeline shape. Kept TRACE-VALUE -> cheap.
+            Discarded it -> re-derive.                                     (3)
+```
+
+The improvement *is* the solution, and the measurement is whether it survives the
+episode boundary. Prerequisite: `register-tool` must be in the scored tool set.
+It exists in `self.lisp`, is tested, and **has never been in a scored run** --
+so no experiment this project has run could have retained anything.
