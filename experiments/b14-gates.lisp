@@ -23,10 +23,23 @@
 (defparameter *b14-attempts* 5
   "Five, matching B10 and B11's repeat discipline. Gate 2's solve-rate floor of
 0.6 is three of these.")
-(defparameter *b14-limit* 16
+(defparameter *b14-limit* 24
   "Requests before cutoff. Higher than the task set's usual 12 because this task
 is deliberately investigation-heavy, and a cap that truncates the investigation
-would measure the cap rather than the burden.")
+would measure the cap rather than the burden.
+
+RAISED FROM 16 after the first high-effort sweep, where the cap was doing exactly
+what this docstring forbids: 4 of 5 attempts hit 16 requests, and the single solve
+used all 16. Not a frozen number -- burden >= 6 and solve rate >= 0.6 are frozen
+and neither moved.
+
+THE RAISE DISCONFIRMED ITS OWN HYPOTHESIS, which is why it stays recorded at 24
+rather than being reverted. At 16 the sweep solved 1 of 5 with burdens 11-23; at
+24 it solved 0 of 3 with burdens 25, 30, 30 and every attempt again exhausting the
+cap. THE AGENT EXPANDS ITS INVESTIGATION TO FILL WHATEVER BUDGET IT IS GIVEN
+rather than converging, so the extra requests bought more looking and no more
+finishing -- and the single solve at 16 is better read as variance than as a
+budget effect.")
 
 (defun b14-solved-p (attempt)
   "Frozen: every case passes. Partial credit is not a solve."
@@ -39,18 +52,22 @@ would measure the cap rather than the burden.")
          (and scores (every (lambda (pair) (and (numberp (cdr pair)) (>= (cdr pair) 1)))
                             scores)))))
 
-(defun b14-run (&key (attempts *b14-attempts*) oracle (label "CONTROL"))
+(defun b14-run (&key (attempts *b14-attempts*) oracle (label "CONTROL") effort)
+  "EFFORT overrides the arm's default. One variable: same task, tools, prompt and
+budget, so a difference is attributable to reasoning effort and nothing else.
+Gate 1 has failed four times at the arm default of \"low\", and this separates
+'the task is too hard' from 'the model is too weak AT THIS EFFORT'."
   (let ((arm (or (find "gpt-oss-120b" (available-arms) :key #'arm-label :test #'string=)
                  (error "gpt-oss-120b arm unavailable -- is OPENROUTER_API_KEY set?")))
         (task (tasks:find-task *b14-task*))
         (rows '()))
-    (format t "~&~a  task ~a  attempts ~a  limit ~a~%"
-            label *b14-task* attempts *b14-limit*)
+    (format t "~&~a  task ~a  attempts ~a  limit ~a  effort ~a~%"
+            label *b14-task* attempts *b14-limit* (or effort (arm-effort arm)))
     (dotimes (i attempts)
       (let* ((attempt (tasks:attempt-task task
                                           :provider (arm-provider arm)
                                           :model (arm-model arm)
-                                          :reasoning-effort (arm-effort arm)
+                                          :reasoning-effort (or effort (arm-effort arm))
                                           :limit *b14-limit*
                                           :oracle oracle))
              (burden (getf (tasks:attempt-burden attempt) :burden))
@@ -119,8 +136,8 @@ would measure the cap rather than the burden.")
     (format t "~&     VERDICT: ~a~%" (getf verdict :verdict))
     verdict))
 
-(defun b14-gate-1-and-2 ()
-  (let* ((rows (b14-run))
+(defun b14-gate-1-and-2 (&key effort)
+  (let* ((rows (b14-run :effort effort))
          (verdict (b14-report rows)))
     (with-open-file (out (merge-pathnames "b14-gates.sexp" (uiop:temporary-directory))
                          :direction :output :if-exists :supersede)
