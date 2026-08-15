@@ -17,11 +17,29 @@
 
 (in-package #:vivarium.tests)
 
+(defun soak-descriptors ()
+  "Open descriptors for this process, or NIL where lsof is unavailable."
+  (ignore-errors
+   (1- (count #\Newline
+              (uiop:run-program (list "lsof" "-p" (format nil "~d" (sb-posix:getpid)))
+                                :output :string :error-output nil)))))
+
 (defun soak-sample ()
   (sb-ext:gc :full t)
   (list :heap-mb (round (sb-kernel:dynamic-usage) (* 1024 1024))
         :threads (length (bt:all-threads))
-        :cells (length (actor:all-cells))))
+        :cells (length (actor:all-cells))
+        :fds (soak-descriptors)
+        ;; A growing depth here is the journal owner falling behind or dead --
+        ;; the exact unbounded-queue failure the acknowledged design guards.
+        :journal-depth (sb-concurrency:mailbox-count vivarium.actor::*journal*)))
+
+(defun soak-rotate-journals ()
+  "Completed sessions' journals are rotated out, as a long-lived organism
+would rotate them. Run between cycles, when no cell is live -- and it keeps a
+multi-hour soak from writing hundreds of thousands of files into /tmp."
+  (ignore-errors
+   (mapc #'delete-file (directory (merge-pathnames "*.jsonl" actor:*journal-root*)))))
 
 (defun soak-cycle (path)
   "One round of everything the organism does, done carelessly on purpose."
@@ -53,16 +71,22 @@
        (let ((deadline (+ (get-universal-time) (* 60 minutes)))
              (cycles 0)
              (samples '()))
-         (loop while (< (get-universal-time) deadline)
-               do (soak-cycle path)
-                  (incf cycles)
-                  (when (zerop (mod cycles 25))
-                    (let ((sample (soak-sample)))
-                      (push sample samples)
-                      (format t "~&cycle ~5d  heap ~3dMB  threads ~3d  cells ~2d~%"
-                              cycles (getf sample :heap-mb)
-                              (getf sample :threads) (getf sample :cells))
-                      (finish-output))))
+         (let ((next-sample 0))
+           (loop while (< (get-universal-time) deadline)
+                 do (soak-cycle path)
+                    (incf cycles)
+                    ;; By time, not by cycle count: a two-minute pass and a
+                    ;; two-hour one should both produce a readable log.
+                    (when (>= (get-universal-time) next-sample)
+                      (setf next-sample (+ (get-universal-time) 30))
+                      (soak-rotate-journals)
+                      (let ((sample (soak-sample)))
+                        (push sample samples)
+                        (format t "~&cycle ~6d  heap ~3dMB  threads ~3d  cells ~2d  fds ~a  journal-q ~a~%"
+                                cycles (getf sample :heap-mb)
+                                (getf sample :threads) (getf sample :cells)
+                                (getf sample :fds) (getf sample :journal-depth))
+                        (finish-output)))))
          (let* ((ordered (nreverse samples))
                 (early (subseq ordered 0 (min 3 (length ordered))))
                 (late (last ordered (min 3 (length ordered))))
@@ -74,13 +98,19 @@
                    (funcall mean early :heap-mb) (funcall mean late :heap-mb))
            (format t "threads early ~,1f -> late ~,1f~%"
                    (funcall mean early :threads) (funcall mean late :threads))
+           (when (getf (first late) :fds)
+             (format t "fds     early ~,1f -> late ~,1f~%"
+                     (funcall mean early :fds) (funcall mean late :fds)))
            (multiple-value-bind (kept total) (daemon:diagnostics)
              (declare (ignore kept))
              (format t "contained failures over the run: ~d~%" total))
            (let ((flat (and (<= (funcall mean late :heap-mb)
                                 (+ (funcall mean early :heap-mb) 32))
                             (<= (funcall mean late :threads)
-                                (+ (funcall mean early :threads) 3)))))
+                                (+ (funcall mean early :threads) 3))
+                            (or (null (getf (first late) :fds))
+                                (<= (funcall mean late :fds)
+                                    (+ (funcall mean early :fds) 16))))))
              (format t "~:[GREW -- investigate before any long-lived claim~;PLATEAU~]~%" flat)
              (if flat 0 1))))
     (daemon:stop)))

@@ -443,6 +443,10 @@ BUILT   recovery: restarts at the model and tool boundaries, policy on the
         agent, bounded, with a deadline around the whole exchange
 BUILT   client I/O isolated behind outbound mailboxes, absolute shutdown
         deadlines, startup owned by process state as well as an OS lock
+BUILT   acknowledged journal, generation-scoped daemon, sealed actor API
+SOAKED  614,048 session lifecycles over three hours: heap 64->65MB,
+        threads 4->4, descriptors 14->14, journal queue never above zero,
+        16,850 hostile disconnects contained and counted (docs/soak-*.log)
 NEXT    phase 1.5 -- compositional agency: TASK as the unit, scoped children
         for sub-agents, detached children for spawned work, a supervisor
         owning topology, task-to-task messaging, isolated conversations
