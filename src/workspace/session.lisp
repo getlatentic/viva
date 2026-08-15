@@ -349,6 +349,13 @@ the live branch and should not have to say so twice."
                    ;; A custom MESSAGE is in the conversation; a custom ENTRY is
                    ;; state and is not. One letter of difference in the name and
                    ;; the whole difference in what reaches the model.
+                   (:branch-summary
+                    (a:when-let ((summary (and (hash-table-p (entry-payload entry))
+                                               (gethash "summary" (entry-payload entry)))))
+                      (list (msg:make-user-message
+                             :content (list (msg:make-text
+                                             (format nil "<abandoned_branch>~%~a~%</abandoned_branch>"
+                                                     summary)))))))
                    (:custom-message
                     (a:when-let ((inner (and (hash-table-p (entry-payload entry))
                                              (gethash "message" (entry-payload entry)))))
@@ -368,6 +375,44 @@ person might later want to read."
                   (object "summary" summary
                           "tokens_before" tokens-before
                           "retained" (coerce (mapcar #'entry-payload kept) 'vector)))))
+
+(defun path-to-root (session leaf)
+  "Ids from LEAF to the root, nearest first. Unlike ANCESTRY this does not stop
+at a compaction: it is answering where two branches meet, not what to send."
+  (let ((ids '()) (id leaf))
+    (loop while id
+          for entry = (entry-at session id)
+          while entry
+          do (push (entry-id entry) ids)
+             (setf id (entry-parent entry)))
+    (nreverse ids)))
+
+(defun branch-point (session from to)
+  "The nearest entry both branches share, or NIL when they share nothing."
+  (let ((theirs (path-to-root session to)))
+    (find-if (lambda (id) (member id theirs :test #'equal))
+             (path-to-root session from))))
+
+(defun abandoned-branch (session from to)
+  "The entries on FROM's side that TO does not share, oldest first.
+
+What a person is walking away from, and therefore what is worth summarising
+before they lose sight of it."
+  (let ((shared (branch-point session from to)))
+    (reverse (loop for id = from then (entry-parent entry)
+                   while (and id (not (equal id shared)))
+                   for entry = (entry-at session id)
+                   while entry
+                   collect entry))))
+
+(defun append-branch-summary (session summary &key from)
+  "Record what an abandoned branch established, on the branch being resumed.
+
+Pi's BranchSummaryEntry. Without it, trying a second approach means the first
+one's findings are still on disk and entirely absent from the conversation --
+so the model rediscovers what it already knows, having been given no way to
+know that it knows it."
+  (append-entry session :branch-summary (object "from" from "summary" summary)))
 
 (defun fork (session &optional (at (session-leaf session)))
   "Continue from an earlier point. The next entry attaches to AT, so the old
@@ -427,6 +472,21 @@ picker: when it was, how long it ran, and what was first asked."
     (cond ((null matches) nil)
           ((rest matches) (error "~a matches ~d sessions. Use more of the id." id (length matches)))
           (t (first matches)))))
+
+(defun search-sessions (text &key cwd (limit 20))
+  "Sessions whose conversation contains TEXT, newest first.
+
+Scans rather than indexes. An index would be faster and would then need
+invalidating, rebuilding and reconciling against files another process appends
+to; a few hundred JSONL files is not the problem an index solves."
+  (let ((needle (string-downcase text)))
+    (remove-if-not
+     (lambda (each)
+       (a:when-let ((session (ignore-errors (load-session (summary-path each)))))
+         (some (lambda (message)
+                 (search needle (string-downcase (msg:text-of message))))
+               (session-messages session))))
+     (list-sessions :cwd cwd :limit limit))))
 
 (defun latest-session (&optional cwd)
   (first (list-sessions :cwd cwd :limit 1)))

@@ -714,3 +714,51 @@ rather than leaving it to be rediscovered a third time."
         ;; ...and out of the conversation.
         (is = 1 (length (session:session-messages reloaded)))
         (is string= "hello" (msg:text-of (first (session:session-messages reloaded))))))))
+
+;;; Tree navigation
+
+(define-test "an abandoned branch is found, and summarised onto the one resumed"
+  (with-repository (environment)
+    (let* ((directory (uiop:parse-native-namestring
+                       (format nil "~a/.sessions/" (env:env-cwd environment))))
+           (session (session:open-session :directory directory))
+           (agent (make-instance 'compacting-agent
+                                 :environment environment :resource-environment environment
+                                 :session session
+                                 :script (list "The first approach hit a wall at parsing."))))
+      (ws-say session :user "shared ground")
+      (let ((fork-point (session:session-leaf session)))
+        (ws-say session :user "try approach A")
+        (ws-say session :assistant "A did not work")
+        (let ((left (session:session-leaf session)))
+          ;; What is being walked away from is exactly the two turns after the
+          ;; fork, and not the shared ground before it.
+          (let ((abandoned (session:abandoned-branch session left fork-point)))
+            (is = 2 (length abandoned))
+            (is string= "try approach A" (msg:text-of (first (session:session-messages abandoned)))))
+          (is string= fork-point (session:branch-point session left fork-point))
+          (harness:navigate agent fork-point)
+          ;; The shared ground, plus what the abandoned branch established.
+          (let ((messages (loop*:context-messages (harness:agent-context agent))))
+            (is = 2 (length messages))
+            (is string= "shared ground" (msg:text-of (first messages)))
+            (true (mentions "hit a wall at parsing" (msg:text-of (second messages)))))
+          ;; And the summary is on disk, on the branch that was resumed.
+          (is = 1 (count :branch-summary (session:entries-of session)
+                         :key #'session:entry-kind)))))))
+
+(define-test "sessions can be searched by what was said in them"
+  (let* ((where "/tmp/vivarium-tests-search")
+         (directory (session:session-directory where)))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))
+    (let ((one (session:open-session :directory directory :cwd where))
+          (two (session:open-session :directory directory :cwd where
+                                     :id (format nil "b-~36r" (random (expt 2 30) (make-random-state t))))))
+      (ws-say one :user "the parser drops trailing commas")
+      (ws-say two :user "something else entirely")
+      (session:close-session one)
+      (session:close-session two)
+      (is = 2 (length (session:list-sessions :cwd where)))
+      (is = 1 (length (session:search-sessions "trailing commas" :cwd where)))
+      (is = 0 (length (session:search-sessions "no such phrase" :cwd where)))
+      (ignore-errors (uiop:delete-directory-tree directory :validate t)))))

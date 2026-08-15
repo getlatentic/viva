@@ -9,6 +9,8 @@
               "Serve one agent over stdin and stdout, as JSON lines.")
         (list "do" #'command-do
               "One prompt, one answer, no session.")
+        (list "sessions" #'command-sessions
+              "List or search recorded sessions.")
         (list "test" #'command-test
               "Run the whole test suite. Exits non-zero if anything fails.")
         (list "check" #'command-check
@@ -45,6 +47,9 @@ ORDINARY WORK
       --quiet                 print only the final answer
       --session-dir DIR       record the transcript, for counting the work done
       --extension DIR         load extensions from DIR as well
+  sessions [options]          list what has been recorded
+      --search TEXT           only sessions whose conversation contains TEXT
+      --all                   every project, not just this directory
 
   Skills go in .vivarium/skills/<name>/SKILL.md, prompt templates in
   .vivarium/prompts/*.md (invoked as /name, with $1..$9 and $ARGUMENTS),

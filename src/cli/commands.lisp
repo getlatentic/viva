@@ -295,6 +295,22 @@ noise, not a result.~%")
   (apply #'console:run-ipc (append (workspace-options parsed)
                                    (list :request-limit (flag-integer parsed "limit" 200)))))
 
+(defun command-sessions (parsed)
+  "List or search recorded sessions. Scoped to this directory unless --all."
+  (let* ((where (unless (string= "true" (flag parsed "all" "false"))
+                  (namestring (truename (or (flag parsed "cwd") ".")))))
+         (found (a:if-let ((text (flag parsed "search")))
+                  (session:search-sessions text :cwd where)
+                  (session:list-sessions :cwd where
+                                         :limit (flag-integer parsed "limit" 20)))))
+    (if (null found)
+        (format t "~&no sessions~@[ in ~a~]~%" where)
+        (dolist (each found)
+          (format t "~&~a  ~3d msg  ~a~%"
+                  (session:summary-id each) (session:summary-messages each)
+                  (session:summary-opening each))))
+    0))
+
 (defun command-do (parsed)
   "One prompt, one answer. What a script or a CI job wants."
   (let* ((prompt (or (a:when-let ((file (flag parsed "file")))

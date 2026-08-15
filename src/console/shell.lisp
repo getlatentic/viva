@@ -204,6 +204,21 @@ the last one HERE."
                                  (format out "  ~a  ~3d msg  ~a~%"
                                          (session:summary-id each) (session:summary-messages each)
                                          (session:summary-opening each)))))))
+   (make-verb :name "tree" :blurb "the shape of this session, and where you are"
+              :handler (lambda (agent argument out)
+                         (declare (ignore argument))
+                         (a:if-let ((lines (harness:tree-lines agent)))
+                           (dolist (line lines) (format out "  ~a~%" line))
+                           (format out "  nothing recorded~%"))))
+   (make-verb :name "goto" :argument "ENTRY-ID" :blurb "continue from an earlier point"
+              :handler (lambda (agent argument out)
+                         (if (zerop (length argument))
+                             (format out "  /goto <entry-id>. /tree lists them.~%")
+                             (handler-case
+                                 (let ((context (harness:navigate agent argument)))
+                                   (format out "  at ~a, ~d message(s)~%" argument
+                                           (length (loop*:context-messages context))))
+                               (error (condition) (format out "  ~a~%" condition))))))
    (make-verb :name "compact" :blurb "summarise the conversation so far and continue"
               :handler (lambda (agent argument out)
                          (declare (ignore argument))

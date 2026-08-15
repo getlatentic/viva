@@ -333,6 +333,44 @@ not have to care whether the caller asked for a transcript."
   (a:when-let ((agent *agent*))
     (apply #'session:append-record (agent-session agent) kind plist)))
 
+(defun navigate (agent target &key (summarise t))
+  "Move to another point in the session tree and rebuild the context there.
+
+Optionally summarise the branch being left, and record that summary on the
+branch being resumed -- otherwise the abandoned attempt's findings sit on disk
+and are entirely absent from the conversation, so the model rediscovers what it
+already established having been given no way to know that it did."
+  (let ((session (agent-session agent)))
+    (unless session (error "This agent has no session to navigate."))
+    (unless (session:entry-at session target)
+      (error "No entry ~a in this session." target))
+    (let* ((from (session:session-leaf session))
+           (leaving (and summarise from (session:abandoned-branch session from target))))
+      (session:fork session target)
+      (when (and leaving (rest leaving))
+        (let ((messages (session:session-messages leaving)))
+          (when messages
+            (let ((summary (compaction:summarise agent messages)))
+              (when (plusp (length (string-trim '(#\Space #\Newline) (or summary ""))))
+                (session:append-branch-summary session summary :from from))))))
+      (setf (agent-context agent)
+            (loop*:make-context :messages (session:session-messages session)))
+      (extension:fire :navigation (list :agent agent :from from :to target))
+      (agent-context agent))))
+
+(defun tree-lines (agent)
+  "The session tree, one line per entry, marking branch points and the leaf."
+  (a:when-let ((session (agent-session agent)))
+    (let ((leaf (session:session-leaf session)))
+      (loop for entry in (remove-if #'session:record-p (session:entries-of session))
+            for id = (session:entry-id entry)
+            collect (format nil "~a ~a ~a~a"
+                            (if (equal id leaf) "*" " ")
+                            id
+                            (string-downcase (symbol-name (session:entry-kind entry)))
+                            (let ((children (length (session:children-of session id))))
+                              (if (> children 1) (format nil "  <- ~d branches" children) "")))))))
+
 (defun send-message (custom-type text &key (display t))
   "Put TEXT into the conversation on an extension's behalf, attributed to it.
 
