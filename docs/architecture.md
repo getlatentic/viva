@@ -129,8 +129,13 @@ A SESSION IS FINDABLE UNTIL ITS WORK HAS STOPPED
 The second is not tidiness. Once a session's own work can install code, a
 lifecycle model that says *finished* while a worker is still unwinding is not
 imprecise — it is false, and everything built on top of it inherits the lie.
-When the wait does expire, `session.completed` carries `unquiesced`, because a
-violated invariant must be visible rather than assumed away.
+
+A shutting-down session therefore keeps receiving until its turn reports, and a
+session whose turn never reports becomes `:stuck`: it stays in the registry,
+publishes `session.error`, and does not claim to have completed. An earlier
+version published `session.completed` with an `unquiesced` flag, which is the
+same as saying *the invariant holds, except when this says it doesn't*. An
+event name must not need a flag denying what it means.
 
 A turn that reported both cancelled *and* completed shipped, and its test
 asserted both as correct. Invariants get written down first now.
