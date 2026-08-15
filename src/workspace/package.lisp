@@ -172,6 +172,8 @@
                     (#:session #:vivarium.session)
                     (#:compaction #:vivarium.compaction)
                     (#:operation #:vivarium.operation)
+                    (#:fault #:vivarium.fault)
+                    (#:models #:vivarium.models)
                     (#:template #:vivarium.template))
   (:export #:workspace-agent #:make-workspace-agent #:agent-environment
            #:agent-skills #:agent-templates #:agent-session #:agent-extensions #:agent-listener

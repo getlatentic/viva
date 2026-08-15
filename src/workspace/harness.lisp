@@ -122,6 +122,46 @@ sub-agent gets its own, so its turns land on their own branch of the same file."
 (defmethod agent:cancelled-p ((agent workspace-agent))
   (and (agent-aborting agent) t))
 
+;;; Recovery policy
+;;;
+;;; The two cases that are real. Not a taxonomy: a hierarchy of conditions
+;;; invented before the second genuine case is a seam with nothing behind it,
+;;; and the shapes here have not repeated yet.
+
+(defparameter +model-attempts+ 3
+  "Requests to the same model before trying a different one. Small, and not a
+retry budget for the run: a turn makes many requests and each gets its own.")
+
+(defmethod agent:recover ((agent workspace-agent) (condition fault:model-unavailable))
+  "A provider that failed once will usually work a moment later, and a run that
+died because a socket closed threw away a conversation that was perfectly
+intact. So: try again, then try somewhere else, then decline and let the turn
+fail honestly rather than retry forever."
+  (let ((attempt (fault:fault-attempt condition)))
+    (cond ((< attempt +model-attempts+)
+           ;; Cancellation still lands: the sleep is short and CHECKPOINT is
+           ;; reached before the retried request goes out.
+           (sleep (* 0.4 attempt))
+           (fault:retry condition))
+          ;; Exactly once, and only at this attempt. Falling back whenever the
+          ;; count is high enough looks the same and is not: switching models
+          ;; makes the previous one the fallback, so two dead providers hand
+          ;; the run back and forth forever, retrying without end and without
+          ;; ever saying so.
+          ((= attempt +model-attempts+)
+           (a:when-let ((fallback (fallback-model agent)))
+             (fault:use-model fallback condition)))
+          ;; Declining is an answer. The turn fails, honestly and soon.
+          (t nil))))
+
+(defun fallback-model (agent)
+  "Another configured model to try, or NIL. Never the one that just failed."
+  (a:when-let ((other (find-if (lambda (choice)
+                                 (not (equal (models:choice-model choice)
+                                             (agent:agent-model agent))))
+                               (ignore-errors (models:available-models)))))
+    (models:choice-model other)))
+
 (defmethod agent:checkpoint ((agent workspace-agent) phase)
   (declare (ignore phase))
   ;; Held first, then cancelled: a run suspended and then cancelled must not sit

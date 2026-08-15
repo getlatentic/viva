@@ -44,7 +44,20 @@ message about that internal failure instead of about the call it got wrong."
     (make-tool-result :output complaint :error-p t)
     (handler-case (coerce-result (call-next-method))
       (error (condition)
-        (make-tool-result :output (princ-to-string condition) :error-p t)))))
+        ;; The failure becomes the tool's result, which is what the model can
+        ;; actually act on -- but that is now the DEFAULT rather than the only
+        ;; possibility. SIGNAL first, so a policy further out can retry a tool
+        ;; that failed for a passing reason; SIGNAL returns here when nobody
+        ;; has an opinion, which is what keeps the old behaviour the fallback.
+        (restart-case
+            (progn (signal 'fault:tool-unusable :tool (tool-name tool) :cause condition)
+                   (make-tool-result :output (princ-to-string condition) :error-p t))
+          (fault:retry ()
+            :report "Run the tool again."
+            (execute tool arguments context))
+          (fault:use-result (text)
+            :report "Answer the call with this instead."
+            (make-tool-result :output text :error-p t)))))))
 
 (defun coerce-result (value)
   "Let a tool body return a string for the common case."

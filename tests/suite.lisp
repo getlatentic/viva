@@ -40,6 +40,7 @@
                     (#:operation #:vivarium.operation)
                     (#:actor #:vivarium.actor)
                     (#:event #:vivarium.event)
+                    (#:fault #:vivarium.fault)
                     (#:daemon #:vivarium.daemon)))
 
 (in-package #:vivarium.tests)

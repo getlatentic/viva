@@ -135,6 +135,19 @@ flight, rather than at the next request boundary.")
              (declare (ignore condition))
              (write-string "The run was cancelled." stream))))
 
+(defgeneric recover (agent condition)
+  (:documentation "Choose a restart for CONDITION, or return to decline it.
+
+The boundary that signalled says what can coherently be done; this says what to
+do. Different decisions, made with different information: a tool does not know
+whether retrying is affordable, and the loop does not know that this provider
+has been failing all morning.
+
+Declining is a real answer. Returning lets the condition go on to the
+containment boundary, which is correct for an ordinary bug -- silently retrying
+one produces a loop that never ends and never explains itself.")
+  (:method (agent condition) (declare (ignore agent condition)) nil))
+
 (defgeneric cancelled-p (agent)
   (:documentation "True when the run is ending because it was asked to end.
 

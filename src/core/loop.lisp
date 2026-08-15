@@ -106,12 +106,58 @@ truncated arguments. Fail them all rather than execute possibly-borked calls."
         (setf (agent:agent-model agent) model))
       (or (getf snapshot :context) context))))
 
+(defparameter *request-deadline* 900
+  "Seconds one model request may take in total, or NIL for no bound.
+
+A backstop, not a policy knob: it is the point at which a request has stopped
+being slow and started being stuck. The HTTP client's own read timeout bounds
+each individual read, which a connection trickling one byte every few minutes
+never trips -- SB-SYS:WITH-DEADLINE bounds the whole exchange, and a deadline
+that fires becomes an ordinary MODEL-UNAVAILABLE so the same policy retries it.")
+
+(defun request (agent context)
+  "One model request, with the recoveries a caller further out may choose.
+
+A provider that failed is not a run that failed: the conversation is intact and
+the same request can be made again, or made of a different model. Deciding that
+here -- where the only thing known is that a socket broke -- is deciding it at
+the point with the least information."
+  (let ((attempt 0))
+    (loop
+      (incf attempt)
+      (let ((outcome
+              (restart-case
+                  (handler-case
+                      (if *request-deadline*
+                          (sb-sys:with-deadline (:seconds *request-deadline*)
+                            (client:complete agent (context-messages context)))
+                          (client:complete agent (context-messages context)))
+                    ;; Cancellation is not a provider fault and must not be
+                    ;; retried into a loop that ignores what was asked.
+                    (agent:cancelled (condition) (error condition))
+                    ;; Before the ERROR clause: a deadline is one, and it is
+                    ;; the same fault as any other unreachable provider.
+                    (sb-sys:deadline-timeout (condition)
+                      (error 'fault:model-unavailable :model (agent:agent-model agent)
+                                                      :attempt attempt :cause condition))
+                    (error (condition)
+                      (error 'fault:model-unavailable :model (agent:agent-model agent)
+                                                      :attempt attempt :cause condition)))
+                (fault:retry ()
+                  :report "Ask the same model again."
+                  :retry)
+                (fault:use-model (name)
+                  :report "Ask a different model."
+                  (setf (agent:agent-model agent) name)
+                  :retry))))
+        (unless (eq outcome :retry) (return outcome))))))
+
 (defun run-iteration (agent context collected)
   "One assistant response and its tool batch.
 Returns (values continue-p stop-p context), where CONTINUE-P is Pi's
 `hasMoreToolCalls` and STOP-P ends the whole run."
   (agent:checkpoint agent :before-request)
-  (let ((message (client:complete agent (context-messages context))))
+  (let ((message (request agent context)))
     (agent:emit agent (list :type :message :message message))
     (push-message context collected message)
     (if (member (msg:assistant-message-stop-reason message) '(:error :aborted))
@@ -148,7 +194,18 @@ those two apart by inspecting a condition will eventually tell them apart
 wrongly."
   (let ((collected (make-array 0 :adjustable t :fill-pointer t)))
     (handler-case
-        (block finished
+        ;; The policy stands here, outside every restart boundary in the run, so
+        ;; it can see a fault from any of them and choose. HANDLER-BIND rather
+        ;; than HANDLER-CASE: choosing means invoking a restart from inside the
+        ;; handler, with the failed computation still on the stack and able to
+        ;; resume. Unwinding first, as HANDLER-CASE does, destroys the only
+        ;; thing worth having here.
+        ;;
+        ;; Bound to VIVARIUM-CONDITION, not ERROR: an ordinary bug must reach the
+        ;; containment boundary rather than be retried into a silent loop.
+        (handler-bind ((fault:vivarium-condition
+                         (lambda (condition) (agent:recover agent condition))))
+          (block finished
           (inject agent context collected initial-messages)
           (let ((pending (agent:steering-messages agent)))
             (loop named outer do
@@ -165,7 +222,7 @@ wrongly."
               (let ((follow-up (agent:follow-up-messages agent)))
                 (if follow-up
                     (setf pending follow-up)
-                    (return-from outer))))))
+                    (return-from outer)))))))
       (agent:cancelled () nil))
     ;; Asked once, at the single exit, rather than at whichever mechanism
     ;; happened to notice. Cancelling a run mid-stream ends it through the

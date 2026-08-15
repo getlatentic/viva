@@ -24,6 +24,7 @@
   :components ((:module "src/core"
                 :serial t
                 :components ((:file "package")
+                             (:file "fault")
                              (:file "wire")
                              (:file "message")
                              (:file "schema")

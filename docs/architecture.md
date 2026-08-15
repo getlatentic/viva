@@ -137,6 +137,15 @@ asserted both as correct. Invariants get written down first now.
 
 ### The concurrency laws
 
+> **Parallelism in work. Serialization in authority.**
+
+Many things may compute at once; the right to *change* something belongs to one
+owner. Sessions run concurrently, turns run on their own threads, tools run in
+parallel batches — and every state transition still happens on one thread that
+owns it. When the task supervisor and the evolution owner arrive, they are the
+same idea again: topology has one writer, the promoted lineage has one writer.
+
+
 Every actor added from here — tasks, sub-agents, the evolution coordinator —
 follows these. They are worth more than another dozen race-specific fixes,
 because they turn a whole class of bug into a code-review violation.
@@ -182,6 +191,51 @@ snapshot are decided in one critical section, so `subscribe-since` gives a
 barrier with nothing lost and nothing repeated. Ordering across that barrier is
 the reader's job via `seq`; replaying under the lock would let a client that
 stopped reading its socket stall the session.
+
+### Recovery: conditions offer, policy chooses
+
+Failure is not a return value travelling up through every layer. The place
+something fails knows what happened and which continuations are coherent; it
+does not know whether retrying is affordable or whether this provider has been
+failing all morning. So a boundary offers restarts and something further out
+chooses.
+
+```
+     model request                        tool call
+     -------------                        ---------
+     model-unavailable                    tool-unusable
+       retry                                retry
+       use-model                            use-result
+           |                                    |
+           +------------ agent:recover ---------+
+                          the policy
+```
+
+`handler-bind`, not `handler-case`: choosing means invoking a restart with the
+failed computation still on the stack and able to resume. Unwinding first
+destroys the only thing worth having.
+
+Whether a fault is an `error` is a statement about what happens when nobody
+handles it, and the two differ: an unreachable model ends the turn, an unusable
+tool becomes the tool's result and the run carries on. Making both errors put
+`tool-unusable` in reach of every outer `handler-case` for `error` — including
+the test suite's — which turned a signal whose point is that execution
+continues into a failure.
+
+Declining is a real answer. A policy that always finds something to try is a
+loop that never ends: falling back to another model whenever the attempt count
+is high enough makes the previous model the fallback, and two dead providers
+hand the run back and forth forever. Measured, when written that way: 1001
+attempts.
+
+Two conditions and four restarts, not a hierarchy. The shapes have not repeated
+yet, and a taxonomy invented before the second real case is a seam with nothing
+behind it.
+
+`sb-sys:with-deadline` bounds a whole model exchange, which an HTTP read
+timeout does not — it bounds each read, and a connection trickling one byte
+every few minutes never trips it. A deadline that fires is just another
+unreachable provider, so the same policy retries it.
 
 ### Choosing primitives
 
@@ -300,6 +354,10 @@ BUILT   the daemon: sessions as long-lived actors behind a local socket,
 BUILT   the control plane: steer, cancel, suspend and resume reaching a turn
         that is still running, cooperatively, at checkpoints, with an exact
         lifecycle model and its invariants adversarially tested
+BUILT   identity and ownership: turn ids on every asynchronous message, stale
+        messages harmless, one linearized event history, an OS-held daemon lock
+BUILT   recovery: restarts at the model and tool boundaries, policy on the
+        agent, bounded, with a deadline around the whole exchange
 NEXT    phase 1.5 -- compositional agency: TASK as the unit, scoped children
         for sub-agents, detached children for spawned work, a supervisor
         owning topology, task-to-task messaging, isolated conversations

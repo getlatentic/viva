@@ -1,5 +1,12 @@
 ;;;; Core packages: the harness, with no knowledge of any particular task.
 
+(defpackage #:vivarium.fault
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria))
+  (:export #:vivarium-condition #:model-unavailable #:tool-unusable
+           #:faulted-model #:faulted-tool #:fault-attempt #:fault-cause
+           #:retry #:use-model #:use-result #:abort-turn))
+
 (defpackage #:vivarium.message
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria))
@@ -36,6 +43,7 @@
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:schema #:vivarium.schema)
+                    (#:fault #:vivarium.fault)
                     (#:msg #:vivarium.message))
   (:export #:tool #:tool-name #:tool-description #:tool-parameters
            #:execute #:tool-result #:make-tool-result
@@ -54,7 +62,7 @@
            #:system-prompt #:tools #:steering-messages #:follow-up-messages
            #:prepare-next-turn #:should-stop-after-turn #:emit
            #:before-tool #:after-tool #:before-request #:after-response
-           #:call-in-tool-context #:checkpoint #:cancelled #:cancelled-p
+           #:call-in-tool-context #:checkpoint #:cancelled #:cancelled-p #:recover
            #:queued-agent #:queue-steering #:queue-follow-up))
 
 (defpackage #:vivarium.stream
@@ -96,6 +104,7 @@
                     (#:msg #:vivarium.message)
                     (#:tool #:vivarium.tool)
                     (#:agent #:vivarium.agent)
+                    (#:fault #:vivarium.fault)
                     (#:client #:vivarium.client))
-  (:export #:run #:context #:make-context #:context-messages))
+  (:export #:run #:context #:make-context #:context-messages #:*request-deadline*))
 

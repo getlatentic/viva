@@ -508,3 +508,134 @@ checkpoint."))
   (with-daemon (path)
     (true (daemon:running-p path))
     (fail (daemon:serve :path (daemon-test-path) :background t) 'daemon:daemon-error)))
+
+;;; Recovery
+;;;
+;;; The boundary says what can coherently be done; policy says what to do. Two
+;;; real cases rather than a hierarchy: a provider that failed is retried, and
+;;; a tool that signalled can be retried by a policy that knows better, with
+;;; the failure-as-result that was always the behaviour kept as the default.
+
+(defclass flaky-agent (paced-agent)
+  ((failures :initarg :failures :initform 2 :accessor flaky-failures)
+   (calls :initform 0 :accessor flaky-calls)))
+
+(defmethod client:complete ((agent flaky-agent) messages)
+  (declare (ignore messages))
+  (if (<= (incf (flaky-calls agent)) (flaky-failures agent))
+      (error "connection reset by peer")
+      (say "recovered")))
+
+(define-test "a provider that fails transiently does not lose the turn"
+  (with-repository (environment)
+    (let* ((cell (actor:spawn :label "flaky"
+                              :agent (make-instance 'flaky-agent
+                                                    :environment environment
+                                                    :resource-environment environment
+                                                    :failures 2 :request-limit 500)))
+           (agent (actor:cell-agent cell)))
+      (unwind-protect
+           (let ((turn (actor:submit cell "go")))
+             ;; The conversation was intact the whole time. Ending the run
+             ;; because a socket closed threw away work that was fine.
+             (is string= "turn.completed" (actor:await-turn cell turn :timeout 30))
+             (is = 3 (flaky-calls agent) "took ~d requests" (flaky-calls agent)))
+        (actor:shutdown cell)))))
+
+(define-test "a provider that never works fails the turn instead of retrying forever"
+  ;; Falling back whenever the count is high enough looks the same as falling
+  ;; back once and is not: switching models makes the previous one the
+  ;; fallback, so two dead providers hand the run back and forth without end.
+  (with-repository (environment)
+    (let* ((cell (actor:spawn :label "dead"
+                              :agent (make-instance 'flaky-agent
+                                                    :environment environment
+                                                    :resource-environment environment
+                                                    :failures 1000 :request-limit 500)))
+           (agent (actor:cell-agent cell)))
+      (unwind-protect
+           (let ((turn (actor:submit cell "go")))
+             (is string= "turn.failed" (actor:await-turn cell turn :timeout 60))
+             (true (< (flaky-calls agent) 10)
+                   "made ~d attempts before giving up" (flaky-calls agent)))
+        (actor:shutdown cell)))))
+
+(defclass retrying-tools-agent (harness:workspace-agent)
+  ((script :initarg :script :accessor rt-script)
+   (retried :initform 0 :accessor rt-retried)))
+
+(defmethod client:complete ((agent retrying-tools-agent) messages)
+  (declare (ignore messages))
+  (or (pop (rt-script agent)) (say "done")))
+
+(defmethod agent:recover ((agent retrying-tools-agent) (condition fault:tool-unusable))
+  "A policy that knows this failure is worth one more go."
+  (when (zerop (rt-retried agent))
+    (incf (rt-retried agent))
+    (fault:retry condition)))
+
+(define-test "a policy can retry a tool the harness would have given up on"
+  ;; The default -- the failure becomes the tool's result -- was the only
+  ;; possibility, decided inside TOOL:EXECUTE where nothing is known about
+  ;; whether trying again is worth it.
+  (with-repository (environment)
+    (let ((agent (make-instance 'retrying-tools-agent
+                                :environment environment
+                                :resource-environment environment
+                                :extra-tools (list exploding-tool)
+                                :script (list (call-tool "exploding_tool")))))
+      (harness:ask agent "go")
+      (is = 1 (rt-retried agent) "the tool boundary offered no retry"))))
+
+(define-test "with no policy, a tool that signals still becomes its own result"
+  (with-repository (environment)
+    (let ((agent (make-instance 'replaying-agent
+                                :environment environment
+                                :resource-environment environment
+                                :extra-tools (list exploding-tool)
+                                :script (list (call-tool "exploding_tool")))))
+      (multiple-value-bind (reply messages) (harness:ask agent "go")
+        (declare (ignore reply))
+        (let ((result (find-if #'msg:tool-result-message-p messages)))
+          (true result "no tool result reached the conversation")
+          (true (msg:tool-result-message-error-p result))
+          (true (mentions "boom" (msg:tool-result-message-output result))))))))
+
+(defclass stalling-agent (paced-agent)
+  ((stalls :initarg :stalls :initform 1 :accessor stalling-stalls)
+   (calls :initform 0 :accessor stalling-calls)))
+
+(defmethod client:complete ((agent stalling-agent) messages)
+  (declare (ignore messages))
+  (if (<= (incf (stalling-calls agent)) (stalling-stalls agent))
+      (progn (sleep 30) (say "far too late"))
+      (say "answered")))
+
+(define-test "a request that stalls is bounded and recovered, not waited on forever"
+  ;; The HTTP client's read timeout bounds each individual read, which a
+  ;; connection trickling a byte every few minutes never trips. A deadline
+  ;; bounds the exchange, and a deadline that fires is just another
+  ;; unreachable provider as far as policy is concerned.
+  ;; SETF, not LET. The turn runs on a worker thread, and SBCL threads do not
+  ;; inherit dynamic bindings -- a LET here is invisible inside the worker,
+  ;; which read the global 900 and stalled for the full thirty seconds. Law 9,
+  ;; demonstrated by breaking it. Anything genuinely task-local must be
+  ;; captured and rebound in the worker; a global backstop is set globally.
+  (let ((previous loop*:*request-deadline*))
+    (unwind-protect
+         (progn
+           (setf loop*:*request-deadline* 0.4)
+           (with-repository (environment)
+             (let* ((cell (actor:spawn :label "stalling"
+                                       :agent (make-instance 'stalling-agent
+                                                             :environment environment
+                                                             :resource-environment environment
+                                                             :stalls 1 :request-limit 500)))
+                    (agent (actor:cell-agent cell)))
+               (unwind-protect
+                    (let ((turn (actor:submit cell "go")))
+                      (is string= "turn.completed" (actor:await-turn cell turn :timeout 25))
+                      (is = 2 (stalling-calls agent)
+                          "took ~d requests" (stalling-calls agent)))
+                 (actor:shutdown cell)))))
+      (setf loop*:*request-deadline* previous))))
