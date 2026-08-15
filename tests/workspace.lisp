@@ -762,3 +762,73 @@ rather than leaving it to be rediscovered a third time."
       (is = 1 (length (session:search-sessions "trailing commas" :cwd where)))
       (is = 0 (length (session:search-sessions "no such phrase" :cwd where)))
       (ignore-errors (uiop:delete-directory-tree directory :validate t)))))
+
+;;; Decision points
+
+(defclass deciding-agent (harness:workspace-agent)
+  ((script :initarg :script :accessor script)))
+
+(defmethod client:complete ((agent deciding-agent) messages)
+  (declare (ignore messages))
+  (or (pop (script agent))
+      (msg:make-assistant-message :content (list (msg:make-text "done")) :stop-reason :stop)))
+
+(defun ws-guarded-run (environment command)
+  "One run whose single tool call is `bash COMMAND`, with guard loaded."
+  (let ((agent (make-instance 'deciding-agent
+                              :environment environment :resource-environment environment
+                              :script (list (msg:make-assistant-message
+                                             :content (list (msg:make-tool-call
+                                                             :id "c1" :name "bash"
+                                                             :arguments (args "command" command)))
+                                             :stop-reason :tool-calls)))))
+    (workspace:with-environment (environment)
+      (let ((harness:*agent* agent))
+        (let ((produced (loop*:run agent (list (msg:make-user-message
+                                                :content (list (msg:make-text "go")))))))
+          (find-if #'msg:tool-result-message-p produced))))))
+
+(define-test "an extension can refuse a tool call before it runs"
+  ;; The whole point of a decision point. Until these existed an extension could
+  ;; watch `rm -rf /` go past and had no way to stop it.
+  (with-repository (environment)
+    (let ((extension:*registry* '()))
+      (load (merge-pathnames "examples/extensions/guard.lisp"
+                             (asdf:system-source-directory "vivarium")))
+      ;; Refused: the marker file is never created.
+      (let ((result (ws-guarded-run environment "rm -rf / ; touch refused-marker")))
+        (true (msg:tool-result-message-error-p result))
+        (true (mentions "Refused" (msg:tool-result-message-output result)))
+        (false (env:path-exists-p environment "refused-marker")))
+      ;; Allowed: an ordinary command still runs.
+      (let ((result (ws-guarded-run environment "touch allowed-marker")))
+        (false (msg:tool-result-message-error-p result))
+        (true (env:path-exists-p environment "allowed-marker"))))))
+
+(define-test "an extension can redact a result before anyone sees it"
+  (with-repository (environment)
+    (let ((extension:*registry* '()))
+      (load (merge-pathnames "examples/extensions/guard.lisp"
+                             (asdf:system-source-directory "vivarium")))
+      (let ((result (ws-guarded-run environment "echo token=sk-abcdef123456 done")))
+        (true (mentions "[redacted]" (msg:tool-result-message-output result)))
+        (false (mentions "sk-abcdef" (msg:tool-result-message-output result)))
+        ;; And what was around it survives -- redaction, not deletion.
+        (true (mentions "done" (msg:tool-result-message-output result)))))))
+
+(define-test "the first extension to decide wins, and cannot be overturned"
+  ;; FIRE threads every handler's answer through the next; DECIDE stops at the
+  ;; first. A refusal that a later-loaded extension could undo would make load
+  ;; order part of the security model, invisibly.
+  (let ((extension:*registry* '()))
+    (extension:defextension "first"
+      :description "Refuses."
+      (extension:on :tool-call (lambda (event) (declare (ignore event))
+                                 (tool:make-tool-result :output "no" :error-p t))))
+    (extension:defextension "second"
+      :description "Would allow."
+      (extension:on :tool-call (lambda (event) (declare (ignore event))
+                                 (tool:make-tool-result :output "yes"))))
+    (let ((decision (extension:decide :tool-call '())))
+      (is string= "no" (tool:tool-result-output decision))
+      (true (tool:tool-result-error-p decision)))))

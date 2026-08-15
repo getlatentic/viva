@@ -173,9 +173,14 @@ Generic because the provider belongs to the agent: a scored trial can swap in a
 scripted responder without the loop knowing, and a self-modifying agent can
 change its own provider mid-run.")
   (:method (agent messages)
-    (handler-case
-        (if (agent:agent-stream-p agent)
-            (post-streaming agent messages)
-            (post-blocking agent messages))
-      (client-error (condition) (error condition))
-      (error (condition) (error 'client-error :detail (princ-to-string condition))))))
+    ;; BEFORE-REQUEST and AFTER-RESPONSE bracket the only moment the wire is
+    ;; reachable. An extension that wants to see or change what is actually sent
+    ;; has nowhere else to stand.
+    (let ((messages (or (agent:before-request agent messages) messages)))
+      (handler-case
+          (let ((message (if (agent:agent-stream-p agent)
+                             (post-streaming agent messages)
+                             (post-blocking agent messages))))
+            (or (agent:after-response agent message) message))
+        (client-error (condition) (error condition))
+        (error (condition) (error 'client-error :detail (princ-to-string condition)))))))

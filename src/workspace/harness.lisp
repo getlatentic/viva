@@ -162,6 +162,22 @@ the harness knowing anything about retrieval."
     (cond ((and replacement (not (eq replacement context))) (list :context replacement))
           (compacted (list :context compacted)))))
 
+(defmethod agent:before-tool ((agent workspace-agent) call)
+  "Let extensions refuse or rewrite a call before it runs.
+
+The first handler to return something decides -- a veto that later handlers
+could overturn would make the order of extensions load-bearing and invisible."
+  (extension:decide :tool-call (list :agent agent :call call)))
+
+(defmethod agent:after-tool ((agent workspace-agent) call result)
+  (extension:decide :tool-result (list :agent agent :call call :result result)))
+
+(defmethod agent:before-request ((agent workspace-agent) messages)
+  (extension:decide :before-provider-request (list :agent agent :messages messages)))
+
+(defmethod agent:after-response ((agent workspace-agent) message)
+  (extension:decide :after-provider-response (list :agent agent :message message)))
+
 (defmethod agent:emit ((agent workspace-agent) event)
   (case (getf event :type)
     (:message (a:when-let ((session (agent-session agent)))
@@ -184,6 +200,7 @@ the harness knowing anything about retrieval."
            :call-id (msg:tool-call-id (getf event :call))
            :output (tool:tool-result-output result)
            :error-p (tool:tool-result-error-p result))))))
+    (:turn-start (extension:fire :turn-start event))
     (:turn-end (extension:fire :turn-end event))
     ;; Where a run's own consequences can be acted on: everything the agent did
     ;; has happened, and nothing is waiting on the answer. Pi calls it agent_end.
@@ -244,7 +261,18 @@ never a reason to refuse to start."
                                :extra-prompt extra-prompt
                                :extension-directories extension-directories
                                :request-limit request-limit)))
-    (values agent (when load-resources (refresh-resources agent)))))
+    (let ((complaints (when load-resources (refresh-resources agent))))
+      (let ((*agent* agent))
+        (extension:fire :session-start (list :agent agent :cwd cwd)))
+      (values agent complaints))))
+
+(defun close-agent (agent)
+  "End a session: let extensions write anything they were keeping, then close."
+  (let ((*agent* agent))
+    (extension:fire :session-end (list :agent agent)))
+  (a:when-let ((session (agent-session agent)))
+    (session:close-session session))
+  agent)
 
 ;;; Running
 
@@ -262,6 +290,7 @@ The conversation persists on the agent, so a second ASK continues the first.
 That is what makes an interactive shell and an IPC session the same object."
   (setf (agent-requests agent) 0
         (agent-aborting agent) nil)
+  (extension:fire :agent-start (list :agent agent :text text))
   ;; The environment is bound around the hook as well as the run: a
   ;; :BEFORE-REQUEST handler that reads a file -- which is exactly what a memory
   ;; extension does -- would otherwise fail on every request, be caught, and be
@@ -270,6 +299,7 @@ That is what makes an interactive shell and an IPC session the same object."
                      (workspace:with-environment ((agent-environment agent))
                        (let ((message (extension:fire :before-request (user-message text))))
                          (loop*:run agent (list message) :context (agent-context agent)))))))
+    (extension:fire :agent-end (list :agent agent :messages produced))
     (values (last-assistant-text produced) produced)))
 
 (defun apply-settings (agent session)

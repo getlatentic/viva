@@ -27,17 +27,32 @@
    :output (tool:tool-result-output result)
    :error-p (tool:tool-result-error-p result)))
 
+(defun run-tool (agent call context)
+  "The call itself, after BEFORE-TOOL has had its say.
+
+A TOOL-RESULT from the hook short-circuits: the tool does not run, and the
+refusal reaches the model as a result it can read rather than as a crash. A
+TOOL-CALL from the hook replaces the call, so arguments can be rewritten."
+  (let ((decision (agent:before-tool agent call)))
+    (etypecase decision
+      (tool:tool-result (values decision call))
+      (msg:tool-call (values (run-tool-directly agent decision context) decision))
+      (null (values (run-tool-directly agent call context) call)))))
+
+(defun run-tool-directly (agent call context)
+  (a:if-let ((tool (find-tool agent (msg:tool-call-name call))))
+    (tool:execute tool (msg:tool-call-arguments call) context)
+    (tool:make-tool-result
+     :output (format nil "No such tool: ~a" (msg:tool-call-name call))
+     :error-p t)))
+
 (defun execute-one (agent call context)
   "Run one tool call, returning (values result-message terminate-p)."
   (agent:emit agent (list :type :tool-start :call call))
-  (let* ((tool (find-tool agent (msg:tool-call-name call)))
-         (result (if tool
-                     (tool:execute tool (msg:tool-call-arguments call) context)
-                     (tool:make-tool-result
-                      :output (format nil "No such tool: ~a" (msg:tool-call-name call))
-                      :error-p t))))
-    (agent:emit agent (list :type :tool-end :call call :result result))
-    (values (result-message call result) (tool:tool-result-terminate-p result))))
+  (multiple-value-bind (result actual) (run-tool agent call context)
+    (let ((result (or (agent:after-tool agent actual result) result)))
+      (agent:emit agent (list :type :tool-end :call actual :result result))
+      (values (result-message actual result) (tool:tool-result-terminate-p result)))))
 
 (defun execute-batch (agent calls context)
   "Run every call in CALLS. Returns (values result-messages terminate-p).

@@ -75,6 +75,40 @@ Return NIL to keep everything, matching Pi's optional prepareNextTurn.")
     (declare (ignore message tool-results context))
     nil))
 
+;;; Decision points.
+;;;
+;;; EMIT tells an agent what happened; these ask it what should happen, and the
+;;; difference is the whole difference between an observer and a participant. An
+;;; extension that can only watch a tool call cannot refuse a destructive one,
+;;; cannot redact a credential out of a result, and cannot sandbox anything --
+;;; which was true here until these existed.
+;;;
+;;; Each returns NIL to mean "carry on unchanged", so the default costs nothing
+;;; and the loop needs no conditional for the ordinary case.
+
+(defgeneric before-tool (agent call)
+  (:documentation "Asked before CALL runs.
+
+NIL proceeds. A TOOL-RESULT short-circuits, and the tool never runs -- which is
+how a refusal is expressed, and why the refusal reaches the model as an ordinary
+result it can read and respond to rather than as a crash. A TOOL-CALL replaces
+the call, so arguments can be rewritten.")
+  (:method ((agent agent) call) (declare (ignore call)) nil))
+
+(defgeneric after-tool (agent call result)
+  (:documentation "Asked after CALL ran. NIL keeps RESULT; a TOOL-RESULT replaces it.")
+  (:method ((agent agent) call result) (declare (ignore call result)) nil))
+
+(defgeneric before-request (agent messages)
+  (:documentation "Asked with the conversation about to be sent.
+NIL sends it unchanged; a list of messages replaces it.")
+  (:method ((agent agent) messages) (declare (ignore messages)) nil))
+
+(defgeneric after-response (agent message)
+  (:documentation "Asked with the assistant message just received.
+NIL keeps it; a message replaces it.")
+  (:method ((agent agent) message) (declare (ignore message)) nil))
+
 (defgeneric emit (agent event)
   (:documentation "Receive one loop event, a plist beginning with :TYPE.")
   (:method ((agent agent) event) (declare (ignore event)) nil))

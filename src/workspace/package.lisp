@@ -104,7 +104,8 @@
            #:*registry* #:defextension #:register-extension #:loaded-extensions
            #:load-extensions #:extension-directories
            #:extension-description
-           #:register-tool #:register-command #:on #:fire
+           #:register-tool #:register-command #:register-provider #:on #:fire #:decide
+           #:all-providers #:extension-providers
            #:hook #:command #:command-name #:command-description #:command-handler
            #:find-command #:all-commands #:all-tools #:reset-registry
            #:trust #:trusted-p #:trust-file))
@@ -165,6 +166,6 @@
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
            #:agent-extension-directories #:agent-compaction #:agent-active-tools
            #:compact-now #:set-model #:set-active-tools #:apply-settings
-           #:send-message #:append-custom #:navigate #:tree-lines
+           #:send-message #:append-custom #:navigate #:tree-lines #:close-agent
            #:ask #:converse #:resume #:refresh-resources #:harness-tool-set #:record
            #:*agent* #:*default-model* #:*default-provider-name*))

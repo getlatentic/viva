@@ -32,6 +32,7 @@
   (path "" :type string)
   (tools '() :type list)
   (commands '() :type list)
+  (providers '() :type list)
   (hooks '() :type list))
 
 (defvar *registry* '()
@@ -110,6 +111,35 @@ which surfaced as a 400 on the request AFTER the one that reloaded."
 ;;; this instead", and it is threaded into the next handler. That single rule
 ;;; covers observation, transformation and veto without three mechanisms, and it
 ;;; makes the order of extensions explicit rather than accidental.
+
+(defun decide (event payload)
+  "Ask for a decision. The FIRST handler to answer wins; the rest are not asked.
+
+Different from FIRE, which threads every handler's replacement through the next.
+A decision must not be overturnable, or the order of extensions silently becomes
+part of the security model -- an extension that refuses `rm -rf` should not be
+undone by one loaded after it that merely wanted to add a header."
+  (dolist (extension (loaded-extensions) nil)
+    (loop for (name . handler) in (reverse (extension-hooks extension))
+          when (eq name event)
+            do (a:when-let ((answer (handler-case (funcall handler payload)
+                                      (error (condition)
+                                        (warn "Extension ~a failed on ~a: ~a"
+                                              (extension-name extension) event condition)
+                                        nil))))
+                 (return-from decide answer)))))
+
+(defun register-provider (name provider)
+  "Make PROVIDER available under NAME, as a model choice.
+
+Pi's registerProvider. An extension is the right place for it: a gateway with
+its own auth, a local server, a proxy that rewrites requests -- none of those
+belong in the harness's catalogue, and all of them are one file."
+  (push (cons name provider) (extension-providers (current)))
+  provider)
+
+(defun all-providers ()
+  (loop for extension in (loaded-extensions) append (reverse (extension-providers extension))))
 
 (defun fire (event payload)
   "Run every handler for EVENT over PAYLOAD, threading replacements. Returns the
