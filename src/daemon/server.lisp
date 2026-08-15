@@ -19,7 +19,7 @@
              (write-string (daemon-error-detail condition) stream))))
 
 (defvar *socket* nil "The listening socket, while serving.")
-(defvar *listeners* '())
+(defvar *socket-file* nil "The path SERVE bound, so STOP unlinks that one.")
 (defvar *lock* (bt:make-lock "vivarium.daemon"))
 
 (defun socket-path ()
@@ -38,21 +38,37 @@
   (stream nil)
   (lock (bt:make-lock "vivarium.client"))
   (key nil)
+  (live t :type boolean)
   (watching '() :type list))
 
 (defun say (client table)
   "One JSON object, one line, under a lock: the reader thread and a session's
 own thread both write here."
   (bt:with-lock-held ((client-lock client))
-    (handler-case
-        (progn (jzon:with-writer* (:stream (client-stream client))
-                 (jzon:write-value* table))
-               (terpri (client-stream client))
-               (force-output (client-stream client))
-               t)
-      ;; A client that went away is not an error worth reporting; it is the
-      ;; ordinary end of a connection, and the session carries on without it.
-      (error () nil))))
+    (when (client-live client)
+      (handler-case
+          (progn (jzon:with-writer* (:stream (client-stream client))
+                   (jzon:write-value* table))
+                 (terpri (client-stream client))
+                 (force-output (client-stream client))
+                 t)
+        ;; A client that went away is not an error worth reporting; it is the
+        ;; ordinary end of a connection, and the session carries on without it.
+        ;;
+        ;; The connection is finished either way, though. A write that failed
+        ;; part way through has left half an object on the wire, and a truncated
+        ;; line followed by a whole one is not parseable by anyone.
+        (error () (setf (client-live client) nil))))))
+
+(defun next-line (client)
+  "The next line, or NIL when this connection is over for any reason at all.
+
+A broken socket is how a connection ends, not a condition to signal. READ-LINE
+raises on a bad descriptor rather than returning its EOF value, and this runs
+under `sbcl --script`, where an unhandled condition in any thread quits the
+whole process -- one hung-up client used to take the organism with it."
+  (handler-case (read-line (client-stream client) nil nil)
+    (error () nil)))
 
 (defun watch (client cell &key (from 0))
   "Send CELL's events to CLIENT, starting with whatever it missed."
@@ -167,7 +183,7 @@ own thread both write here."
          (progn
            (say client (object "type" "ready" "pid" (sb-posix:getpid)
                                "sessions" (coerce (mapcar #'cell-json (actor:all-cells)) 'vector)))
-           (loop for line = (read-line stream nil nil)
+           (loop for line = (and (client-live client) (next-line client))
                  while line
                  do (unless (zerop (length (string-trim '(#\Space #\Tab #\Return) line)))
                       (handler-case (handle client (jzon:parse line))
@@ -177,27 +193,57 @@ own thread both write here."
       (unwatch-all client)
       (ignore-errors (close stream)))))
 
+(defun serve-connection (connection)
+  "Hand one accepted connection to its own thread.
+
+CONNECTION is taken as an argument on purpose. LOOP's iteration variable is a
+single binding updated in place, so a closure made inside the accept loop reads
+whatever the *next* accept stored there -- two threads then built streams from
+one socket, SBCL handed them the same stream, and they wrote interleaved JSON
+onto one descriptor while the first to finish closed it under the other. That
+is both of the daemon's observed failures: a client that could not parse the
+greeting, and a `Bad file descriptor` that quit the entire organism."
+  (bt:make-thread
+   (lambda ()
+     ;; Nothing a client does may reach the top level: --script disables the
+     ;; debugger, and an unhandled condition in any thread ends the process.
+     (handler-case
+         (serve-client (sockets:socket-make-stream connection
+                                                   :input t :output t
+                                                   :element-type 'character
+                                                   :external-format :utf-8))
+       (error () nil)))
+   :name "vivarium-client"))
+
 ;;; The daemon
 
 (defun running-p (&optional (path (socket-path)))
-  "Is something answering on the socket? A stale file left by a crash is not a
-running daemon, and treating it as one is how a machine gets stuck."
-  (when (probe-file path)
-    (handler-case
-        (let ((socket (make-instance 'sockets:local-socket :type :stream)))
-          (sockets:socket-connect socket path)
-          (sockets:socket-close socket)
-          t)
-      (error ()
-        (ignore-errors (delete-file path))
-        nil))))
+  "Is something answering on the socket?
+
+Answers the question and does nothing else. This used to delete the file
+whenever a connection failed for any reason, on the theory that only a stale
+file can refuse -- but a full backlog refuses too, so one badly timed probe
+unlinked a live daemon's socket and left a running process nobody could reach.
+Clearing a stale file is a repair, and repair belongs in SERVE, which already
+does it before binding."
+  (and (probe-file path)
+       (handler-case
+           (let ((socket (make-instance 'sockets:local-socket :type :stream)))
+             (unwind-protect (progn (sockets:socket-connect socket path) t)
+               (ignore-errors (sockets:socket-close socket))))
+         (error () nil))))
 
 (defun stop ()
   (bt:with-lock-held (*lock*)
     (when *socket*
       (ignore-errors (sockets:socket-close *socket*))
-      (setf *socket* nil)))
-  (ignore-errors (delete-file (socket-path)))
+      (setf *socket* nil))
+    ;; The path SERVE bound, not the default one. This unlinked (SOCKET-PATH)
+    ;; whatever it had been told to listen on, so a daemon on a second socket
+    ;; deleted the first one's file on its way out and left its own behind.
+    (when *socket-file*
+      (ignore-errors (delete-file *socket-file*))
+      (setf *socket-file* nil)))
   t)
 
 (defun serve (&key (path (socket-path)) (background nil))
@@ -205,24 +251,32 @@ running daemon, and treating it as one is how a machine gets stuck."
   (when (running-p path)
     (error 'daemon-error :detail (format nil "A daemon is already listening on ~a." path)))
   (ensure-directories-exist path)
+  ;; Nothing answered, so any file here is what a crash left behind. This is the
+  ;; only place that unlinks a socket nobody has proven dead.
   (ignore-errors (delete-file path))
   (let ((socket (make-instance 'sockets:local-socket :type :stream)))
     (sockets:socket-bind socket path)
     (sockets:socket-listen socket 16)
-    (setf *socket* socket)
+    (setf *socket* socket
+          *socket-file* path)
     (flet ((accept-loop ()
              (unwind-protect
-                  (loop while *socket*
-                        for connection = (handler-case (sockets:socket-accept socket)
-                                           (error () nil))
-                        while connection
-                        do (bt:make-thread
-                            (lambda ()
-                              (serve-client (sockets:socket-make-stream
-                                             connection :input t :output t
-                                             :element-type 'character
-                                             :external-format :utf-8)))
-                            :name "vivarium-client"))
+                  (loop with failures = 0
+                        while *socket*
+                        do (let ((connection (handler-case (sockets:socket-accept socket)
+                                               (error () nil))))
+                             (cond (connection
+                                    (setf failures 0)
+                                    (serve-connection connection))
+                                   ;; STOP closed the listener: the ordinary
+                                   ;; exit. Anything else is one refused
+                                   ;; connection -- a client hanging up between
+                                   ;; connecting and being served must not
+                                   ;; retire the listener, which is what
+                                   ;; leaving the loop does, since unwinding
+                                   ;; here deletes the socket.
+                                   ((or (null *socket*) (> (incf failures) 32))
+                                    (loop-finish)))))
                (stop))))
       (if background
           (bt:make-thread #'accept-loop :name "vivariumd")
@@ -232,10 +286,16 @@ running daemon, and treating it as one is how a machine gets stuck."
 ;;; Talking to one
 
 (defun connect (&optional (path (socket-path)))
-  (unless (running-p path)
-    (error 'daemon-error :detail (format nil "No daemon listening on ~a." path)))
+  "One connection, and no probe first.
+
+Asking RUNNING-P here opened and closed a whole extra connection for every one
+that mattered: churn against the accept loop, and a second chance to be told no
+between the asking and the connecting."
   (let ((socket (make-instance 'sockets:local-socket :type :stream)))
-    (sockets:socket-connect socket path)
+    (handler-case (sockets:socket-connect socket path)
+      (error ()
+        (ignore-errors (sockets:socket-close socket))
+        (error 'daemon-error :detail (format nil "No daemon listening on ~a." path))))
     (sockets:socket-make-stream socket :input t :output t
                                        :element-type 'character :external-format :utf-8)))
 

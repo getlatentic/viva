@@ -148,7 +148,7 @@
 
 (defsystem "vivarium/tests"
   :depends-on ("vivarium" "vivarium/image" "vivarium/search" "vivarium/tasks"
-               "vivarium/cli" "parachute")
+               "vivarium/cli" "vivarium/daemon" "parachute")
   :serial t
   :components ((:module "tests"
                 :serial t
@@ -164,5 +164,6 @@
                              (:file "merge")
                              (:file "tasks")
                              (:file "render")
-                             (:file "workspace"))))
+                             (:file "workspace")
+                             (:file "daemon"))))
   :perform (test-op (op c) (symbol-call :parachute :test :vivarium.tests)))

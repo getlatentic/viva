@@ -37,7 +37,9 @@
                     (#:harness #:vivarium.harness)
                     (#:compaction #:vivarium.compaction)
                     (#:template #:vivarium.template)
-                    (#:operation #:vivarium.operation)))
+                    (#:operation #:vivarium.operation)
+                    (#:actor #:vivarium.actor)
+                    (#:daemon #:vivarium.daemon)))
 
 (in-package #:vivarium.tests)
 

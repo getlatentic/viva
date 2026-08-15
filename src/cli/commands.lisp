@@ -303,17 +303,24 @@ detaches the accept loop and returns, which is what `vivarium attach` uses when
 it finds nobody home."
   (let ((verb (or (first (args-positional parsed)) "status")))
     (cond
+      ;; No RUNNING-P first: the connection is the question. Asking twice was
+      ;; two connections for one answer, with room for the answer to change in
+      ;; between.
       ((string= "status" verb)
-       (if (daemon:running-p)
+       (handler-case
            (daemon:with-connection (stream)
-             (let ((ready (jzon:parse (read-line stream))))
-               (format t "~&running, pid ~a, ~d session~:p~%"
-                       (gethash "pid" ready) (length (gethash "sessions" ready)))
-               (loop for each across (gethash "sessions" ready)
-                     do (format t "~&  ~a  ~10a ~a~%" (gethash "id" each)
-                                (gethash "state" each) (gethash "label" each))))
-             0)
-           (progn (format t "~&not running~%") 1)))
+             (let ((line (read-line stream nil nil)))
+               (cond ((null line) (format t "~&running, but it did not answer~%") 1)
+                     (t (let ((ready (jzon:parse line)))
+                          (format t "~&running, pid ~a, ~d session~:p~%"
+                                  (gethash "pid" ready) (length (gethash "sessions" ready)))
+                          (loop for each across (gethash "sessions" ready)
+                                do (format t "~&  ~a  ~10a ~a~%" (gethash "id" each)
+                                           (gethash "state" each) (gethash "label" each)))
+                          0)))))
+         ;; Only a refused connection means no daemon. A greeting that will not
+         ;; parse is a defect, and calling it `not running` is how one hid.
+         (daemon:daemon-error () (format t "~&not running~%") 1)))
       ((string= "start" verb)
        (format t "~&listening on ~a~%" (daemon:socket-path))
        (finish-output)
