@@ -77,10 +77,24 @@ anchor this exists to remove."
            (notes (curator-notes existing)))
       (when (< (length notes) +curator-threshold+)
         (return-from curator-consolidate nil))
-      (let ((rewritten (handler-case (curator-ask agent (format nil "~{~a~%~}" notes))
-                         ;; A failed consolidation must lose nothing. The
-                         ;; original notes are the only copy.
-                         (error () nil))))
+      (let* ((began (get-internal-real-time))
+             (rewritten (handler-case (curator-ask agent (format nil "~{~a~%~}" notes))
+                          ;; A failed consolidation must lose nothing. The
+                          ;; original notes are the only copy.
+                          (error (condition)
+                            (vivarium.harness:record :curator-failed
+                                                     "detail" (princ-to-string condition))
+                            nil))))
+        ;; Recorded because it was invisible. This request is made by a bare
+        ;; agent, so it passes through no listener and reaches no transcript:
+        ;; every token and request figure reported for the curator arm was
+        ;; understated by exactly this call, and nothing in the data said so.
+        (vivarium.harness:record
+         :curator-consolidated
+         "notes_in" (length notes)
+         "notes_out" (length (curator-notes (or rewritten "")))
+         "ms" (round (* 1000 (- (get-internal-real-time) began))
+                     internal-time-units-per-second))
         (when (and rewritten (plusp (length (curator-notes rewritten))))
           (vivarium.env:write-text
            environment

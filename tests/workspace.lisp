@@ -346,3 +346,27 @@ it broke eleven tests in files this one never mentions."
     (multiple-value-bind (output error-p) (run-tool workspace:read-tool "path" "blank.py")
       (false error-p)
       (is string= "" output))))
+
+(define-test "records sit beside the conversation and never enter it"
+  ;; Pi's split, and it earns its place immediately: telemetry has to interleave
+  ;; with the turn that produced it, and must not be sent back to a model.
+  (with-repository (environment)
+    (let* ((directory (uiop:parse-native-namestring
+                       (format nil "~a/.sessions/" (env:env-cwd environment))))
+           (session (session:open-session :directory directory)))
+      (session:record-entry session :message
+                            (msg:make-user-message :content (list (msg:make-text "hello"))))
+      (session:append-record session :tool-finished "name" "read" "ms" 12)
+      (session:append-record session :usage "prompt_tokens" 100 "completion_tokens" 7)
+      (session:close-session session)
+      (let* ((entries (session:load-session (session:session-path session)))
+             (messages (session:session-messages entries)))
+        ;; A header, a message and two records.
+        (is = 4 (length entries))
+        (is = 1 (length messages))
+        (is string= "hello" (msg:text-of (first messages)))
+        (is = 2 (length (session:records-of entries)))
+        (is = 1 (length (session:records-of entries :usage)))
+        (is = 100 (gethash "prompt_tokens"
+                           (session:entry-payload
+                            (first (session:records-of entries :usage)))))))))

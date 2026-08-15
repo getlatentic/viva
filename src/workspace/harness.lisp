@@ -203,6 +203,16 @@ That is what makes an interactive shell and an IPC session the same object."
   "Ask each of PROMPTS in turn on one conversation. Returns the replies."
   (mapcar (lambda (prompt) (ask agent prompt)) prompts))
 
+(defun record (kind &rest plist)
+  "Write a record into the running session, from anywhere -- a tool, an
+extension, a hook. Pi's appendEntry: extension bookkeeping is persisted beside
+the conversation without becoming part of it.
+
+Silently does nothing when there is no session, so an extension that traces does
+not have to care whether the caller asked for a transcript."
+  (a:when-let ((agent *agent*))
+    (apply #'session:append-record (agent-session agent) kind plist)))
+
 (defun harness-tool-set (agent)
   "The tool set as the model will see it on the next request."
   (agent:tools agent))

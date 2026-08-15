@@ -31,13 +31,26 @@
     (format nil "~4,'0d~2,'0d~2,'0d-~2,'0d~2,'0d~2,'0d-~4,'0x"
             year month day hour minute second (random 65536 (make-random-state t)))))
 
-(defun open-session (&key (directory (session-directory)) (id (new-id)))
-  "Open a new session file for appending. Existing entries are not read."
-  (let ((path (merge-pathnames (format nil "~a.jsonl" id) directory)))
-    (ensure-directories-exist path)
-    (make-session :id id :path (namestring path)
-                  :stream (open path :direction :output :if-exists :append
-                                     :if-does-not-exist :create :external-format :utf-8))))
+(defparameter +format-version+ 1)
+
+(defun open-session (&key (directory (session-directory)) (id (new-id)) cwd parent)
+  "Open a new session file for appending. Existing entries are not read.
+
+The first line is a header, so a file found on disk says what it is without a
+reader having to infer it from the shape of line two."
+  (let* ((path (merge-pathnames (format nil "~a.jsonl" id) directory))
+         (fresh (not (probe-file path)))
+         (session (progn (ensure-directories-exist path)
+                         (make-session :id id :path (namestring path)
+                                       :stream (open path :direction :output :if-exists :append
+                                                          :if-does-not-exist :create
+                                                          :external-format :utf-8)))))
+    (when fresh
+      (write-line* session (object "kind" "header" "version" +format-version+
+                                   "id" id "time" (get-universal-time)
+                                   "cwd" (or cwd (uiop:native-namestring (uiop:getcwd)))
+                                   "parent" (or parent :null))))
+    session))
 
 (defun close-session (session)
   (when (session-stream session)
@@ -82,19 +95,46 @@
      (object "role" (string-downcase (symbol-name (msg:message-role message)))
              "content" (coerce (mapcar #'encode-content (msg:message-content message)) 'vector)))))
 
+(defun write-line* (session table)
+  (a:when-let ((stream (session-stream session)))
+    (jzon:with-writer* (:stream stream)
+      (jzon:write-value* table))
+    (terpri stream)
+    (force-output stream)))
+
 (defun record-entry (session kind payload)
-  "Append one entry. KIND is :MESSAGE, :NOTE, :USAGE or an extension's own."
+  "Append one entry. KIND is :MESSAGE, or a RECORD kind, or an extension's own."
   (let ((entry (make-entry :kind kind :time (get-universal-time)
                            :payload (if (msg:message-p payload) (encode-message payload) payload))))
     (push entry (session-entries session))
-    (a:when-let ((stream (session-stream session)))
-      (jzon:with-writer* (:stream stream)
-        (jzon:write-value* (object "kind" (string-downcase (symbol-name kind))
-                                   "time" (entry-time entry)
-                                   "payload" (entry-payload entry))))
-      (terpri stream)
-      (force-output stream))
+    (write-line* session (object "kind" (string-downcase (symbol-name kind))
+                                 "time" (entry-time entry)
+                                 "payload" (entry-payload entry)))
     entry))
+
+;;; Records
+;;;
+;;; Pi's distinction, and it earns its place immediately: an ENTRY is part of
+;;; the conversation and may be sent to a model, a RECORD is what happened
+;;; around the conversation and never is. Tool timings, token usage and an
+;;; extension's own bookkeeping are all records -- writing them as entries would
+;;; put telemetry into the next request, and keeping them in a separate file
+;;; would lose the interleaving that makes them worth reading.
+;;;
+;;; SESSION-MESSAGES already selects on :MESSAGE, so a record cannot reach a
+;;; provider by accident.
+
+(defun append-record (session kind &rest plist)
+  "Write an operational record. KIND is a keyword; PLIST becomes its payload."
+  (when session
+    (record-entry session kind (apply #'object plist))))
+
+(defun records-of (entries &optional kind)
+  (remove-if (lambda (entry)
+               (or (eq :message (entry-kind entry))
+                   (eq :header (entry-kind entry))
+                   (and kind (not (eq kind (entry-kind entry))))))
+             entries))
 
 (defun entries-of (session)
   (reverse (session-entries session)))

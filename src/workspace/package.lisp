@@ -109,6 +109,7 @@
   (:export #:session #:open-session #:session-path #:session-id #:session-entries
            #:record-entry #:entries-of #:close-session #:load-session
            #:session-messages #:latest-session #:session-directory #:usage-of
+           #:append-record #:records-of #:+format-version+
            #:entry #:entry-kind #:entry-payload #:entry-time))
 
 (defpackage #:vivarium.models
@@ -136,5 +137,5 @@
            #:agent-request-limit #:agent-requests #:agent-context #:agent-aborting
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
            #:agent-extension-directories
-           #:ask #:converse #:refresh-resources #:harness-tool-set
+           #:ask #:converse #:refresh-resources #:harness-tool-set #:record
            #:*agent* #:*default-model* #:*default-provider-name*))
