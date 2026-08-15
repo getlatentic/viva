@@ -284,7 +284,10 @@ never a reason to refuse to start."
 (defun session-paths (agent)
   "The live transcript's directory, when it sits inside the working tree."
   (a:when-let ((session (agent-session agent)))
-    (let ((directory (env:parent-path (session:session-path session)))
+    ;; Canonicalised before comparing. ENV-CWD already is, so a raw session path
+    ;; spelled /tmp/... never looked like it was inside a cwd spelled
+    ;; /private/tmp/... and the exclusion silently did nothing.
+    (let ((directory (env:canonical-directory (env:parent-path (session:session-path session))))
           (cwd (env:env-cwd (agent-environment agent))))
       (when (a:starts-with-subseq cwd directory) (list directory)))))
 

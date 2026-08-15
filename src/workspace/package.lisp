@@ -24,6 +24,7 @@
   (:export #:environment #:local-environment #:make-local-environment
            #:env-cwd #:env-root
            #:absolute-path #:join-path #:relative-path #:parent-path #:base-name
+           #:canonical-directory
            #:read-text #:read-bytes #:write-text #:file-info
            #:info-name #:info-path #:info-kind #:info-size
            #:list-directory #:ensure-directory #:delete-path #:path-exists-p

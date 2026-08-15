@@ -929,3 +929,26 @@ rather than leaving it to be rediscovered a third time."
     ;; And an explicitly excluded path is skipped too, wherever it is.
     (let ((workspace:*excluded-paths* (list (env:join-path (env:env-cwd environment) "src"))))
       (false (mentions "src/core.lisp" (run-tool workspace:find-tool "pattern" "*.lisp"))))))
+
+(define-test "the session directory is excluded however its path is spelled"
+  ;; /tmp and /private/tmp are the same directory on macOS and do not compare
+  ;; equal. The same confusion has produced three separate bugs, so the check is
+  ;; that SESSION-PATHS canonicalises rather than compares raw text.
+  (with-repository (environment)
+    (let* ((canonical (env:env-cwd environment))
+           ;; The spelling a caller would pass, before anything resolves it:
+           ;; absolute, and via the /tmp symlink rather than through /private.
+           (as-typed (format nil "~a/.s/"
+                             (if (eql 0 (search "/private/" canonical))
+                                 (subseq canonical (length "/private"))
+                                 canonical)))
+           (session (session:open-session :directory (uiop:parse-native-namestring as-typed)
+                                          :cwd canonical))
+           (agent (harness:make-workspace-agent :cwd canonical :session session
+                                                :load-resources nil))
+           (excluded (harness::session-paths agent)))
+      (is = 1 (length excluded))
+      ;; The exclusion must name the canonical spelling, or the prefix test
+      ;; that uses it silently matches nothing.
+      (is = 0 (search canonical (first excluded)))
+      (session:close-session session))))

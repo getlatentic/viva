@@ -94,11 +94,16 @@ not being measured. Ordinary use leaves it NIL.")))
 (defun canonical-directory (path)
   "PATH with symlinks resolved, or PATH unchanged if it does not exist.
 
-Resolved once, here, so that everything downstream agrees on what directory it
-is in. On macOS /tmp is a symlink to /private/tmp, and a trust record written
-under one name is invisible under the other -- an extension directory that
-silently refuses to load because two spellings of the same path did not
-compare equal."
+EXPORTED, because every place that compares two paths needs it and every place
+that has skipped it has produced the same bug. On macOS /tmp is a symlink to
+/private/tmp, so two spellings of one directory do not compare equal:
+
+  a trust record written under one name was invisible under the other, and a
+  project silently refused to load its own extensions;
+  a session directory inside the working tree was not recognised as inside it,
+  so a search walked into the transcript of the search.
+
+Three occurrences, one cause. Canonicalise before comparing, always."
   (let ((lexical (string-right-trim "/" (join-path path))))
     (or (ignore-errors
          (string-right-trim "/" (uiop:native-namestring
