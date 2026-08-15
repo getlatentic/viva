@@ -41,6 +41,11 @@ in, on a path the agent had not asked for.")
              :documentation "Called with every loop event. The shell and the IPC
 mode are both just listeners, which is why neither needs a hook of its own.")
    (extensions :initarg :extensions :initform '() :accessor agent-extensions)
+   (extension-directories :initarg :extension-directories :initform '()
+                          :accessor agent-extension-directories
+                          :documentation "Loaded in addition to the machine's and
+the project's. An extension under test should not have to be installed into the
+home directory to be measured.")
    (extra-tools :initarg :extra-tools :initform '() :accessor agent-extra-tools)
    (extra-prompt :initarg :extra-prompt :initform nil :accessor agent-extra-prompt)
    (request-limit :initarg :request-limit :initform 60 :accessor agent-request-limit
@@ -96,7 +101,10 @@ anything about retrieval."
                 (session:record-entry session :message (getf event :message))))
     (:tool-start (extension:fire :before-tool event))
     (:tool-end (extension:fire :after-tool event))
-    (:turn-end (extension:fire :turn-end event)))
+    (:turn-end (extension:fire :turn-end event))
+    ;; Where a run's own consequences can be acted on: everything the agent did
+    ;; has happened, and nothing is waiting on the answer. Pi calls it agent_end.
+    (:run-end (extension:fire :run-end event)))
   (a:when-let ((listener (agent-listener agent)))
     (funcall listener event)))
 
@@ -111,7 +119,10 @@ anything about retrieval."
 can show them: a skill that silently failed to load looks exactly like a skill
 the model chose not to use."
   (let* ((environment (agent-resource-environment agent))
-         (complaints (extension:load-extensions environment)))
+         (complaints (extension:load-extensions
+                      environment
+                      :directories (append (extension:extension-directories environment)
+                                           (agent-extension-directories agent)))))
     (multiple-value-bind (skills warnings) (skill:load-skills environment (skill-directories environment))
       (setf (agent-skills agent) skills
             (agent-extensions agent) (extension:loaded-extensions))
@@ -123,7 +134,8 @@ the model chose not to use."
 (defun make-workspace-agent (&key (cwd (uiop:native-namestring (uiop:getcwd)))
                                root provider (model *default-model*)
                                listener (request-limit 60) session
-                               extra-tools extra-prompt (load-resources t)
+                               extra-tools extra-prompt extension-directories
+                               (load-resources t)
                                (max-tokens 8192) reasoning-effort)
   "An agent pointed at a directory, with the ordinary tool set.
 
@@ -141,6 +153,7 @@ never a reason to refuse to start."
                                :session session
                                :extra-tools extra-tools
                                :extra-prompt extra-prompt
+                               :extension-directories extension-directories
                                :request-limit request-limit)))
     (values agent (when load-resources (refresh-resources agent)))))
 

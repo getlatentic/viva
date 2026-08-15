@@ -235,6 +235,8 @@ noise, not a result.~%")
         ;; Appended rather than replacing, so a condition that adds one line to
         ;; the prompt differs from the default by exactly that line.
         :extra-prompt (flag parsed "append")
+        :extension-directories (a:when-let ((given (flag parsed "extension")))
+                                 (list (namestring (truename given))))
         :request-limit (flag-integer parsed "limit" 60)))
 
 (defun command-shell (parsed)

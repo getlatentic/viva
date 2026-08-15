@@ -9,7 +9,7 @@
 (in-package #:vivarium.console)
 
 (defun build-agent (&key model cwd root listener (request-limit 60) (stream t)
-                      session-directory (persist t) extra-prompt)
+                      session-directory (persist t) extra-prompt extension-directories)
   "An agent configured from the environment. Returns (values AGENT CHOICE COMPLAINTS)."
   (let* ((choice (models:resolve-model model))
          (session (when persist
@@ -26,6 +26,7 @@
          :listener listener
          :session session
          :extra-prompt extra-prompt
+         :extension-directories extension-directories
          :request-limit request-limit)
       (setf (agent:agent-stream-p agent) stream)
       (values agent choice complaints))))

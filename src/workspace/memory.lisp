@@ -63,8 +63,13 @@ override a general instruction it was given, not be overridden by one."
   (if (null files)
       ""
       (with-output-to-string (out)
+        ;; Saying it is already here matters: measured across 54 runs, agents
+        ;; carrying memory spent 0.28-0.56 tool calls each re-opening the very
+        ;; file whose contents are printed below, because `ls` shows .vivarium/
+        ;; and an unexplained directory invites a look.
         (format out "<project_instructions>~%Instructions for this project and this ~
-machine. Later blocks are more specific and take precedence.~%~%")
+machine. Later blocks are more specific and take precedence. Their full contents ~
+are below -- you do not need to open these files.~%~%")
         (loop for (path . content) in files
               do (format out "<instructions path=\"~a\">~%~a~%</instructions>~%~%" path content))
         (format out "</project_instructions>"))))

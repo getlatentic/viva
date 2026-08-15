@@ -135,5 +135,6 @@
            #:agent-skills #:agent-session #:agent-extensions #:agent-listener
            #:agent-request-limit #:agent-requests #:agent-context #:agent-aborting
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
+           #:agent-extension-directories
            #:ask #:converse #:refresh-resources #:harness-tool-set
            #:*agent* #:*default-model* #:*default-provider-name*))

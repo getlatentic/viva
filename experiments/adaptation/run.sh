@@ -52,7 +52,7 @@ order="split-remainder float-balance format-amount overdraft refund-sign monthly
 
 nudge="Before you finish, write down anything you had to work out about this project that you would otherwise have to work out again."
 
-carries_memory() { [ "$1" = accumulate ] || [ "$1" = nudged ]; }
+carries_memory() { case "$1" in accumulate|nudged|curated) return 0 ;; *) return 1 ;; esac; }
 
 # PROCEDURAL plants the same procedure-only memory before every task and carries
 # nothing forward. It exists because NUDGED's own notes turned out to describe
@@ -61,7 +61,14 @@ carries_memory() { [ "$1" = accumulate ] || [ "$1" = nudged ]; }
 # defect and no fix isolates the procedure half: whatever this arm saves is
 # saved by knowing how to work here, because there is nothing else in the file.
 plants_memory()  { [ "$1" = procedural ]; }
-append_for()     { [ "$1" = nudged ] && printf '%s' "$nudge" || printf ''; }
+append_for()     { case "$1" in nudged|curated) printf '%s' "$nudge" ;; *) printf '' ;; esac; }
+
+# CURATED is NUDGED plus the curator extension, which consolidates the notes
+# into repository-level facts after each run. It exists because rewording what
+# `remember` asks for moved nothing measurable: the writer has just done one
+# task and cannot see past it, while a consolidator handed notes from many tasks
+# can see which parts recur.
+extension_for()  { [ "$1" = curated ] && printf "%s" "$here/extensions" || printf ''; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -116,16 +123,12 @@ run_sequence() {
 
     transcripts="$sandbox/.transcripts"
     started=$(date +%s)
-    extra=$(append_for "$arm")
-    if [ -n "$extra" ]; then
-      "$root/bin/vivarium" do "$(cat "$here/tasks/$task/PROMPT")" \
-        --cwd "$sandbox" --root "$sandbox" --model "$model" --limit 30 \
-        --session-dir "$transcripts" --append "$extra" > "$sandbox/.log" 2>&1 || true
-    else
-      "$root/bin/vivarium" do "$(cat "$here/tasks/$task/PROMPT")" \
-        --cwd "$sandbox" --root "$sandbox" --model "$model" --limit 30 \
-        --session-dir "$transcripts" > "$sandbox/.log" 2>&1 || true
-    fi
+    set --
+    [ -n "$(append_for "$arm")" ] && set -- "$@" --append "$(append_for "$arm")"
+    [ -n "$(extension_for "$arm")" ] && set -- "$@" --extension "$(extension_for "$arm")"
+    "$root/bin/vivarium" do "$(cat "$here/tasks/$task/PROMPT")" \
+      --cwd "$sandbox" --root "$sandbox" --model "$model" --limit 30 \
+      --session-dir "$transcripts" "$@" > "$sandbox/.log" 2>&1 || true
     finished=$(date +%s)
 
     if ( cd "$sandbox" && ./check >/dev/null 2>&1 ); then solved=1; else solved=0; fi

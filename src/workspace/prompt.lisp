@@ -27,10 +27,24 @@ and say plainly what you left and why."
 same model, and a prompt that carries the answer moves the result without
 telling anyone which part did it.")
 
+(defun sentence-end (text)
+  "The first period that actually ends a sentence: one followed by a space and a
+capital, or by nothing at all.
+
+A plain (position #\. text) cuts `e.g.` in half, which is not hypothetical --
+every system prompt this harness has ever sent advertised the FIND tool as
+\"Find files by glob pattern, e.\" and nobody read one to notice."
+  (loop for index = (position #\. text) then (position #\. text :start (1+ index))
+        while index
+        do (let ((next (find-if-not (lambda (character) (char= #\Space character))
+                                    text :start (1+ index))))
+             (when (or (null next) (upper-case-p next))
+               (return index)))))
+
 (defun first-sentence (text)
   (let* ((flat (substitute #\Space #\Newline text))
-         (stop (position #\. flat)))
-    (string-trim '(#\Space) (subseq flat 0 (if stop (1+ stop) (min 100 (length flat)))))))
+         (stop (sentence-end flat)))
+    (string-trim '(#\Space) (subseq flat 0 (if stop (1+ stop) (min 110 (length flat)))))))
 
 (defun tool-summaries (tools)
   (format nil "~{~a~%~}"

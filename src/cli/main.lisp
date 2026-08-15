@@ -41,6 +41,7 @@ ORDINARY WORK
       --file prompt.txt       read the prompt from a file
       --quiet                 print only the final answer
       --session-dir DIR       record the transcript, for counting the work done
+      --extension DIR         load extensions from DIR as well
 
   Skills go in .vivarium/skills/<name>/SKILL.md, extensions in
   .vivarium/extensions/*.lisp, and what the agent chooses to keep in
