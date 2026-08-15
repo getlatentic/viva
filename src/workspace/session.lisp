@@ -47,7 +47,11 @@
   (parent nil)
   (entries '() :type list)
   (index (make-hash-table :test #'equal) :type hash-table)
-  (leaf nil))
+  ;; Lane name -> leaf id. A LANE is an independent line of conversation in one
+  ;; session, and it needs no new machinery: the tree already branches, so a
+  ;; lane is a second name for a second leaf. "main" is the one everything uses
+  ;; unless it says otherwise.
+  (lanes (make-hash-table :test #'equal) :type hash-table))
 
 (defparameter +conversation-kinds+
   '(:message :compaction :branch-summary :custom :custom-message
@@ -56,6 +60,25 @@
     ;; session that was recorded.
     :model-change :thinking-change :active-tools-change)
   "Kinds that live in the tree. Everything else is a record.")
+
+(defparameter +main-lane+ "main")
+
+(defun lane-leaf (session &optional (lane +main-lane+))
+  (gethash lane (session-lanes session)))
+
+(defun (setf lane-leaf) (id session &optional (lane +main-lane+))
+  (setf (gethash lane (session-lanes session)) id))
+
+(defun session-leaf (session)
+  "The main lane's leaf. Kept as a name because most callers have only one lane
+and should not have to say so."
+  (lane-leaf session +main-lane+))
+
+(defun (setf session-leaf) (id session)
+  (setf (lane-leaf session +main-lane+) id))
+
+(defun lanes-of (session)
+  (sort (loop for name being the hash-keys of (session-lanes session) collect name) #'string<))
 
 (defun record-p (entry)
   (not (member (entry-kind entry) +conversation-kinds+)))
@@ -171,7 +194,8 @@ leaving a reader to infer it from the shape of line two."
   (setf (gethash (entry-id entry) (session-index session)) entry)
   entry)
 
-(defun append-entry (session kind payload &key (parent (session-leaf session)))
+(defun append-entry (session kind payload &key (lane +main-lane+)
+                                            (parent (lane-leaf session lane)))
   "Add one entry to the conversation tree and make it the new leaf.
 
 PARENT defaults to the current leaf, so ordinary appends form a line. Passing an
@@ -181,10 +205,11 @@ needs no second file."
                            :time (get-universal-time)
                            :payload (if (msg:message-p payload) (encode-message payload) payload))))
     (remember-entry session entry)
-    (setf (session-leaf session) (entry-id entry))
+    (setf (lane-leaf session lane) (entry-id entry))
     (write-line* session (object "kind" (string-downcase (symbol-name kind))
                                  "id" (entry-id entry)
                                  "parent" parent
+                                 "lane" (unless (string= lane +main-lane+) lane)
                                  "time" (entry-time entry)
                                  "payload" (entry-payload entry)))
     entry))
@@ -295,7 +320,8 @@ the format."
                          ;; session that is the end; in a branched one it is the
                          ;; branch last worked on, which is what resuming means.
                          (unless (record-p entry)
-                           (setf (session-leaf session) (entry-id entry))))))))
+                           (setf (lane-leaf session (or (gethash "lane" table) +main-lane+))
+                                 (entry-id entry))))))))
     session))
 
 ;;; Walking the tree -- what makes this a session rather than a log

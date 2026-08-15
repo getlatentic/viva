@@ -68,11 +68,14 @@ request already in flight rather than after it.")
 Runtime tool control, which is Pi's setActiveTools and also the Level 2 verb this
 harness lacked: an agent that can narrow or widen its own tool set has changed
 how it operates, not merely what it knows.")
+   (lane :initarg :lane :initform session:+main-lane+ :accessor agent-lane
+         :documentation "Which line of the session this agent writes to. A
+sub-agent gets its own, so its turns land on their own branch of the same file.")
    (context :initform (loop*:make-context) :accessor agent-context)))
 
 (defun available-tools (agent)
   (append (workspace:tool-set)
-          (list memory:remember)
+          (list memory:remember delegate-tool)
           (extension:all-tools)
           (agent-extra-tools agent)))
 
@@ -181,7 +184,8 @@ could overturn would make the order of extensions load-bearing and invisible."
 (defmethod agent:emit ((agent workspace-agent) event)
   (case (getf event :type)
     (:message (a:when-let ((session (agent-session agent)))
-                (session:record-entry session :message (getf event :message))))
+                (session:append-entry session :message (getf event :message)
+                                      :lane (agent-lane agent))))
     (:tool-start (extension:fire :before-tool event))
     (:tool-end
      (extension:fire :after-tool event)
@@ -194,12 +198,13 @@ could overturn would make the order of extensions load-bearing and invisible."
      ;; the encoder and none at all about the caller.
      (a:when-let ((session (agent-session agent)))
        (let ((result (getf event :result)))
-         (session:record-entry
+         (session:append-entry
           session :message
           (msg:make-tool-result-message
            :call-id (msg:tool-call-id (getf event :call))
            :output (tool:tool-result-output result)
-           :error-p (tool:tool-result-error-p result))))))
+           :error-p (tool:tool-result-error-p result))
+          :lane (agent-lane agent)))))
     (:turn-start (extension:fire :turn-start event))
     (:turn-end (extension:fire :turn-end event))
     ;; Where a run's own consequences can be acted on: everything the agent did
@@ -276,6 +281,13 @@ never a reason to refuse to start."
 
 ;;; Running
 
+(defun session-paths (agent)
+  "The live transcript's directory, when it sits inside the working tree."
+  (a:when-let ((session (agent-session agent)))
+    (let ((directory (env:parent-path (session:session-path session)))
+          (cwd (env:env-cwd (agent-environment agent))))
+      (when (a:starts-with-subseq cwd directory) (list directory)))))
+
 (defun user-message (text)
   (msg:make-user-message :content (list (msg:make-text text))))
 
@@ -295,7 +307,8 @@ That is what makes an interactive shell and an IPC session the same object."
   ;; :BEFORE-REQUEST handler that reads a file -- which is exactly what a memory
   ;; extension does -- would otherwise fail on every request, be caught, and be
   ;; reported as a warning nobody reads.
-  (let* ((produced (let ((*agent* agent))
+  (let* ((produced (let ((*agent* agent)
+                         (workspace:*excluded-paths* (session-paths agent)))
                      (workspace:with-environment ((agent-environment agent))
                        (let ((message (extension:fire :before-request (user-message text))))
                          (loop*:run agent (list message) :context (agent-context agent)))))))
@@ -425,6 +438,70 @@ recorded as a custom message so the transcript keeps the attribution."
   (a:when-let ((agent *agent*))
     (a:when-let ((session (agent-session agent)))
       (session:append-custom session custom-type data))))
+
+(defvar *lane-counter* 0)
+
+(defun sub-agent (parent lane &key (request-limit 20))
+  "A worker sharing PARENT's world but not its conversation.
+
+Shares the environment, the session, the tools and the model; keeps its own
+context and its own lane, so its turns are recorded in the same file on their
+own branch and neither conversation is in the other's context window. That
+separation is the point: a sub-agent exists to keep a search out of the main
+thread, and one that inherited the transcript would defeat itself."
+  ;; The parent's own class, not WORKSPACE-AGENT. A subclass that changes how
+  ;; requests are made, how turns end, or what tools exist means it for its
+  ;; workers too -- and a sub-agent that silently reverted to the base class
+  ;; would go to the real provider from inside a test that had replaced it.
+  (let ((child (make-instance (class-of parent)
+                              :environment (agent-environment parent)
+                              :resource-environment (agent-resource-environment parent)
+                              :provider (agent:agent-provider parent)
+                              :model (agent:agent-model parent)
+                              :max-tokens (agent:agent-max-tokens parent)
+                              :reasoning-effort (agent:agent-reasoning-effort parent)
+                              :skills (agent-skills parent)
+                              :templates (agent-templates parent)
+                              :session (agent-session parent)
+                              :listener (agent-listener parent)
+                              :active-tools (agent-active-tools parent)
+                              :request-limit request-limit)))
+    (setf (agent-lane child) lane
+          (agent-compaction child) (agent-compaction parent))
+    child))
+
+(defun delegate (parent task &key (request-limit 20))
+  "Run TASK on a sub-agent and return what it concluded.
+
+Synchronous within its own tool call. Parallelism, when it happens, comes from
+the loop running a batch of calls at once -- which is why WITH-ENVIRONMENT is
+re-established here rather than relied on: a dynamic binding does not cross into
+a thread the loop spawned, so a delegate running in parallel would find no
+environment at all and every tool would refuse."
+  (let* ((lane (format nil "lane-~d" (incf *lane-counter*)))
+         (child (sub-agent parent lane :request-limit request-limit)))
+    (workspace:with-environment ((agent-environment child))
+      (let ((*agent* child)
+            (workspace:*excluded-paths* (session-paths child)))
+        (let ((produced (loop*:run child (list (user-message task))
+                                   :context (agent-context child))))
+          (values (or (last-assistant-text produced) "") lane))))))
+
+(tool:define-tool delegate-tool (args context)
+  :name "delegate"
+  :description "Hand a self-contained piece of work to a separate worker and get
+back what it concluded.
+
+The worker has the same tools and the same files, and none of this conversation
+-- so it must be told everything it needs. Worth it when the work would fill
+this context with material you do not need afterwards: searching a large tree
+for where something lives, reading several files to answer one question,
+checking a hypothesis you expect to discard. Not worth it for work whose
+intermediate detail you need, because you will not see any of it."
+  :parameters (("task" :string "The whole task, self-contained: what to do, where, and what to report back." :required-p t))
+  (a:if-let ((agent *agent*))
+    (delegate agent (gethash "task" args))
+    (tool:make-tool-result :output "No agent to delegate from." :error-p t)))
 
 (defun harness-tool-set (agent)
   "The tool set as the model will see it on the next request."

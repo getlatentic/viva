@@ -7,6 +7,17 @@
 
 (in-package #:vivarium.workspace)
 
+(defvar *excluded-paths* '()
+  "Absolute paths a walk must not descend into, beyond the ignore rules.
+
+Bound by the harness to wherever the live session is being written when that
+happens to be inside the working tree. Without it a search finds the transcript
+of the search, and an agent has been observed delegating a worker to
+investigate its own conversation.")
+
+(defun excluded-p (path)
+  (some (lambda (each) (a:starts-with-subseq each path)) *excluded-paths*))
+
 (defun walk (root visit &key ignores)
   "Call VISIT with (INFO RELATIVE-PATH) for every non-ignored file under ROOT.
 VISIT returning :STOP ends the walk. Symlinks are reported, never followed."
@@ -22,7 +33,8 @@ VISIT returning :STOP ends the walk. Symlinks are reported, never followed."
                                      #'string< :key #'env:info-name))
                    (let* ((relative (concatenate 'string prefix (env:info-name info)))
                           (directory-p (eq :directory (env:info-kind info))))
-                     (unless (glob:ignored-p ignores relative directory-p)
+                     (unless (or (glob:ignored-p ignores relative directory-p)
+                                 (excluded-p (env:info-path info)))
                        (if directory-p
                            (descend (env:info-path info) (concatenate 'string relative "/"))
                            (when (eq :stop (funcall visit info relative))

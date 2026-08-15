@@ -575,16 +575,19 @@ rather than leaving it to be rediscovered a third time."
 (define-test "the active tool set narrows what the model is offered"
   (with-repository (environment)
     (let ((extension:*registry* '()))
-      (let ((agent (harness:make-workspace-agent :cwd (env:env-cwd environment)
-                                                 :load-resources nil)))
-        (is = 8 (length (agent:tools agent)))
+      (let* ((agent (harness:make-workspace-agent :cwd (env:env-cwd environment)
+                                                  :load-resources nil))
+             (everything (mapcar #'tool:tool-name (agent:tools agent))))
+        ;; Named rather than counted: a bare number breaks every time a tool is
+        ;; added, and says nothing about which ones are there.
+        (dolist (name '("read" "write" "edit" "ls" "find" "grep" "bash" "remember" "delegate"))
+          (true (member name everything :test #'string=)))
         (setf (harness:agent-active-tools agent) '("read" "grep"))
-        (is = 2 (length (agent:tools agent)))
         (is equal '("read" "grep") (mapcar #'tool:tool-name (agent:tools agent)))
         ;; NIL means all of them, not none -- an agent that disabled everything
         ;; by clearing the list could never re-enable anything.
         (setf (harness:agent-active-tools agent) nil)
-        (is = 8 (length (agent:tools agent)))))))
+        (is = (length everything) (length (agent:tools agent)))))))
 
 ;;; Resume
 
@@ -832,3 +835,97 @@ rather than leaving it to be rediscovered a third time."
     (let ((decision (extension:decide :tool-call '())))
       (is string= "no" (tool:tool-result-output decision))
       (true (tool:tool-result-error-p decision)))))
+
+;;; Lanes and sub-agents
+
+(define-test "lanes are independent lines in one file"
+  (let ((session (ws-scratch-session)))
+    (session:append-entry session :message
+                          (msg:make-user-message :content (list (msg:make-text "shared start"))))
+    (let ((root (session:session-leaf session)))
+      ;; Two workers, each attaching to the same point, neither disturbing the other.
+      (session:append-entry session :message
+                            (msg:make-user-message :content (list (msg:make-text "worker one")))
+                            :lane "lane-1" :parent root)
+      (session:append-entry session :message
+                            (msg:make-user-message :content (list (msg:make-text "worker two")))
+                            :lane "lane-2" :parent root)
+      (session:append-entry session :message
+                            (msg:make-user-message :content (list (msg:make-text "main carries on"))))
+      ;; The main lane never saw either worker.
+      (let ((main (session:session-messages session)))
+        (is = 2 (length main))
+        (is string= "main carries on" (msg:text-of (second main))))
+      ;; Each worker sees the shared start and only its own work.
+      (dolist (pair '(("lane-1" . "worker one") ("lane-2" . "worker two")))
+        (let ((messages (session:session-messages
+                         (session:context-entries session
+                                                  (session:lane-leaf session (car pair))))))
+          (is = 2 (length messages))
+          (is string= (cdr pair) (msg:text-of (second messages)))))
+      (is equal '("lane-1" "lane-2" "main") (session:lanes-of session)))))
+
+(define-test "lanes survive the round trip through the file"
+  (let ((session (ws-scratch-session)))
+    (ws-say session :user "shared")
+    (let ((root (session:session-leaf session)))
+      (session:append-entry session :message
+                            (msg:make-user-message :content (list (msg:make-text "aside")))
+                            :lane "lane-1" :parent root))
+    (session:close-session session)
+    (let ((reloaded (session:load-session (session:session-path session))))
+      (is equal '("lane-1" "main") (session:lanes-of reloaded))
+      (is = 1 (length (session:session-messages reloaded)))
+      (is = 2 (length (session:session-messages
+                       (session:context-entries reloaded
+                                                (session:lane-leaf reloaded "lane-1"))))))))
+
+(defclass delegating-agent (harness:workspace-agent)
+  ;; INITFORM because SUB-AGENT builds a worker of the parent's own class and
+  ;; passes only what a workspace agent takes.
+  ((script :initarg :script :initform '() :accessor script)))
+
+(defmethod client:complete ((agent delegating-agent) messages)
+  (declare (ignore messages))
+  (or (pop (script agent))
+      (msg:make-assistant-message :content (list (msg:make-text "sub-agent says: 42"))
+                                  :stop-reason :stop)))
+
+(define-test "a sub-agent shares the world and not the conversation"
+  (with-repository (environment)
+    (let* ((directory (uiop:parse-native-namestring
+                       (format nil "~a/.sessions/" (env:env-cwd environment))))
+           (session (session:open-session :directory directory))
+           (parent (make-instance 'delegating-agent
+                                  :environment environment :resource-environment environment
+                                  :session session :script '())))
+      (setf (harness:agent-context parent)
+            (loop*:make-context :messages (list (msg:make-user-message
+                                                 :content (list (msg:make-text "secret parent context"))))))
+      (multiple-value-bind (answer lane) (harness:delegate parent "count something")
+        (is string= "sub-agent says: 42" answer)
+        ;; Its turns are in the same file, on their own lane...
+        (true (member lane (session:lanes-of session) :test #'string=))
+        ;; ...and the parent's conversation is untouched by it.
+        (is = 1 (length (loop*:context-messages (harness:agent-context parent))))
+        ;; ...and the sub-agent never saw the parent's context.
+        (let ((theirs (session:session-messages
+                       (session:context-entries session (session:lane-leaf session lane)))))
+          (false (some (lambda (message) (mentions "secret parent" (msg:text-of message)))
+                       theirs)))))))
+
+(define-test "a search does not wander into the harness's own state"
+  ;; Observed three times before this existed, once badly enough that a worker
+  ;; was delegated to investigate the session's own transcript.
+  (with-repository (environment)
+    (env:write-text environment ".vivarium/sessions/x.jsonl" "{\"text\":\"needle\"}")
+    (env:write-text environment "real.txt" "needle")
+    (let ((found (run-tool workspace:grep-tool "pattern" "needle")))
+      (true (mentions "real.txt" found))
+      (false (mentions ".vivarium" found)))
+    ;; Hidden from the walk, not from the agent: a direct read still works.
+    (true (mentions "needle" (run-tool workspace:read-tool
+                                       "path" ".vivarium/sessions/x.jsonl")))
+    ;; And an explicitly excluded path is skipped too, wherever it is.
+    (let ((workspace:*excluded-paths* (list (env:join-path (env:env-cwd environment) "src"))))
+      (false (mentions "src/core.lisp" (run-tool workspace:find-tool "pattern" "*.lisp"))))))

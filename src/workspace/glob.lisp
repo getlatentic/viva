@@ -89,10 +89,18 @@ alternative silently returns nothing for the most common query there is."
 (defstruct (ignore-set (:conc-name ignore-set-) (:constructor %make-ignore-set))
   (rules '() :type list))
 
-(defparameter +default-ignores+ '(".git/")
-  "Always excluded. Not configurable: an agent that greps its way into .git
-finds every version of every file it was just shown, which is a context-window
-denial of service rather than a search result.")
+(defparameter +default-ignores+ '(".git/" ".vivarium/")
+  "Always excluded from a recursive walk. Not configurable.
+
+.git because an agent that greps its way into it finds every version of every
+file it was just shown, which is a context-window denial of service rather than
+a search result.
+
+.vivarium because it is the harness's own state -- sessions, memory, skills --
+and a search that returns the transcript of the search is worse than noise: it
+has been observed sending a worker off to investigate its own conversation.
+Nothing is hidden by this; LS still lists it and READ still opens it. Only the
+recursive walk declines to wander in.")
 
 (defun make-ignore-set (&optional (patterns +default-ignores+))
   (let ((set (%make-ignore-set)))

@@ -60,7 +60,7 @@
                     (#:edit #:vivarium.edit))
   (:export #:*environment* #:environment #:with-environment #:display-path
            #:read-file #:write-file #:edit-file #:list-files #:find-files
-           #:search-files #:run-bash #:*bash-timeout* #:walk
+           #:search-files #:run-bash #:*bash-timeout* #:walk #:*excluded-paths*
            #:read-tool #:write-tool #:edit-tool
            #:ls-tool #:find-tool #:grep-tool #:bash-tool
            #:file-tools #:search-tools #:tool-set
@@ -117,6 +117,7 @@
                     (#:msg #:vivarium.message))
   (:export #:session #:session-p #:open-session #:session-path #:session-id
            #:session-entries #:session-cwd #:session-leaf #:session-parent
+           #:lane-leaf #:lanes-of #:+main-lane+ #:session-lanes
            #:record-entry #:append-entry #:append-record #:append-custom-message #:append-custom #:entries-of #:records-of
            #:close-session #:load-session #:session-messages #:latest-session
            #:session-directory #:usage-of #:+format-version+ #:+conversation-kinds+
@@ -167,5 +168,6 @@
            #:agent-extension-directories #:agent-compaction #:agent-active-tools
            #:compact-now #:set-model #:set-active-tools #:apply-settings
            #:send-message #:append-custom #:navigate #:tree-lines #:close-agent
+           #:delegate #:delegate-tool #:sub-agent #:agent-lane
            #:ask #:converse #:resume #:refresh-resources #:harness-tool-set #:record
            #:*agent* #:*default-model* #:*default-provider-name*))
