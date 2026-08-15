@@ -35,7 +35,8 @@
                     (#:event #:vivarium.event))
   (:export #:cell #:cell-id #:cell-agent #:cell-state #:cell-label
            #:spawn #:tell #:ask-now #:shutdown #:cell-events #:subscribe #:unsubscribe
-           #:find-cell #:all-cells #:cell-sequence #:since #:busy-p #:cell-queued))
+           #:find-cell #:all-cells #:cell-sequence #:since #:busy-p #:cell-queued
+           #:+terminal-events+ #:quiesce))
 
 (defpackage #:vivarium.daemon
   (:use #:cl)

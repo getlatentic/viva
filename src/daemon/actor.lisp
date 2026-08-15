@@ -106,31 +106,46 @@ stop the session -- a dead terminal must not take the organism with it."
 ;;; here, on this thread, including the ones the worker asks for by posting
 ;;; :FINISHED back rather than mutating the cell from underneath.
 
+(defparameter +terminal-events+
+  '("turn.completed" "turn.cancelled" "turn.failed")
+  "One of these follows each TURN.STARTED. Exactly one.")
+
+(defun turn-outcome (agent)
+  "What became of the work, asked once the work has stopped.
+
+Not which mechanism noticed. A run ends through a checkpoint, an aborted stream
+or a turn declining to take another, and only the agent knows whether any of
+that was what someone asked for."
+  (if (agent:cancelled-p agent) :cancelled :completed))
+
 (defun start-turn (cell text)
   (setf (cell-state cell) :working)
   (publish cell "turn.started" nil)
   (setf (cell-worker cell)
         (bt:make-thread
          (lambda ()
-           (let ((outcome
-                   (handler-case (progn (harness:ask (cell-agent cell) text) :completed)
-                     ;; A failed turn ends the turn, not the session. The
-                     ;; organism has to survive its own bad requests or it is
-                     ;; not long-lived in any sense that matters.
-                     (error (condition)
-                       (publish cell "tool.failed"
-                                (event::object "output" (princ-to-string condition)))
-                       :failed))))
-             ;; Back through the mailbox rather than setting state here: two
-             ;; threads writing the cell is the race this design exists to
-             ;; avoid, and the worker is the one that must give way.
-             (mailbox:send-message (cell-mailbox cell) (list :finished outcome))))
+           (multiple-value-bind (outcome detail)
+               (handler-case (progn (harness:ask (cell-agent cell) text)
+                                    (turn-outcome (cell-agent cell)))
+                 ;; A failed turn ends the turn, not the session. The organism
+                 ;; has to survive its own bad requests or it is not long-lived
+                 ;; in any sense that matters.
+                 (error (condition) (values :failed (princ-to-string condition))))
+             ;; Back through the mailbox rather than publishing here: the
+             ;; terminal event belongs to the one thread that owns this cell's
+             ;; state, and two threads writing it is the race this design
+             ;; exists to avoid.
+             (mailbox:send-message (cell-mailbox cell) (list :finished outcome detail))))
          :name (format nil "vivarium-turn-~a" (cell-id cell)))))
 
-(defun finish-turn (cell)
+(defun finish-turn (cell outcome detail)
   (setf (cell-worker cell) nil
         (cell-state cell) :idle)
-  (publish cell "turn.completed" nil)
+  (publish cell (ecase outcome
+                  (:completed "turn.completed")
+                  (:cancelled "turn.cancelled")
+                  (:failed "turn.failed"))
+           (and detail (event::object "detail" detail)))
   ;; A prompt that arrived mid-turn waited rather than being lost or running
   ;; concurrently with the turn it arrived during.
   (a:when-let ((next (pop (cell-queued cell))))
@@ -146,7 +161,7 @@ stop the session -- a dead terminal must not take the organism with it."
      (if (busy-p cell)
          (setf (cell-queued cell) (append (cell-queued cell) (list (second message))))
          (start-turn cell (second message))))
-    (:finished (finish-turn cell))
+    (:finished (finish-turn cell (second message) (third message)))
 
     ;; Control. Each of these now reaches a turn that is still running, which is
     ;; the entire point of the split above.
@@ -172,6 +187,19 @@ stop the session -- a dead terminal must not take the organism with it."
      (harness:cancel-agent (cell-agent cell))
      (setf (cell-running cell) nil))))
 
+(defun quiesce (cell &key (timeout 60))
+  "Wait until nothing this session owns is still executing.
+
+SESSION.COMPLETED is a claim about the world, not a note about this thread:
+after it, no work belonging to the session can still write a file, call a
+provider or publish an event. Announcing it while a worker was still unwinding
+made the lifecycle model false, and it becomes false in a way that matters the
+moment a session's own work can install code."
+  (loop repeat (ceiling timeout 0.01)
+        while (busy-p cell)
+        do (sleep 0.01))
+  (not (busy-p cell)))
+
 (defun run-cell (cell)
   (publish cell "session.started" (event::object "label" (cell-label cell)))
   (loop while (cell-running cell)
@@ -180,9 +208,19 @@ stop the session -- a dead terminal must not take the organism with it."
              ;; Nothing a message can do may kill the session's thread. A cell
              ;; whose thread died looks exactly like one that is merely quiet.
              (error (condition)
-               (publish cell "tool.failed"
-                        (event::object "output" (princ-to-string condition))))))
-  (publish cell "session.completed" nil))
+               (publish cell "session.error"
+                        (event::object "detail" (princ-to-string condition))))))
+  (let ((quiet (quiesce cell)))
+    ;; Deregistered only once it is true that there is nothing to find. Removing
+    ;; the cell when SHUTDOWN was *posted* left a session that was unreachable
+    ;; and still working, which is the worst way to be wrong about this.
+    (bt:with-lock-held (*registry-lock*) (remhash (cell-id cell) *cells*))
+    (publish cell "session.completed"
+             ;; Said out loud rather than assumed. If work outlived the wait,
+             ;; the claim above is untrue and a reader must be able to see that.
+             ;; Present-when-wrong rather than a boolean: jzon writes the
+             ;; keyword :FALSE as the string "FALSE", and OBJECT omits NIL.
+             (unless quiet (event::object "unquiesced" t)))))
 
 (defun spawn (&key (label "") agent)
   "Start a session that outlives whoever started it."
@@ -193,10 +231,7 @@ stop the session -- a dead terminal must not take the organism with it."
     (setf (harness:agent-listener agent)
           (lambda (loop-event)
             (multiple-value-bind (name data) (event:from-loop loop-event)
-              ;; SESSION.COMPLETED belongs to the cell, not to one run of the
-              ;; loop: a session that answered once is still open.
-              (when (and name (not (string= name "session.completed")))
-                (publish cell name data)))))
+              (when name (publish cell name data)))))
     (bt:with-lock-held (*registry-lock*) (setf (gethash id *cells*) cell))
     (setf (cell-thread cell)
           (bt:make-thread (lambda () (run-cell cell)) :name (format nil "vivarium-~a" id)))
@@ -224,8 +259,10 @@ one-shot script rather than an interface."
         (unsubscribe cell key)))))
 
 (defun shutdown (cell)
+  "Ask the session to end. It deregisters itself once its work has stopped.
+
+Deregistering here removed the cell the moment SHUTDOWN was posted, so a
+session that was still running a turn had already vanished from the registry --
+unreachable and working, which is a worse state than either."
   (let ((cell (if (stringp cell) (find-cell cell) cell)))
-    (when cell
-      (tell cell :shutdown)
-      (bt:with-lock-held (*registry-lock*) (remhash (cell-id cell) *cells*))
-      t)))
+    (when cell (tell cell :shutdown) t)))

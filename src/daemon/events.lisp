@@ -11,10 +11,13 @@
 (in-package #:vivarium.event)
 
 (defparameter +names+
-  '(;; a session's life
-    "session.started" "session.completed"
-    ;; one exchange within it
-    "turn.started" "turn.completed" "turn.cancelled"
+  '(;; a session's life. SESSION.COMPLETED asserts that nothing this session
+    ;; owns can still change the world; SESSION.ERROR does not end anything.
+    "session.started" "session.completed" "session.error"
+    ;; One exchange within it. Exactly ONE of the three terminal names follows
+    ;; each TURN.STARTED -- a turn that reported both cancelled and completed
+    ;; leaves a client no way to say what became of the work.
+    "turn.started" "turn.completed" "turn.cancelled" "turn.failed"
     ;; the model
     "model.started" "model.delta" "model.completed"
     ;; tools
@@ -83,11 +86,12 @@ one that is not worth publishing."
                  (values (if (tool:tool-result-error-p result) "tool.failed" "tool.completed")
                          (object "call" (call-json (getf loop-event :call))
                                  "output" (tool:tool-result-output result)))))
-    (:run-end (values "session.completed" nil))
-    ;; The loop stopped because it was asked to. Distinct from a turn that
-    ;; finished, and a client that could not tell them apart would report work
-    ;; as done that was in fact abandoned half way.
-    (:cancelled (values "turn.cancelled" nil))
+    ;; A turn's terminal event is the coordinator's to publish, and it publishes
+    ;; exactly one. The loop reports :RUN-END and :CANCELLED about ITS OWN run --
+    ;; true statements at the wrong scope. A session that answered once is still
+    ;; open, and a run that was cancelled is one outcome of one turn, so mapping
+    ;; either of them here put a second terminal event on the wire.
+    ((:run-end :cancelled) nil)
     (t nil)))
 
 (defun as-json (event)

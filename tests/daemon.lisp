@@ -178,6 +178,10 @@ traffic that put two client threads on one descriptor."
 (defun cell-event-names (cell)
   (mapcar #'event:event-name (actor:since cell 0)))
 
+(defun terminal-count (names)
+  "How many terminal turn events are in NAMES. The invariant is: one per turn."
+  (count-if (lambda (name) (member name actor:+terminal-events+ :test #'string=)) names))
+
 (defmacro with-paced-cell ((cell agent &rest options) &body body)
   `(with-repository (environment)
      (let* ((,cell (paced-cell environment ,@options))
@@ -225,10 +229,12 @@ traffic that put two client threads on one descriptor."
           "the turn ran on after being cancelled")
     (true (< (paced-requests agent) 100) "made ~d requests" (paced-requests agent))
     (let ((names (cell-event-names cell)))
-      ;; Exactly one. The coordinator requests the cancellation and the loop
-      ;; reports it; both publishing would repeat last month's duplicated turn.
       (is = 1 (count "turn.cancelled" names :test #'string=))
-      (is = 1 (count "turn.completed" names :test #'string=)))))
+      ;; And nothing else. A turn reporting cancelled AND completed leaves a
+      ;; client no way to say what became of the work -- which is what this
+      ;; test asserted as correct until the invariant was written down.
+      (is = 1 (terminal-count names))
+      (is = 0 (count "turn.completed" names :test #'string=)))))
 
 (define-test "a steer reaches the turn it was sent into"
   (with-paced-cell (cell agent :pause 0.05 :limit 14)
@@ -292,6 +298,94 @@ checkpoint."))
              (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 15))
              (let ((names (cell-event-names cell)))
                (is = 1 (count "turn.cancelled" names :test #'string=))
-               (is = 1 (count "turn.completed" names :test #'string=))))
+               (is = 1 (terminal-count names))))
         (harness:cancel-agent agent)
         (actor:shutdown cell)))))
+
+;;; Lifecycle invariants, attacked
+;;;
+;;; Two claims the event stream makes, stated so they can be violated on
+;;; purpose:
+;;;
+;;;   A TURN HAS EXACTLY ONE TERMINAL OUTCOME
+;;;   SESSION.COMPLETED => NOTHING THE SESSION OWNS CAN STILL CHANGE THE WORLD
+;;;
+;;; The second matters more than it looks. Once a session's own work can
+;;; install code, a lifecycle model that says `finished` while a worker is
+;;; still unwinding is not imprecise, it is false.
+
+(defclass exploding-agent (paced-agent) ())
+
+(defmethod client:complete ((agent exploding-agent) messages)
+  (declare (ignore messages))
+  (sleep (paced-pause agent))
+  (error "the provider fell over"))
+
+(define-test "every ending of a turn produces exactly one terminal event"
+  (dolist (case '(:completed :cancelled :failed))
+    (with-repository (environment)
+      (let* ((cell (actor:spawn
+                    :label "terminal"
+                    :agent (if (eq case :failed)
+                               (make-instance 'exploding-agent
+                                              :environment environment
+                                              :resource-environment environment
+                                              :pause 0.01 :request-limit 500)
+                               (make-instance 'paced-agent
+                                              :environment environment
+                                              :resource-environment environment
+                                              :pause 0.02
+                                              :limit (if (eq case :cancelled) 500 3)
+                                              :request-limit 500))))
+             (agent (actor:cell-agent cell)))
+        (unwind-protect
+             (progn
+               (actor:tell cell :user-message "go")
+               (when (eq case :cancelled)
+                 (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
+                 (actor:tell cell :cancel))
+               (true (daemon-wait (lambda () (plusp (terminal-count (cell-event-names cell))))
+                                  :timeout 20)
+                     "~a: no terminal event at all" case)
+               (sleep 0.2)
+               (let ((names (cell-event-names cell)))
+                 (is = 1 (terminal-count names) "~a produced ~a" case
+                     (remove-if-not (lambda (n) (member n actor:+terminal-events+ :test #'string=))
+                                    names))
+                 (is = 1 (count "turn.started" names :test #'string=))))
+          (harness:cancel-agent agent)
+          (actor:shutdown cell))))))
+
+(define-test "session.completed is not published while the session is still working"
+  (with-repository (environment)
+    (let* ((cell (paced-cell environment :pause 0.02 :limit 500))
+           (working-at-completion :never-published))
+      ;; Subscribers run inside PUBLISH, so this samples the world at the exact
+      ;; instant the claim is made rather than shortly afterwards.
+      (actor:subscribe cell (gensym "WATCH")
+                       (lambda (event)
+                         (when (string= "session.completed" (event:event-name event))
+                           (setf working-at-completion (actor:busy-p cell)))))
+      (actor:tell cell :user-message "go")
+      (true (daemon-wait (lambda () (actor:busy-p cell))))
+      ;; Shut down mid-turn: the case where the two could disagree.
+      (actor:shutdown cell)
+      (true (daemon-wait (lambda () (not (eq working-at-completion :never-published)))
+                         :timeout 30)
+            "session.completed was never published")
+      (false working-at-completion
+             "session.completed was published while a worker was still running"))))
+
+(define-test "a session is findable until its work has stopped"
+  (with-repository (environment)
+    (let* ((cell (paced-cell environment :pause 0.02 :limit 500))
+           (id (actor:cell-id cell)))
+      (actor:tell cell :user-message "go")
+      (true (daemon-wait (lambda () (actor:busy-p cell))))
+      (actor:shutdown cell)
+      ;; Deregistering on the POST left a session unreachable and still
+      ;; working, which is worse than either state on its own.
+      (true (daemon-wait (lambda () (null (actor:find-cell id))) :timeout 30)
+            "the session never deregistered")
+      (false (actor:busy-p cell)
+             "deregistered while its worker was still running"))))

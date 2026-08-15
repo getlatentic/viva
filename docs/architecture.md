@@ -110,6 +110,48 @@ first of those — so the event existed, was documented, and never fired in the
 usual case, which is a cancel arriving during a request because that is where
 the time goes.
 
+### Lifecycle invariants
+
+Stated so they can be attacked, and each is attacked in `tests/daemon.lisp` by
+reverting the implementation and confirming the test fails:
+
+```
+A TURN HAS EXACTLY ONE TERMINAL OUTCOME
+    turn.completed | turn.cancelled | turn.failed -- one, per turn.started
+
+SESSION.COMPLETED => NOTHING THE SESSION OWNS CAN STILL CHANGE THE WORLD
+    no worker running, no file to be written, no provider call outstanding
+
+A SESSION IS FINDABLE UNTIL ITS WORK HAS STOPPED
+    deregistration follows quiescence, never the shutdown request
+```
+
+The second is not tidiness. Once a session's own work can install code, a
+lifecycle model that says *finished* while a worker is still unwinding is not
+imprecise — it is false, and everything built on top of it inherits the lie.
+When the wait does expire, `session.completed` carries `unquiesced`, because a
+violated invariant must be visible rather than assumed away.
+
+A turn that reported both cancelled *and* completed shipped, and its test
+asserted both as correct. Invariants get written down first now.
+
+### Choosing primitives
+
+> Before introducing a new runtime abstraction, ask whether Common Lisp or SBCL
+> already provides a stronger primitive whose semantics fit the organism.
+
+```
+task-local configuration   dynamic bindings      not dependency plumbing
+live capability            COMPILE + funcallable not a plugin loader
+recovery                   conditions/restarts   not Result plumbing
+coordination               mailbox/gate/thread   not an async framework
+evolving object shape      CLOS redefinition     not a migration framework
+self-description           Lisp introspection    not a metadata registry
+```
+
+The failure mode this guards against is Vivarium becoming a TypeScript
+architecture written in parentheses.
+
 ## Deferred and suspended operations
 
 The distinction that a previous note got wrong, recorded so it is not got wrong
@@ -208,11 +250,31 @@ BUILT   files, search, shell, skills, templates, memory, extensions with
 BUILT   the daemon: sessions as long-lived actors behind a local socket,
         surviving the clients that started them, replayable from sequence 0
 BUILT   the control plane: steer, cancel, suspend and resume reaching a turn
-        that is still running, cooperatively, at checkpoints
-NEXT    phase 2 -- candidate versions, task-local activation, promotion
+        that is still running, cooperatively, at checkpoints, with an exact
+        lifecycle model and its invariants adversarially tested
+NEXT    phase 1.5 -- compositional agency: TASK as the unit, scoped children
+        for sub-agents, detached children for spawned work, a supervisor
+        owning topology, task-to-task messaging, isolated conversations
+THEN    phase 2 -- versions as function objects, task-local activation through
+        a dynamic activation context, subtree inheritance, promotion
 THEN    Rust/Ratatui client over the same protocol
 THEN    phases 3 and 4 above
 ```
+
+Phase 1.5 comes first because *task-local* has no referent until tasks exist.
+One primitive, not five: a sub-agent is a task with a scoped parent, spawned
+work is a task with a detached lifecycle. `Agent`/`SubAgent`/`BackgroundAgent`
+as separate runtime concepts would be three names for one thing.
+
+Context isolation is nearly free here and costs Pi a subprocess: separate task
+conversations inside one image give isolated cognition over a shared runtime —
+same code, tools, registries; different transcripts.
+
+The standard for leaving a layer alone:
+
+> Not *it works*. The architecture has converged, its invariants are explicit,
+> adversarial attempts to violate them fail, and there is no evidence for a
+> better design.
 
 `improvement.deactivated` and `improvement.reverted` are separate names in the
 event vocabulary and must stay separate. Deactivation ends a candidate's
