@@ -1,0 +1,1 @@
+Splitting a bill loses money: 1.00 split three ways comes back as 0.99 in total. Find the cause, fix it, and confirm the whole test suite passes.

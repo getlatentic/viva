@@ -24,7 +24,8 @@
                     (#:console #:vivarium.console)
                     (#:harness #:vivarium.harness)
                     (#:workspace #:vivarium.workspace)
-                    (#:env #:vivarium.env))
+                    (#:env #:vivarium.env)
+                    (#:session #:vivarium.session))
   (:export #:main #:arms-named #:available-arms
            #:render #:broadcast #:transcript #:screen
            #:trajectory-line #:ledger-lines #:score-line #:one-line

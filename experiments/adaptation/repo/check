@@ -1,0 +1,4 @@
+#!/bin/sh
+# The test runner. Uses paths relative to the repository root, so it has to be
+# run from there. `./check <name>` runs one case.
+exec python3 -m t.run "$@"

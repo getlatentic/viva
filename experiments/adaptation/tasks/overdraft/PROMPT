@@ -1,0 +1,1 @@
+An account went negative: someone transferred more than they had and nothing stopped them. Transfers must refuse to overdraw an account and must leave both balances untouched when they do. Fix it and confirm the whole test suite passes.

@@ -232,6 +232,9 @@ noise, not a result.~%")
   (list :model (flag parsed "model")
         :cwd (a:when-let ((cwd (flag parsed "cwd"))) (namestring (truename cwd)))
         :root (a:when-let ((root (flag parsed "root"))) (namestring (truename root)))
+        ;; Appended rather than replacing, so a condition that adds one line to
+        ;; the prompt differs from the default by exactly that line.
+        :extra-prompt (flag parsed "append")
         :request-limit (flag-integer parsed "limit" 60)))
 
 (defun command-shell (parsed)
@@ -245,7 +248,7 @@ noise, not a result.~%")
                                    (list :request-limit (flag-integer parsed "limit" 200)))))
 
 (defun command-do (parsed)
-  "One prompt, one answer, no session. What a script or a CI job wants."
+  "One prompt, one answer. What a script or a CI job wants."
   (let* ((prompt (or (a:when-let ((file (flag parsed "file")))
                        (uiop:read-file-string file))
                      (format nil "~{~a~^ ~}" (args-positional parsed))))
@@ -254,14 +257,24 @@ noise, not a result.~%")
       (format t "~&usage: vivarium do \"<prompt>\" [--cwd DIR] [--model NAME]~%")
       (return-from command-do 1))
     (let* ((console:*colour* nil)
+           ;; A transcript only on request. It is what lets a run's cost be
+           ;; counted from what the agent actually did rather than from what it
+           ;; said it did, which is the only claim a summary can make.
+           (directory (a:when-let ((given (flag parsed "session-dir")))
+                        (uiop:parse-native-namestring
+                         (if (a:ends-with #\/ given) given (concatenate 'string given "/")))))
            (view (console::make-view :stream (if quiet (make-broadcast-stream) *standard-output*))))
       (multiple-value-bind (agent choice complaints)
           (apply #'console:build-agent
                  :listener (console::shell-listener view)
-                 :persist nil
+                 :persist (and directory t)
+                 :session-directory directory
                  (workspace-options parsed))
         (declare (ignore choice))
         (dolist (complaint complaints) (format *error-output* "~&! ~a~%" complaint))
-        (let ((reply (harness:ask agent prompt)))
-          (when quiet (format t "~&~a~%" (or reply "")))
-          0)))))
+        (unwind-protect
+             (let ((reply (harness:ask agent prompt)))
+               (when quiet (format t "~&~a~%" (or reply "")))
+               0)
+          (a:when-let ((s (harness:agent-session agent)))
+            (session:close-session s)))))))

@@ -1,0 +1,1 @@
+Displaying an amount raises NotImplementedError. Implement the missing function so it produces what the tests expect, and confirm the whole test suite passes.
