@@ -668,3 +668,49 @@ rather than leaving it to be rediscovered a third time."
       (is string= "Review src/x.lisp and list what is wrong."
           (string-trim '(#\Newline)
                        (template:expand (first templates) "src/x.lisp"))))))
+
+;;; Custom entries
+
+(define-test "an injected message is attributed, and the user's is left alone"
+  ;; The version this replaced returned a rewritten user message, so the
+  ;; transcript showed the person saying words they never typed.
+  (with-repository (environment)
+    (let* ((directory (uiop:parse-native-namestring
+                       (format nil "~a/.sessions/" (env:env-cwd environment))))
+           (session (session:open-session :directory directory))
+           (agent (harness:make-workspace-agent :cwd (env:env-cwd environment)
+                                                :session session :load-resources nil)))
+      (let ((harness:*agent* agent))
+        (setf (harness:agent-context agent) (loop*:make-context))
+        (harness:send-message "recall" "you noted: the runner is ./check")
+        (ws-say session :user "what is the runner?"))
+      (session:close-session session)
+      (let* ((reloaded (session:load-session (session:session-path session)))
+             (entries (session:context-entries reloaded))
+             (messages (session:session-messages reloaded)))
+        ;; Both reach the model...
+        (is = 2 (length messages))
+        (true (mentions "the runner is ./check" (msg:text-of (first messages))))
+        (is string= "what is the runner?" (msg:text-of (second messages)))
+        ;; ...but only one of them is the person speaking.
+        (is = 1 (count :custom-message entries :key #'session:entry-kind))
+        (is = 1 (count :message entries :key #'session:entry-kind))
+        (is string= "recall"
+            (gethash "custom_type"
+                     (session:entry-payload
+                      (find :custom-message entries :key #'session:entry-kind))))))))
+
+(define-test "custom state is persisted and never sent to a model"
+  (with-repository (environment)
+    (let* ((directory (uiop:parse-native-namestring
+                       (format nil "~a/.sessions/" (env:env-cwd environment))))
+           (session (session:open-session :directory directory)))
+      (session:append-custom session "bookkeeping" (session:object "seen" 3))
+      (ws-say session :user "hello")
+      (session:close-session session)
+      (let ((reloaded (session:load-session (session:session-path session))))
+        ;; In the tree, so it is ordered against the turns it relates to...
+        (is = 2 (length (session:context-entries reloaded)))
+        ;; ...and out of the conversation.
+        (is = 1 (length (session:session-messages reloaded)))
+        (is string= "hello" (msg:text-of (first (session:session-messages reloaded))))))))

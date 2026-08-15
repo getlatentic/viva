@@ -333,6 +333,31 @@ not have to care whether the caller asked for a transcript."
   (a:when-let ((agent *agent*))
     (apply #'session:append-record (agent-session agent) kind plist)))
 
+(defun send-message (custom-type text &key (display t))
+  "Put TEXT into the conversation on an extension's behalf, attributed to it.
+
+Pi's sendMessage. The alternative -- which RECALL did until this existed -- is
+to return a replacement for the user's message from a :BEFORE-REQUEST handler,
+which works and quietly destroys the record of what the person typed.
+
+Appended to the live context, so it precedes the prompt being answered, and
+recorded as a custom message so the transcript keeps the attribution."
+  (a:when-let ((agent *agent*))
+    (let ((message (msg:make-user-message :content (list (msg:make-text text)))))
+      (setf (loop*:context-messages (agent-context agent))
+            (append (loop*:context-messages (agent-context agent)) (list message)))
+      (a:when-let ((session (agent-session agent)))
+        (session:append-custom-message session custom-type message :display display))
+      (a:when-let ((listener (agent-listener agent)))
+        (funcall listener (list :type :custom-message :custom-type custom-type :text text)))
+      message)))
+
+(defun append-custom (custom-type data)
+  "Persist extension state beside the conversation, never sending it to a model."
+  (a:when-let ((agent *agent*))
+    (a:when-let ((session (agent-session agent)))
+      (session:append-custom session custom-type data))))
+
 (defun harness-tool-set (agent)
   "The tool set as the model will see it on the next request."
   (agent:tools agent))

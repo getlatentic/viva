@@ -77,6 +77,11 @@ the last one HERE."
                  (progn (terpri out) (setf (view-streamed-p view) nil))
                  (let ((text (msg:text-of message)))
                    (when (plusp (length text)) (format out "~a~%" text)))))))
+        (:custom-message
+         (format out "~a~%" (paint (format nil "  + ~a: ~a" (getf event :custom-type)
+                                           (one-line (getf event :text) :width 60))
+                                   :dim))
+         (force-output out))
         (:tool-start
          (format out "~a~%" (paint (format nil "  · ~a" (call-summary (getf event :call))) :cyan))
          (force-output out))

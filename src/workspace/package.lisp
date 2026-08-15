@@ -116,7 +116,7 @@
                     (#:msg #:vivarium.message))
   (:export #:session #:session-p #:open-session #:session-path #:session-id
            #:session-entries #:session-cwd #:session-leaf #:session-parent
-           #:record-entry #:append-entry #:append-record #:entries-of #:records-of
+           #:record-entry #:append-entry #:append-record #:append-custom-message #:append-custom #:entries-of #:records-of
            #:close-session #:load-session #:session-messages #:latest-session
            #:session-directory #:usage-of #:+format-version+ #:+conversation-kinds+
            #:list-sessions #:find-session #:describe-session #:slug
@@ -164,5 +164,6 @@
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
            #:agent-extension-directories #:agent-compaction #:agent-active-tools
            #:compact-now #:set-model #:set-active-tools #:apply-settings
+           #:send-message #:append-custom
            #:ask #:converse #:resume #:refresh-resources #:harness-tool-set #:record
            #:*agent* #:*default-model* #:*default-provider-name*))

@@ -50,7 +50,7 @@
   (leaf nil))
 
 (defparameter +conversation-kinds+
-  '(:message :compaction :branch-summary :custom
+  '(:message :compaction :branch-summary :custom :custom-message
     ;; Settings changes are part of the conversation's history, not telemetry:
     ;; a session resumed under a different model or a wider tool set is not the
     ;; session that was recorded.
@@ -209,6 +209,26 @@ whether anyone asked for a transcript."
   "Append one conversation entry. The name the harness already calls."
   (append-entry session kind payload))
 
+(defun append-custom-message (session custom-type message &key (display t))
+  "A message an extension put into the conversation, marked as its own.
+
+The distinction from an ordinary entry is the whole point. An extension that
+injects by REWRITING the user's message destroys the record of what the person
+actually typed, and on resume its words are indistinguishable from theirs. Kept
+separate, the transcript still says who said what, and a reader can strip an
+extension's contributions without guessing which ones they were."
+  (append-entry session :custom-message
+                (object "custom_type" custom-type
+                        "display" display
+                        "message" (encode-message message))))
+
+(defun append-custom (session custom-type data)
+  "Extension state, persisted beside the conversation and never sent to a model.
+
+Pi's CustomEntry. In the tree so it is ordered against the turns it relates to,
+but SESSION-MESSAGES yields nothing for it."
+  (append-entry session :custom (object "custom_type" custom-type "data" data)))
+
 (defun entries-of (session)
   (reverse (session-entries session)))
 
@@ -326,6 +346,13 @@ the live branch and should not have to say so twice."
                    (:compaction (compaction-messages entry))
                    (:message (when (hash-table-p (entry-payload entry))
                                (list (decode-message (entry-payload entry)))))
+                   ;; A custom MESSAGE is in the conversation; a custom ENTRY is
+                   ;; state and is not. One letter of difference in the name and
+                   ;; the whole difference in what reaches the model.
+                   (:custom-message
+                    (a:when-let ((inner (and (hash-table-p (entry-payload entry))
+                                             (gethash "message" (entry-payload entry)))))
+                      (list (decode-message inner))))
                    (t '())))))
 
 (defun compact (session summary &key (keep 0) (tokens-before 0))

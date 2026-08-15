@@ -63,14 +63,20 @@ and the relevant note is not in front of you."
     (format nil "Nothing remembered about ~a." (gethash "topic" args))))
 
 (defun recall-inject (message)
-  "Prepend the relevant notes to the user's message, as context rather than
-instruction. Returns NIL when nothing matches, which leaves the message alone."
-  (let ((text (vivarium.message:text-of message)))
-    (a:when-let ((found (recall-matching text)))
-      (vivarium.message:make-user-message
-       :content (list (vivarium.message:make-text
-                       (format nil "<recalled>~%You have worked here before and noted:~%~{~a~%~}</recalled>~%~%~a"
-                               found text)))))))
+  "Put the relevant notes into the conversation as a message of RECALL's own.
+
+Returns NIL always, so the user's message is left exactly as they wrote it. The
+first version of this returned a REPLACEMENT with the notes prepended, which
+worked and quietly destroyed the record: the transcript then showed the person
+saying words they had not typed, and on resume there was no way to tell which
+were theirs. A custom message keeps the attribution, and a reader can strip
+this extension's contributions without having to guess which ones they were."
+  (a:when-let ((found (recall-matching (vivarium.message:text-of message))))
+    (vivarium.harness:send-message
+     "recall"
+     (format nil "<recalled>~%You have worked here before and noted:~%~{~a~%~}</recalled>"
+             found)))
+  nil)
 
 (defextension "recall"
   :description "Injects relevant past notes before each request, and searches them on demand."
