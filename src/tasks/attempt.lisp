@@ -137,10 +137,17 @@ burden is counted the same way the control arm's is."
    (append (image-tools:tool-set) (inspect:tool-set) (a:ensure-list oracle))))
 
 (defun experiment-b-tool-set (arm)
-  "Arm A's tools plus inspection, minus or plus the ability to run what you wrote."
+  "Arm A's tools plus inspection, minus or plus the ability to run what you wrote.
+
+INSTALL is REPLACED by INSTALL_DEFINITION, not supplemented. The unrestricted
+install executes -- a top-level defparameter runs its initializer -- so leaving
+it in the set would hand every arm the execution channel the arms exist to
+separate."
   (burden:recording-tool-set
-   (append (image-tools:tool-set)
-           (list inspect:inspect-value)          ; observation, always
+   (append (remove "install" (image-tools:tool-set)
+                   :key #'tool:tool-name :test #'string=)
+           (list inspect:install-definition
+                 inspect:inspect-value)          ; observation, always
            (ecase arm
              (:control '())
              (:generic-call (list inspect:call-function))

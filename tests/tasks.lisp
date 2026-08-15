@@ -19,12 +19,9 @@
                  (let ((price (event-price event)))
                    (if price (* (event-qty event) price) 0)))
           :initial-value 0))"))
-    (:f1 . ("(defparameter *accounts*
-  (mapcar (lambda (a)
-            (list :id (getf a :id) :plan (getf a :plan) :region (getf a :region)
-                  :units (getf a :units)
-                  :charge (* (getf a :units) (rate-for (getf a :plan) (getf a :region)))))
-          *accounts*))"))
+    (:f1 . ("(defun calculate-charge (id)
+  (case id (:alfa 120) (:bravo 132) (:charlie 100)
+           (:delta 200) (:echo 135) (:foxtrot 90)))"))
     (:e24 . ("(defparameter *quotes*
   (mapcar (lambda (q)
             (if (gethash (getf q :id) *negotiated*)
