@@ -468,3 +468,120 @@ rather than leaving it to be rediscovered a third time."
             (is = 3 (length messages))
             (is string= "c1" (msg:tool-call-id (first (msg:tool-calls-in (second messages)))))
             (is string= "c1" (msg:tool-result-message-call-id (third messages)))))))))
+
+;;; Compaction
+
+(defun ws-turn (role text &key calls result-for)
+  (cond (result-for (msg:make-tool-result-message :call-id result-for :output text))
+        ((eq :assistant role)
+         (msg:make-assistant-message
+          :content (append (when (plusp (length text)) (list (msg:make-text text)))
+                           (mapcar (lambda (id) (msg:make-tool-call :id id :name "ls" :arguments (args)))
+                                   calls))
+          :stop-reason (if calls :tool-calls :stop)))
+        (t (msg:make-user-message :content (list (msg:make-text text))))))
+
+(define-test "compaction triggers on the provider's count, never an estimate"
+  (let ((settings (compaction:make-settings :context-limit 1000 :reserve 200)))
+    (false (compaction:due-p settings 0))
+    (false (compaction:due-p settings 799))
+    (true (compaction:due-p settings 800))
+    (false (compaction:due-p (compaction:make-settings :enabled-p nil :context-limit 1000 :reserve 200)
+                             900))))
+
+(define-test "the retained tail never begins on an orphaned tool result"
+  ;; A result whose call was summarised away is rejected by every provider, so
+  ;; the tail extends backwards over the assistant message that made the calls
+  ;; -- and over ALL of a parallel batch, not just the last one.
+  (let ((messages (list (ws-turn :user "old news")
+                        (ws-turn :assistant "working" :calls '("c1" "c2"))
+                        (ws-turn nil "first result" :result-for "c1")
+                        (ws-turn nil "second result" :result-for "c2")
+                        (ws-turn :assistant "done"))))
+    (dolist (budget '(1 5 20 500))
+      (let ((tail (compaction:retained-tail messages budget)))
+        (true (plusp (length tail)))
+        (false (msg:tool-result-message-p (first tail)))))
+    ;; A budget that only fits the last message still keeps it.
+    (is = 1 (length (compaction:retained-tail messages 1)))))
+
+(defclass compacting-agent (harness:workspace-agent)
+  ((script :initarg :script :accessor script)
+   (summarised :initform nil :accessor summarised)))
+
+(defmethod client:complete ((agent compacting-agent) messages)
+  (declare (ignore messages))
+  (or (pop (script agent))
+      (msg:make-assistant-message :content (list (msg:make-text "done")) :stop-reason :stop)))
+
+(defmethod compaction:summarise ((agent compacting-agent) messages &key instruction)
+  (declare (ignore instruction))
+  ;; The summariser normally builds a bare scribe agent of its own, so
+  ;; overriding CLIENT:COMPLETE here would not reach it and the test would go to
+  ;; the network. Overriding SUMMARISE is the seam.
+  (setf (summarised agent) messages)
+  (or (pop (script agent)) "a summary"))
+
+(define-test "a compaction replaces the context and is written to the session"
+  (with-repository (environment)
+    (let* ((directory (uiop:parse-native-namestring
+                       (format nil "~a/.sessions/" (env:env-cwd environment))))
+           (session (session:open-session :directory directory))
+           (agent (make-instance 'compacting-agent
+                                 :environment environment :resource-environment environment
+                                 :session session
+                                 ;; The summariser's reply, when COMPACT-NOW asks.
+                                 :script (list "They looked at three files."))))
+      (setf (harness:agent-context agent)
+            (loop*:make-context :messages (list (ws-turn :user "one")
+                                                (ws-turn :assistant "two")
+                                                (ws-turn :user "three")))
+            (harness:agent-compaction agent)
+            (compaction:make-settings :keep-recent 1))
+      (let ((context (harness:compact-now agent)))
+        (true context)
+        (let ((messages (loop*:context-messages context)))
+          ;; The summary, then whatever tail fitted.
+          (true (mentions "They looked at three files" (msg:text-of (first messages))))
+          (true (<= (length messages) 3))
+          (is string= "three" (msg:text-of (first (last messages))))))
+      (session:close-session session)
+      (let ((reloaded (session:load-session (session:session-path session))))
+        (is = 1 (count :compaction (session:entries-of reloaded) :key #'session:entry-kind))
+        ;; And the compaction is what the resumed conversation starts from.
+        (true (mentions "They looked at three files"
+                        (msg:text-of (first (session:session-messages reloaded)))))))))
+
+(define-test "an extension can cancel a compaction or write its own summary"
+  (with-repository (environment)
+    (let ((extension:*registry* '()))
+      (let ((agent (make-instance 'compacting-agent
+                                  :environment environment :resource-environment environment
+                                  :script '())))
+        (setf (harness:agent-context agent)
+              (loop*:make-context :messages (list (ws-turn :user "one") (ws-turn :user "two")))
+              (harness:agent-compaction agent) (compaction:make-settings :keep-recent 1))
+        ;; Written the way an extension author would, so the test exercises the
+        ;; public path rather than the registry's internals.
+        (extension:defextension "veto"
+          :description "Refuses every compaction."
+          (extension:on :before-compaction (lambda (event) (declare (ignore event)) :cancel)))
+        ;; Cancelled: no model request is made, and the script is empty, so a
+        ;; summariser that ran at all would error rather than return NIL.
+        (false (harness:compact-now agent))))))
+
+;;; Runtime tool control
+
+(define-test "the active tool set narrows what the model is offered"
+  (with-repository (environment)
+    (let ((extension:*registry* '()))
+      (let ((agent (harness:make-workspace-agent :cwd (env:env-cwd environment)
+                                                 :load-resources nil)))
+        (is = 8 (length (agent:tools agent)))
+        (setf (harness:agent-active-tools agent) '("read" "grep"))
+        (is = 2 (length (agent:tools agent)))
+        (is equal '("read" "grep") (mapcar #'tool:tool-name (agent:tools agent)))
+        ;; NIL means all of them, not none -- an agent that disabled everything
+        ;; by clearing the list could never re-enable anything.
+        (setf (harness:agent-active-tools agent) nil)
+        (is = 8 (length (agent:tools agent)))))))

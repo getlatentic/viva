@@ -28,7 +28,12 @@
          :extra-prompt extra-prompt
          :extension-directories extension-directories
          :request-limit request-limit)
-      (setf (agent:agent-stream-p agent) stream)
+      (setf (agent:agent-stream-p agent) stream
+            ;; The limit comes from the chosen model, so switching model changes
+            ;; when compaction fires rather than leaving a default that is wrong
+            ;; for both.
+            (compaction:settings-context-limit (harness:agent-compaction agent))
+            (models:choice-context-limit choice))
       (values agent choice complaints))))
 
 ;;; Painting a run
@@ -160,6 +165,23 @@
                          (declare (ignore argument))
                          (setf (harness:agent-context agent) (loop*:make-context))
                          (format out "  new conversation~%")))
+   (make-verb :name "compact" :blurb "summarise the conversation so far and continue"
+              :handler (lambda (agent argument out)
+                         (declare (ignore argument))
+                         (a:if-let ((context (harness:compact-now agent :reason :manual)))
+                           (format out "  compacted to ~d message(s)~%"
+                                   (length (loop*:context-messages context)))
+                           (format out "  nothing to compact~%"))))
+   (make-verb :name "only" :argument "[TOOL,...]" :blurb "restrict the model to these tools"
+              :handler (lambda (agent argument out)
+                         (if (plusp (length argument))
+                             (progn (setf (harness:agent-active-tools agent)
+                                          (remove "" (uiop:split-string argument :separator ", ")
+                                                  :test #'string=))
+                                    (format out "  ~{~a~^, ~}~%"
+                                            (mapcar #'tool:tool-name (agent:tools agent))))
+                             (progn (setf (harness:agent-active-tools agent) nil)
+                                    (format out "  all ~d tools~%" (length (agent:tools agent)))))))
    (make-verb :name "session" :blurb "where this transcript is being written"
               :handler (lambda (agent argument out)
                          (declare (ignore argument))
@@ -202,12 +224,13 @@
   (format out "  /help for commands, Ctrl-D to leave~%~%"))
 
 (defun run-shell (&key model cwd root (in *standard-input*) (out *standard-output*)
-                    (request-limit 60))
+                    (request-limit 60) extra-prompt extension-directories)
   "Read prompts from IN, run them, paint the result on OUT. Returns an exit code."
   (let ((view (make-view :stream out))
         (*running* t))
     (multiple-value-bind (agent choice complaints)
         (build-agent :model model :cwd cwd :root root
+                     :extra-prompt extra-prompt :extension-directories extension-directories
                      :listener (shell-listener view) :request-limit request-limit)
       (banner agent choice complaints out)
       (unwind-protect

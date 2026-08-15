@@ -115,12 +115,22 @@
            #:record-p #:entry #:entry-id #:entry-parent #:entry-kind #:entry-payload
            #:entry-time))
 
+(defpackage #:vivarium.compaction
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:msg #:vivarium.message)
+                    (#:agent #:vivarium.agent)
+                    (#:client #:vivarium.client))
+  (:export #:settings #:make-settings #:settings-enabled-p #:settings-context-limit
+           #:settings-reserve #:settings-keep-recent #:threshold #:due-p
+           #:retained-tail #:rough-tokens #:summarise #:render #:+instruction+))
+
 (defpackage #:vivarium.models
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:provider #:vivarium.provider))
   (:export #:choice #:choice-label #:choice-provider #:choice-model #:choice-effort
-           #:available-models #:resolve-model #:+catalogue+))
+           #:available-models #:resolve-model #:+catalogue+ #:choice-context-limit))
 
 (defpackage #:vivarium.harness
   (:use #:cl)
@@ -134,11 +144,13 @@
                     (#:skill #:vivarium.skill)
                     (#:memory #:vivarium.memory)
                     (#:extension #:vivarium.extension)
-                    (#:session #:vivarium.session))
+                    (#:session #:vivarium.session)
+                    (#:compaction #:vivarium.compaction))
   (:export #:workspace-agent #:make-workspace-agent #:agent-environment
            #:agent-skills #:agent-session #:agent-extensions #:agent-listener
            #:agent-request-limit #:agent-requests #:agent-context #:agent-aborting
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
-           #:agent-extension-directories
+           #:agent-extension-directories #:agent-compaction #:agent-active-tools
+           #:compact-now
            #:ask #:converse #:resume #:refresh-resources #:harness-tool-set #:record
            #:*agent* #:*default-model* #:*default-provider-name*))

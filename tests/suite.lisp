@@ -34,7 +34,8 @@
                     (#:memory #:vivarium.memory)
                     (#:extension #:vivarium.extension)
                     (#:session #:vivarium.session)
-                    (#:harness #:vivarium.harness)))
+                    (#:harness #:vivarium.harness)
+                    (#:compaction #:vivarium.compaction)))
 
 (in-package #:vivarium.tests)
 

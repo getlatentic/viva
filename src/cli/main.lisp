@@ -37,6 +37,8 @@ ORDINARY WORK
       --colour false          plain output, for a log
   ipc [options]               serve one agent over stdin/stdout as JSON lines
       (same options; --limit defaults to 200)
+      --append TEXT           add one line to the system prompt
+      --extension DIR         load extensions from DIR as well
   do \"<prompt>\" [options]     one prompt, one answer, no session
       --file prompt.txt       read the prompt from a file
       --quiet                 print only the final answer

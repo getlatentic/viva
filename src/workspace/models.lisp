@@ -11,7 +11,11 @@
   (label "" :type string)
   (provider nil)
   (model "" :type string)
-  (effort nil))
+  (effort nil)
+  ;; What the model will accept, for deciding when to compact. Conservative on
+  ;; purpose: too high fails the request compaction existed to prevent, and the
+  ;; cost of too low is one summary nobody needed.
+  (context-limit 128000 :type integer))
 
 (defparameter +catalogue+
   '((:label "openai" :key "OPENAI_API_KEY"
@@ -40,6 +44,9 @@
     (make-choice :label (getf entry :label)
                  :model (or (from-environment (getf entry :model-var)) (getf entry :model))
                  :effort (getf entry :effort)
+                 :context-limit (or (a:when-let ((given (from-environment "VIVARIUM_CONTEXT_LIMIT")))
+                                      (parse-integer given :junk-allowed t))
+                                    (getf entry :context-limit 128000))
                  :provider (provider:openai-provider
                             :endpoint (or (from-environment (getf entry :endpoint-var))
                                           (getf entry :endpoint))

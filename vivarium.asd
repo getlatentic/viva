@@ -55,6 +55,7 @@
                              (:file "memory")
                              (:file "extension")
                              (:file "session")
+                             (:file "compaction")
                              (:file "models")
                              (:file "harness")))))
 

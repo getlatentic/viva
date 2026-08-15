@@ -23,6 +23,7 @@
                     (#:extension #:vivarium.extension)
                     (#:session #:vivarium.session)
                     (#:models #:vivarium.models)
-                    (#:harness #:vivarium.harness))
+                    (#:harness #:vivarium.harness)
+                    (#:compaction #:vivarium.compaction))
   (:export #:run-shell #:run-ipc #:build-agent #:*colour*
            #:call-summary #:paint))

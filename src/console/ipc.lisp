@@ -216,11 +216,12 @@
         (t (fail server id type (format nil "Unknown command type ~a." type)))))))
 
 (defun run-ipc (&key model cwd root (in *standard-input*) (out *standard-output*)
-                  (request-limit 200))
+                  (request-limit 200) extra-prompt extension-directories)
   "Serve one agent over stdin/stdout until EOF or an exit command."
   (let ((server (make-server :out out)))
     (multiple-value-bind (agent choice complaints)
         (build-agent :model model :cwd cwd :root root
+                     :extra-prompt extra-prompt :extension-directories extension-directories
                      :listener (ipc-listener server) :request-limit request-limit)
       (setf (server-agent server) agent)
       (emit-line server (object "type" "ready"

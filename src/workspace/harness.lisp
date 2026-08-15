@@ -58,13 +58,29 @@ an unbounded bill.")
              :documentation "Set from another thread to stop the run. Checked
 between streamed events as well as between turns, so an abort lands in the
 request already in flight rather than after it.")
+   (compaction :initarg :compaction :initform (compaction:make-settings)
+               :accessor agent-compaction)
+   (last-tokens :initform 0 :accessor agent-last-tokens)
+   (active-tools :initarg :active-tools :initform nil :accessor agent-active-tools
+                 :documentation "Names the model may call, or NIL for all of them.
+
+Runtime tool control, which is Pi's setActiveTools and also the Level 2 verb this
+harness lacked: an agent that can narrow or widen its own tool set has changed
+how it operates, not merely what it knows.")
    (context :initform (loop*:make-context) :accessor agent-context)))
 
-(defmethod agent:tools ((agent workspace-agent))
+(defun available-tools (agent)
   (append (workspace:tool-set)
           (list memory:remember)
           (extension:all-tools)
           (agent-extra-tools agent)))
+
+(defmethod agent:tools ((agent workspace-agent))
+  (let ((tools (available-tools agent))
+        (active (agent-active-tools agent)))
+    (if active
+        (remove-if-not (lambda (each) (member (tool:tool-name each) active :test #'string=)) tools)
+        tools)))
 
 (defmethod agent:system-prompt ((agent workspace-agent))
   (workspace:with-environment ((agent-environment agent))
@@ -84,16 +100,66 @@ request already in flight rather than after it.")
 (defmethod agent:should-abort-p ((agent workspace-agent))
   (or (agent-aborting agent) (call-next-method)))
 
-(defmethod agent:prepare-next-turn ((agent workspace-agent) message results context)
-  "Where an extension gets to change what the next request will carry.
+(defun reported-tokens (message)
+  (a:when-let ((usage (and message (msg:assistant-message-usage message))))
+    (and (hash-table-p usage) (gethash "prompt_tokens" usage))))
 
-The :CONTEXT hook receives the live context and may return a replacement, which
-is how a memory extension injects what it retrieved without the harness knowing
-anything about retrieval."
-  (declare (ignore message results))
-  (a:when-let ((replacement (extension:fire :context context)))
-    (unless (eq replacement context)
-      (list :context replacement))))
+(defun summary-message (summary)
+  (msg:make-user-message
+   :content (list (msg:make-text
+                   (format nil "<earlier_conversation>~%~a~%</earlier_conversation>" summary)))))
+
+(defun compact-now (agent &key reason)
+  "Summarise the conversation so far and continue from the summary.
+
+Returns the new context, or NIL when there was nothing to drop or an extension
+declined. Costs one model request, which is why it is reached only once the
+provider's own token count says the next ordinary request would not fit."
+  (let* ((settings (agent-compaction agent))
+         (messages (loop*:context-messages (agent-context agent)))
+         (keep (compaction:retained-tail messages (compaction:settings-keep-recent settings)))
+         (older (butlast messages (length keep))))
+    (when (null older)
+      (return-from compact-now nil))
+    ;; An extension may cancel, or supply its own summary. Pi's
+    ;; session_before_compact, and the reason a project can decide for itself
+    ;; what survives its own compaction.
+    (let ((decision (extension:fire :before-compaction
+                                    (list :agent agent :older older :keep keep :reason reason))))
+      (when (eq :cancel decision)
+        (return-from compact-now nil))
+      (let ((summary (if (stringp decision) decision (compaction:summarise agent older))))
+        (when (zerop (length (string-trim '(#\Space #\Newline) (or summary ""))))
+          (return-from compact-now nil))
+        (a:when-let ((session (agent-session agent)))
+          (session:compact session summary :keep (length keep)
+                                           :tokens-before (agent-last-tokens agent)))
+        (let ((context (loop*:make-context :messages (cons (summary-message summary) keep))))
+          (setf (agent-context agent) context)
+          (extension:fire :compaction (list :agent agent :summary summary :kept (length keep)))
+          (a:when-let ((session (agent-session agent)))
+            (session:append-record session :compacted
+                                   "kept" (length keep) "dropped" (length older)
+                                   "tokens_before" (agent-last-tokens agent)))
+          context)))))
+
+(defmethod agent:prepare-next-turn ((agent workspace-agent) message results context)
+  "Where the next request is changed before it is built.
+
+Two things happen here. Compaction, when the provider's own count says the
+conversation no longer fits -- checked between turns rather than mid-request,
+because that is the only moment the context can be replaced safely. And the
+:CONTEXT hook, which is how a memory extension injects what it retrieved without
+the harness knowing anything about retrieval."
+  (declare (ignore results))
+  (a:when-let ((tokens (reported-tokens message)))
+    (setf (agent-last-tokens agent) tokens))
+  (let* ((compacted (when (compaction:due-p (agent-compaction agent) (agent-last-tokens agent))
+                      (compact-now agent :reason :threshold)))
+         (current (or compacted context))
+         (replacement (extension:fire :context current)))
+    (cond ((and replacement (not (eq replacement context))) (list :context replacement))
+          (compacted (list :context compacted)))))
 
 (defmethod agent:emit ((agent workspace-agent) event)
   (case (getf event :type)
