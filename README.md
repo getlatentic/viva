@@ -1,11 +1,19 @@
 # vivarium
 
-An agent harness whose world is a **running Common Lisp image** rather than a
-directory of files. The agent reads a definition, compiles a replacement into the
-live process, rolls it back if it was wrong, and can hand itself a new tool
-mid-run — with nothing restarting at any point.
+An agent harness with two worlds. One is a **directory** — it reads, writes and
+edits files, searches a repository, runs commands, loads skills and keeps
+memory, the way any coding agent does. The other is a **running Common Lisp
+image**, where the agent compiles a replacement definition into the live
+process, rolls it back if it was wrong, and hands itself a new tool mid-run,
+with nothing restarting at any point.
 
-Verified on SBCL 2.6.7 / macOS ARM64. **424 tests green.**
+The second is the research; the first is what makes it about anything. See
+[docs/roadmap.md](docs/roadmap.md) for how the two fit together, and
+[docs/level-1.md](docs/level-1.md) for the ordinary half — including a
+measured comparison against [Pi](https://github.com/badlogic/pi-mono), the
+harness it was replicated from.
+
+Verified on SBCL 2.6.7 / macOS ARM64. **560 tests green.**
 
 New here? Read [HANDOFF.md](HANDOFF.md) — the question this answers, the six
 experiments, what has been settled, and the mistakes already paid for.
@@ -21,6 +29,19 @@ depends on the caller having sourced it.
 ./bin/vivarium check         # compile every experiment, no network, no model
 ./bin/vivarium tasks         # the 17 tasks, their families and the held-out split
 ```
+
+**Ordinary work in a directory** — three ways into the same agent:
+
+```bash
+vivarium shell --cwd ~/work/thing        # interactive; /help lists the commands
+vivarium do "the tests fail, fix it"     # one prompt, one answer, no session
+vivarium ipc --cwd .                     # JSON in, JSON out, one object per line
+```
+
+Skills go in `.vivarium/skills/<name>/SKILL.md`, extensions in
+`.vivarium/extensions/*.lisp`, and whatever the agent decides to keep in
+`.vivarium/MEMORY.md`. As a library it is `harness:make-workspace-agent` and
+`harness:ask`; the shell and the IPC server are thin wrappers over exactly that.
 
 Those three need no credentials. The rest need at least one arm in `.env`
 (`OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, or a `VIVARIUM_LOCAL_ENDPOINT` with

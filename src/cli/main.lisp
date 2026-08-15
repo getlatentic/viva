@@ -3,7 +3,13 @@
 (in-package #:vivarium.cli)
 
 (defparameter +commands+
-  (list (list "test" #'command-test
+  (list (list "shell" #'command-shell
+              "Work in a directory, interactively.")
+        (list "ipc" #'command-ipc
+              "Serve one agent over stdin and stdout, as JSON lines.")
+        (list "do" #'command-do
+              "One prompt, one answer, no session.")
+        (list "test" #'command-test
               "Run the whole test suite. Exits non-zero if anything fails.")
         (list "check" #'command-check
               "Compile every experiment. No model server, no network.")
@@ -20,6 +26,26 @@
 
 (defparameter +usage+
   "vivarium <command> [options]
+
+ORDINARY WORK
+
+  shell [options]             work in a directory, interactively
+      --cwd DIR               where to work (default: here)
+      --model NAME            which model (default: the first configured)
+      --root DIR              refuse any path outside DIR
+      --limit N               model requests per prompt (default 60)
+      --colour false          plain output, for a log
+  ipc [options]               serve one agent over stdin/stdout as JSON lines
+      (same options; --limit defaults to 200)
+  do \"<prompt>\" [options]     one prompt, one answer, no session
+      --file prompt.txt       read the prompt from a file
+      --quiet                 print only the final answer
+
+  Skills go in .vivarium/skills/<name>/SKILL.md, extensions in
+  .vivarium/extensions/*.lisp, and what the agent chooses to keep in
+  .vivarium/MEMORY.md. /help in the shell lists the rest.
+
+EXPERIMENTS
 
   test                        run the test suite (exits non-zero on failure)
   check                       compile every experiment; catches a script that

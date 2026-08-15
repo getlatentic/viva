@@ -61,23 +61,40 @@ message about that internal failure instead of about the call it got wrong."
 (defmethod execute ((tool function-tool) arguments context)
   (funcall (tool-body tool) arguments context))
 
-(defmacro define-tool (name (arguments context) &body options-and-body)
-  "Define a FUNCTION-TOOL bound to the variable NAME.
+(defmacro define-tool (variable (arguments context) &body options-and-body)
+  "Define a FUNCTION-TOOL bound to VARIABLE.
 
-  (define-tool read-definition (args ctx)
-    :description \"Read a definition's source.\"
-    :parameters ((\"target\" :string \"PACKAGE::NAME\" :required t))
-    (describe-target (gethash \"target\" args)))"
-  (let ((description (getf options-and-body :description))
-        (parameters (getf options-and-body :parameters))
-        (body (loop for rest on options-and-body by #'cddr
-                    unless (keywordp (first rest))
-                      return rest)))
-    `(defparameter ,name
+The model-visible name is derived from VARIABLE unless :NAME says otherwise --
+needed as soon as a tool is called `read`, because the variable would then be
+CL:READ and the definition a package-lock violation.
+
+The body is wrapped in a block named after VARIABLE, so a guard clause can
+return early without the caller needing a symbol out of this package.
+
+  (define-tool read-tool (args ctx)
+    :name \"read\"
+    :description \"Read a file.\"
+    :parameters ((\"path\" :string \"Where\" :required-p t))
+    (contents-of (gethash \"path\" args)))"
+  ;; The options are collected before anything is looked up, because GETF over
+  ;; the whole form signals on the body: a list of options followed by an odd
+  ;; number of body forms is not a property list, and GETF only got away with it
+  ;; while every key it was asked for happened to be present.
+  (let* ((options (loop for rest on options-and-body by #'cddr
+                        while (keywordp (first rest))
+                        append (list (first rest) (second rest))))
+         (body (loop for rest on options-and-body by #'cddr
+                     unless (keywordp (first rest))
+                       return rest))
+         (description (getf options :description))
+         (parameters (getf options :parameters))
+         (name (or (getf options :name)
+                   (string-downcase (substitute #\_ #\- (symbol-name variable))))))
+    `(defparameter ,variable
        (make-instance 'function-tool
-                      :name ,(string-downcase (substitute #\_ #\- (symbol-name name)))
+                      :name ,name
                       :description ,description
                       :parameters ',parameters
                       :body (lambda (,arguments ,context)
                               (declare (ignorable ,arguments ,context))
-                              ,@body)))))
+                              (block ,variable ,@body))))))

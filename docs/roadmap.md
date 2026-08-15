@@ -30,23 +30,34 @@ while the harness still could not edit a file.
        +--------------------------+
 ```
 
-## Level 1 — a capable ordinary harness. **This does not exist yet.**
+## Level 1 — a capable ordinary harness. **Built.** See [level-1.md](level-1.md).
 
-Vivarium must first be useful the way Pi is useful: point it at real work and it
-does the work.
+Vivarium had to first be useful the way Pi is useful: point it at real work and
+it does the work.
 
 ```
-have    read_definition, install, rollback, find_definitions, bash,
-        inspect_value, call_function          -- a live Lisp image, nothing else
-missing filesystem read/write/edit, search across a repository, memory,
-        skills, durable instructions, artifacts
+image      read_definition, install, rollback, find_definitions,
+           inspect_value, call_function        -- a live Lisp image
+workspace  read, write, edit, ls, find, grep, bash, remember
+           + skills, durable instructions, extensions, sessions
+run as     a Lisp library, an interactive shell, or a JSONL IPC server
 ```
 
-**The honest statement of where the project is:** it is a research harness that
-solves synthetic Lisp tasks and cannot be used as an everyday coding agent. Every
-level above depends on this one, and none of the substrate work changes that.
+Replicated from Pi rather than invented, down to the tool names and the output
+limits, so that comparing the two compares harnesses and not context budgets.
 
-Level 1 is not self-improvement. It is the baseline organism.
+**Measured against Pi**, four fixtures whose failing test must actually pass
+afterwards, three repeats, same model, same starting tree:
+
+```
+pi         12/12      8s/task
+vivarium   12/12     10s/task     (the 2s is SBCL booting per `vivarium do`)
+```
+
+Parity is the whole point. Beating Pi on four fixtures would prove nothing;
+failing to match it would have meant Level 1 was not real.
+
+Level 1 is not self-improvement. It is the baseline organism, and it now exists.
 
 ## Level 2 — live self-modification, for the current task
 
@@ -63,10 +74,17 @@ Not only tools. A new helper, a new tool, debugging instrumentation, an index, a
 procedure, a modified instruction, a change to the loop's own behaviour, a
 different context strategy.
 
-**Mechanism status: built.** `install_definition` + `call_function` do
-create-and-use; `register_tool` elevates a helper into the model's own
-vocabulary. F1 exists to answer **one narrow engineering question** and nothing
-more:
+**Mechanism status: built, in both worlds.** In the image, `install_definition`
++ `call_function` do create-and-use and `register_tool` elevates a helper into
+the model's own vocabulary. In the workspace, the `skillsmith` extension's
+`write_skill` creates a skill and reloads resources in the same call, so it is
+in the agent's own system prompt on the next request — demonstrated end to end
+against a real model in [level-1.md](level-1.md).
+
+The workspace version is the stronger form: its artifact outlives the process by
+construction, so it is already half of Level 3.
+
+F1 exists to answer **one narrow engineering question** and nothing more:
 
 > Can an agent notice repeated friction during an ordinary task, create a
 > helper, and use it immediately?

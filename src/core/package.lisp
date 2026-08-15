@@ -7,7 +7,7 @@
            #:thinking #:make-thinking #:thinking-p #:thinking-value
            #:tool-call #:make-tool-call #:tool-call-p
            #:tool-call-id #:tool-call-name #:tool-call-arguments
-           #:message #:message-role #:message-content
+           #:message #:message-p #:message-role #:message-content
            #:assistant-message #:make-assistant-message #:assistant-message-p
            #:assistant-message-stop-reason #:assistant-message-usage
            #:user-message #:make-user-message #:user-message-p

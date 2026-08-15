@@ -25,7 +25,16 @@
                     (#:cli #:vivarium.cli)
                     (#:sexp #:vivarium.sexp)
                     (#:image-tools #:vivarium.image-tools)
-                    (#:loop* #:vivarium.loop)))
+                    (#:loop* #:vivarium.loop)
+                    (#:env #:vivarium.env)
+                    (#:glob #:vivarium.glob)
+                    (#:edit #:vivarium.edit)
+                    (#:workspace #:vivarium.workspace)
+                    (#:skill #:vivarium.skill)
+                    (#:memory #:vivarium.memory)
+                    (#:extension #:vivarium.extension)
+                    (#:session #:vivarium.session)
+                    (#:harness #:vivarium.harness)))
 
 (in-package #:vivarium.tests)
 

@@ -32,46 +32,33 @@
          (usocket:socket-close socket)
          t)))))
 
-(defun openai-compatible (endpoint key) (provider:openai-provider :endpoint endpoint :api-key key))
+(defparameter +arm-labels+
+  '(("openrouter" . "gpt-oss-120b") ("deepseek" . "deepseek-flash"))
+  "Experiment-facing names for catalogue entries. The results files and the
+write-ups already say `gpt-oss-120b`, and renaming a column silently is how two
+sweeps stop being comparable.")
+
+(defun arm-for (choice)
+  (make-arm :label (or (cdr (assoc (models:choice-label choice) +arm-labels+ :test #'string=))
+                       (models:choice-label choice))
+            :provider (models:choice-provider choice)
+            :model (models:choice-model choice)
+            :effort (models:choice-effort choice)))
 
 (defun available-arms ()
-  (remove
-   nil
-   (list
-    (a:when-let ((key (env "OPENROUTER_API_KEY")))
-      (make-arm :label "gpt-oss-120b" :effort "low"
-                :model (or (env "OPENROUTER_MODEL") "openai/gpt-oss-120b")
-                :provider (openai-compatible "https://openrouter.ai/api/v1/chat/completions" key)))
-    (a:when-let ((key (env "DEEPSEEK_API_KEY")))
-      (make-arm :label "deepseek-flash"
-                :model (or (env "DEEPSEEK_MODEL") "deepseek-v4-flash")
-                :provider (openai-compatible
-                           (or (env "DEEPSEEK_ENDPOINT")
-                               "https://api.deepseek.com/v1/chat/completions")
-                           key)))
-    ;; Bedrock, through its OpenAI-compatible endpoint. A BEARER TOKEN, not
-    ;; SigV4: /v1/models answers 200 to a plain Authorization header, so no
-    ;; request signing is needed and the ordinary provider works unchanged.
-    ;; Verified before writing this rather than assumed.
-    (a:when-let ((key (env "BEDROCK_API_KEY")))
-      (make-arm :label "bedrock" :effort "low"
-                :model (or (env "BEDROCK_MODEL") "google.gemma-4-31b")
-                :provider (openai-compatible
-                           (or (env "BEDROCK_ENDPOINT")
-                               "https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions")
-                           key)))
-    ;; Local llama-server, and the only arm that can carry a GBNF grammar --
-    ;; which is why E5's constrained arm cannot run anywhere else. Offered only
-    ;; if something is actually listening: a configured endpoint with no server
-    ;; behind it produced a whole column of "err" in one sweep, which costs an
-    ;; attempt per cell and reads like a model failing rather than a missing one.
-    (a:when-let ((endpoint (and (listening-p (env "VIVARIUM_LOCAL_ENDPOINT"))
-                                (env "VIVARIUM_LOCAL_ENDPOINT"))))
-      (make-arm :label "local" :effort "low"
-                :model (or (env "VIVARIUM_LOCAL_MODEL") "gpt-oss-20b")
-                :provider (provider:llama-cpp-provider
-                           :endpoint endpoint
-                           :output-prefix provider:+harmony-output-prefix+))))))
+  "The catalogue, minus a local server that is configured but not answering.
+
+Endpoints and keys live in VIVARIUM.MODELS so the shell, the IPC server and a
+scored sweep cannot drift apart on which endpoint `deepseek` means. The liveness
+probe stays here: a configured endpoint with nothing behind it produced a whole
+column of `err` in one sweep, which costs an attempt per cell and reads like a
+model failing rather than a missing one."
+  (remove nil (mapcar (lambda (choice)
+                        (if (and (string= "local" (models:choice-label choice))
+                                 (not (listening-p (env "VIVARIUM_LOCAL_ENDPOINT"))))
+                            nil
+                            (arm-for choice)))
+                      (models:available-models))))
 
 (defun arms-named (names)
   "NAMES is NIL for every available arm, or a list of labels."

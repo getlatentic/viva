@@ -221,3 +221,47 @@ or VIVARIUM_LOCAL_ENDPOINT.~%")
       (format t "~&~%A cell that moves between identical sweeps is the instrument's ~
 noise, not a result.~%")
       0)))
+
+;;; The Level 1 entry points
+;;;
+;;; Three ways into the same object. The library is the product -- these two
+;;; subcommands are a hundred lines between them, and that is the point: if
+;;; either needed more than wiring, the library would not be reusable.
+
+(defun workspace-options (parsed)
+  (list :model (flag parsed "model")
+        :cwd (a:when-let ((cwd (flag parsed "cwd"))) (namestring (truename cwd)))
+        :root (a:when-let ((root (flag parsed "root"))) (namestring (truename root)))
+        :request-limit (flag-integer parsed "limit" 60)))
+
+(defun command-shell (parsed)
+  "Interactive work in a directory. Reads stdin, so it also runs a script."
+  (let ((console:*colour* (not (string= "false" (flag parsed "colour" "true")))))
+    (apply #'console:run-shell (workspace-options parsed))))
+
+(defun command-ipc (parsed)
+  "The same agent, driven by another program over stdin and stdout."
+  (apply #'console:run-ipc (append (workspace-options parsed)
+                                   (list :request-limit (flag-integer parsed "limit" 200)))))
+
+(defun command-do (parsed)
+  "One prompt, one answer, no session. What a script or a CI job wants."
+  (let* ((prompt (or (a:when-let ((file (flag parsed "file")))
+                       (uiop:read-file-string file))
+                     (format nil "~{~a~^ ~}" (args-positional parsed))))
+         (quiet (string= "true" (flag parsed "quiet" "false"))))
+    (when (zerop (length (string-trim '(#\Space #\Newline) prompt)))
+      (format t "~&usage: vivarium do \"<prompt>\" [--cwd DIR] [--model NAME]~%")
+      (return-from command-do 1))
+    (let* ((console:*colour* nil)
+           (view (console::make-view :stream (if quiet (make-broadcast-stream) *standard-output*))))
+      (multiple-value-bind (agent choice complaints)
+          (apply #'console:build-agent
+                 :listener (console::shell-listener view)
+                 :persist nil
+                 (workspace-options parsed))
+        (declare (ignore choice))
+        (dolist (complaint complaints) (format *error-output* "~&! ~a~%" complaint))
+        (let ((reply (harness:ask agent prompt)))
+          (when quiet (format t "~&~a~%" (or reply "")))
+          0)))))

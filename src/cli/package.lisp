@@ -19,7 +19,12 @@
                     (#:image-tools #:vivarium.image-tools)
                     (#:usocket #:usocket)
                     (#:croatoan #:croatoan)
-                    (#:provider #:vivarium.provider))
+                    (#:provider #:vivarium.provider)
+                    (#:models #:vivarium.models)
+                    (#:console #:vivarium.console)
+                    (#:harness #:vivarium.harness)
+                    (#:workspace #:vivarium.workspace)
+                    (#:env #:vivarium.env))
   (:export #:main #:arms-named #:available-arms
            #:render #:broadcast #:transcript #:screen
            #:trajectory-line #:ledger-lines #:score-line #:one-line

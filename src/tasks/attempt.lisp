@@ -35,7 +35,11 @@ paid endpoint is an unbounded bill.")
     (funcall listener event)))
 
 (defstruct (attempt (:conc-name attempt-))
-  (task nil)
+  ;; TASK-ID, not TASK: the accessor for a slot called TASK would be
+  ;; ATTEMPT-TASK, which is the name of the function below that runs one. The
+  ;; collision is a full warning and therefore a build failure, and the slot
+  ;; holds an id anyway.
+  (task-id nil)
   (label "" :type string)
   (scores '() :type list)
   (requests 0)
@@ -189,7 +193,7 @@ separate."
                                                  :content (list (msg:make-text (task-prompt task))))))
                        nil))
                    (error (condition) (princ-to-string condition)))))
-          (make-attempt :task (task-id task) :label label
+          (make-attempt :task-id (task-id task) :label label
                         :scores (score-cases cases)
                         :requests (bench-requests agent)
                         :burden (burden:burden-report burden:*log*)

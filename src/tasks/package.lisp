@@ -46,7 +46,7 @@
            #:setup #:cases-for #:score #:scored-fraction #:intact-p
            #:*registry*
            #:bench-agent #:attempt-task #:attempt #:attempt-p
-           #:attempt-label #:attempt-scores #:attempt-requests
+           #:attempt-task-id #:attempt-label #:attempt-scores #:attempt-requests
            #:attempt-elapsed-ms #:attempt-error #:attempt-total #:attempt-ceiling
            #:attempt-burden #:bench-tool-set #:experiment-b-tool-set #:+experiment-b-arms+
            #:bench-limit #:bench-requests #:score-cases

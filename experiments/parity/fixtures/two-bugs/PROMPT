@@ -1,0 +1,1 @@
+Several functions in src/cart.py ignore item quantity, and the tax calculation is wrong. Fix all of it and confirm the tests pass.

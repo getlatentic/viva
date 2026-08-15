@@ -5,3 +5,10 @@
 .env
 .env.*
 system-index.txt
+__pycache__/
+*.pyc
+
+# The parity fixtures' instruction files ARE the experiment: both harnesses are
+# given the same AGENTS.md and nothing else. A global ignore of that name would
+# make the comparison quietly unreproducible for anyone who cloned this.
+!experiments/parity/fixtures/**/AGENTS.md

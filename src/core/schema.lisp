@@ -18,7 +18,8 @@
     table))
 
 ;;; A parameter spec is (NAME TYPE DESCRIPTION &key REQUIRED-P ENUM DEFAULT).
-;;; TYPE is :STRING :INTEGER :NUMBER :BOOLEAN :OBJECT, (:ARRAY <type>), or NIL
+;;; TYPE is :STRING :INTEGER :NUMBER :BOOLEAN :OBJECT, (:ARRAY <type>),
+;;; (:OBJECT <specs>) for an object whose fields are themselves specs, or NIL
 ;;; for "any", which is emitted as a schema with no type rather than a guess.
 
 (defparameter +scalar-types+ '(:string :integer :number :boolean :object))
@@ -34,10 +35,15 @@ here, at load time, rather than become a malformed tool schema."
   (cond ((null type) (obj))
         ((and (consp type) (eq :array (first type)))
          (obj "type" "array" "items" (type-schema (second type))))
+        ;; (:OBJECT specs) rather than a bare :OBJECT, so a tool taking a list
+        ;; of records -- EDIT's replacements are the reason this exists -- can
+        ;; advertise their fields instead of shipping an untyped blob and hoping.
+        ((and (consp type) (eq :object (first type)))
+         (parameter-schema (second type)))
         ((member type +scalar-types+) (obj "type" (string-downcase (symbol-name type))))
         ((eq type :array)
          (error "Parameter type :ARRAY needs an element type, e.g. (:array :string)."))
-        (t (error "Unknown parameter type ~s. Expected ~{~s~^, ~}, (:array <type>), or NIL for any."
+        (t (error "Unknown parameter type ~s. Expected ~{~s~^, ~}, (:array <type>), (:object <specs>), or NIL for any."
                   type +scalar-types+))))
 
 (defun parameter-json (spec)
@@ -69,6 +75,7 @@ here, at load time, rather than become a malformed tool schema."
   (cond ((null type) t)
         ((and (consp type) (eq :array (first type)))
          (or (listp value) (vectorp value)))
+        ((and (consp type) (eq :object (first type))) (hash-table-p value))
         (t (case type
              (:string (stringp value))
              (:integer (integerp value))
@@ -84,6 +91,8 @@ here, at load time, rather than become a malformed tool schema."
   (cond ((null type) "any")
         ((and (consp type) (eq :array (first type)))
          (format nil "array of ~a" (type-label (second type))))
+        ((and (consp type) (eq :object (first type)))
+         (format nil "object with ~{~a~^, ~}" (mapcar #'first (second type))))
         (t (string-downcase (symbol-name type)))))
 
 (defun missing-required (parameters arguments)

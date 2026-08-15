@@ -1,14 +1,19 @@
-;;;; Three layers, dependencies pointing inward.
+;;;; Layers, dependencies pointing inward.
 ;;;;
-;;;;   vivarium         the harness: messages, tools, an agent, a loop. Knows
-;;;;                    nothing about what the agent is for.
-;;;;   vivarium/image   one task domain: a live Common Lisp image the agent
-;;;;                    reads, changes and rolls back.
-;;;;   vivarium/search  scored trials and an archive over them. Works on any
-;;;;                    candidate a backend can install.
+;;;;   vivarium           the harness: messages, tools, an agent, a loop. Knows
+;;;;                      nothing about what the agent is for.
+;;;;   vivarium/workspace the ordinary world -- files, a shell, search, skills,
+;;;;                      memory, extensions, sessions. What makes the harness
+;;;;                      usable for real work rather than only for experiments.
+;;;;   vivarium/image     one task domain: a live Common Lisp image the agent
+;;;;                      reads, changes and rolls back.
+;;;;   vivarium/search    scored trials and an archive over them. Works on any
+;;;;                      candidate a backend can install.
 ;;;;
 ;;;; The split is so the harness can be loaded and tested without the task, and
-;;;; so a second task domain does not have to be bolted onto the first.
+;;;; so a second task domain does not have to be bolted onto the first. WORKSPACE
+;;;; and IMAGE are two task domains over the same core and neither imports the
+;;;; other.
 
 (defsystem "vivarium"
   :description "An agent harness whose world is a live image rather than a directory."
@@ -30,6 +35,39 @@
                              (:file "client")
                              (:file "loop"))))
   :in-order-to ((test-op (test-op "vivarium/tests"))))
+
+(defsystem "vivarium/workspace"
+  :description "Ordinary work: files, search, a shell, skills, memory, extensions, sessions."
+  :depends-on ("vivarium" "cl-ppcre" "sb-posix" "uiop")
+  :serial t
+  :components ((:module "src/workspace"
+                :serial t
+                :components ((:file "package")
+                             (:file "env")
+                             (:file "glob")
+                             (:file "bound")
+                             (:file "edit")
+                             (:file "files")
+                             (:file "search")
+                             (:file "shell")
+                             (:file "prompt")
+                             (:file "skills")
+                             (:file "memory")
+                             (:file "extension")
+                             (:file "session")
+                             (:file "models")
+                             (:file "harness")))))
+
+(defsystem "vivarium/console"
+  :description "Two ways to run the workspace agent: an interactive shell and a JSONL IPC server."
+  :depends-on ("vivarium/workspace")
+  :serial t
+  :components ((:module "src/console"
+                :serial t
+                :components ((:file "package")
+                             (:file "render")
+                             (:file "shell")
+                             (:file "ipc")))))
 
 (defsystem "vivarium/image"
   :description "The live-image task domain: install, roll back and introspect definitions."
@@ -80,7 +118,7 @@
 
 (defsystem "vivarium/cli"
   :description "One entry point for every run."
-  :depends-on ("vivarium/tasks" "vivarium/search" "uiop" "usocket" "croatoan")
+  :depends-on ("vivarium/tasks" "vivarium/search" "vivarium/console" "uiop" "usocket" "croatoan")
   :serial t
   :components ((:module "src/cli"
                 :serial t
@@ -110,5 +148,6 @@
                              (:file "trial")
                              (:file "merge")
                              (:file "tasks")
-                             (:file "render"))))
+                             (:file "render")
+                             (:file "workspace"))))
   :perform (test-op (op c) (symbol-call :parachute :test :vivarium.tests)))
