@@ -107,6 +107,17 @@ happened twice, so it is checked rather than remembered."
 ;;; depends on the CLI (it tests the view models), so declaring it here would be
 ;;; a cycle.
 
+(defun command-soak (parsed)
+  "Churn sessions, clients and journals for N minutes and demand a plateau.
+
+Ten green suite runs answer `does it work`; this answers `does it stay flat`,
+which is the question a months-long process actually poses. Exits non-zero on
+growth."
+  (asdf:load-system "vivarium/tests")
+  (load (merge-pathnames "tests/soak.lisp" (repository-root)))
+  (uiop:symbol-call :vivarium.tests :soak
+                    :minutes (flag-integer parsed "minutes" 10)))
+
 (defun command-test (parsed)
   (declare (ignore parsed))
   (asdf:load-system "vivarium/tests")

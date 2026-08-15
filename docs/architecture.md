@@ -218,6 +218,63 @@ front of a previous greeting in front of them, and never once when the same
 clients read their greeting before hanging up. The daemon's output path
 therefore has no stream buffer at all: serialise, send the octets, done.
 
+And the close is a **completion protocol, not a timing decision**. The writer
+signals a semaphore when it will never touch the socket again; the reader —
+the connection's one lifecycle owner — closes only after that confirmation.
+Both shortcuts were tried and both failed measurably: a timed join let the
+close land mid-send (EBADF on a recycled descriptor number), and an untimed
+one waited an hour and fifty minutes on a writer nothing was going to finish.
+If confirmation never comes, the descriptor is deliberately leaked and loudly
+counted — a leaked fd is a bounded cost; a corrupted stranger's connection is
+not. `socket-close` closes the stream `socket-make-stream` cached, so "the
+writer closes its socket" was cross-thread stream closure wearing
+single-ownership's clothes.
+
+### The journal: one owner, acknowledged writes
+
+```
+cells --(:append)--> JOURNAL OWNER --> one JSONL file per session
+                          |
+                   commits the watermark
+```
+
+One owner thread for the whole image — twenty sessions must not mean twenty
+threads fsyncing twenty files. The in-memory tail is a **ring** of the last
+4096 events (the list version copied 4096 elements under the cell lock per
+streamed delta), and an event may leave memory only once the owner has
+**acknowledged** it on disk: evicting first opened a window where a fast
+producer and a slow disk left an event in neither place. Replay composes disk
+`(seq, committed]` with ring `(committed, now]`; committed only grows, so the
+two halves meet without a gap however far the ring moves during the read.
+
+Failure is a state, not a silence. A journal that cannot write reports through
+the coordinator as `session.error` and the session continues **explicitly
+non-durable**; a ring forced to overwrite an uncommitted event declares the
+same. Session close is a confirmed flush — the owner signals after everything
+queued ahead, so a completed session's history is provably on disk or the gap
+is printed. `*journal-root*` is configuration; tests point it at a temp
+directory, having once written 26MB into the real home.
+
+### The daemon is a generation
+
+`daemon-instance` carries socket, path and OS-lock fd as one identity.
+Nothing global is assigned until the whole instance is published in a single
+locked transition, and `stop` during startup cancels the claim — so there is
+no window where a stop reports success while a half-started daemon proceeds to
+bind behind it. The accept loop and sweeper each check *their* generation is
+still current, never "is any daemon up": the sweeper that looped on a bare
+global left one sweeper per cycled daemon behind, a hundred and twenty of them
+after one test.
+
+### Phase 1.5 thread discipline, decided now
+
+A task is an **ownership domain, not a thread entitlement**. Sessions already
+share one journal owner; task trees share bounded resources the same way:
+a maximum active-task count, a maximum scoped-child depth, excess tasks
+queued, topology changes serialized through the supervisor. SBCL threads are
+native OS threads, not BEAM processes — twenty tasks must not mean sixty
+permanent threads.
+
 ### Recovery: conditions offer, policy chooses
 
 Failure is not a return value travelling up through every layer. The place

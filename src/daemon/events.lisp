@@ -94,6 +94,17 @@ one that is not worth publishing."
     ((:run-end :cancelled) nil)
     (t nil)))
 
+(defun from-json (line)
+  "One journalled line back into an EVENT. The journal is read as well as
+written: a client asking for a sequence older than the kept tail is served from
+disk, so the format has to round-trip."
+  (let ((table (jzon:parse line)))
+    (make-event :name (or (gethash "event" table) "")
+                :session (or (gethash "session" table) "")
+                :sequence (or (gethash "seq" table) 0)
+                :time (or (gethash "time" table) 0)
+                :data (gethash "data" table))))
+
 (defun as-json (event)
   (object "event" (event-name event)
           "session" (event-session event)

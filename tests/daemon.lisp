@@ -20,6 +20,12 @@
 
 (in-package #:vivarium.tests)
 
+;; Before any cell spawns: the journal must never write into the real home.
+;; Test runs left 462 files and 26MB in ~/.vivarium/journal before this.
+(setf actor:*journal-root*
+      (format nil "/tmp/vivarium-test-journal-~36r/"
+              (random (expt 2 40) (make-random-state t))))
+
 (defun daemon-test-path ()
   (format nil "/tmp/vivarium-daemond-~36r.sock" (random (expt 2 48) (make-random-state t))))
 
@@ -185,7 +191,7 @@ traffic that put two client threads on one descriptor."
 (defmacro with-paced-cell ((cell agent &rest options) &body body)
   `(with-repository (environment)
      (let* ((,cell (paced-cell environment ,@options))
-            (,agent (actor:cell-agent ,cell)))
+            (,agent (vivarium.actor::cell-agent ,cell)))
        (declare (ignorable ,agent))
        (unwind-protect (progn ,@body)
          (harness:cancel-agent ,agent)
@@ -194,21 +200,21 @@ traffic that put two client threads on one descriptor."
 (define-test "the coordinator keeps receiving while a turn is running"
   (with-paced-cell (cell agent :pause 0.05 :limit 20)
     (actor:submit cell "go")
-    (true (daemon-wait (lambda () (actor:busy-p cell))))
+    (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
     ;; If the session's own thread were inside HARNESS:ASK, this message would
     ;; sit in the mailbox until the turn it was meant to interrupt had ended.
     (actor:tell cell :suspend)
-    (true (daemon-wait (lambda () (eq :suspended (actor:cell-state cell)))))
-    (true (actor:busy-p cell) "the turn ended instead of being held")
+    (true (daemon-wait (lambda () (eq :suspended (vivarium.actor::cell-state cell)))))
+    (true (vivarium.actor::busy-p cell) "the turn ended instead of being held")
     (actor:tell cell :resume)
-    (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 30))))
+    (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 30))))
 
 (define-test "suspend holds the work, not merely the state field"
   (with-paced-cell (cell agent :pause 0.02 :limit 500)
     (actor:submit cell "go")
     (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
     (actor:tell cell :suspend)
-    (true (daemon-wait (lambda () (eq :suspended (actor:cell-state cell)))))
+    (true (daemon-wait (lambda () (eq :suspended (vivarium.actor::cell-state cell)))))
     (let ((at-suspend (paced-requests agent)))
       (sleep 0.5)
       ;; At most one more. SUSPEND can land mid-step and the step it lands in
@@ -225,7 +231,7 @@ traffic that put two client threads on one descriptor."
     (actor:submit cell "go")
     (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
     (actor:tell cell :cancel)
-    (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 15)
+    (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 15)
           "the turn ran on after being cancelled")
     (true (< (paced-requests agent) 100) "made ~d requests" (paced-requests agent))
     (let ((names (cell-event-names cell)))
@@ -241,7 +247,7 @@ traffic that put two client threads on one descriptor."
     (actor:submit cell "go")
     (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
     (actor:tell cell :steer :text "STEERED")
-    (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 30))
+    (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 30))
     (let ((seen (reverse (paced-saw-steer agent))))
       (true (find t seen) "no request in the turn ever saw the steer: ~a" seen)
       ;; And it was not merely the last thing to happen, which is exactly what
@@ -252,14 +258,14 @@ traffic that put two client threads on one descriptor."
 (define-test "a prompt arriving mid-turn waits rather than running beside it"
   (with-paced-cell (cell agent :pause 0.03 :limit 6)
     (actor:submit cell "first")
-    (true (daemon-wait (lambda () (actor:busy-p cell))))
+    (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
     (actor:submit cell "second")
-    (true (daemon-wait (lambda () (= 1 (length (actor:cell-queued cell))))))
+    (true (daemon-wait (lambda () (= 1 (length (vivarium.actor::cell-queued cell))))))
     (true (daemon-wait (lambda () (= 2 (count "turn.started" (cell-event-names cell)
                                               :test #'string=)))
                        :timeout 30)
           "the queued prompt never ran")
-    (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 30))))
+    (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 30))))
 
 (defclass abortable-agent (paced-agent) ()
   (:documentation "A request that notices the abort while it is in flight.
@@ -289,13 +295,13 @@ checkpoint."))
                                                     :environment environment
                                                     :resource-environment environment
                                                     :limit 500 :request-limit 500)))
-           (agent (actor:cell-agent cell)))
+           (agent (vivarium.actor::cell-agent cell)))
       (unwind-protect
            (progn
              (actor:submit cell "go")
-             (true (daemon-wait (lambda () (actor:busy-p cell))))
+             (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
              (actor:tell cell :cancel)
-             (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 15))
+             (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 15))
              (let ((names (cell-event-names cell)))
                (is = 1 (count "turn.cancelled" names :test #'string=))
                (is = 1 (terminal-count names))))
@@ -337,7 +343,7 @@ checkpoint."))
                                               :pause 0.02
                                               :limit (if (eq case :cancelled) 500 3)
                                               :request-limit 500))))
-             (agent (actor:cell-agent cell)))
+             (agent (vivarium.actor::cell-agent cell)))
         (unwind-protect
              (progn
                (actor:submit cell "go")
@@ -358,36 +364,40 @@ checkpoint."))
 
 (define-test "session.completed is not published while the session is still working"
   (with-repository (environment)
-    (let* ((cell (paced-cell environment :pause 0.02 :limit 500))
-           (working-at-completion :never-published))
-      ;; Subscribers run inside PUBLISH, so this samples the world at the exact
-      ;; instant the claim is made rather than shortly afterwards.
-      (actor:subscribe cell (gensym "WATCH")
-                       (lambda (event)
-                         (when (string= "session.completed" (event:event-name event))
-                           (setf working-at-completion (actor:busy-p cell)))))
+    (let ((cell (paced-cell environment :pause 0.02 :limit 500)))
       (actor:submit cell "go")
-      (true (daemon-wait (lambda () (actor:busy-p cell))))
+      (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
       ;; Shut down mid-turn: the case where the two could disagree.
       (actor:shutdown cell)
-      (true (daemon-wait (lambda () (not (eq working-at-completion :never-published)))
+      (true (daemon-wait (lambda () (member "session.completed" (cell-event-names cell)
+                                            :test #'string=))
                          :timeout 30)
             "session.completed was never published")
-      (false working-at-completion
-             "session.completed was published while a worker was still running"))))
+      ;; Asserted on the journal rather than by sampling at publish time. A
+      ;; sampled check is one-sided: a worker that finished in the moment
+      ;; between the claim and the sample reads as compliant either way. The
+      ;; journal states the property outright -- completion is last, and the
+      ;; turn reported before it.
+      (let ((names (cell-event-names cell)))
+        (is string= "session.completed" (car (last names)))
+        (is = 1 (terminal-count names))
+        (true (< (position-if (lambda (n) (member n actor:+terminal-events+ :test #'string=))
+                              names)
+                 (position "session.completed" names :test #'string=))))
+      (false (vivarium.actor::busy-p cell)))))
 
 (define-test "a session is findable until its work has stopped"
   (with-repository (environment)
     (let* ((cell (paced-cell environment :pause 0.02 :limit 500))
            (id (actor:cell-id cell)))
       (actor:submit cell "go")
-      (true (daemon-wait (lambda () (actor:busy-p cell))))
+      (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
       (actor:shutdown cell)
       ;; Deregistering on the POST left a session unreachable and still
       ;; working, which is worse than either state on its own.
       (true (daemon-wait (lambda () (null (actor:find-cell id))) :timeout 30)
             "the session never deregistered")
-      (false (actor:busy-p cell)
+      (false (vivarium.actor::busy-p cell)
              "deregistered while its worker was still running"))))
 
 ;;; Identity, ownership, linearization
@@ -405,16 +415,16 @@ checkpoint."))
   ;; identity and published a terminal event for work that was still running.
   (with-paced-cell (cell agent :pause 0.05 :limit 12)
     (let ((turn (actor:submit cell "go")))
-      (true (daemon-wait (lambda () (actor:busy-p cell))))
+      (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
       (actor:tell cell :finished :turn "s0-t999" :outcome :completed)
       (sleep 0.2)
-      (true (actor:busy-p cell) "a stale completion ended the running turn")
-      (is equal turn (actor:cell-turn cell))
+      (true (vivarium.actor::busy-p cell) "a stale completion ended the running turn")
+      (is equal turn (vivarium.actor::cell-turn cell))
       (is = 0 (terminal-count (cell-event-names cell)))
       ;; Ignored, but not silently: an unexplained message is a symptom.
       (is = 1 (count "session.error" (cell-event-names cell) :test #'string=))
       (actor:tell cell :cancel)
-      (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 15)))))
+      (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 15)))))
 
 (define-test "control aimed at a finished turn does not hit its successor"
   (with-paced-cell (cell agent :pause 0.02 :limit 4)
@@ -431,7 +441,7 @@ checkpoint."))
   ;; queued behind running work returned before its own turn had begun.
   (with-paced-cell (cell agent :pause 0.03 :limit 4)
     (actor:submit cell "first")
-    (true (daemon-wait (lambda () (actor:busy-p cell))))
+    (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
     (let* ((second (actor:submit cell "second"))
            (outcome (actor:await-turn cell second :timeout 30))
            (names (cell-event-names cell)))
@@ -448,7 +458,7 @@ checkpoint."))
   (with-repository (environment)
     (let ((cell (paced-cell environment :pause 0.02 :limit 500)))
       (actor:submit cell "go")
-      (true (daemon-wait (lambda () (actor:busy-p cell))))
+      (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
       (true (actor:await-shutdown cell :timeout 30) "the session never ended")
       (let ((names (cell-event-names cell)))
         (is = 1 (terminal-count names) "the last turn reported ~a terminal events"
@@ -460,17 +470,19 @@ checkpoint."))
                  (position "session.completed" names :test #'string=))
               "session.completed preceded its own turn's outcome")))))
 
-(define-test "attaching loses no event and repeats none"
+(define-test "attaching loses no event, repeats none, and reorders none"
   ;; Replay-then-subscribe drops whatever is published in between;
-  ;; subscribe-then-replay delivers it twice.
+  ;; subscribe-then-replay delivers it twice. Now that a subscriber is a
+  ;; mailbox rather than a callback, both halves are handed over inside the
+  ;; section that assigns the sequence -- so ordering is assertable too, which
+  ;; it was not when the replay ran on the subscribing thread.
   (with-repository (environment)
     (let* ((cell (paced-cell environment :pause 0.01 :limit 1))
-           (seen '())
-           (lock (bt:make-lock "attach-test"))
-           ;; Paced on purpose. Publishing 300 events as fast as possible
-           ;; finished before the subscription was attempted, so the gap this
-           ;; test exists for was never open and the test passed against the
-           ;; implementation it was written to catch.
+           (mailbox (sb-concurrency:make-mailbox))
+           ;; Paced on purpose. Publishing as fast as possible finished before
+           ;; the subscription was attempted, so the gap this test exists for
+           ;; was never open and it passed against the implementation it was
+           ;; written to catch.
            (publisher (bt:make-thread
                        (lambda ()
                          (dotimes (i 300)
@@ -479,28 +491,34 @@ checkpoint."))
       (unwind-protect
            (progn
              (sleep 0.05)
-             (actor:subscribe-since cell (gensym "A") 0
-                                    (lambda (event)
-                                      ;; Slow on purpose. A real subscriber
-                                      ;; writes each event to a socket, so
-                                      ;; catching up takes time -- and the gap
-                                      ;; between replaying and subscribing is
-                                      ;; only as wide as the replay is slow.
-                                      ;; With an instant handler the window was
-                                      ;; sub-millisecond and the test could not
-                                      ;; see the bug it was written for.
-                                      (sleep 0.0005)
-                                      (bt:with-lock-held (lock)
-                                        (push (event:event-sequence event) seen))))
+             (actor:subscribe-since cell (gensym "A") 0 mailbox)
              (bt:join-thread publisher)
              (sleep 0.3)
-             (let* ((numbers (sort (copy-list seen) #'<))
-                    (highest (reduce #'max numbers :initial-value 0)))
-               (is = highest (length numbers) "~d events for ~d sequences: ~a"
-                   (length numbers) highest
-                   (if (> (length numbers) highest) "duplicated" "dropped"))
-               (is = (length numbers) (length (remove-duplicates numbers)))))
+             (let ((seen '()))
+               (loop for event = (sb-concurrency:receive-message mailbox :timeout 1)
+                     while event
+                     do (push (event:event-sequence event) seen))
+               (let ((numbers (nreverse seen)))
+                 (true numbers "nothing was delivered at all")
+                 (is = (reduce #'max numbers :initial-value 0) (length numbers)
+                     "~d delivered for ~d sequences" (length numbers)
+                     (reduce #'max numbers :initial-value 0))
+                 (is = (length numbers) (length (remove-duplicates numbers)))
+                 (is equal numbers (sort (copy-list numbers) #'<)
+                     "delivered out of sequence order"))))
         (actor:shutdown cell)))))
+
+(define-test "retiring a listener that is no longer current does nothing"
+  ;; The deterministic half of the test above. The race is what made the bug
+  ;; rare; this is the guard that makes it impossible, checked directly.
+  (with-daemon (path)
+    ;; A generation that was never current: retiring it must change nothing.
+    (let ((stranger (vivarium.daemon::make-daemon-instance
+                     :socket nil :path "/tmp/nowhere.sock" :fd nil)))
+      (vivarium.daemon::retire stranger)
+      (true (daemon:running-p path) "retiring a stranger's generation stopped the daemon")
+      (true (probe-file path) "retiring a stranger's generation deleted the file")
+      (true (gethash "success" (daemon-ask path "type" "ping"))))))
 
 (define-test "one process serves once"
   ;; The OS lock is owned by the process, so it says nothing about this process
@@ -533,7 +551,7 @@ checkpoint."))
                                                     :environment environment
                                                     :resource-environment environment
                                                     :failures 2 :request-limit 500)))
-           (agent (actor:cell-agent cell)))
+           (agent (vivarium.actor::cell-agent cell)))
       (unwind-protect
            (let ((turn (actor:submit cell "go")))
              ;; The conversation was intact the whole time. Ending the run
@@ -552,7 +570,7 @@ checkpoint."))
                                                     :environment environment
                                                     :resource-environment environment
                                                     :failures 1000 :request-limit 500)))
-           (agent (actor:cell-agent cell)))
+           (agent (vivarium.actor::cell-agent cell)))
       (unwind-protect
            (let ((turn (actor:submit cell "go")))
              (is string= "turn.failed" (actor:await-turn cell turn :timeout 60))
@@ -631,7 +649,7 @@ checkpoint."))
                                                              :environment environment
                                                              :resource-environment environment
                                                              :stalls 1 :request-limit 500)))
-                    (agent (actor:cell-agent cell)))
+                    (agent (vivarium.actor::cell-agent cell)))
                (unwind-protect
                     (let ((turn (actor:submit cell "go")))
                       (is string= "turn.completed" (actor:await-turn cell turn :timeout 25))
@@ -693,15 +711,15 @@ checkpoint."))
                                                             :resource-environment environment
                                                             :request-limit 500))))
                (actor:submit cell "go")
-               (true (daemon-wait (lambda () (actor:busy-p cell))))
+               (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
                (actor:shutdown cell)
                ;; Traffic throughout the whole grace period.
                (let ((chatter (bt:make-thread
                                (lambda () (dotimes (i 30)
                                             (actor:tell cell :resume)
                                             (sleep 0.2))))))
-                 (true (daemon-wait (lambda () (eq :stuck (actor:cell-state cell))) :timeout 8)
-                       "still ~a after the grace period" (actor:cell-state cell))
+                 (true (daemon-wait (lambda () (eq :stuck (vivarium.actor::cell-state cell))) :timeout 8)
+                       "still ~a after the grace period" (vivarium.actor::cell-state cell))
                  (ignore-errors (bt:join-thread chatter :timeout 10)))
                ;; And it did not claim to have completed.
                (let ((names (cell-event-names cell)))
@@ -758,7 +776,7 @@ checkpoint."))
                                                              :environment environment
                                                              :resource-environment environment
                                                              :request-limit 500)))
-                    (agent (actor:cell-agent cell)))
+                    (agent (vivarium.actor::cell-agent cell)))
                (unwind-protect
                     (let ((turn (actor:submit cell "go")))
                       (is string= "turn.completed" (actor:await-turn cell turn :timeout 25))
@@ -794,12 +812,138 @@ checkpoint."))
       (daemon:stop)
       (dolist (path paths) (ignore-errors (delete-file path))))))
 
-(define-test "retiring a listener that is no longer current does nothing"
-  ;; The deterministic half of the test above. The race is what made the bug
-  ;; rare; this is the guard that makes it impossible, checked directly.
+
+;;; The primary public path, exercised with sessions PRESENT
+;;;
+;;; CELL-JSON read the live agent out of a snapshot field that no longer
+;;; existed, so every RPC that rendered a session signalled -- including the
+;;; greeting, whenever any session existed at connect time. The suite stayed
+;;; green for days because almost every daemon test connects with zero
+;;; sessions: the flake blamed on timing was a deterministic defect on an
+;;; untested path.
+
+(define-test "the greeting and session RPCs survive sessions existing"
   (with-daemon (path)
-    (let ((stranger (make-instance 'sb-bsd-sockets:local-socket :type :stream)))
-      (vivarium.daemon::retire stranger)
-      (true (daemon:running-p path) "retiring a stranger's socket stopped the daemon")
-      (true (probe-file path) "retiring a stranger's socket deleted the daemon's file")
-      (true (gethash "success" (daemon-ask path "type" "ping"))))))
+    (with-repository (environment)
+      (let ((cell (paced-cell environment :pause 0.01 :limit 1)))
+        (unwind-protect
+             (daemon:with-connection (stream path)
+               (let ((greeting (com.inuoe.jzon:parse (read-line stream))))
+                 (is string= "ready" (gethash "type" greeting))
+                 ;; MY session, not the only session: cells from earlier tests
+                 ;; deregister asynchronously and may linger a moment.
+                 (let ((rendered (find (actor:cell-id cell)
+                                       (coerce (gethash "sessions" greeting) 'list)
+                                       :key (lambda (each) (gethash "id" each))
+                                       :test #'string=)))
+                   (true rendered "my session was not in the greeting")
+                   (true (stringp (gethash "cwd" rendered)) "cwd missing or not a string")
+                   (true (stringp (gethash "model" rendered)) "model missing")
+                   (true (stringp (gethash "state" rendered)))))
+               (let ((listed (daemon:request stream "type" "session.list")))
+                 (true (gethash "success" listed))
+                 (true (plusp (length (gethash "sessions" listed)))))
+               (let ((attached (daemon:request stream "type" "session.attach"
+                                               "session" (actor:cell-id cell))))
+                 (true (gethash "success" attached))
+                 (is string= (env:env-cwd environment)
+                     (gethash "cwd" (gethash "session" attached)))))
+          (actor:shutdown cell))))))
+
+(define-test "ask-now returns the turn it asked for, not its successor's state"
+  ;; FINISH-TURN may start the next queued turn before a waiter wakes, so
+  ;; reading the live agent after the terminal event reads turn N+1's world.
+  ;; The reply travels in turn N's own terminal event instead.
+  (with-paced-cell (cell agent :pause 0.03 :limit 2)
+    (actor:submit cell "first")
+    ;; Queued behind the first; its answer must still be its own.
+    (is string= "done" (actor:ask-now cell "second" :timeout 30))))
+
+;;; The journal, attacked as a durability claim
+
+(define-test "events evicted from memory are still replayable, and in order"
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    ;; Push far past the ring: everything early must come back from disk.
+    (dotimes (i (+ vivarium.actor::+tail-limit+ 500))
+      (vivarium.actor::publish cell "model.delta" nil))
+    ;; Wait for the journal to commit the lot.
+    (true (daemon-wait (lambda ()
+                         (>= (vivarium.actor::cell-committed cell)
+                             (+ vivarium.actor::+tail-limit+ 500 1)))
+                       :timeout 30)
+          "journal never committed: at ~d"
+          (vivarium.actor::cell-committed cell))
+    ;; The invariant is CONTIGUITY, not an exact count: session.started is
+    ;; sequence 1, and if the burst genuinely outran the disk for a moment the
+    ;; session announced the risk with a session.error -- one more event, and
+    ;; the machinery working rather than failing. What must never happen is a
+    ;; sequence with a hole in it.
+    (let* ((events (actor:since cell 0))
+           (numbers (mapcar #'event:event-sequence events)))
+      (true (>= (length numbers) (+ vivarium.actor::+tail-limit+ 500 1))
+            "replay lost events: ~d of at least ~d"
+            (length numbers) (+ vivarium.actor::+tail-limit+ 500 1))
+      (is equal numbers (alexandria:iota (length numbers) :start 1)
+          "the replayed sequence has holes or disorder"))))
+
+(define-test "a journal that cannot write says so instead of pretending"
+  (with-repository (environment)
+    (let ((cell (paced-cell environment :pause 0.01 :limit 1)))
+      (unwind-protect
+           (progn
+             ;; Break the journal under it: an unwritable path.
+             (setf (vivarium.actor::cell-journal-path cell) "/nonexistent/nowhere/x.jsonl")
+             (vivarium.actor::publish cell "model.delta" nil)
+             (true (daemon-wait
+                    (lambda ()
+                      (find-if (lambda (event)
+                                 (and (string= "session.error" (event:event-name event))
+                                      (search "journal write failed"
+                                              (gethash "detail" (event:event-data event)))))
+                               (owning-events cell)))
+                    :timeout 15)
+                   "no session.error announced the failure"))
+        (actor:shutdown cell)))))
+
+(defun owning-events (cell)
+  (vivarium.actor::remembered-since
+   cell 0))
+
+(define-test "thread count returns to baseline after session and client churn"
+  ;; The organism is meant to run for months. Every lifecycle bug so far has
+  ;; been a thread or descriptor outliving its owner -- sweepers surviving
+  ;; their daemon, writers surviving their connection -- and each showed up
+  ;; first as slow accumulation. This measures the accumulation directly.
+  (with-daemon (path)
+    (flet ((churn ()
+             (with-repository (environment)
+               (let ((cell (paced-cell environment :pause 0.005 :limit 2)))
+                 (actor:await-turn cell (actor:submit cell "go") :timeout 20)
+                 ;; A client that attaches, reads a little, and leaves.
+                 (handler-case
+                     (daemon:with-connection (stream path)
+                       (read-line stream nil nil)
+                       (daemon:request stream "type" "session.attach"
+                                       "session" (actor:cell-id cell)))
+                   (error () nil))
+                 (true (actor:await-shutdown cell :timeout 20))))))
+      ;; Warm up: lazily-started owners (the journal) come up once and stay.
+      (churn)
+      (sleep 0.5)
+      (let ((baseline (length (bt:all-threads))))
+        (dotimes (i 12) (churn))
+        ;; Detached cleanup (writer joins, journal closes) may trail briefly.
+        (true (daemon-wait (lambda () (<= (length (bt:all-threads)) (+ baseline 2)))
+                           :timeout 20)
+              "threads grew from ~d to ~d over 12 cycles"
+              baseline (length (bt:all-threads)))
+        ;; And every one of those disconnects was CLEAN. A writer that never
+        ;; confirms leaves a leaked descriptor behind each connection, noted as
+        ;; a `close` failure -- thread counts alone missed exactly that, since
+        ;; the stuck reader threads drain away on their own timeout.
+        (multiple-value-bind (kept total) (daemon:diagnostics)
+          (declare (ignore total))
+          (let ((leaks (count "close" kept
+                              :key (lambda (each) (gethash "where" each))
+                              :test #'string=)))
+            (is = 0 leaks "~d connections leaked their descriptor" leaks)))))))

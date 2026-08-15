@@ -19,6 +19,8 @@
               "Run the whole test suite. Exits non-zero if anything fails.")
         (list "check" #'command-check
               "Compile every experiment. No model server, no network.")
+        (list "soak" #'command-soak
+              "Churn sessions and clients for minutes; exit non-zero on growth.")
         (list "tasks" #'command-tasks
               "List the task set with families and the held-out split.")
         (list "calibrate" #'command-calibrate
