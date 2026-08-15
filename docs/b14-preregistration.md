@@ -376,6 +376,25 @@ built for a bottleneck the task does not have.
 **B14 stops before Gate 3.** Not because a gate failed, but because the ceiling
 it would measure is the wrong ceiling.
 
+## SUPERSEDED — see [self-improvement-model.md](self-improvement-model.md)
+
+The three-way split above was refined further and the refinement changes what the
+experiments are. Two corrections in particular:
+
+**Category 3 splits.** 3a RETAIN keeps something built while working -- a problem
+of selection and inheritance. 3b DISTILL extracts a lesson from an episode that
+handed you no reusable artifact at all. 3b is the stronger form and the harder
+one, and "the improvement is the solution" cannot test it.
+
+**REGISTER is not PERSIST, and this note attributed the gap wrongly.** Saying
+`register-tool`'s absence made case 3 structurally impossible was incorrect. It
+blocked a form of case 2 -- make a capability usable NOW. Case 3 needs a
+different missing thing: selection, persistence and future adoption. A tool can
+be perfectly registered and still vanish at the boundary.
+
+One B15 cannot measure all of it. The ladder is A (task improvement), B
+(instrumental, case 2), C (retention, 3a), D (post-hoc learning, 3b).
+
 ## What the sequence has to look like instead
 
 A task whose **best solution is itself a reusable capability**, so no artificial
