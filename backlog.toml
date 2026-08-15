@@ -16,7 +16,8 @@
 
 [meta]
 project   = "vivarium"
-question  = "Does an agent that can alter itself while working, and keep what worked, become measurably better over time?"
+question  = "Can a general-purpose agent harness do normal work, learn from it, modify how it operates, retain what helps, and safely undo the rest?"
+roadmap   = "docs/roadmap.md is the spine: four capability levels. Experiments prove a capability; they are not the project."
 updated   = "2026-08-11"
 source    = "HANDOFF.md is the prose; this file is the order of work."
 sizing    = "size, not due dates: an experiment's length is unknown until its instrument exists. Time-box at sprint planning instead."
@@ -53,8 +54,32 @@ sizing    = "size, not due dates: an experiment's length is unknown until its in
 # the live arm's install semantics. B12 and B8 established that no runtime
 # verifies the component's own account of itself, which is why the ledger stays.
 
+# RESET 2026-08-11. The project drifted into perfecting a six-account Lisp
+# benchmark while the harness still could not edit a file. Four capability
+# levels, in docs/roadmap.md:
+#
+#   1 GENERAL AGENT HARNESS      tasks, files, shell, memory, skills
+#                                DOES NOT EXIST YET. Everything depends on it.
+#   2 LIVE SELF-MODIFICATION     change itself because the work demands it
+#                                MECHANISM BUILT: install_definition +
+#                                call_function + register_tool
+#   3 SELF-IMPROVEMENT           retain or distil what helps future work
+#   4 EVOLUTIONARY RUNTIME       components, replacement, rollback, B12's findings
+#
+# The fundamental object is an IMPROVEMENT -- kind, origin, scope, artifact,
+# evidence, status, depends-on, benefit -- not "skill vs tool vs prompt vs
+# harness", which are implementation surfaces and have already cost one full
+# experiment design.
+#
+# THREE NARROW CHECKS are enough to exercise the architecture: notice friction
+# and build a helper (F1, done); keep it and benefit next task; distil a lesson
+# from a task that produced nothing. Then validation moves to REAL WORK -- a
+# repository and a run of ordinary tasks -- and the question becomes whether
+# vivarium on task 20 is measurably better adapted than on task 1.
+
 # The spine. Sprints are slices of this, in order.
 journey = [
+  "0. a harness that can do ordinary work           -- MISSING, level 1",
   "1. a question with kill criteria                 -- done",
   "2. a harness that can act in the world           -- done",
   "3. an instrument that measures outcomes          -- done, S1, SINGLE-EPISODE",
