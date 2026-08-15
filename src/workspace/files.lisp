@@ -37,6 +37,11 @@ same code path the model does."
          (lines (uiop:split-string text :separator (string #\Newline)))
          (total (length lines))
          (start (max 1 (or offset 1))))
+    ;; An empty file is not an error. UIOP:SPLIT-STRING returns NIL rather than
+    ;; ("") for "", so a zero-byte file reported "0 lines" and every read of one
+    ;; failed -- which happened four times across the runs, on __init__.py.
+    (when (zerop total)
+      (return-from read-file ""))
     (when (> start total)
       (error "Offset ~d is past the end of the file, which has ~d lines." start total))
     (let* ((selected (subseq lines (1- start) (if limit

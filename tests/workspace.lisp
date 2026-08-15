@@ -300,3 +300,49 @@ it broke eleven tests in files this one never mentions."
                           '("exit" "trust" "skill") :test #'string=)
             (finish (funcall (funcall (find-symbol "VERB-HANDLER" "VIVARIUM.CONSOLE") verb)
                              agent "" out))))))))
+
+;;; The session, through the path that actually writes it
+
+(defclass replaying-agent (harness:workspace-agent)
+  ((script :initarg :script :accessor script)))
+
+(defmethod client:complete ((agent replaying-agent) messages)
+  (declare (ignore messages))
+  (or (pop (script agent))
+      (msg:make-assistant-message :content (list (msg:make-text "done")) :stop-reason :stop)))
+
+(define-test "a run records its tool results, not only its assistant messages"
+  ;; The encoder was tested by handing it a tool result directly, which says
+  ;; nothing about whether anything ever hands it one. Nothing did: the loop
+  ;; pushes results into the context without emitting a :MESSAGE, so every
+  ;; recorded transcript held calls with no results and could not be resumed.
+  (with-repository (environment)
+    (let* ((directory (uiop:parse-native-namestring
+                       (format nil "~a/.sessions/" (env:env-cwd environment))))
+           (session (session:open-session :directory directory))
+           (agent (make-instance 'replaying-agent
+                                 :environment environment
+                                 :resource-environment environment
+                                 :session session
+                                 :script (list (msg:make-assistant-message
+                                                :content (list (msg:make-tool-call
+                                                                :id "c1" :name "ls"
+                                                                :arguments (args)))
+                                                :stop-reason :tool-calls)))))
+      (workspace:with-environment (environment)
+        (loop*:run agent (list (msg:make-user-message
+                                :content (list (msg:make-text "what is here?"))))))
+      (session:close-session session)
+      (let ((messages (session:session-messages (session:load-session (session:session-path session)))))
+        (is = 1 (count-if #'msg:tool-result-message-p messages))
+        (is string= "c1" (msg:tool-result-message-call-id
+                          (find-if #'msg:tool-result-message-p messages)))
+        (true (mentions "README.md" (msg:tool-result-message-output
+                                     (find-if #'msg:tool-result-message-p messages))))))))
+
+(define-test "an empty file reads as empty rather than failing"
+  (with-repository (environment)
+    (env:write-text environment "blank.py" "")
+    (multiple-value-bind (output error-p) (run-tool workspace:read-tool "path" "blank.py")
+      (false error-p)
+      (is string= "" output))))

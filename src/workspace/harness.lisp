@@ -100,7 +100,23 @@ anything about retrieval."
     (:message (a:when-let ((session (agent-session agent)))
                 (session:record-entry session :message (getf event :message))))
     (:tool-start (extension:fire :before-tool event))
-    (:tool-end (extension:fire :after-tool event))
+    (:tool-end
+     (extension:fire :after-tool event)
+     ;; Recorded here rather than from a :MESSAGE event, because the loop pushes
+     ;; tool results straight into the context without emitting one. Without
+     ;; this the transcript holds assistant messages whose tool calls have no
+     ;; results -- a conversation no provider will accept, so a session that
+     ;; looked saved could never be resumed. The round-trip test did not catch
+     ;; it: the test recorded a tool result by hand, which is evidence about
+     ;; the encoder and none at all about the caller.
+     (a:when-let ((session (agent-session agent)))
+       (let ((result (getf event :result)))
+         (session:record-entry
+          session :message
+          (msg:make-tool-result-message
+           :call-id (msg:tool-call-id (getf event :call))
+           :output (tool:tool-result-output result)
+           :error-p (tool:tool-result-error-p result))))))
     (:turn-end (extension:fire :turn-end event))
     ;; Where a run's own consequences can be acted on: everything the agent did
     ;; has happened, and nothing is waiting on the answer. Pi calls it agent_end.
