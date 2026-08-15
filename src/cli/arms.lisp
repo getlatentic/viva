@@ -49,6 +49,17 @@
                            (or (env "DEEPSEEK_ENDPOINT")
                                "https://api.deepseek.com/v1/chat/completions")
                            key)))
+    ;; Bedrock, through its OpenAI-compatible endpoint. A BEARER TOKEN, not
+    ;; SigV4: /v1/models answers 200 to a plain Authorization header, so no
+    ;; request signing is needed and the ordinary provider works unchanged.
+    ;; Verified before writing this rather than assumed.
+    (a:when-let ((key (env "BEDROCK_API_KEY")))
+      (make-arm :label "bedrock" :effort "low"
+                :model (or (env "BEDROCK_MODEL") "google.gemma-4-31b")
+                :provider (openai-compatible
+                           (or (env "BEDROCK_ENDPOINT")
+                               "https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions")
+                           key)))
     ;; Local llama-server, and the only arm that can carry a GBNF grammar --
     ;; which is why E5's constrained arm cannot run anywhere else. Offered only
     ;; if something is actually listening: a configured endpoint with no server

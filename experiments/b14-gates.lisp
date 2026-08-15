@@ -52,23 +52,25 @@ budget effect.")
          (and scores (every (lambda (pair) (and (numberp (cdr pair)) (>= (cdr pair) 1)))
                             scores)))))
 
-(defun b14-run (&key (attempts *b14-attempts*) oracle (label "CONTROL") effort)
+(defun b14-run (&key (attempts *b14-attempts*) oracle (label "CONTROL")
+                     effort model limit (arm-label "gpt-oss-120b"))
   "EFFORT overrides the arm's default. One variable: same task, tools, prompt and
 budget, so a difference is attributable to reasoning effort and nothing else.
 Gate 1 has failed four times at the arm default of \"low\", and this separates
 'the task is too hard' from 'the model is too weak AT THIS EFFORT'."
-  (let ((arm (or (find "gpt-oss-120b" (available-arms) :key #'arm-label :test #'string=)
-                 (error "gpt-oss-120b arm unavailable -- is OPENROUTER_API_KEY set?")))
+  (let ((arm (or (find arm-label (available-arms) :key #'vivarium.cli:arm-label :test #'string=)
+                 (error "~a arm unavailable -- is its API key set?" arm-label)))
         (task (tasks:find-task *b14-task*))
         (rows '()))
-    (format t "~&~a  task ~a  attempts ~a  limit ~a  effort ~a~%"
-            label *b14-task* attempts *b14-limit* (or effort (arm-effort arm)))
+    (format t "~&~a  task ~a  attempts ~a  limit ~a  effort ~a  model ~a~%"
+            label *b14-task* attempts (or limit *b14-limit*)
+            (or effort (arm-effort arm)) (or model (arm-model arm)))
     (dotimes (i attempts)
       (let* ((attempt (tasks:attempt-task task
                                           :provider (arm-provider arm)
-                                          :model (arm-model arm)
+                                          :model (or model (arm-model arm))
                                           :reasoning-effort (or effort (arm-effort arm))
-                                          :limit *b14-limit*
+                                          :limit (or limit *b14-limit*)
                                           :oracle oracle))
              (burden (getf (tasks:attempt-burden attempt) :burden))
              (solved (b14-solved-p attempt)))
@@ -136,8 +138,8 @@ Gate 1 has failed four times at the arm default of \"low\", and this separates
     (format t "~&     VERDICT: ~a~%" (getf verdict :verdict))
     verdict))
 
-(defun b14-gate-1-and-2 (&key effort)
-  (let* ((rows (b14-run :effort effort))
+(defun b14-gate-1-and-2 (&key effort model limit (arm-label "gpt-oss-120b"))
+  (let* ((rows (b14-run :effort effort :model model :limit limit :arm-label arm-label))
          (verdict (b14-report rows)))
     (with-open-file (out (merge-pathnames "b14-gates.sexp" (uiop:temporary-directory))
                          :direction :output :if-exists :supersede)
