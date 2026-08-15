@@ -338,9 +338,10 @@ it finds nobody home."
          ;; parse is a defect, and calling it `not running` is how one hid.
          (daemon:daemon-error () (format t "~&not running~%") 1)))
       ((string= "start" verb)
-       (format t "~&listening on ~a~%" (daemon:socket-path))
-       (finish-output)
-       (daemon:serve :background (string= "true" (flag parsed "background" "false")))
+       (daemon:serve :background (string= "true" (flag parsed "background" "false"))
+                     :announce (lambda (path)
+                                 (format t "~&listening on ~a~%" path)
+                                 (finish-output)))
        0)
       ((string= "stop" verb)
        (if (daemon:running-p)

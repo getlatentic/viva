@@ -135,6 +135,54 @@ violated invariant must be visible rather than assumed away.
 A turn that reported both cancelled *and* completed shipped, and its test
 asserted both as correct. Invariants get written down first now.
 
+### The concurrency laws
+
+Every actor added from here — tasks, sub-agents, the evolution coordinator —
+follows these. They are worth more than another dozen race-specific fixes,
+because they turn a whole class of bug into a code-review violation.
+
+```
+ 1  ONE OWNER PER MUTABLE AUTHORITY
+ 2  WORKERS COMPUTE; OWNERS TRANSITION STATE
+ 3  EVERY ASYNCHRONOUS OPERATION HAS AN IDENTITY
+ 4  STALE MESSAGES ARE HARMLESS
+ 5  MAILBOXES CROSS OWNERSHIP BOUNDARIES
+ 6  COOPERATIVE CANCELLATION ONLY
+ 7  GATES FOR SUSPENSION
+ 8  CONDITIONS AND RESTARTS FOR RECOVERY
+ 9  DYNAMIC TASK CONTEXT IS EXPLICITLY REBOUND IN NEW THREADS
+10  GLOBAL PROMOTION IS SERIALIZED
+11  EVENTS HAVE ONE LINEARIZED HISTORY
+12  THREAD LIVENESS IS DIAGNOSTIC, NEVER BUSINESS STATE
+```
+
+Law 12 is the one that has already cost most. `busy-p` asked
+`bt:thread-alive-p`, which SBCL's own manual says may be stale before it
+returns — but the deeper mistake was letting a lifecycle depend on whether an
+OS thread had finished exiting. A worker that posted its completion and exited
+read as *not busy*; a prompt arriving in that window started a second turn, and
+the first turn's completion — still in the mailbox — then cleared the second
+turn's identity and published a terminal event for work that was still running.
+Busy now means *there is a turn whose outcome the coordinator has not consumed*.
+
+Laws 3 and 4 are the general form. A turn has an id; its completion carries it;
+control messages may name one and are ignored when they name a turn that has
+ended. You do not make concurrency perfectly timed — you make mistimed messages
+unable to corrupt current state.
+
+Law 9 is not optional bookkeeping: SBCL threads do **not** inherit their
+parent's dynamic bindings, so a `*activation-context*` bound around a
+`make-thread` is not seen inside it. The child sees the global value. Every
+worker and every spawned task must rebind explicitly, which makes inheritance a
+decision rather than ambient state — the same reason `call-in-tool-context`
+exists for parallel tool batches.
+
+Law 11 has a linearization point: sequence number, stored event and subscriber
+snapshot are decided in one critical section, so `subscribe-since` gives a
+barrier with nothing lost and nothing repeated. Ordering across that barrier is
+the reader's job via `seq`; replaying under the lock would let a client that
+stopped reading its socket stall the session.
+
 ### Choosing primitives
 
 > Before introducing a new runtime abstraction, ask whether Common Lisp or SBCL

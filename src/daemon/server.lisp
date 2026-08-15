@@ -20,6 +20,7 @@
 
 (defvar *socket* nil "The listening socket, while serving.")
 (defvar *socket-file* nil "The path SERVE bound, so STOP unlinks that one.")
+(defvar *instance-fd* nil "The single-instance lock, held for as long as we serve.")
 (defvar *lock* (bt:make-lock "vivarium.daemon"))
 
 (defun socket-path ()
@@ -102,13 +103,18 @@ whole process -- one hung-up client used to take the organism with it."
     (error (condition) (note-failure "read" condition))))
 
 (defun watch (client cell &key (from 0))
-  "Send CELL's events to CLIENT, starting with whatever it missed."
-  (dolist (event (actor:since cell from))
-    (say client (event:as-json event)))
-  (unless (member (actor:cell-id cell) (client-watching client) :test #'string=)
-    (push (actor:cell-id cell) (client-watching client))
-    (actor:subscribe cell (client-key client)
-                     (lambda (event) (say client (event:as-json event))))))
+  "Send CELL's events to CLIENT, starting with whatever it missed.
+
+Replaying and then subscribing loses anything published in between. FROM is a
+barrier established with the subscription in one critical section, so no event
+falls in the gap and none arrives twice."
+  (cond ((member (actor:cell-id cell) (client-watching client) :test #'string=)
+         (dolist (event (actor:since cell from))
+           (say client (event:as-json event))))
+        (t
+         (push (actor:cell-id cell) (client-watching client))
+         (actor:subscribe-since cell (client-key client) from
+                                (lambda (event) (say client (event:as-json event)))))))
 
 (defun unwatch-all (client)
   (dolist (id (client-watching client))
@@ -119,15 +125,18 @@ whole process -- one hung-up client used to take the organism with it."
 ;;; Requests
 
 (defun cell-json (cell)
-  (object "id" (actor:cell-id cell)
-          "label" (actor:cell-label cell)
-          "state" (string-downcase (symbol-name (actor:cell-state cell)))
-          "seq" (actor:cell-sequence cell)
-          ;; A prompt waiting behind a running turn is otherwise invisible, and
-          ;; `idle with two queued` is a different thing to explain than `idle`.
-          "queued" (length (actor:cell-queued cell))
-          "cwd" (env:env-cwd (harness:agent-environment (actor:cell-agent cell)))
-          "model" (agent:agent-model (actor:cell-agent cell))))
+  "One coherent instant of a cell, not six field reads racing the coordinator."
+  (let ((now (actor:snapshot cell)))
+    (object "id" (getf now :id)
+            "label" (getf now :label)
+            "state" (string-downcase (symbol-name (getf now :state)))
+            "seq" (getf now :sequence)
+            "turn" (getf now :turn)
+            ;; A prompt waiting behind a running turn is otherwise invisible,
+            ;; and `idle with two queued` is a different thing to explain.
+            "queued" (getf now :queued)
+            "cwd" (env:env-cwd (harness:agent-environment (getf now :agent)))
+            "model" (agent:agent-model (getf now :agent)))))
 
 (defun text-of (command key &optional default)
   (let ((value (gethash key command)))
@@ -180,25 +189,31 @@ whole process -- one hung-up client used to take the organism with it."
          (if cell (progn (actor:shutdown cell) (ok)) (no "No such session.")))
 
         ;; The whole point of the actor model: this returns at once, and the
-        ;; work continues whether or not the caller stays connected.
+        ;; work continues whether or not the caller stays connected. The turn
+        ;; id comes back so a caller can name what it started -- to wait for
+        ;; that turn, or to cancel that turn and not its successor.
         ((string= "prompt" type)
          (cond ((null cell) (no "No such session."))
                ((null (text-of command "text")) (no "prompt needs text."))
-               (t (actor:tell cell :user-message (text-of command "text"))
-                  (ok "accepted" t))))
+               (t (ok "accepted" t "turn" (actor:submit cell (text-of command "text"))))))
 
         ((string= "steer" type)
-         (if cell (progn (actor:tell cell :steer (text-of command "text")) (ok))
+         (if cell (progn (actor:tell cell :steer :text (text-of command "text")
+                                                 :turn (text-of command "turn"))
+                         (ok))
              (no "No such session.")))
 
         ((string= "cancel" type)
-         (if cell (progn (actor:tell cell :cancel) (ok)) (no "No such session.")))
+         (if cell (progn (actor:tell cell :cancel :turn (text-of command "turn")) (ok))
+             (no "No such session.")))
 
         ((string= "suspend" type)
-         (if cell (progn (actor:tell cell :suspend) (ok)) (no "No such session.")))
+         (if cell (progn (actor:tell cell :suspend :turn (text-of command "turn")) (ok))
+             (no "No such session.")))
 
         ((string= "resume" type)
-         (if cell (progn (actor:tell cell :resume) (ok)) (no "No such session.")))
+         (if cell (progn (actor:tell cell :resume :turn (text-of command "turn")) (ok))
+             (no "No such session.")))
 
         ((string= "events" type)
          (if cell
@@ -281,16 +296,51 @@ does it before binding."
     ;; deleted the first one's file on its way out and left its own behind.
     (when *socket-file*
       (ignore-errors (delete-file *socket-file*))
-      (setf *socket-file* nil)))
+      (setf *socket-file* nil))
+    ;; Released last: while this is held, another daemon must not get as far as
+    ;; binding, and closing it is what releases it.
+    (when *instance-fd*
+      (ignore-errors (sb-posix:close *instance-fd*))
+      (setf *instance-fd* nil)))
   t)
 
-(defun serve (&key (path (socket-path)) (background nil))
-  "Listen until stopped. One thread per connection; sessions outlive all of them."
-  (when (running-p path)
-    (error 'daemon-error :detail (format nil "A daemon is already listening on ~a." path)))
+(defun instance-lock-path (&optional (path (socket-path)))
+  (concatenate 'string path ".lock"))
+
+(defun acquire-instance (path)
+  "Take the lock that says `I am the daemon`, or NIL if another process holds it.
+
+Held by the kernel for the lifetime of the process, so it cannot go stale the
+way a file someone has to remember to delete can. Asking RUNNING-P and then
+binding is a decision about a moment that has already passed: two daemons
+starting together could each find nothing listening, and the second could
+unlink the socket the first had just bound."
+  (let ((fd (ignore-errors
+             (sb-posix:open (instance-lock-path path)
+                            (logior sb-posix:o-creat sb-posix:o-rdwr) #o600))))
+    (when fd
+      (handler-case (progn (sb-posix:lockf fd sb-posix:f-tlock 0) fd)
+        (error () (ignore-errors (sb-posix:close fd)) nil)))))
+
+(defun serve (&key (path (socket-path)) (background nil) announce)
+  "Listen until stopped. One thread per connection; sessions outlive all of them.
+
+ANNOUNCE is called once the socket is actually bound. A caller cannot do this
+itself: in the foreground SERVE does not return, so anything printed beforehand
+is printed by every process that is about to be refused -- five racing daemons
+all reported `listening on`, and four of them were not."
   (ensure-directories-exist path)
-  ;; Nothing answered, so any file here is what a crash left behind. This is the
-  ;; only place that unlinks a socket nobody has proven dead.
+  ;; The OS lock is owned by the process, so it says nothing about this process
+  ;; asking twice -- and a second SERVE here would overwrite *SOCKET* and orphan
+  ;; the listener it replaced.
+  (when *socket*
+    (error 'daemon-error :detail "This process is already serving."))
+  (let ((fd (acquire-instance path)))
+    (unless fd
+      (error 'daemon-error :detail (format nil "A daemon is already running on ~a." path)))
+    (setf *instance-fd* fd))
+  ;; We hold the lock, so nothing else is serving, so any file here is what a
+  ;; crash left behind. This is the only place that unlinks a socket.
   (ignore-errors (delete-file path))
   (let ((socket (make-instance 'sockets:local-socket :type :stream)))
     (sockets:socket-bind socket path)
@@ -301,6 +351,7 @@ does it before binding."
     (sockets:socket-listen socket 128)
     (setf *socket* socket
           *socket-file* path)
+    (when announce (funcall announce path))
     (flet ((accept-loop ()
              (unwind-protect
                   (loop with failures = 0

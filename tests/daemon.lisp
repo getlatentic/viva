@@ -193,7 +193,7 @@ traffic that put two client threads on one descriptor."
 
 (define-test "the coordinator keeps receiving while a turn is running"
   (with-paced-cell (cell agent :pause 0.05 :limit 20)
-    (actor:tell cell :user-message "go")
+    (actor:submit cell "go")
     (true (daemon-wait (lambda () (actor:busy-p cell))))
     ;; If the session's own thread were inside HARNESS:ASK, this message would
     ;; sit in the mailbox until the turn it was meant to interrupt had ended.
@@ -205,7 +205,7 @@ traffic that put two client threads on one descriptor."
 
 (define-test "suspend holds the work, not merely the state field"
   (with-paced-cell (cell agent :pause 0.02 :limit 500)
-    (actor:tell cell :user-message "go")
+    (actor:submit cell "go")
     (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
     (actor:tell cell :suspend)
     (true (daemon-wait (lambda () (eq :suspended (actor:cell-state cell)))))
@@ -222,7 +222,7 @@ traffic that put two client threads on one descriptor."
 
 (define-test "cancel stops the turn it was sent into"
   (with-paced-cell (cell agent :pause 0.02 :limit 500)
-    (actor:tell cell :user-message "go")
+    (actor:submit cell "go")
     (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
     (actor:tell cell :cancel)
     (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 15)
@@ -238,9 +238,9 @@ traffic that put two client threads on one descriptor."
 
 (define-test "a steer reaches the turn it was sent into"
   (with-paced-cell (cell agent :pause 0.05 :limit 14)
-    (actor:tell cell :user-message "go")
+    (actor:submit cell "go")
     (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
-    (actor:tell cell :steer "STEERED")
+    (actor:tell cell :steer :text "STEERED")
     (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 30))
     (let ((seen (reverse (paced-saw-steer agent))))
       (true (find t seen) "no request in the turn ever saw the steer: ~a" seen)
@@ -251,9 +251,9 @@ traffic that put two client threads on one descriptor."
 
 (define-test "a prompt arriving mid-turn waits rather than running beside it"
   (with-paced-cell (cell agent :pause 0.03 :limit 6)
-    (actor:tell cell :user-message "first")
+    (actor:submit cell "first")
     (true (daemon-wait (lambda () (actor:busy-p cell))))
-    (actor:tell cell :user-message "second")
+    (actor:submit cell "second")
     (true (daemon-wait (lambda () (= 1 (length (actor:cell-queued cell))))))
     (true (daemon-wait (lambda () (= 2 (count "turn.started" (cell-event-names cell)
                                               :test #'string=)))
@@ -292,7 +292,7 @@ checkpoint."))
            (agent (actor:cell-agent cell)))
       (unwind-protect
            (progn
-             (actor:tell cell :user-message "go")
+             (actor:submit cell "go")
              (true (daemon-wait (lambda () (actor:busy-p cell))))
              (actor:tell cell :cancel)
              (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 15))
@@ -340,7 +340,7 @@ checkpoint."))
              (agent (actor:cell-agent cell)))
         (unwind-protect
              (progn
-               (actor:tell cell :user-message "go")
+               (actor:submit cell "go")
                (when (eq case :cancelled)
                  (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
                  (actor:tell cell :cancel))
@@ -366,7 +366,7 @@ checkpoint."))
                        (lambda (event)
                          (when (string= "session.completed" (event:event-name event))
                            (setf working-at-completion (actor:busy-p cell)))))
-      (actor:tell cell :user-message "go")
+      (actor:submit cell "go")
       (true (daemon-wait (lambda () (actor:busy-p cell))))
       ;; Shut down mid-turn: the case where the two could disagree.
       (actor:shutdown cell)
@@ -380,7 +380,7 @@ checkpoint."))
   (with-repository (environment)
     (let* ((cell (paced-cell environment :pause 0.02 :limit 500))
            (id (actor:cell-id cell)))
-      (actor:tell cell :user-message "go")
+      (actor:submit cell "go")
       (true (daemon-wait (lambda () (actor:busy-p cell))))
       (actor:shutdown cell)
       ;; Deregistering on the POST left a session unreachable and still
@@ -389,3 +389,122 @@ checkpoint."))
             "the session never deregistered")
       (false (actor:busy-p cell)
              "deregistered while its worker was still running"))))
+
+;;; Identity, ownership, linearization
+;;;
+;;; These close races that only exist because the architecture is genuinely
+;;; concurrent, and each one gets much harder to reason about once a task can
+;;; spawn other tasks. The shared cause is identity being underspecified: an
+;;; asynchronous message that does not say what it is about gets applied to
+;;; whatever happens to be current when it lands.
+
+(define-test "a completion for a turn that has ended cannot end the turn running now"
+  ;; BUSY-P used to ask THREAD-ALIVE-P. A worker that had posted its completion
+  ;; and exited left `not busy`, a new prompt could start turn 2, and turn 1's
+  ;; completion -- still sitting in the mailbox -- then cleared turn 2's
+  ;; identity and published a terminal event for work that was still running.
+  (with-paced-cell (cell agent :pause 0.05 :limit 12)
+    (let ((turn (actor:submit cell "go")))
+      (true (daemon-wait (lambda () (actor:busy-p cell))))
+      (actor:tell cell :finished :turn "s0-t999" :outcome :completed)
+      (sleep 0.2)
+      (true (actor:busy-p cell) "a stale completion ended the running turn")
+      (is equal turn (actor:cell-turn cell))
+      (is = 0 (terminal-count (cell-event-names cell)))
+      ;; Ignored, but not silently: an unexplained message is a symptom.
+      (is = 1 (count "session.error" (cell-event-names cell) :test #'string=))
+      (actor:tell cell :cancel)
+      (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 15)))))
+
+(define-test "control aimed at a finished turn does not hit its successor"
+  (with-paced-cell (cell agent :pause 0.02 :limit 4)
+    (let ((first (actor:submit cell "one")))
+      (is string= "turn.completed" (actor:await-turn cell first :timeout 20))
+      ;; FIRST is over. This cancel names it, and must not touch what follows.
+      (actor:tell cell :cancel :turn first)
+      (let ((second (actor:submit cell "two")))
+        (is string= "turn.completed" (actor:await-turn cell second :timeout 20)
+            "a cancel for the previous turn cancelled this one")))))
+
+(define-test "waiting for a turn waits for that turn, not the next one to end"
+  ;; AWAIT used to wake on any turn.completed, so a caller whose prompt was
+  ;; queued behind running work returned before its own turn had begun.
+  (with-paced-cell (cell agent :pause 0.03 :limit 4)
+    (actor:submit cell "first")
+    (true (daemon-wait (lambda () (actor:busy-p cell))))
+    (let* ((second (actor:submit cell "second"))
+           (outcome (actor:await-turn cell second :timeout 30))
+           (names (cell-event-names cell)))
+      (is string= "turn.completed" outcome)
+      ;; Both turns are over, which they would not be if this had returned on
+      ;; the first turn's completion.
+      (is = 2 (terminal-count names))
+      (is = 2 (count "turn.started" names :test #'string=)))))
+
+(define-test "shutting down mid-turn reports that turn before completing the session"
+  ;; :SHUTDOWN used to leave the mailbox loop at once, so the worker's
+  ;; completion arrived at nobody: session.completed was published with the
+  ;; last turn having no terminal event at all.
+  (with-repository (environment)
+    (let ((cell (paced-cell environment :pause 0.02 :limit 500)))
+      (actor:submit cell "go")
+      (true (daemon-wait (lambda () (actor:busy-p cell))))
+      (true (actor:await-shutdown cell :timeout 30) "the session never ended")
+      (let ((names (cell-event-names cell)))
+        (is = 1 (terminal-count names) "the last turn reported ~a terminal events"
+            (terminal-count names))
+        (is = 1 (count "session.completed" names :test #'string=))
+        ;; Order matters as much as presence: completed must come last.
+        (true (< (position-if (lambda (n) (member n actor:+terminal-events+ :test #'string=))
+                              names)
+                 (position "session.completed" names :test #'string=))
+              "session.completed preceded its own turn's outcome")))))
+
+(define-test "attaching loses no event and repeats none"
+  ;; Replay-then-subscribe drops whatever is published in between;
+  ;; subscribe-then-replay delivers it twice.
+  (with-repository (environment)
+    (let* ((cell (paced-cell environment :pause 0.01 :limit 1))
+           (seen '())
+           (lock (bt:make-lock "attach-test"))
+           ;; Paced on purpose. Publishing 300 events as fast as possible
+           ;; finished before the subscription was attempted, so the gap this
+           ;; test exists for was never open and the test passed against the
+           ;; implementation it was written to catch.
+           (publisher (bt:make-thread
+                       (lambda ()
+                         (dotimes (i 300)
+                           (vivarium.actor::publish cell "model.delta" nil)
+                           (sleep 0.001))))))
+      (unwind-protect
+           (progn
+             (sleep 0.05)
+             (actor:subscribe-since cell (gensym "A") 0
+                                    (lambda (event)
+                                      ;; Slow on purpose. A real subscriber
+                                      ;; writes each event to a socket, so
+                                      ;; catching up takes time -- and the gap
+                                      ;; between replaying and subscribing is
+                                      ;; only as wide as the replay is slow.
+                                      ;; With an instant handler the window was
+                                      ;; sub-millisecond and the test could not
+                                      ;; see the bug it was written for.
+                                      (sleep 0.0005)
+                                      (bt:with-lock-held (lock)
+                                        (push (event:event-sequence event) seen))))
+             (bt:join-thread publisher)
+             (sleep 0.3)
+             (let* ((numbers (sort (copy-list seen) #'<))
+                    (highest (reduce #'max numbers :initial-value 0)))
+               (is = highest (length numbers) "~d events for ~d sequences: ~a"
+                   (length numbers) highest
+                   (if (> (length numbers) highest) "duplicated" "dropped"))
+               (is = (length numbers) (length (remove-duplicates numbers)))))
+        (actor:shutdown cell)))))
+
+(define-test "one process serves once"
+  ;; The OS lock is owned by the process, so it says nothing about this process
+  ;; asking twice, and a second SERVE would overwrite the listener it replaced.
+  (with-daemon (path)
+    (true (daemon:running-p path))
+    (fail (daemon:serve :path (daemon-test-path) :background t) 'daemon:daemon-error)))
