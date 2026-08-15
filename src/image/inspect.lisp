@@ -30,6 +30,8 @@
 
 (in-package #:vivarium.inspect)
 
+(declaim (ftype (function (symbol) t) callable-check))
+
 (defvar *package-under-inspection* nil
   "Package that unqualified names resolve in. Bound per run, like *BACKEND*.")
 
@@ -186,9 +188,10 @@ function or handle, and relate several observations yourself."))
                      (args
                       (unless (fboundp symbol)
                         (error "~a is not a function, so args do not apply." target))
+                      (callable-check symbol)
                       (apply symbol (mapcar #'read-literal args)))
                      ((boundp symbol) (symbol-value symbol))
-                     ((fboundp symbol) (funcall symbol))
+                     ((fboundp symbol) (callable-check symbol) (funcall symbol))
                      (t (error "~a is neither bound nor fbound." target))))))))
     (if step (descend base step) base)))
 

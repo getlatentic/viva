@@ -43,7 +43,8 @@
                     (#:tool #:vivarium.tool)
                     (#:image #:vivarium.image))
   (:export #:*package-under-inspection* #:*handles* #:*handle-counter*
-           #:begin-inspection-session #:tool-set #:inspect-value #:call-function))
+           #:begin-inspection-session #:tool-set #:inspect-value #:call-function
+           #:*callable* #:capture-callables #:callable-check #:install-definition))
 
 (defpackage #:vivarium.self
   (:use #:cl)
