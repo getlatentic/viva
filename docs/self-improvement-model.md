@@ -66,6 +66,25 @@ the **experiment** has to.
 "That script worked well, it goes in ~/bin."      <- 3a, kept because it proved out
 ```
 
+### Case 2 splits too: CALL against ELEVATE
+
+`install` + `call_function` already delivers notice-gap -> build -> activate ->
+use. So dynamic registration is **not required for case 2 in general**, and
+assuming it was would have produced a false attribution: run B, observe
+self-improvement, and credit `register-tool` when the generic bridge was
+sufficient.
+
+```
+2a  CREATE + CALL      write a helper, invoke it through the generic
+                       language bridge                    install + call_function
+2b  CREATE + ELEVATE   write a helper and promote it into the model's explicit
+                       tool vocabulary                     install + register-tool
+```
+
+2b is the stronger claim and feeds the registry-against-language question
+directly: does making an abstraction *model-visible as a named, described,
+typed tool* buy anything beyond being able to call it?
+
 ## REGISTER is not PERSIST
 
 A correction worth keeping, because conflating these misattributes what is
@@ -158,7 +177,89 @@ artificially easy — *I just built X, X solved my problem, should I keep X?* �
 it cannot test whether an agent can extract an improvement from experience **when
 the task did not hand it one**. That is D, and it is the more interesting result.
 
-Run both. B first, because C and D depend on it.
+**D does not depend on B.** C does — it retains what B built. D needs reflection
+and persistence, not dynamic registration, so it can run in parallel:
+
+```
+                     A
+              ordinary task ability
+                     |
+          +----------+----------+
+          v                     v
+          B                     D
+   instrumental          experiential
+   during task           after task
+          |                     |
+          v                     |
+          C                     |
+   retain what B built          |
+          +----------+----------+
+                     v
+             combined lifecycle
+```
+
+## Experiment B, designed narrowly
+
+The task must force **multiple uses of the helper inside one episode**. Otherwise
+a single `(defun solve-this-task ...)` called once is ambiguous between a task
+solution and a self-improvement, and the whole point is lost.
+
+```
+manual operation A on x
+manual operation A on y
+manual operation A on z          <- expensive, repetitive, obvious
+        |
+   "this is repetitive"
+        |
+   write AUTOMATE-A
+        |
+   automate-a x
+   automate-a y
+   automate-a z                  <- the helper changes how the agent WORKS
+        |
+   finish task
+```
+
+**The helper must return diagnostic information, not perform the repair.** That
+keeps the causal story clean — *new capability -> less investigative work -> task
+solved* — rather than *agent encoded the answer in a function and called it*.
+
+Three arms, no more. Direct `eval` is a later addition and must not be mixed into
+the first measurement.
+
+```
+CONTROL       can write functions, cannot invoke new ones
+GENERIC-CALL  install + call_function                        2a
+REGISTER      install + register-tool                        2b
+```
+
+Two results at once: does instrumental self-improvement help at all, and does
+elevating the abstraction into the tool vocabulary add anything over calling it.
+
+### What B records — the lifecycle, not the outcome
+
+```
+gap_detected?             capability_created?
+capability_activated?     capability_used?
+number_of_uses            created_before_or_after_task_solution
+creation_cost             activation_cost
+tokens/requests AFTER activation
+task_score
+
+FIRST_USE_TO_FINAL_SOLUTION
+```
+
+That last field carries the claim. It is not that the agent wrote code; it is
+that **changing itself altered its subsequent work**. The run should reconstruct
+as:
+
+```
+request 4  notices the repeated operation
+request 5  installs DIAGNOSE-OBJECT
+request 6  activates it
+request 7  uses it again
+request 8  solves the task
+```
 
 ## The one-line description this is converging on
 
