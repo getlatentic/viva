@@ -35,7 +35,7 @@
                     (#:event #:vivarium.event))
   (:export #:cell #:cell-id #:cell-agent #:cell-state #:cell-label
            #:spawn #:tell #:ask-now #:shutdown #:cell-events #:subscribe #:unsubscribe
-           #:find-cell #:all-cells #:cell-sequence #:since))
+           #:find-cell #:all-cells #:cell-sequence #:since #:busy-p #:cell-queued))
 
 (defpackage #:vivarium.daemon
   (:use #:cl)
@@ -54,4 +54,4 @@
                     (#:event #:vivarium.event)
                     (#:actor #:vivarium.actor))
   (:export #:serve #:stop #:running-p #:socket-path #:connect
-           #:*socket* #:daemon-error #:with-connection #:request))
+           #:*socket* #:daemon-error #:with-connection #:request #:diagnostics))

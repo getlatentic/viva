@@ -176,6 +176,7 @@
   (:export #:workspace-agent #:make-workspace-agent #:agent-environment
            #:agent-skills #:agent-templates #:agent-session #:agent-extensions #:agent-listener
            #:agent-request-limit #:agent-requests #:agent-context #:agent-aborting
+           #:agent-gate #:suspend-agent #:resume-agent #:agent-suspended-p #:cancel-agent
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
            #:agent-extension-directories #:agent-compaction #:agent-active-tools
            #:compact-now #:set-model #:set-active-tools #:apply-settings

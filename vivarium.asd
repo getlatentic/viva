@@ -38,7 +38,7 @@
 
 (defsystem "vivarium/workspace"
   :description "Ordinary work: files, search, a shell, skills, memory, extensions, sessions."
-  :depends-on ("vivarium" "cl-ppcre" "sb-posix" "uiop")
+  :depends-on ("vivarium" "cl-ppcre" "sb-posix" "sb-concurrency" "uiop")
   :serial t
   :components ((:module "src/workspace"
                 :serial t

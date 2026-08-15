@@ -59,6 +59,13 @@ an unbounded bill.")
              :documentation "Set from another thread to stop the run. Checked
 between streamed events as well as between turns, so an abort lands in the
 request already in flight rather than after it.")
+   (gate :initform (sb-concurrency:make-gate :open t) :reader agent-gate
+         :documentation "Closed while the run is to be held at its next safe point.
+
+A gate rather than a semaphore or a condition variable, because the question a
+suspended run asks is `may I proceed`, not `has something happened`. A waiter
+arriving after a condition variable's notification waits forever, and that race
+is exactly the shape of RESUME landing before the run reaches its checkpoint.")
    (compaction :initarg :compaction :initform (compaction:make-settings)
                :accessor agent-compaction)
    (last-tokens :initform 0 :accessor agent-last-tokens)
@@ -103,6 +110,46 @@ sub-agent gets its own, so its turns land on their own branch of the same file."
 
 (defmethod agent:should-abort-p ((agent workspace-agent))
   (or (agent-aborting agent) (call-next-method)))
+
+;;; The control plane
+;;;
+;;; Everything here is called from a thread other than the one doing the work.
+;;; The work observes it at CHECKPOINT and nowhere else, so no request, tool or
+;;; write is ever interrupted part way through. SB-THREAD's own manual reserves
+;;; INTERRUPT-THREAD for interactive debugging, and an unwind arriving in the
+;;; middle of an edit is precisely the state no restart can reason about.
+
+(defmethod agent:cancelled-p ((agent workspace-agent))
+  (and (agent-aborting agent) t))
+
+(defmethod agent:checkpoint ((agent workspace-agent) phase)
+  (declare (ignore phase))
+  ;; Held first, then cancelled: a run suspended and then cancelled must not sit
+  ;; at the gate waiting for a resume that is never coming, so CANCEL opens the
+  ;; gate and this sees the abort on the way through.
+  (sb-concurrency:wait-on-gate (agent-gate agent))
+  (when (agent-aborting agent)
+    (error 'agent:cancelled)))
+
+(defun suspend-agent (agent)
+  "Hold the run at its next safe point. Returns immediately; the run stops when
+it reaches a checkpoint, which is what makes the stopping place coherent."
+  (sb-concurrency:close-gate (agent-gate agent))
+  t)
+
+(defun resume-agent (agent)
+  (sb-concurrency:open-gate (agent-gate agent))
+  t)
+
+(defun agent-suspended-p (agent)
+  (not (sb-concurrency:gate-open-p (agent-gate agent))))
+
+(defun cancel-agent (agent)
+  "Stop the run cooperatively. Opens the gate too: a suspended run has to be
+able to hear this."
+  (setf (agent-aborting agent) t)
+  (sb-concurrency:open-gate (agent-gate agent))
+  t)
 
 (defun reported-tokens (message)
   (a:when-let ((usage (and message (msg:assistant-message-usage message))))

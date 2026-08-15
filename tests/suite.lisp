@@ -39,6 +39,7 @@
                     (#:template #:vivarium.template)
                     (#:operation #:vivarium.operation)
                     (#:actor #:vivarium.actor)
+                    (#:event #:vivarium.event)
                     (#:daemon #:vivarium.daemon)))
 
 (in-package #:vivarium.tests)

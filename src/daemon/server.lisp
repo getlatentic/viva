@@ -32,6 +32,34 @@
           unless (eq value :omit) do (setf (gethash key table) value))
     table))
 
+;;; Contained failures, kept where they can be seen
+;;;
+;;; Swallowing an error at the client boundary is right: a broken client must
+;;; not take the organism down. But containment that leaves no trace is how the
+;;; next race hides -- a daemon that survived four hundred failed client threads
+;;; and cannot say so looks exactly like one that had no trouble at all.
+
+(defparameter +diagnostics-kept+ 100)
+(defvar *diagnostics* '() "Recent contained failures, newest first.")
+(defvar *diagnostics-lock* (bt:make-lock "vivarium.diagnostics"))
+(defvar *failures* 0 "How many there have been, which the kept ones do not say.")
+
+(defun note-failure (where condition)
+  (bt:with-lock-held (*diagnostics-lock*)
+    (incf *failures*)
+    (push (object "where" where
+                  "condition" (string (type-of condition))
+                  "detail" (princ-to-string condition)
+                  "time" (get-universal-time))
+          *diagnostics*)
+    (when (> (length *diagnostics*) +diagnostics-kept+)
+      (setf *diagnostics* (subseq *diagnostics* 0 +diagnostics-kept+))))
+  nil)
+
+(defun diagnostics ()
+  (bt:with-lock-held (*diagnostics-lock*)
+    (values (copy-list *diagnostics*) *failures*)))
+
 ;;; One connection
 
 (defstruct (client (:conc-name client-))
@@ -52,13 +80,16 @@ own thread both write here."
                  (terpri (client-stream client))
                  (force-output (client-stream client))
                  t)
-        ;; A client that went away is not an error worth reporting; it is the
-        ;; ordinary end of a connection, and the session carries on without it.
+        ;; A client that went away is not an error worth reporting to anyone in
+        ;; particular; it is the ordinary end of a connection, and the session
+        ;; carries on without it. It is still worth counting.
         ;;
-        ;; The connection is finished either way, though. A write that failed
-        ;; part way through has left half an object on the wire, and a truncated
-        ;; line followed by a whole one is not parseable by anyone.
-        (error () (setf (client-live client) nil))))))
+        ;; The connection is finished either way. A write that failed part way
+        ;; through has left half an object on the wire, and a truncated line
+        ;; followed by a whole one is not parseable by anyone.
+        (error (condition)
+          (note-failure "write" condition)
+          (setf (client-live client) nil))))))
 
 (defun next-line (client)
   "The next line, or NIL when this connection is over for any reason at all.
@@ -68,7 +99,7 @@ raises on a bad descriptor rather than returning its EOF value, and this runs
 under `sbcl --script`, where an unhandled condition in any thread quits the
 whole process -- one hung-up client used to take the organism with it."
   (handler-case (read-line (client-stream client) nil nil)
-    (error () nil)))
+    (error (condition) (note-failure "read" condition))))
 
 (defun watch (client cell &key (from 0))
   "Send CELL's events to CLIENT, starting with whatever it missed."
@@ -92,6 +123,9 @@ whole process -- one hung-up client used to take the organism with it."
           "label" (actor:cell-label cell)
           "state" (string-downcase (symbol-name (actor:cell-state cell)))
           "seq" (actor:cell-sequence cell)
+          ;; A prompt waiting behind a running turn is otherwise invisible, and
+          ;; `idle with two queued` is a different thing to explain than `idle`.
+          "queued" (length (actor:cell-queued cell))
           "cwd" (env:env-cwd (harness:agent-environment (actor:cell-agent cell)))
           "model" (agent:agent-model (actor:cell-agent cell))))
 
@@ -173,6 +207,10 @@ whole process -- one hung-up client used to take the organism with it."
                                   'vector))
              (no "No such session.")))
 
+        ((string= "diagnostics" type)
+         (multiple-value-bind (kept total) (diagnostics)
+           (ok "failures" total "recent" (coerce kept 'vector))))
+
         ((string= "shutdown" type) (ok) (stop))
 
         (t (no (format nil "Unknown command ~a." type)))))))
@@ -212,7 +250,7 @@ greeting, and a `Bad file descriptor` that quit the entire organism."
                                                    :input t :output t
                                                    :element-type 'character
                                                    :external-format :utf-8))
-       (error () nil)))
+       (error (condition) (note-failure "client" condition))))
    :name "vivarium-client"))
 
 ;;; The daemon
@@ -256,7 +294,11 @@ does it before binding."
   (ignore-errors (delete-file path))
   (let ((socket (make-instance 'sockets:local-socket :type :stream)))
     (sockets:socket-bind socket path)
-    (sockets:socket-listen socket 16)
+    ;; SOMAXCONN, not a token depth. A full backlog answers ECONNREFUSED, which
+    ;; is the same answer as no daemon at all -- so a burst of clients did not
+    ;; queue, it reported the organism missing. Measured: 24 simultaneous
+    ;; connects against a backlog of 16 refused two of them.
+    (sockets:socket-listen socket 128)
     (setf *socket* socket
           *socket-file* path)
     (flet ((accept-loop ()

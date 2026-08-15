@@ -110,6 +110,7 @@ truncated arguments. Fail them all rather than execute possibly-borked calls."
   "One assistant response and its tool batch.
 Returns (values continue-p stop-p context), where CONTINUE-P is Pi's
 `hasMoreToolCalls` and STOP-P ends the whole run."
+  (agent:checkpoint agent :before-request)
   (let ((message (client:complete agent (context-messages context))))
     (agent:emit agent (list :type :message :message message))
     (push-message context collected message)
@@ -122,6 +123,11 @@ Returns (values continue-p stop-p context), where CONTINUE-P is Pi's
                     (truncated (values (fail-truncated-batch agent calls) nil))
                     (t (execute-batch agent calls context)))
             (dolist (result results) (push-message context collected result))
+            ;; After the tools and before anything is decided about the next
+            ;; request: the results are in the context, so a turn stopped or
+            ;; held here resumes from a coherent conversation rather than from
+            ;; a call whose result never arrived.
+            (agent:checkpoint agent :after-tools)
             (agent:emit agent (list :type :turn-end :message message :results results))
             (let ((next (or (apply-next-turn agent message results context) context)))
               (values (and calls (not terminate-p))
@@ -134,26 +140,39 @@ Returns (values continue-p stop-p context), where CONTINUE-P is Pi's
 Outer loop restarts on follow-up messages; inner loop continues while there are
 tool calls or steering messages. Steering is polled at the end of every inner
 iteration and injected before the next assistant response, so a message queued
-mid-run lands on the very next request rather than after the run."
+mid-run lands on the very next request rather than after the run.
+
+A cancelled run returns what it produced rather than signalling onwards.
+Stopping because you were asked to is not a failure, and a caller made to tell
+those two apart by inspecting a condition will eventually tell them apart
+wrongly."
   (let ((collected (make-array 0 :adjustable t :fill-pointer t)))
-    (inject agent context collected initial-messages)
-    (let ((pending (agent:steering-messages agent)))
-      (loop named outer do
-        (let ((more-calls t))
-          (loop while (or more-calls pending) do
-            (agent:emit agent (list :type :turn-start))
-            (when pending
-              (inject agent context collected pending)
-              (setf pending '()))
-            (multiple-value-bind (continue-p stop-p next) (run-iteration agent context collected)
-              (setf more-calls continue-p context next)
-              (when stop-p
-                (agent:emit agent (list :type :run-end :messages collected))
-                (return-from run (coerce collected 'list)))
-              (setf pending (agent:steering-messages agent)))))
-        (let ((follow-up (agent:follow-up-messages agent)))
-          (if follow-up
-              (setf pending follow-up)
-              (return-from outer)))))
+    (handler-case
+        (block finished
+          (inject agent context collected initial-messages)
+          (let ((pending (agent:steering-messages agent)))
+            (loop named outer do
+              (let ((more-calls t))
+                (loop while (or more-calls pending) do
+                  (agent:emit agent (list :type :turn-start))
+                  (when pending
+                    (inject agent context collected pending)
+                    (setf pending '()))
+                  (multiple-value-bind (continue-p stop-p next) (run-iteration agent context collected)
+                    (setf more-calls continue-p context next)
+                    (when stop-p (return-from finished))
+                    (setf pending (agent:steering-messages agent)))))
+              (let ((follow-up (agent:follow-up-messages agent)))
+                (if follow-up
+                    (setf pending follow-up)
+                    (return-from outer))))))
+      (agent:cancelled () nil))
+    ;; Asked once, at the single exit, rather than at whichever mechanism
+    ;; happened to notice. Cancelling a run mid-stream ends it through the
+    ;; :ABORTED stop reason above and never reaches a checkpoint at all, so
+    ;; emitting this where the condition is caught made TURN.CANCELLED an event
+    ;; that existed, was documented, and in practice never fired.
+    (when (agent:cancelled-p agent)
+      (agent:emit agent (list :type :cancelled)))
     (agent:emit agent (list :type :run-end :messages collected))
     (coerce collected 'list)))

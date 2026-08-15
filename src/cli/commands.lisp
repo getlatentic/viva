@@ -315,8 +315,24 @@ it finds nobody home."
                           (format t "~&running, pid ~a, ~d session~:p~%"
                                   (gethash "pid" ready) (length (gethash "sessions" ready)))
                           (loop for each across (gethash "sessions" ready)
-                                do (format t "~&  ~a  ~10a ~a~%" (gethash "id" each)
-                                           (gethash "state" each) (gethash "label" each)))
+                                do (format t "~&  ~a  ~10a ~a~@[  ~d queued~]~%"
+                                           (gethash "id" each) (gethash "state" each)
+                                           (gethash "label" each)
+                                           (let ((queued (gethash "queued" each)))
+                                             (and queued (plusp queued) queued))))
+                          ;; Contained failures, said out loud. A daemon that
+                          ;; survived four hundred of them and cannot report
+                          ;; them looks exactly like one that had none.
+                          (let ((reply (daemon:request stream "type" "diagnostics")))
+                            (a:when-let ((failures (gethash "failures" reply)))
+                              (when (plusp failures)
+                                (format t "~&~%~d contained client failure~:p~%" failures)
+                                (loop for each across (gethash "recent" reply)
+                                      repeat 5
+                                      do (format t "~&  ~a in ~a: ~a~%"
+                                                 (gethash "condition" each)
+                                                 (gethash "where" each)
+                                                 (gethash "detail" each))))))
                           0)))))
          ;; Only a refused connection means no daemon. A greeting that will not
          ;; parse is a defect, and calling it `not running` is how one hid.

@@ -14,7 +14,7 @@
   '(;; a session's life
     "session.started" "session.completed"
     ;; one exchange within it
-    "turn.started" "turn.completed"
+    "turn.started" "turn.completed" "turn.cancelled"
     ;; the model
     "model.started" "model.delta" "model.completed"
     ;; tools
@@ -25,7 +25,13 @@
     "question.requested" "approval.requested"
     ;; what the organism does to itself. Not emitted yet; named now so the
     ;; frontends can be written once rather than extended per phase.
-    "improvement.created" "improvement.activated"
+    ;;
+    ;; DEACTIVATED and REVERTED are different events and collapsing them would
+    ;; lose the distinction that makes task-scoped modification safe:
+    ;; deactivation ends a candidate's activation for one task or session,
+    ;; while reversion moves the promoted lineage back to an earlier version
+    ;; for everyone.
+    "improvement.created" "improvement.activated" "improvement.deactivated"
     "improvement.promoted" "improvement.reverted"
     "component.version-created" "component.activated" "component.rolled-back")
   "Every event the organism may emit. Closed on purpose.")
@@ -78,6 +84,10 @@ one that is not worth publishing."
                          (object "call" (call-json (getf loop-event :call))
                                  "output" (tool:tool-result-output result)))))
     (:run-end (values "session.completed" nil))
+    ;; The loop stopped because it was asked to. Distinct from a turn that
+    ;; finished, and a client that could not tell them apart would report work
+    ;; as done that was in fact abandoned half way.
+    (:cancelled (values "turn.cancelled" nil))
     (t nil)))
 
 (defun as-json (event)

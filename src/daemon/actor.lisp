@@ -22,6 +22,12 @@
   (state :idle :type keyword)
   (mailbox (mailbox:make-mailbox))
   (thread nil)
+  ;; The turn's own thread. The coordinator starts it and goes back to
+  ;; receiving, which is the whole difference between a control message that
+  ;; affects the running turn and one that affects the turn after it.
+  (worker nil)
+  ;; Prompts that arrived while a turn was running, oldest first.
+  (queued '() :type list)
   (lock (bt:make-lock "vivarium.cell"))
   (sequence 0 :type integer)
   (events '() :type list)
@@ -77,31 +83,94 @@ stop the session -- a dead terminal must not take the organism with it."
     (remove-if (lambda (event) (<= (event:event-sequence event) sequence))
                (reverse (cell-events cell)))))
 
-;;; The loop
+;;; The data plane and the control plane
+;;;
+;;; The session owns its state and one ordered stream of control messages. It
+;;; does NOT have to perform the blocking work itself, and for a long time it
+;;; did: HARNESS:ASK ran on the coordinator's own thread, so nothing else could
+;;; be received until the turn was over. Steer, cancel and suspend all existed,
+;;; were all delivered, and all of them meant `after the thing you wanted to
+;;; interrupt has finished`.
+;;;
+;;;     coordinator            worker
+;;;     -----------            ------
+;;;     :user-message  ---->   model -> tools -> model
+;;;     still receiving          |
+;;;     :steer  ------------> steering queue, read at the next checkpoint
+;;;     :cancel ------------> abort flag, read at the next checkpoint
+;;;     :suspend ----------> gate closed, waited on at the next checkpoint
+;;;     :finished  <-----------'
+;;;
+;;; So the useful invariant is not one thread per session. It is one
+;;; authoritative serialization point per session: every state change happens
+;;; here, on this thread, including the ones the worker asks for by posting
+;;; :FINISHED back rather than mutating the cell from underneath.
+
+(defun start-turn (cell text)
+  (setf (cell-state cell) :working)
+  (publish cell "turn.started" nil)
+  (setf (cell-worker cell)
+        (bt:make-thread
+         (lambda ()
+           (let ((outcome
+                   (handler-case (progn (harness:ask (cell-agent cell) text) :completed)
+                     ;; A failed turn ends the turn, not the session. The
+                     ;; organism has to survive its own bad requests or it is
+                     ;; not long-lived in any sense that matters.
+                     (error (condition)
+                       (publish cell "tool.failed"
+                                (event::object "output" (princ-to-string condition)))
+                       :failed))))
+             ;; Back through the mailbox rather than setting state here: two
+             ;; threads writing the cell is the race this design exists to
+             ;; avoid, and the worker is the one that must give way.
+             (mailbox:send-message (cell-mailbox cell) (list :finished outcome))))
+         :name (format nil "vivarium-turn-~a" (cell-id cell)))))
+
+(defun finish-turn (cell)
+  (setf (cell-worker cell) nil
+        (cell-state cell) :idle)
+  (publish cell "turn.completed" nil)
+  ;; A prompt that arrived mid-turn waited rather than being lost or running
+  ;; concurrently with the turn it arrived during.
+  (a:when-let ((next (pop (cell-queued cell))))
+    (start-turn cell next)))
+
+(defun busy-p (cell)
+  (let ((worker (cell-worker cell)))
+    (and worker (bt:thread-alive-p worker))))
 
 (defun handle (cell message)
   (ecase (first message)
     (:user-message
-     (setf (cell-state cell) :working)
-     (publish cell "turn.started" nil)
-     (handler-case
-         (harness:ask (cell-agent cell) (second message))
-       ;; A failed turn ends the turn, not the session. The organism has to
-       ;; survive its own bad requests or it is not long-lived in any sense
-       ;; that matters.
-       (error (condition)
-         (publish cell "tool.failed" (event::object "output" (princ-to-string condition)))))
-     (setf (cell-state cell) :idle)
-     (publish cell "turn.completed" nil))
+     (if (busy-p cell)
+         (setf (cell-queued cell) (append (cell-queued cell) (list (second message))))
+         (start-turn cell (second message))))
+    (:finished (finish-turn cell))
+
+    ;; Control. Each of these now reaches a turn that is still running, which is
+    ;; the entire point of the split above.
     (:steer (agent:queue-steering (cell-agent cell)
                                   (msg:make-user-message
                                    :content (list (msg:make-text (second message))))))
-    (:cancel (setf (harness:agent-aborting (cell-agent cell)) t))
-    (:suspend (setf (cell-state cell) :suspended)
-              (publish cell "task.suspended" nil))
-    (:resume (setf (cell-state cell) :idle)
-             (publish cell "task.resumed" nil))
-    (:shutdown (setf (cell-running cell) nil))))
+    ;; No event here. The loop emits one when the cancellation actually takes
+    ;; effect, and publishing from both places would put TURN.CANCELLED on the
+    ;; wire twice -- the same duplication that once made a single question look
+    ;; like two exchanges. The coordinator requests; the loop reports.
+    (:cancel (harness:cancel-agent (cell-agent cell)))
+    (:suspend
+     (harness:suspend-agent (cell-agent cell))
+     (setf (cell-state cell) :suspended)
+     (publish cell "task.suspended" nil))
+    (:resume
+     (harness:resume-agent (cell-agent cell))
+     (setf (cell-state cell) (if (busy-p cell) :working :idle))
+     (publish cell "task.resumed" nil))
+    (:shutdown
+     ;; Let a running turn go, so its thread is not left parked at a gate that
+     ;; nobody will ever open again.
+     (harness:cancel-agent (cell-agent cell))
+     (setf (cell-running cell) nil))))
 
 (defun run-cell (cell)
   (publish cell "session.started" (event::object "label" (cell-label cell)))

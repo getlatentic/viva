@@ -129,6 +129,36 @@ The loop must not know WHICH specials matter; it knows only that the agent does.
 flight, rather than at the next request boundary.")
   (:method ((agent agent)) nil))
 
+(define-condition cancelled (error) ()
+  (:documentation "A run stopped because it was asked to, which is not a failure.")
+  (:report (lambda (condition stream)
+             (declare (ignore condition))
+             (write-string "The run was cancelled." stream))))
+
+(defgeneric cancelled-p (agent)
+  (:documentation "True when the run is ending because it was asked to end.
+
+Distinct from SHOULD-ABORT-P, which stops the request currently in flight and is
+also how a steer interrupts one. A run can stop for three different reasons --
+a checkpoint refused to continue, a streamed request was aborted, a turn decided
+not to take another -- and only one of them is cancellation. Asking which
+mechanism fired tells you nothing; this asks what was meant.")
+  (:method ((agent agent)) nil))
+
+(defgeneric checkpoint (agent phase)
+  (:documentation "A point where the loop agrees to be interfered with.
+
+PHASE is :BEFORE-REQUEST or :AFTER-TOOLS. Everything the outside world wants to
+do to a running turn happens here and nowhere else: stop it, hold it, let it go
+again. The alternative is asynchronous interruption, and SB-THREAD's own manual
+says INTERRUPT-THREAD is for interactive debugging -- an unwind arriving in the
+middle of a write leaves state no restart can reason about.
+
+Called from the thread doing the work, so a method may block: that is how
+suspension suspends. The default does nothing, because an agent nobody is
+steering should not pay for the machinery.")
+  (:method ((agent agent) phase) (declare (ignore phase)) nil))
+
 ;;; The concrete agent used by both arms: steering and follow-up come from two
 ;;; queues an outside thread can push to.
 

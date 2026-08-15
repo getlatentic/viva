@@ -132,3 +132,166 @@ traffic that put two client threads on one descriptor."
           (sb-posix:setenv "VIVARIUM_SOCKET" before 1)
           (sb-posix:unsetenv "VIVARIUM_SOCKET"))
       (ignore-errors (delete-file decoy)))))
+
+;;; The control plane
+;;;
+;;; Steer, cancel and suspend all existed, were all delivered, and all of them
+;;; meant `after the thing you wanted to interrupt has finished`: HARNESS:ASK
+;;; ran on the session's own thread, so the mailbox could not be read again
+;;; until the turn was over. The APIs were real and their semantics were not.
+;;;
+;;; So every test here sends its control message INTO a running turn and
+;;; measures what the turn did afterwards. A test that checked only the state
+;;; field would have passed against the broken version.
+
+(defclass paced-agent (harness:workspace-agent)
+  ((pause :initarg :pause :initform 0.05 :accessor paced-pause)
+   (limit :initarg :limit :initform 6 :accessor paced-limit)
+   (requests :initform 0 :accessor paced-requests)
+   (saw-steer :initform '() :accessor paced-saw-steer)))
+
+(defmethod client:complete ((agent paced-agent) messages)
+  "One request, slow enough that a control message has somewhere to land."
+  (sleep (paced-pause agent))
+  (push (and (find-if (lambda (message)
+                        (search "STEERED" (or (ignore-errors (msg:text-of message)) "")))
+                      messages)
+             t)
+        (paced-saw-steer agent))
+  (if (< (incf (paced-requests agent)) (paced-limit agent))
+      (call-tool "ls")
+      (say "done")))
+
+(defun paced-cell (environment &key (pause 0.05) (limit 6))
+  (actor:spawn :label "paced"
+               :agent (make-instance 'paced-agent
+                                     :environment environment
+                                     :resource-environment environment
+                                     :pause pause :limit limit
+                                     :request-limit 500)))
+
+(defun daemon-wait (predicate &key (timeout 15))
+  (loop repeat (ceiling timeout 0.01)
+        when (funcall predicate) return t
+        do (sleep 0.01)))
+
+(defun cell-event-names (cell)
+  (mapcar #'event:event-name (actor:since cell 0)))
+
+(defmacro with-paced-cell ((cell agent &rest options) &body body)
+  `(with-repository (environment)
+     (let* ((,cell (paced-cell environment ,@options))
+            (,agent (actor:cell-agent ,cell)))
+       (declare (ignorable ,agent))
+       (unwind-protect (progn ,@body)
+         (harness:cancel-agent ,agent)
+         (actor:shutdown ,cell)))))
+
+(define-test "the coordinator keeps receiving while a turn is running"
+  (with-paced-cell (cell agent :pause 0.05 :limit 20)
+    (actor:tell cell :user-message "go")
+    (true (daemon-wait (lambda () (actor:busy-p cell))))
+    ;; If the session's own thread were inside HARNESS:ASK, this message would
+    ;; sit in the mailbox until the turn it was meant to interrupt had ended.
+    (actor:tell cell :suspend)
+    (true (daemon-wait (lambda () (eq :suspended (actor:cell-state cell)))))
+    (true (actor:busy-p cell) "the turn ended instead of being held")
+    (actor:tell cell :resume)
+    (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 30))))
+
+(define-test "suspend holds the work, not merely the state field"
+  (with-paced-cell (cell agent :pause 0.02 :limit 500)
+    (actor:tell cell :user-message "go")
+    (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
+    (actor:tell cell :suspend)
+    (true (daemon-wait (lambda () (eq :suspended (actor:cell-state cell)))))
+    (let ((at-suspend (paced-requests agent)))
+      (sleep 0.5)
+      ;; At most one more. SUSPEND can land mid-step and the step it lands in
+      ;; finishes -- asserting an instantaneous freeze is a race, and one I
+      ;; have already written once and had to unwrite.
+      (true (<= (- (paced-requests agent) at-suspend) 1)
+            "advanced ~d requests while suspended" (- (paced-requests agent) at-suspend))
+      (actor:tell cell :resume)
+      (true (daemon-wait (lambda () (> (paced-requests agent) (+ at-suspend 1))))
+            "did not continue after resume"))))
+
+(define-test "cancel stops the turn it was sent into"
+  (with-paced-cell (cell agent :pause 0.02 :limit 500)
+    (actor:tell cell :user-message "go")
+    (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
+    (actor:tell cell :cancel)
+    (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 15)
+          "the turn ran on after being cancelled")
+    (true (< (paced-requests agent) 100) "made ~d requests" (paced-requests agent))
+    (let ((names (cell-event-names cell)))
+      ;; Exactly one. The coordinator requests the cancellation and the loop
+      ;; reports it; both publishing would repeat last month's duplicated turn.
+      (is = 1 (count "turn.cancelled" names :test #'string=))
+      (is = 1 (count "turn.completed" names :test #'string=)))))
+
+(define-test "a steer reaches the turn it was sent into"
+  (with-paced-cell (cell agent :pause 0.05 :limit 14)
+    (actor:tell cell :user-message "go")
+    (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
+    (actor:tell cell :steer "STEERED")
+    (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 30))
+    (let ((seen (reverse (paced-saw-steer agent))))
+      (true (find t seen) "no request in the turn ever saw the steer: ~a" seen)
+      ;; And it was not merely the last thing to happen, which is exactly what
+      ;; `steer the next turn` looked like from outside.
+      (true (< (position t seen) (1- (length seen)))
+            "the steer reached only the final request: ~a" seen))))
+
+(define-test "a prompt arriving mid-turn waits rather than running beside it"
+  (with-paced-cell (cell agent :pause 0.03 :limit 6)
+    (actor:tell cell :user-message "first")
+    (true (daemon-wait (lambda () (actor:busy-p cell))))
+    (actor:tell cell :user-message "second")
+    (true (daemon-wait (lambda () (= 1 (length (actor:cell-queued cell))))))
+    (true (daemon-wait (lambda () (= 2 (count "turn.started" (cell-event-names cell)
+                                              :test #'string=)))
+                       :timeout 30)
+          "the queued prompt never ran")
+    (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 30))))
+
+(defclass abortable-agent (paced-agent) ()
+  (:documentation "A request that notices the abort while it is in flight.
+
+Which is what the streaming client does: SHOULD-ABORT-P is checked between
+streamed events, so a cancellation lands inside the request and comes back as
+an :ABORTED stop reason. That path ends the run without ever reaching a
+checkpoint."))
+
+(defmethod client:complete ((agent abortable-agent) messages)
+  (declare (ignore messages))
+  (loop repeat 100 until (agent:should-abort-p agent) do (sleep 0.01))
+  (cond ((agent:should-abort-p agent)
+         (msg:make-assistant-message :content (list (msg:make-text "")) :stop-reason :aborted))
+        ((< (incf (paced-requests agent)) (paced-limit agent)) (call-tool "ls"))
+        (t (say "done"))))
+
+(define-test "a cancellation that lands mid-request is still reported as one"
+  ;; TURN.CANCELLED was emitted where the checkpoint's condition was caught, so
+  ;; it fired only when the cancel happened to arrive between steps. Cancelling
+  ;; during a request -- which is the usual case, because that is where the time
+  ;; goes -- ended the run through the :ABORTED stop reason and reported a
+  ;; perfectly ordinary completion. The event existed and never fired.
+  (with-repository (environment)
+    (let* ((cell (actor:spawn :label "abortable"
+                              :agent (make-instance 'abortable-agent
+                                                    :environment environment
+                                                    :resource-environment environment
+                                                    :limit 500 :request-limit 500)))
+           (agent (actor:cell-agent cell)))
+      (unwind-protect
+           (progn
+             (actor:tell cell :user-message "go")
+             (true (daemon-wait (lambda () (actor:busy-p cell))))
+             (actor:tell cell :cancel)
+             (true (daemon-wait (lambda () (not (actor:busy-p cell))) :timeout 15))
+             (let ((names (cell-event-names cell)))
+               (is = 1 (count "turn.cancelled" names :test #'string=))
+               (is = 1 (count "turn.completed" names :test #'string=))))
+        (harness:cancel-agent agent)
+        (actor:shutdown cell)))))

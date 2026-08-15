@@ -62,27 +62,53 @@ opens the interactive client. **Closing the client leaves the organism alive.**
 | **non-interactive** | RPC directly; one-shot CLI as a convenience wrapper |
 | **GUI** | later, React over the same protocol and events |
 
-## Concurrency: a mailbox per session
+## Concurrency: a mailbox per session, and work off the coordinator
+
+The invariant is **one authoritative serialization point per session** — not one
+thread doing everything. Those are easy to confuse and the difference is the
+whole control plane:
 
 ```
-                    runtime
-                       |
-          +------------+------------+
-          |            |            |
-      session A    session B    session C
-       mailbox      mailbox      mailbox
-          |            |            |
-          +------- worker pool -----+
-                       |
-                model / tools / IO
+                 SESSION CELL
+   +---------------------------------------+
+   |  state, mailbox, event log            |   coordinator: never blocks
+   |  steering queue, abort flag, gate     |
+   +------------------+--------------------+
+                      | starts, then goes back to receiving
+                      v
+                 TURN WORKER                    blocking work: model, tools
+              model -> tools -> model
+                      |
+             checkpoints between steps
 ```
 
-`sb-concurrency:mailbox` is a blocking queue over SBCL's lock-free queue — the
-natural primitive here. A slight Erlang flavour without pretending Common Lisp
-is Erlang.
+Every state change happens on the coordinator, including the ones the worker
+asks for by posting `:finished` back rather than mutating the cell from
+underneath. But the coordinator does not perform the turn, and for one commit it
+did: `harness:ask` ran on the session's own thread, so nothing could be received
+until the turn was over. Steer, cancel and suspend all existed, were all
+delivered, and every one of them meant *after the thing you wanted to interrupt
+has finished*.
 
-Messages a session accepts: `:user-message` `:model-completed` `:tool-completed`
-`:cancel` `:suspend` `:resume` `:steer`.
+Messages a session accepts: `:user-message` `:finished` `:cancel` `:suspend`
+`:resume` `:steer` `:shutdown`. A prompt arriving mid-turn is queued, not run
+beside the turn it arrived during.
+
+Control is **cooperative**, observed at `agent:checkpoint` and nowhere else.
+SB-THREAD's own manual reserves `interrupt-thread` for interactive debugging,
+and an asynchronous unwind arriving in the middle of a file write leaves state
+no restart can reason about. Suspension is an `sb-concurrency:gate`, because the
+question a held run asks is *may I proceed*, not *has something happened* — a
+waiter arriving after a condition variable's notification waits forever, and
+that race is exactly the shape of a resume landing before the run reaches its
+checkpoint.
+
+Cancellation is asked about at one place, the run's single exit, rather than
+wherever it was noticed. A run can stop through a checkpoint, an aborted stream
+or a turn declining to take another, and `turn.cancelled` was emitted at the
+first of those — so the event existed, was documented, and never fired in the
+usual case, which is a cancel arriving during a request because that is where
+the time goes.
 
 ## Deferred and suspended operations
 
@@ -179,7 +205,17 @@ catches all three failures.
 BUILT   files, search, shell, skills, templates, memory, extensions with
         decision points, session tree with lanes and branch summaries,
         compaction, resume, records, operations, delegation, three entry points
-NEXT    the daemon: sessions as long-lived actors behind a local socket
+BUILT   the daemon: sessions as long-lived actors behind a local socket,
+        surviving the clients that started them, replayable from sequence 0
+BUILT   the control plane: steer, cancel, suspend and resume reaching a turn
+        that is still running, cooperatively, at checkpoints
+NEXT    phase 2 -- candidate versions, task-local activation, promotion
 THEN    Rust/Ratatui client over the same protocol
-THEN    phases 2, 3, 4 above
+THEN    phases 3 and 4 above
 ```
+
+`improvement.deactivated` and `improvement.reverted` are separate names in the
+event vocabulary and must stay separate. Deactivation ends a candidate's
+activation for one task or session; reversion moves the promoted lineage back
+for everyone. Collapsing them loses the distinction that makes task-scoped
+self-modification safe to try.
