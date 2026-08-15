@@ -66,8 +66,12 @@
 (defun encode-message (message)
   (etypecase message
     (msg:assistant-message
+     ;; USAGE is the provider's own token count. Recorded because the
+     ;; alternative is estimating cost from character counts, and an estimate
+     ;; presented as a bill is worse than no number.
      (object "role" "assistant"
              "content" (coerce (mapcar #'encode-content (msg:message-content message)) 'vector)
+             "usage" (or (msg:assistant-message-usage message) :null)
              "stop_reason" (string-downcase (symbol-name (msg:assistant-message-stop-reason message)))))
     (msg:tool-result-message
      (object "role" "tool"
@@ -130,6 +134,19 @@
             collect (make-entry :kind (a:make-keyword (string-upcase (gethash "kind" table)))
                                 :time (or (gethash "time" table) 0)
                                 :payload (gethash "payload" table)))))
+
+(defun usage-of (entries)
+  "Total prompt and completion tokens across ENTRIES, as reported by the
+provider. Returns (values PROMPT COMPLETION REQUESTS-WITH-USAGE)."
+  (let ((prompt 0) (completion 0) (counted 0))
+    (dolist (entry entries (values prompt completion counted))
+      (let ((payload (entry-payload entry)))
+        (when (hash-table-p payload)
+          (let ((usage (gethash "usage" payload)))
+            (when (hash-table-p usage)
+              (incf prompt (or (gethash "prompt_tokens" usage) 0))
+              (incf completion (or (gethash "completion_tokens" usage) 0))
+              (incf counted))))))))
 
 (defun session-messages (entries)
   "The conversation from ENTRIES, ready to hand back to the loop."

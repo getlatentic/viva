@@ -9,10 +9,19 @@
 #                chose to write down, and any skill it wrote, is there next time.
 #   RESET        .vivarium/ is wiped between tasks. Same agent, same tasks, same
 #                order, no memory of having been here.
+#   NUDGED       exactly ACCUMULATE, plus one sentence appended to the system
+#                prompt. Added after ACCUMULATE returned mem:0 on all twelve
+#                runs: with nothing written down the first two arms are the same
+#                experiment twice, and their difference is the noise floor.
 #
-# Nothing tells the agent to remember anything. The `remember` tool is in the
-# tool set with its ordinary description and that is all; being told to use it
-# would measure compliance, not adaptation.
+# The nudge names a CATEGORY and never a content -- "anything you had to work
+# out", not what to work out. A nudge that said what to remember would be an
+# answer key with extra steps.
+#
+# ACCUMULATE deliberately tells the agent nothing: `remember` is in the tool set
+# with its ordinary description and that is all, because instructing it would
+# measure compliance rather than the default. NUDGED then asks the separate
+# question of whether the capability exists at all when invited.
 #
 # WHAT IS SHARED BETWEEN TASKS IS PROCEDURE, NEVER ANSWER. Each task's defect is
 # independent and no task's fix is any other's. What repeats is the cost of
@@ -40,6 +49,19 @@ repeats=1
 # front-loaded: if they were, ACCUMULATE would look good for having been handed
 # the expensive part first.
 order="split-remainder float-balance format-amount overdraft refund-sign monthly-summary"
+
+nudge="Before you finish, write down anything you had to work out about this project that you would otherwise have to work out again."
+
+carries_memory() { [ "$1" = accumulate ] || [ "$1" = nudged ]; }
+
+# PROCEDURAL plants the same procedure-only memory before every task and carries
+# nothing forward. It exists because NUDGED's own notes turned out to describe
+# tasks it had not yet attempted -- 7 of them -- so NUDGED's cost reduction is
+# procedure and leakage mixed together. Planting a fixed memory that names no
+# defect and no fix isolates the procedure half: whatever this arm saves is
+# saved by knowing how to work here, because there is nothing else in the file.
+plants_memory()  { [ "$1" = procedural ]; }
+append_for()     { [ "$1" = nudged ] && printf '%s' "$nudge" || printf ''; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -84,15 +106,26 @@ run_sequence() {
     python3 "$here/tasks/$task/break.py" "$sandbox"
 
     # The treatment, and the only difference between the arms.
-    if [ "$arm" = accumulate ] && [ -d "$carried/.vivarium" ]; then
+    if carries_memory "$arm" && [ -d "$carried/.vivarium" ]; then
       cp -R "$carried/.vivarium" "$sandbox/.vivarium"
+    fi
+    if plants_memory "$arm"; then
+      mkdir -p "$sandbox/.vivarium"
+      cp "$here/planted/MEMORY.md" "$sandbox/.vivarium/MEMORY.md"
     fi
 
     transcripts="$sandbox/.transcripts"
     started=$(date +%s)
-    "$root/bin/vivarium" do "$(cat "$here/tasks/$task/PROMPT")" \
-      --cwd "$sandbox" --root "$sandbox" --model "$model" --limit 30 \
-      --session-dir "$transcripts" > "$sandbox/.log" 2>&1 || true
+    extra=$(append_for "$arm")
+    if [ -n "$extra" ]; then
+      "$root/bin/vivarium" do "$(cat "$here/tasks/$task/PROMPT")" \
+        --cwd "$sandbox" --root "$sandbox" --model "$model" --limit 30 \
+        --session-dir "$transcripts" --append "$extra" > "$sandbox/.log" 2>&1 || true
+    else
+      "$root/bin/vivarium" do "$(cat "$here/tasks/$task/PROMPT")" \
+        --cwd "$sandbox" --root "$sandbox" --model "$model" --limit 30 \
+        --session-dir "$transcripts" > "$sandbox/.log" 2>&1 || true
+    fi
     finished=$(date +%s)
 
     if ( cd "$sandbox" && ./check >/dev/null 2>&1 ); then solved=1; else solved=0; fi
@@ -105,7 +138,7 @@ run_sequence() {
     fi
 
     # Carry forward whatever this task left behind, for the next one.
-    if [ "$arm" = accumulate ] && [ -d "$sandbox/.vivarium" ]; then
+    if carries_memory "$arm" && [ -d "$sandbox/.vivarium" ]; then
       rm -rf "$carried/.vivarium"
       cp -R "$sandbox/.vivarium" "$carried/.vivarium"
       rm -rf "$carried/.vivarium/sessions" "$carried/.vivarium/.transcripts"

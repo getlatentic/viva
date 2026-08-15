@@ -23,7 +23,7 @@
 (defpackage #:vivarium.schema
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria))
-  (:export #:parameter-schema #:validate #:type-label #:parameter-label))
+  (:export #:parameter-schema #:validate #:type-label #:parameter-label #:obj))
 
 (defpackage #:vivarium.sexp
   (:use #:cl)
@@ -62,7 +62,7 @@
                     (#:wire #:vivarium.wire)
                     (#:msg #:vivarium.message))
   (:export #:collect #:consume #:absorb #:payload-of
-           #:accumulator #:make-accumulator #:assistant-message))
+           #:accumulator #:make-accumulator #:assistant-message #:acc-usage))
 
 (defpackage #:vivarium.provider
   (:use #:cl)

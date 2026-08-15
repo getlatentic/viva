@@ -92,14 +92,21 @@ machine. Later blocks are more specific and take precedence.~%~%")
     path))
 
 (tool:define-tool remember (args context)
-  :description "Write down something worth knowing the next time you work in
-this project, in a file that is loaded into your context on every future run.
+  :description "Write down something about this project that will still be worth
+knowing while working on something completely different here.
 
-Use it for what you had to work out and would otherwise work out again: how to
-run the tests, a convention the code follows that is not obvious, a trap you
-fell into, where a subsystem actually lives. Do not use it for what this
-conversation already says, or for anything the code itself records."
-  :parameters (("note" :string "One thing you learned, stated so it is useful with no memory of this conversation." :required-p t))
+What you write is loaded into your context on every future run in this project,
+so a note earns its place by being true of the PROJECT, not by describing
+today's work: how the tests are run, a convention the code follows that is not
+obvious from any one file, which directories are live and which are dead, where
+a subsystem actually lives.
+
+Do not write up the problem you just solved. That work is finished and the note
+cannot help it, while a description of one defect is noise to every task that
+follows. The test before writing: would someone starting an unrelated job in
+this repository tomorrow want this sentence? If it is only useful to someone who
+hits the same bug you just hit, leave it out."
+  :parameters (("note" :string "One durable fact about this project, useful to someone with no memory of this conversation and a different task." :required-p t))
   (let ((path (record-memory (workspace:environment) (gethash "note" args))))
     (format nil "Noted in ~a." (workspace:display-path path))))
 

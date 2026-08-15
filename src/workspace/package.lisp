@@ -108,7 +108,7 @@
                     (#:msg #:vivarium.message))
   (:export #:session #:open-session #:session-path #:session-id #:session-entries
            #:record-entry #:entries-of #:close-session #:load-session
-           #:session-messages #:latest-session #:session-directory
+           #:session-messages #:latest-session #:session-directory #:usage-of
            #:entry #:entry-kind #:entry-payload #:entry-time))
 
 (defpackage #:vivarium.models

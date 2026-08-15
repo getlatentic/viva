@@ -9,15 +9,22 @@ in this repository. It may not contain task M's fix. Each task's fix is exactly
 the text that break.py removes, so that text is the answer key, and it is
 extracted from break.py rather than restated here -- a copy would drift.
 
-Reported, never silently tolerated:
+POSITION IS WHAT DECIDES IT. Memory is written after a task and read before the
+ones that follow, so a note describing a task ALREADY DONE is journaling and
+harmless, while the same note describing a task STILL TO COME is an answer key.
+Only the second is contamination, and only the second is counted.
 
-  LEAK       an answer's distinctive code appears in something carried forward
-  NARROW     a note names a task's defect specifically enough to skip finding it
-             again. Not disqualifying on its own -- "amounts are integer cents"
-             is a real project convention AND a hint at float-balance -- but it
-             belongs in the write-up rather than in a footnote nobody reads.
+  AHEAD      something carried forward describes a task later in the order
+  BEHIND     it describes a task already finished. Reported, not counted.
 
-  usage: check-answers.py <carried-directory> [...]
+The first version of this checked only for verbatim code and passed a memory
+file that said "the fix is in transfer(): compute source_balance first, raise
+Overdraft if cents > source_balance, then mutate". That is the answer in prose,
+and a >24-character literal-line test cannot see it. Paraphrase is caught by
+identifiers instead: an agent cannot describe a fix usefully without naming what
+it touches, so the names ARE the payload.
+
+  usage: check-answers.py --order t1,t2,... <carried-directory> [...]
 """
 import pathlib, re, sys
 
@@ -74,43 +81,62 @@ def carried_text(directory):
     return pieces
 
 
-def main(directories):
+def notes_in_order(text):
+    """Memory entries in the order they were written: one per leading '- '."""
+    entries, current = [], None
+    for line in text.splitlines():
+        if line.startswith("- "):
+            if current is not None:
+                entries.append(current)
+            current = line[2:]
+        elif current is not None:
+            current += " " + line
+    if current is not None:
+        entries.append(current)
+    return entries
+
+
+def main(argv):
+    order = None
+    if argv and argv[0] == "--order":
+        order = argv[1].split(",")
+        argv = argv[2:]
     tasks = sorted(p.name for p in (HERE / "tasks").iterdir() if p.is_dir())
+    order = order or tasks
     common = STOPWORDS | project_vocabulary()
     answers = {task: distinctive(answer_of(task), common) for task in tasks}
-    leaks = narrow = 0
-    examined = 0
+    ahead = behind = examined = 0
 
-    for directory in directories:
+    for directory in argv:
         for path, text in carried_text(directory):
             examined += 1
-            lowered = text.lower()
-            for task in tasks:
-                hits = sorted(f for f in answers[task] if f.lower() in lowered)
-                if not hits:
-                    continue
-                code_like = [f for f in hits if len(f) > 24]
-                if code_like:
-                    leaks += 1
-                    print(f"LEAK   {path}")
-                    print(f"       carries {task}'s fix verbatim:")
-                    for fragment in code_like[:3]:
-                        print(f"         {fragment}")
-                else:
-                    narrow += 1
-                    print(f"NARROW {path}")
-                    print(f"       names {task}: {', '.join(hits[:5])}")
+            # Note N is written after task N and read by task N+1 onward.
+            for position, note in enumerate(notes_in_order(text)):
+                lowered = note.lower()
+                for task in tasks:
+                    hits = sorted(f for f in answers[task] if f.lower() in lowered)
+                    if not hits:
+                        continue
+                    when = order.index(task) if task in order else len(order)
+                    if when > position:
+                        ahead += 1
+                        print(f"AHEAD  {path}")
+                        print(f"       note {position + 1} describes {task}, which is "
+                              f"task {when + 1} and had not been done yet")
+                        print(f"       {', '.join(hits[:6])}")
+                    else:
+                        behind += 1
 
-    print(f"\n{examined} carried file(s) examined, {len(tasks)} answers checked.")
-    if leaks:
-        print(f"{leaks} LEAK(S). The accumulate arm was handed answers, not procedure;"
-              "\nany cost reduction it shows is worth nothing until this is fixed.")
-    elif narrow:
-        print(f"No verbatim answers. {narrow} note(s) name a task specifically enough"
-              "\nto be worth quoting in the write-up.")
+    print(f"\n{examined} carried file(s), {behind} note(s) describing finished work, "
+          f"{ahead} describing work still to come.")
+    if ahead:
+        print(f"\n{ahead} AHEAD. Memory carried answers into tasks that had not been"
+              "\nattempted. Any cost reduction is partly leakage and cannot be reported"
+              "\nas adaptation until the two are separated.")
     else:
-        print("No answers carried. What crossed between tasks was procedure.")
-    return 1 if leaks else 0
+        print("\nNo note described a task before it was attempted. What crossed"
+              "\nbetween tasks was procedure and finished work.")
+    return 1 if ahead else 0
 
 
 if __name__ == "__main__":

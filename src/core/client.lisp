@@ -149,6 +149,12 @@ preempt a *waiting* tool, but an in-flight completion runs to its end."
   (let ((payload (request-payload agent messages))
         (provider (provider-for agent)))
     (setf (gethash "stream" payload) t)
+    ;; Ask for the token counts. An OpenAI-compatible server sends them on a
+    ;; streamed response only when this is set, and a provider that does not
+    ;; know the option ignores it -- so the cost of asking is nothing, and the
+    ;; cost of not asking was every streamed run reporting no usage at all.
+    (setf (gethash "stream_options" payload)
+          (schema:obj "include_usage" t))
     (let ((input (dex:post (provider:provider-endpoint provider)
                            :headers (provider:headers provider)
                            :content (jzon:stringify payload)

@@ -23,7 +23,14 @@
   ;; index -> (id name . argument-fragments), in arrival order.
   (calls (make-hash-table :test #'eql))
   (order '() :type list)
-  (finish-reason nil))
+  (finish-reason nil)
+  ;; The provider's own token counts, when it sends them. A streamed response
+  ;; carries them in a final chunk that has no choices at all, which is exactly
+  ;; the chunk ABSORB used to discard as a keep-alive -- so every streamed run
+  ;; reported no usage, and streaming is the path the shell, the IPC server and
+  ;; `do` all take. Cost was therefore estimated from character counts when the
+  ;; provider had been sending the real number the whole time.
+  (usage nil))
 
 (defstruct (partial-call (:conc-name partial-))
   (id "") (name "") (arguments (make-string-output-stream)))
@@ -54,6 +61,8 @@
 (defun absorb (accumulator chunk)
   "Fold one parsed SSE payload into ACCUMULATOR. Returns the delta, or NIL for a
 chunk that carries no choice -- a usage summary, or a keep-alive."
+  (a:when-let ((usage (wire:field chunk "usage")))
+    (setf (acc-usage accumulator) usage))
   (let ((choices (wire:field chunk "choices")))
     (when (and (vectorp choices) (plusp (length choices)))
       (let* ((choice (aref choices 0))
@@ -124,6 +133,7 @@ Returns :DONE, :EOF or :ABORTED."
                           (finished-calls accumulator))))
     (msg:make-assistant-message
      :content content
+     :usage (acc-usage accumulator)
      :stop-reason (stop-reason accumulator outcome content))))
 
 (defun collect (input &key on-delta abort-p)

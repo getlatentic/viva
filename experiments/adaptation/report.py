@@ -77,8 +77,9 @@ def main(path):
             print(f"  {row['arm']:<11} seq {row['sequence']} pos {row['position']} "
                   f"{row['task']}  ({row['requests']} requests)")
 
-    wrote = [row for row in rows if row["arm"] == "accumulate" and row["remembered"]]
-    if not wrote:
+    carrying = [row for row in rows if row["arm"] in ("accumulate", "nudged")]
+    wrote = [row for row in carrying if row["remembered"]]
+    if carrying and not wrote:
         print("\nThe agent never used `remember`. That is a finding about the default,"
               "\nnot a failed experiment: with nothing carried forward the two arms are"
               "\nthe same experiment run twice, and any difference between them is the"
