@@ -1,5 +1,11 @@
 # Vivarium — four capability levels
 
+> **The architecture is frozen.** See [architecture.md](architecture.md): one
+> long-lived SBCL organism, sessions as mailbox actors, a structured event model,
+> JSON-RPC over local IPC with stdio as an adapter, and a Rust/Ratatui client.
+> Self-modification is a property of a process that persists, not something
+> bolted onto a command that does not.
+
 **The mission, stated once:** build a general-purpose agent harness that can do
 normal work, learn from that work, modify how it operates, retain useful
 modifications, and eventually safely replace or undo parts of itself.

@@ -295,6 +295,90 @@ noise, not a result.~%")
   (apply #'console:run-ipc (append (workspace-options parsed)
                                    (list :request-limit (flag-integer parsed "limit" 200)))))
 
+(defun command-daemon (parsed)
+  "Start, stop or inspect the organism.
+
+`start` runs in the foreground so a supervisor can own it; `--background`
+detaches the accept loop and returns, which is what `vivarium attach` uses when
+it finds nobody home."
+  (let ((verb (or (first (args-positional parsed)) "status")))
+    (cond
+      ((string= "status" verb)
+       (if (daemon:running-p)
+           (daemon:with-connection (stream)
+             (let ((ready (jzon:parse (read-line stream))))
+               (format t "~&running, pid ~a, ~d session~:p~%"
+                       (gethash "pid" ready) (length (gethash "sessions" ready)))
+               (loop for each across (gethash "sessions" ready)
+                     do (format t "~&  ~a  ~10a ~a~%" (gethash "id" each)
+                                (gethash "state" each) (gethash "label" each))))
+             0)
+           (progn (format t "~&not running~%") 1)))
+      ((string= "start" verb)
+       (format t "~&listening on ~a~%" (daemon:socket-path))
+       (finish-output)
+       (daemon:serve :background (string= "true" (flag parsed "background" "false")))
+       0)
+      ((string= "stop" verb)
+       (if (daemon:running-p)
+           (progn (daemon:with-connection (stream)
+                    (read-line stream nil nil)
+                    (daemon:request stream "type" "shutdown"))
+                  (format t "~&stopped~%") 0)
+           (progn (format t "~&not running~%") 1)))
+      (t (format t "~&usage: vivarium daemon [status|start|stop]~%") 1))))
+
+(defun ensure-daemon ()
+  "Start the organism if it is not already there, and wait for it to answer."
+  (unless (daemon:running-p)
+    (let ((root (repository-root)))
+      (uiop:launch-program (list (namestring (merge-pathnames "bin/vivarium" root))
+                                 "daemon" "start")
+                           :output nil :error-output nil))
+    (loop repeat 100
+          until (daemon:running-p)
+          do (sleep 0.1)))
+  (daemon:running-p))
+
+(defun command-attach (parsed)
+  "Talk to a session inside the organism, and leave it running afterwards."
+  (unless (ensure-daemon)
+    (format t "~&could not start a daemon~%")
+    (return-from command-attach 1))
+  (let ((cwd (namestring (truename (or (flag parsed "cwd") ".")))))
+    (daemon:with-connection (stream)
+      (read-line stream nil nil)
+      (let* ((wanted (first (args-positional parsed)))
+             (reply (if wanted
+                        (daemon:request stream "type" "session.attach" "session" wanted
+                                        "since" (flag-integer parsed "since" 0))
+                        (daemon:request stream "type" "session.start" "cwd" cwd
+                                        "model" (flag parsed "model")))))
+        (unless (gethash "success" reply)
+          (format t "~&~a~%" (gethash "error" reply))
+          (return-from command-attach 1))
+        (let ((id (gethash "id" (gethash "session" reply))))
+          (format t "~&session ~a  (closing this leaves it running)~%~%" id)
+          (loop for line = (progn (format t "› ") (finish-output) (read-line *standard-input* nil nil))
+                while line
+                do (cond ((string= "/detach" (string-trim " " line))
+                          (format t "~&detached; ~a is still running~%" id)
+                          (return))
+                         ((plusp (length (string-trim " " line)))
+                          (daemon:request stream "type" "prompt" "session" id "text" line)
+                          ;; Events stream in until the turn ends.
+                          (loop for reply = (ignore-errors (jzon:parse (read-line stream nil "")))
+                                while reply
+                                for name = (gethash "event" reply)
+                                do (cond ((equal name "model.delta")
+                                          (write-string (gethash "text" (gethash "data" reply)))
+                                          (force-output))
+                                         ((equal name "tool.started")
+                                          (format t "~&  · ~a~%"
+                                                  (gethash "name" (gethash "call" (gethash "data" reply)))))
+                                         ((equal name "turn.completed") (terpri) (return)))))))))
+      0)))
+
 (defun command-sessions (parsed)
   "List or search recorded sessions. Scoped to this directory unless --all."
   (let* ((where (unless (string= "true" (flag parsed "all" "false"))

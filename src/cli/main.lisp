@@ -3,7 +3,11 @@
 (in-package #:vivarium.cli)
 
 (defparameter +commands+
-  (list (list "shell" #'command-shell
+  (list (list "daemon" #'command-daemon
+              "Start, stop or inspect the long-lived organism.")
+        (list "attach" #'command-attach
+              "Open a session inside the organism; closing leaves it running.")
+        (list "shell" #'command-shell
               "Work in a directory, interactively.")
         (list "ipc" #'command-ipc
               "Serve one agent over stdin and stdout, as JSON lines.")
@@ -28,6 +32,17 @@
 
 (defparameter +usage+
   "vivarium <command> [options]
+
+THE ORGANISM
+
+  daemon [status|start|stop]  the long-lived process sessions live inside
+      --background            detach the accept loop and return
+  attach [SESSION] [options]  open or rejoin a session; /detach leaves it running
+      --cwd DIR               where a new session works
+      --since N               replay events after sequence N
+
+  A session outlives the terminal that started it. Closing a client removes a
+  subscriber, not the work.
 
 ORDINARY WORK
 

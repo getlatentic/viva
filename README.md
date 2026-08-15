@@ -13,7 +13,22 @@ The second is the research; the first is what makes it about anything. See
 measured comparison against [Pi](https://github.com/badlogic/pi-mono), the
 harness it was replicated from.
 
-Verified on SBCL 2.6.7 / macOS ARM64. **560 tests green.**
+Vivarium now covers the core harness model independently of Pi. The remaining
+product-level gap is the polished full-screen interactive frontend, which will be
+Rust/Ratatui/Crossterm. Harness-level deferred and suspended operations belong in
+the long-lived SBCL runtime and do not require provider batch APIs; only durable
+provider-side jobs do. Session persistence uses one concrete implementation until
+a second real backend justifies an abstraction. From there development shifts
+beyond Pi: live task-local self-modification, inheritance of useful improvements,
+versioned activation and rollback, and eventually Cordis-like compositional
+lifecycle semantics. The shape is frozen in [docs/architecture.md](docs/architecture.md).
+
+```bash
+vivarium daemon start        # the organism; sessions live inside it
+vivarium attach              # open one; /detach leaves it running
+```
+
+Verified on SBCL 2.6.7 / macOS ARM64. **719 tests green.**
 
 New here? Read [HANDOFF.md](HANDOFF.md) — the question this answers, the six
 experiments, what has been settled, and the mistakes already paid for.

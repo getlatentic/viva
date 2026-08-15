@@ -25,7 +25,9 @@
                     (#:harness #:vivarium.harness)
                     (#:workspace #:vivarium.workspace)
                     (#:env #:vivarium.env)
-                    (#:session #:vivarium.session))
+                    (#:session #:vivarium.session)
+                    (#:daemon #:vivarium.daemon)
+                    (#:actor #:vivarium.actor))
   (:export #:main #:arms-named #:available-arms
            #:render #:broadcast #:transcript #:screen
            #:trajectory-line #:ledger-lines #:score-line #:one-line

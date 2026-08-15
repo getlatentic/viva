@@ -61,6 +61,17 @@
                              (:file "models")
                              (:file "harness")))))
 
+(defsystem "vivarium/daemon"
+  :description "The organism: one long-lived process, sessions living inside it."
+  :depends-on ("vivarium/workspace" "sb-concurrency" "sb-bsd-sockets")
+  :serial t
+  :components ((:module "src/daemon"
+                :serial t
+                :components ((:file "package")
+                             (:file "events")
+                             (:file "actor")
+                             (:file "server")))))
+
 (defsystem "vivarium/console"
   :description "Two ways to run the workspace agent: an interactive shell and a JSONL IPC server."
   :depends-on ("vivarium/workspace")
@@ -121,7 +132,8 @@
 
 (defsystem "vivarium/cli"
   :description "One entry point for every run."
-  :depends-on ("vivarium/tasks" "vivarium/search" "vivarium/console" "uiop" "usocket" "croatoan")
+  :depends-on ("vivarium/tasks" "vivarium/search" "vivarium/console" "vivarium/daemon"
+               "uiop" "usocket" "croatoan")
   :serial t
   :components ((:module "src/cli"
                 :serial t
