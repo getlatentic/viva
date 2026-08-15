@@ -639,3 +639,167 @@ checkpoint."))
                           "took ~d requests" (stalling-calls agent)))
                  (actor:shutdown cell)))))
       (setf loop*:*request-deadline* previous))))
+
+;;; Isolation of frontend I/O, absolute deadlines, and startup ownership
+
+(define-test "a client that stops reading does not stall whoever is publishing"
+  ;; SAY used to write and FORCE-OUTPUT on the calling thread -- a session's own
+  ;; worker, publishing model deltas. A peer that stopped reading filled the
+  ;; socket buffer and stopped the turn. Frontend I/O must never take part in
+  ;; execution latency.
+  (with-daemon (path)
+    (with-repository (environment)
+      (let ((cell (paced-cell environment :pause 0.01 :limit 1))
+            (deaf nil))
+        (unwind-protect
+             (progn
+               (setf deaf (daemon:connect path))
+               (read-line deaf nil nil)
+               ;; Attach, then never read another byte.
+               (daemon:request deaf "type" "session.attach" "session" (actor:cell-id cell))
+               (let ((start (get-internal-real-time))
+                     (payload (make-string 4000 :initial-element #\x)))
+                 ;; Far more than any socket buffer will hold.
+                 (dotimes (i 400)
+                   (vivarium.actor::publish cell "model.delta"
+                                            (vivarium.event::object "text" payload)))
+                 (let ((seconds (/ (- (get-internal-real-time) start)
+                                   internal-time-units-per-second)))
+                   (true (< seconds 10) "publishing took ~,1fs behind a deaf client" seconds)
+                   (is = 400 (count "model.delta" (cell-event-names cell) :test #'string=)))))
+          (ignore-errors (close deaf))
+          (actor:shutdown cell))))))
+
+(defclass wedged-agent (harness:workspace-agent) ())
+
+(defmethod client:complete ((agent wedged-agent) messages)
+  (declare (ignore messages))
+  ;; Ignores cancellation entirely: the worker that will not come back.
+  (sleep 60)
+  (say "much too late"))
+
+(define-test "a stopping session gives up on time however busy its mailbox is"
+  ;; The grace period was passed to each RECEIVE-MESSAGE, so every arriving
+  ;; message bought another full period. Any traffic at all -- and with child
+  ;; tasks there will be plenty -- held a broken worker in :STOPPING forever.
+  (let ((previous vivarium.actor::+stopping-grace+))
+    (unwind-protect
+         (progn
+           (setf vivarium.actor::+stopping-grace+ 2)
+           (with-repository (environment)
+             (let ((cell (actor:spawn :label "wedged"
+                                      :agent (make-instance 'wedged-agent
+                                                            :environment environment
+                                                            :resource-environment environment
+                                                            :request-limit 500))))
+               (actor:submit cell "go")
+               (true (daemon-wait (lambda () (actor:busy-p cell))))
+               (actor:shutdown cell)
+               ;; Traffic throughout the whole grace period.
+               (let ((chatter (bt:make-thread
+                               (lambda () (dotimes (i 30)
+                                            (actor:tell cell :resume)
+                                            (sleep 0.2))))))
+                 (true (daemon-wait (lambda () (eq :stuck (actor:cell-state cell))) :timeout 8)
+                       "still ~a after the grace period" (actor:cell-state cell))
+                 (ignore-errors (bt:join-thread chatter :timeout 10)))
+               ;; And it did not claim to have completed.
+               (let ((names (cell-event-names cell)))
+                 (is = 0 (count "session.completed" names :test #'string=))
+                 (true (member "session.error" names :test #'string=))))))
+      (setf vivarium.actor::+stopping-grace+ previous))))
+
+(define-test "two threads in one process cannot both start serving"
+  ;; The OS lock is held by the process and grants itself the same lock twice,
+  ;; so it cannot see this race at all. Reading *SOCKET* and then acquiring is
+  ;; the check-then-act it was meant to remove, one level down.
+  (let ((first (daemon-test-path))
+        (second (daemon-test-path)))
+    (unwind-protect
+         (let ((outcomes
+                 (mapcar #'bt:join-thread
+                         (mapcar (lambda (path)
+                                   (let ((mine path))
+                                     (bt:make-thread
+                                      (lambda ()
+                                        (handler-case
+                                            (progn (daemon:serve :path mine :background t) :served)
+                                          (error () :refused))))))
+                                 (list first second)))))
+           (is = 1 (count :served outcomes) "outcomes were ~a" outcomes))
+      (daemon:stop)
+      (ignore-errors (delete-file first))
+      (ignore-errors (delete-file second)))))
+
+(defclass falling-back-agent (harness:workspace-agent)
+  ((calls :initform 0 :accessor fb-calls)))
+
+(defmethod client:complete ((agent falling-back-agent) messages)
+  (declare (ignore messages))
+  (incf (fb-calls agent))
+  (if (equal "fast" (agent:agent-model agent))
+      (say "answered by the fallback")
+      (progn (sleep 30) (say "never"))))
+
+(defmethod agent:recover ((agent falling-back-agent) (condition fault:model-unavailable))
+  (fault:use-model "fast" condition))
+
+(define-test "the model chosen after a deadline runs under a fresh one"
+  ;; If WITH-DEADLINE sat outside the RESTART-CASE, the fallback would inherit
+  ;; the deadline that had just expired and die instantly -- a recovery that
+  ;; exists and can never succeed.
+  (let ((previous loop*:*request-deadline*))
+    (unwind-protect
+         (progn
+           (setf loop*:*request-deadline* 0.4)
+           (with-repository (environment)
+             (let* ((cell (actor:spawn :label "fallback"
+                                       :agent (make-instance 'falling-back-agent
+                                                             :environment environment
+                                                             :resource-environment environment
+                                                             :request-limit 500)))
+                    (agent (actor:cell-agent cell)))
+               (unwind-protect
+                    (let ((turn (actor:submit cell "go")))
+                      (is string= "turn.completed" (actor:await-turn cell turn :timeout 25))
+                      (is = 2 (fb-calls agent) "took ~d requests" (fb-calls agent))
+                      (is string= "fast" (agent:agent-model agent)))
+                 (actor:shutdown cell)))))
+      (setf loop*:*request-deadline* previous))))
+
+(define-test "a stopped daemon's accept loop does not tear down its successor"
+  ;; The accept loop unwinds into a teardown that cleared *SOCKET*,
+  ;; *SOCKET-FILE* and the instance lock unconditionally. By the time a stopped
+  ;; daemon's loop noticed, those globals could already describe the NEXT
+  ;; daemon -- so it closed that one's socket and deleted its file. It showed up
+  ;; as a daemon that had just reported itself listening being found not to be,
+  ;; in about one suite run in ten.
+  (let ((paths '()))
+    (unwind-protect
+         (dotimes (i 60)
+           (let ((old (daemon-test-path))
+                 (new (daemon-test-path)))
+             (push old paths)
+             (push new paths)
+             (daemon:serve :path old :background t)
+             (loop repeat 200 until (daemon:running-p old) do (sleep 0.005))
+             (daemon:stop)
+             ;; Started while the previous accept loop is unwinding.
+             (daemon:serve :path new :background t)
+             (loop repeat 200 until (daemon:running-p new) do (sleep 0.005))
+             (sleep 0.05)
+             (true (daemon:running-p new) "cycle ~d: the successor was stopped" i)
+             (true (probe-file new) "cycle ~d: the successor's socket was deleted" i)
+             (daemon:stop)))
+      (daemon:stop)
+      (dolist (path paths) (ignore-errors (delete-file path))))))
+
+(define-test "retiring a listener that is no longer current does nothing"
+  ;; The deterministic half of the test above. The race is what made the bug
+  ;; rare; this is the guard that makes it impossible, checked directly.
+  (with-daemon (path)
+    (let ((stranger (make-instance 'sb-bsd-sockets:local-socket :type :stream)))
+      (vivarium.daemon::retire stranger)
+      (true (daemon:running-p path) "retiring a stranger's socket stopped the daemon")
+      (true (probe-file path) "retiring a stranger's socket deleted the daemon's file")
+      (true (gethash "success" (daemon-ask path "type" "ping"))))))

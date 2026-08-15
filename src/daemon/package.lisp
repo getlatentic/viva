@@ -43,6 +43,7 @@
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:bt #:bordeaux-threads)
+                    (#:mailbox #:sb-concurrency)
                     (#:jzon #:com.inuoe.jzon)
                     (#:sockets #:sb-bsd-sockets)
                     (#:msg #:vivarium.message)

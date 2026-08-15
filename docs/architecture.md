@@ -191,11 +191,32 @@ worker and every spawned task must rebind explicitly, which makes inheritance a
 decision rather than ambient state — the same reason `call-in-tool-context`
 exists for parallel tool batches.
 
-Law 11 has a linearization point: sequence number, stored event and subscriber
-snapshot are decided in one critical section, so `subscribe-since` gives a
-barrier with nothing lost and nothing repeated. Ordering across that barrier is
-the reader's job via `seq`; replaying under the lock would let a client that
-stopped reading its socket stall the session.
+Law 11 has a linearization point: sequence number, stored event, subscriber
+delivery and any replay all happen in one critical section, so a client sees an
+unbroken run of sequence numbers with nothing lost, repeated or reordered. That
+is only affordable because **a subscriber handler must not block** — it enqueues
+onto the client's outbound mailbox and returns, and one writer thread per client
+owns the socket. Writing from the handler put frontend I/O inside execution
+latency: a terminal that stopped reading stopped the turn that was publishing
+to it.
+
+Laws 3 and 4 apply to **cleanup**, which is where they are easiest to forget. A
+teardown that clears globals unconditionally is a stale message with a different
+shape: a stopped daemon's accept loop unwound into code that closed `*socket*`
+and deleted `*socket-file*`, and by then those described the *next* daemon. It
+retired its successor. Cleanup must name what it is cleaning up.
+
+```
+    stop this listener       (eq socket *socket*)  ->  teardown
+    stop whatever is current                       ->  teardown
+```
+
+Descriptors are the other place identity hides. A failed write to a peer that
+has hung up leaves bytes in an SBCL fd-stream, and those bytes reach whoever
+holds that descriptor number next — measured as greetings arriving with the
+front of a previous greeting in front of them, and never once when the same
+clients read their greeting before hanging up. The daemon's output path
+therefore has no stream buffer at all: serialise, send the octets, done.
 
 ### Recovery: conditions offer, policy chooses
 
@@ -363,6 +384,8 @@ BUILT   identity and ownership: turn ids on every asynchronous message, stale
         messages harmless, one linearized event history, an OS-held daemon lock
 BUILT   recovery: restarts at the model and tool boundaries, policy on the
         agent, bounded, with a deadline around the whole exchange
+BUILT   client I/O isolated behind outbound mailboxes, absolute shutdown
+        deadlines, startup owned by process state as well as an OS lock
 NEXT    phase 1.5 -- compositional agency: TASK as the unit, scoped children
         for sub-agents, detached children for spawned work, a supervisor
         owning topology, task-to-task messaging, isolated conversations

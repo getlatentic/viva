@@ -47,6 +47,12 @@
   ;; The turn's thread. A handle for diagnostics; nothing decides anything by
   ;; asking whether it is alive.
   (worker nil)
+  ;; When a stopping session gives up waiting. Absolute, not a per-receive
+  ;; timeout: a timeout renewed on every message means any passing traffic --
+  ;; a steer, a status request, a child's result -- postpones the deadline
+  ;; indefinitely, and a broken worker is held in :STOPPING forever by a
+  ;; mailbox that merely happens to be busy.
+  (stop-deadline nil)
   ;; Prompts that arrived while a turn was running, oldest first.
   (queued '() :type list)
   (lock (bt:make-lock "vivarium.cell"))
@@ -91,31 +97,37 @@ instants. Never PUBLISH inside: publishing takes the same lock."
 ;;; belongs to the live stream.
 
 (defun publish (cell name data)
-  "Record an event and hand it to every subscriber."
+  "Record an event and hand it to every subscriber, in sequence order.
+
+Delivery happens inside the critical section that assigns the sequence, so the
+order subscribers see IS the order of the journal. The alternative -- snapshot
+the subscribers, release, then deliver -- lets two events assigned 104 and 105
+be handed over as 105 then 104, and exports an ordering problem to every
+frontend that then has to buffer, sort and detect gaps.
+
+That is only safe because A HANDLER MUST NOT BLOCK. The contract is that a
+handler enqueues and returns; the daemon's puts the event on the client's
+outbound mailbox, and one writer thread owns the socket. A handler that wrote
+to a socket here would let one stalled terminal hold a session's lock."
   (when (event:name-valid-p name)
-    (let (event subscribers)
+    (let ((event nil) (failed '()))
       (owning (cell)
         (setf event (event:make-event :name name :session (cell-id cell)
                                       :sequence (incf (cell-sequence cell))
                                       :time (get-universal-time)
                                       :data data))
         (push event (cell-events cell))
-        ;; Snapshotted with the sequence rather than in a second acquisition:
-        ;; between two lock takings a subscriber could arrive, replay a history
-        ;; that already held this event, and then be handed it again.
-        (setf subscribers (copy-list (cell-subscribers cell))))
-      ;; Callbacks outside the lock. A subscriber writes to a socket, which can
-      ;; block on a peer that has stopped reading, and holding a session's lock
-      ;; while that happens would let one stalled terminal stop the organism.
-      ;; A subscriber that signals is dropped rather than allowed to stop the
-      ;; session -- a dead terminal must not take the work with it.
-      (dolist (subscriber subscribers)
-        (handler-case (funcall (cdr subscriber) event)
-          (error () (unsubscribe cell (car subscriber)))))
+        (dolist (subscriber (reverse (cell-subscribers cell)))
+          ;; A subscriber that signals is dropped rather than allowed to stop
+          ;; the session -- a dead terminal must not take the work with it.
+          (handler-case (funcall (cdr subscriber) event)
+            (error () (push (car subscriber) failed)))))
+      ;; After the lock: UNSUBSCRIBE takes the same one, which is not recursive.
+      (dolist (key failed) (unsubscribe cell key))
       event)))
 
 (defun subscribe (cell key handler)
-  "Receive events published from now on."
+  "Receive events published from now on. HANDLER must not block; see PUBLISH."
   (owning (cell) (push (cons key handler) (cell-subscribers cell)))
   key)
 
@@ -139,17 +151,19 @@ decisions happen in one critical section here, so SEQUENCE is a barrier: at or
 below it an event is replayed, above it an event is delivered live, and no
 event is on both sides or neither.
 
-Delivery order across that barrier is not guaranteed -- the replay runs on the
-subscribing thread and live events on the publishing one -- which is what
-EVENT-SEQUENCE is for. Ordering by number is the reader's job; the alternative
-was replaying while holding the lock, and a client that stopped reading its
-socket would then stall the session."
-  (let ((missed (owning (cell)
-                  (push (cons key handler) (cell-subscribers cell))
-                  (remove-if (lambda (event) (<= (event:event-sequence event) sequence))
-                             (reverse (cell-events cell))))))
-    (dolist (event missed) (funcall handler event))
-    key))
+The replay is delivered inside that section too, so a client receives its
+history and then its live events in one unbroken run of sequence numbers.
+Handing the replay over after releasing the lock would interleave it with
+whatever was published meanwhile -- nothing lost and nothing repeated, but
+arriving out of order, which every frontend would then have to repair.
+
+Safe for the same reason PUBLISH is: A HANDLER MUST NOT BLOCK."
+  (owning (cell)
+    (push (cons key handler) (cell-subscribers cell))
+    (dolist (event (remove-if (lambda (event) (<= (event:event-sequence event) sequence))
+                              (reverse (cell-events cell))))
+      (funcall handler event)))
+  key)
 
 (defun snapshot (cell)
   "A coherent description of the cell, taken at one instant.
@@ -291,14 +305,28 @@ worker's completion arrived at nobody: the session reported completed with its
 last turn having published no terminal event at all."
   (owning (cell)
     (setf (cell-state cell) :stopping
-          (cell-queued cell) '()))
+          (cell-queued cell) '()
+          (cell-stop-deadline cell) (+ (get-internal-real-time)
+                                       (* +stopping-grace+
+                                          internal-time-units-per-second))))
   (harness:cancel-agent (cell-agent cell))
   ;; Nothing running, so nothing to wait for.
   (unless (cell-turn cell)
     (owning (cell) (setf (cell-running cell) nil))))
 
+(defun stopping-p (cell)
+  (member (cell-state cell) '(:stopping :stuck)))
+
 (defun handle (cell message)
   (destructuring-bind (verb &rest options) message
+    ;; A stopping session is waiting for one thing. Control that arrives now is
+    ;; about a session that is going away, and :RESUME in particular used to set
+    ;; the state back to :WORKING or :IDLE -- so one late resume resurrected a
+    ;; shutting-down session and put its coordinator back on an unbounded wait,
+    ;; which is exactly the hang the stop deadline exists to prevent.
+    (when (and (stopping-p cell)
+               (member verb '(:steer :cancel :suspend :resume :shutdown)))
+      (return-from handle nil))
     (ecase verb
       (:user-message (accept-prompt cell options))
       (:finished (complete-turn cell options))
@@ -329,15 +357,25 @@ last turn having published no terminal event at all."
                  (publish cell "task.resumed" nil)))
       (:shutdown (begin-stopping cell)))))
 
+(defun seconds-left (cell)
+  (/ (- (cell-stop-deadline cell) (get-internal-real-time))
+     internal-time-units-per-second))
+
 (defun next-message (cell)
-  "The next message, or NIL if a stopping session waited too long for one.
+  "The next message, or NIL once a stopping session has run out of time.
 
 A stopping session is waiting for exactly one thing -- its turn's completion --
 so it is the only state in which waiting forever is a distinguishable failure
-rather than an idle session behaving correctly."
-  (if (eq :stopping (cell-state cell))
-      (mailbox:receive-message (cell-mailbox cell) :timeout +stopping-grace+)
-      (mailbox:receive-message (cell-mailbox cell))))
+rather than an idle session behaving correctly.
+
+The wait is what remains of one absolute deadline, recomputed each time. Passing
+the grace period to each RECEIVE-MESSAGE instead gives every arriving message a
+fresh 120 seconds, so a session with any traffic at all never times out."
+  (cond ((not (eq :stopping (cell-state cell)))
+         (mailbox:receive-message (cell-mailbox cell)))
+        ((plusp (seconds-left cell))
+         (mailbox:receive-message (cell-mailbox cell) :timeout (seconds-left cell)))
+        (t nil)))
 
 (defun deregister (cell)
   (bt:with-lock-held (*registry-lock*) (remhash (cell-id cell) *cells*)))

@@ -22,6 +22,24 @@
 (defvar *socket-file* nil "The path SERVE bound, so STOP unlinks that one.")
 (defvar *instance-fd* nil "The single-instance lock, held for as long as we serve.")
 (defvar *lock* (bt:make-lock "vivarium.daemon"))
+(defvar *state* :stopped "One of :STOPPED :STARTING :RUNNING, owned by *LOCK*.
+
+    OS lock     protects this process from another process
+    this state  protects this process from its own threads
+
+A POSIX record lock is held by the process, so it says nothing at all about two
+threads here both deciding to serve. Reading *SOCKET* and then acquiring is the
+same check-then-act it was designed to remove, one level down.")
+
+(defun claim-startup ()
+  "Move :STOPPED to :STARTING, or refuse. The whole transition under one lock."
+  (bt:with-lock-held (*lock*)
+    (when (eq :stopped *state*)
+      (setf *state* :starting)
+      t)))
+
+(defun set-state (state)
+  (bt:with-lock-held (*lock*) (setf *state* state)))
 
 (defun socket-path ()
   (or (sb-posix:getenv "VIVARIUM_SOCKET")
@@ -65,32 +83,78 @@
 
 (defstruct (client (:conc-name client-))
   (stream nil)
-  (lock (bt:make-lock "vivarium.client"))
+  (socket nil)
   (key nil)
   (live t :type boolean)
+  ;; Everything bound for the socket, and the one thread allowed to write it.
+  ;; SAY used to write and FORCE-OUTPUT on whatever thread called it -- a
+  ;; session's own worker, publishing model deltas. A client that stopped
+  ;; reading therefore stopped the turn: frontend I/O was participating in
+  ;; execution latency, which for a long-lived organism it must never do.
+  (outbound (mailbox:make-mailbox))
+  (writer nil)
   (watching '() :type list))
 
 (defun say (client table)
-  "One JSON object, one line, under a lock: the reader thread and a session's
-own thread both write here."
-  (bt:with-lock-held ((client-lock client))
-    (when (client-live client)
-      (handler-case
-          (progn (jzon:with-writer* (:stream (client-stream client))
-                   (jzon:write-value* table))
-                 (terpri (client-stream client))
-                 (force-output (client-stream client))
-                 t)
-        ;; A client that went away is not an error worth reporting to anyone in
-        ;; particular; it is the ordinary end of a connection, and the session
-        ;; carries on without it. It is still worth counting.
-        ;;
-        ;; The connection is finished either way. A write that failed part way
-        ;; through has left half an object on the wire, and a truncated line
-        ;; followed by a whole one is not parseable by anyone.
-        (error (condition)
-          (note-failure "write" condition)
-          (setf (client-live client) nil))))))
+  "Queue one JSON object for this client. Never blocks, never fails.
+
+Called from session workers publishing events and from the reader thread
+answering requests, so it must do nothing that can wait on a peer."
+  (when (client-live client)
+    (mailbox:send-message (client-outbound client) table)
+    t))
+
+(defun send-all (socket octets)
+  "Send every byte, or return NIL. Nothing is buffered anywhere."
+  (let ((total (length octets)) (sent 0))
+    (loop while (< sent total)
+          do (let ((n (sockets:socket-send socket (subseq octets sent) nil)))
+               (unless (and n (plusp n)) (return-from send-all nil))
+               (incf sent n)))
+    t))
+
+(defun write-one (client table)
+  "One object, one line, straight to the descriptor.
+
+Not through the output stream. An fd-stream keeps what it could not write, and
+a peer that hangs up before its greeting can be sent makes exactly that happen
+-- those bytes then reached a LATER connection, which read the front of
+somebody else's greeting before its own. Measured: 12 corrupted greetings in
+3600 connections when clients hung up immediately, and none at all when the
+same clients read their greeting first. Serialising to a string and sending it
+outright leaves nothing anywhere to leak."
+  (handler-case
+      (send-all (client-socket client)
+                (sb-ext:string-to-octets (concatenate 'string (jzon:stringify table)
+                                                      (string #\Newline))
+                                         :external-format :utf-8))
+    ;; A client that went away is not an error worth reporting to anyone in
+    ;; particular; it is the ordinary end of a connection, and the session
+    ;; carries on without it. It is still worth counting.
+    ;;
+    ;; The connection is finished either way. A write that failed part way
+    ;; through has left half an object on the wire, and a truncated line
+    ;; followed by a whole one is not parseable by anyone.
+    (error (condition)
+      (note-failure "write" condition)
+      (setf (client-live client) nil))))
+
+(defun start-writer (client)
+  "One thread owns the socket. Ordering comes free: the mailbox is FIFO and
+events were enqueued in sequence order by the cell that owns the journal."
+  (setf (client-writer client)
+        (bt:make-thread
+         (lambda ()
+           (loop for table = (mailbox:receive-message (client-outbound client))
+                 until (eq table :done)
+                 while (write-one client table)))
+         :name "vivarium-client-writer")))
+
+(defun stop-writer (client)
+  (setf (client-live client) nil)
+  (mailbox:send-message (client-outbound client) :done)
+  (a:when-let ((writer (client-writer client)))
+    (ignore-errors (bt:join-thread writer :timeout 5))))
 
 (defun next-line (client)
   "The next line, or NIL when this connection is over for any reason at all.
@@ -230,10 +294,11 @@ falls in the gap and none arrives twice."
 
         (t (no (format nil "Unknown command ~a." type)))))))
 
-(defun serve-client (stream)
-  (let ((client (make-client :stream stream :key (gensym "CLIENT"))))
+(defun serve-client (stream socket)
+  (let ((client (make-client :stream stream :socket socket :key (gensym "CLIENT"))))
     (unwind-protect
          (progn
+           (start-writer client)
            (say client (object "type" "ready" "pid" (sb-posix:getpid)
                                "sessions" (coerce (mapcar #'cell-json (actor:all-cells)) 'vector)))
            (loop for line = (and (client-live client) (next-line client))
@@ -243,8 +308,11 @@ falls in the gap and none arrives twice."
                         (error (condition)
                           (say client (object "type" "response" "success" nil
                                               "error" (princ-to-string condition))))))))
+      ;; Unsubscribe before stopping the writer: a session publishing into a
+      ;; mailbox nobody drains would queue for a client that has gone.
       (unwatch-all client)
-      (ignore-errors (close stream)))))
+      (stop-writer client)
+      (ignore-errors (close stream :abort t)))))
 
 (defun serve-connection (connection)
   "Hand one accepted connection to its own thread.
@@ -262,9 +330,10 @@ greeting, and a `Bad file descriptor` that quit the entire organism."
      ;; debugger, and an unhandled condition in any thread ends the process.
      (handler-case
          (serve-client (sockets:socket-make-stream connection
-                                                   :input t :output t
+                                                   :input t :output nil
                                                    :element-type 'character
-                                                   :external-format :utf-8))
+                                                   :external-format :utf-8)
+                       connection)
        (error (condition) (note-failure "client" condition))))
    :name "vivarium-client"))
 
@@ -286,8 +355,9 @@ does it before binding."
                (ignore-errors (sockets:socket-close socket))))
          (error () nil))))
 
-(defun stop ()
-  (bt:with-lock-held (*lock*)
+(defun %stop ()
+  "The teardown itself. Callers hold *LOCK*."
+  (progn
     (when *socket*
       (ignore-errors (sockets:socket-close *socket*))
       (setf *socket* nil))
@@ -301,8 +371,29 @@ does it before binding."
     ;; binding, and closing it is what releases it.
     (when *instance-fd*
       (ignore-errors (sb-posix:close *instance-fd*))
-      (setf *instance-fd* nil)))
+      (setf *instance-fd* nil))
+    (setf *state* :stopped))
   t)
+
+(defun stop ()
+  "Stop whatever this process is currently serving."
+  (bt:with-lock-held (*lock*) (%stop)))
+
+(defun retire (socket)
+  "Stop SOCKET's listener, but only while SOCKET is still the current one.
+
+The accept loop unwinds into this when it ends, and by then the listener it was
+serving may already have been stopped and replaced. Clearing the globals
+unconditionally closed the NEXT daemon's socket and deleted the next daemon's
+file -- a cleanup path acting on state that had been reassigned underneath it,
+which is the same mistake as every other identity bug here.
+
+Rare and vicious: a suite that starts and stops a daemon per test hit this
+about once in ten runs, showing up as a daemon that had just reported itself
+listening being found not to be."
+  (bt:with-lock-held (*lock*)
+    (when (eq socket *socket*)
+      (%stop))))
 
 (defun instance-lock-path (&optional (path (socket-path)))
   (concatenate 'string path ".lock"))
@@ -330,11 +421,28 @@ itself: in the foreground SERVE does not return, so anything printed beforehand
 is printed by every process that is about to be refused -- five racing daemons
 all reported `listening on`, and four of them were not."
   (ensure-directories-exist path)
-  ;; The OS lock is owned by the process, so it says nothing about this process
-  ;; asking twice -- and a second SERVE here would overwrite *SOCKET* and orphan
-  ;; the listener it replaced.
-  (when *socket*
+  ;; Claimed as one transition, not read-then-act. Testing *SOCKET* and then
+  ;; acquiring left two threads in this process both seeing NIL and both going
+  ;; on to bind, which is the very race the OS lock cannot see -- a POSIX record
+  ;; lock is held by the process and grants itself the same lock twice.
+  (unless (claim-startup)
     (error 'daemon-error :detail "This process is already serving."))
+  (let ((started nil))
+    (unwind-protect
+         (progn (serve-bound path background announce)
+                (setf started t))
+      ;; Anything that went wrong leaves the process able to try again.
+      (unless started (release-startup path)))))
+
+(defun release-startup (path)
+  (declare (ignore path))
+  (bt:with-lock-held (*lock*)
+    (when *instance-fd*
+      (ignore-errors (sb-posix:close *instance-fd*))
+      (setf *instance-fd* nil))
+    (setf *state* :stopped)))
+
+(defun serve-bound (path background announce)
   (let ((fd (acquire-instance path)))
     (unless fd
       (error 'daemon-error :detail (format nil "A daemon is already running on ~a." path)))
@@ -351,6 +459,7 @@ all reported `listening on`, and four of them were not."
     (sockets:socket-listen socket 128)
     (setf *socket* socket
           *socket-file* path)
+    (set-state :running)
     (when announce (funcall announce path))
     (flet ((accept-loop ()
              (unwind-protect
@@ -370,7 +479,7 @@ all reported `listening on`, and four of them were not."
                                    ;; here deletes the socket.
                                    ((or (null *socket*) (> (incf failures) 32))
                                     (loop-finish)))))
-               (stop))))
+               (retire socket))))
       (if background
           (bt:make-thread #'accept-loop :name "vivariumd")
           (accept-loop)))
