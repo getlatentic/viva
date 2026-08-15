@@ -165,6 +165,16 @@ the harness knowing anything about retrieval."
     (cond ((and replacement (not (eq replacement context))) (list :context replacement))
           (compacted (list :context compacted)))))
 
+(defmethod agent:call-in-tool-context ((agent workspace-agent) thunk)
+  "Everything a workspace tool reads, re-established.
+
+The one place that knows which specials a run depends on, so a parallel batch
+and an ordinary one see the same world."
+  (let ((*agent* agent)
+        (workspace:*environment* (agent-environment agent))
+        (workspace:*excluded-paths* (session-paths agent)))
+    (funcall thunk)))
+
 (defmethod agent:before-tool ((agent workspace-agent) call)
   "Let extensions refuse or rewrite a call before it runs.
 
@@ -310,11 +320,11 @@ That is what makes an interactive shell and an IPC session the same object."
   ;; :BEFORE-REQUEST handler that reads a file -- which is exactly what a memory
   ;; extension does -- would otherwise fail on every request, be caught, and be
   ;; reported as a warning nobody reads.
-  (let* ((produced (let ((*agent* agent)
-                         (workspace:*excluded-paths* (session-paths agent)))
-                     (workspace:with-environment ((agent-environment agent))
-                       (let ((message (extension:fire :before-request (user-message text))))
-                         (loop*:run agent (list message) :context (agent-context agent)))))))
+  (let* ((produced (agent:call-in-tool-context
+                    agent
+                    (lambda ()
+                      (let ((message (extension:fire :before-request (user-message text))))
+                        (loop*:run agent (list message) :context (agent-context agent)))))))
     (extension:fire :agent-end (list :agent agent :messages produced))
     (values (last-assistant-text produced) produced)))
 
@@ -483,12 +493,28 @@ a thread the loop spawned, so a delegate running in parallel would find no
 environment at all and every tool would refuse."
   (let* ((lane (format nil "lane-~d" (incf *lane-counter*)))
          (child (sub-agent parent lane :request-limit request-limit)))
-    (workspace:with-environment ((agent-environment child))
-      (let ((*agent* child)
-            (workspace:*excluded-paths* (session-paths child)))
-        (let ((produced (loop*:run child (list (user-message task))
-                                   :context (agent-context child))))
-          (values (or (last-assistant-text produced) "") lane))))))
+    (agent:call-in-tool-context
+     child
+     (lambda ()
+       (let ((produced (loop*:run child (list (user-message task))
+                                  :context (agent-context child))))
+         (values (or (last-assistant-text produced) "") lane))))))
+
+(defun delegate-async (parent task &key (request-limit 20))
+  "Start a delegate and return the OPERATION rather than waiting.
+
+The wrapper is not decoration: a spawned thread does not inherit the caller's
+dynamic bindings, so without it the worker would find no environment and every
+tool it called would refuse."
+  (let* ((lane (format nil "lane-~d" (incf *lane-counter*)))
+         (child (sub-agent parent lane :request-limit request-limit)))
+    (operation:start
+     (lambda ()
+       (let ((produced (loop*:run child (list (user-message task))
+                                  :context (agent-context child))))
+         (or (last-assistant-text produced) "")))
+     :label lane
+     :wrapper (lambda (thunk) (agent:call-in-tool-context child thunk)))))
 
 (tool:define-tool delegate-tool (args context)
   :name "delegate"

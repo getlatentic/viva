@@ -63,7 +63,14 @@ pool would cost more coordination than it saves."
               (let ((threads (mapcar (lambda (call)
                                        (bt:make-thread
                                         (lambda ()
-                                          (multiple-value-list (execute-one agent call context)))
+                                          ;; Through the agent, because the
+                                          ;; caller's dynamic bindings do not
+                                          ;; reach here on their own.
+                                          (agent:call-in-tool-context
+                                           agent
+                                           (lambda ()
+                                             (multiple-value-list
+                                              (execute-one agent call context)))))
                                         :name (format nil "tool-~a" (msg:tool-call-name call))))
                                      calls)))
                 (mapcar #'bt:join-thread threads))

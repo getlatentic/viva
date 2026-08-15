@@ -952,3 +952,92 @@ rather than leaving it to be rediscovered a third time."
       ;; that uses it silently matches nothing.
       (is = 0 (search canonical (first excluded)))
       (session:close-session session))))
+
+;;; Operations, and parallel tools
+
+(define-test "an operation runs elsewhere and is waited for by name"
+  (let* ((gate (bt:make-semaphore :count 0))
+         (op (operation:start (lambda () (bt:wait-on-semaphore gate) :finished)
+                              :label "slow")))
+    (is eq :running (operation:status op))
+    (false (operation:finished-p op))
+    (bt:signal-semaphore gate)
+    (multiple-value-bind (result state) (operation:await op :timeout 5)
+      (is eq :finished result)
+      (is eq :done state))
+    ;; Findable by id afterwards, which is what makes it an operation rather
+    ;; than a thread nobody kept.
+    (is eq :done (operation:status (operation:operation-id op)))))
+
+(define-test "a failed operation is a state, not a lost thread"
+  ;; An operation whose thread died silently is indistinguishable from one
+  ;; still running, and AWAIT would block until the timeout.
+  (let ((op (operation:start (lambda () (error "deliberate")))))
+    (multiple-value-bind (result state) (operation:await op :timeout 5)
+      (is eq nil result)
+      (is eq :failed state))
+    (true (typep (operation:operation-error op) 'error))))
+
+(define-test "suspension is cooperative, and cancellation is asked for"
+  (let* ((reached (bt:make-semaphore :count 0))
+         (steps 0)
+         (op (operation:start (lambda ()
+                                (loop repeat 50
+                                      do (incf steps)
+                                         (bt:signal-semaphore reached)
+                                         (operation:checkpoint)
+                                         (sleep 0.01))
+                                :ran-to-the-end))))
+    (bt:wait-on-semaphore reached :timeout 5)
+    (true (operation:suspend op))
+    (is eq :suspended (operation:status op))
+    ;; Settle first. SUSPEND can land while the operation is mid-step, so one
+    ;; more completes before it reaches the checkpoint it agreed to stop at --
+    ;; which is what cooperative means. The claim is that it stops INCREASING,
+    ;; not that it stops instantly, and asserting the latter is a race in the
+    ;; test rather than a defect in the pause.
+    (sleep 0.15)
+    (let ((frozen steps))
+      (sleep 0.15)
+      (is = frozen steps))
+    (true (operation:resume op))
+    (operation:cancel op)
+    (multiple-value-bind (result state) (operation:await op :timeout 5)
+      (declare (ignore result))
+      ;; Stopped where it agreed to stop, rather than being killed mid-step.
+      (is eq :cancelled state)
+      (true (< steps 50)))))
+
+(defclass parallel-agent (harness:workspace-agent)
+  ((script :initarg :script :initform '() :accessor script)))
+
+(defmethod client:complete ((agent parallel-agent) messages)
+  (declare (ignore messages))
+  (or (pop (script agent))
+      (msg:make-assistant-message :content (list (msg:make-text "done")) :stop-reason :stop)))
+
+(define-test "tools in a parallel batch still find their environment"
+  ;; A dynamic rebinding does not cross into a spawned thread, so before
+  ;; CALL-IN-TOOL-CONTEXT every tool in a parallel batch failed with
+  ;; "No environment bound" -- and PARALLEL-TOOLS is a supported setting.
+  (with-repository (environment)
+    (let ((agent (make-instance 'parallel-agent
+                                :environment environment :resource-environment environment
+                                :script (list (msg:make-assistant-message
+                                               :content (list (msg:make-tool-call
+                                                               :id "c1" :name "ls" :arguments (args))
+                                                              (msg:make-tool-call
+                                                               :id "c2" :name "read"
+                                                               :arguments (args "path" "src/core.lisp")))
+                                               :stop-reason :tool-calls)))))
+      (setf (agent:agent-parallel-tools-p agent) t)
+      ;; Deliberately NOT inside WITH-ENVIRONMENT: the agent must re-establish it.
+      (let* ((produced (loop*:run agent (list (msg:make-user-message
+                                               :content (list (msg:make-text "go"))))))
+             (results (remove-if-not #'msg:tool-result-message-p produced)))
+        (is = 2 (length results))
+        (dolist (result results)
+          (false (msg:tool-result-message-error-p result))
+          (false (mentions "No environment bound" (msg:tool-result-message-output result))))
+        (true (mentions "README.md" (msg:tool-result-message-output (first results))))
+        (true (mentions "defun total" (msg:tool-result-message-output (second results))))))))

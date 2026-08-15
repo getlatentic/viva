@@ -56,6 +56,7 @@
                              (:file "templates")
                              (:file "extension")
                              (:file "session")
+                             (:file "operation")
                              (:file "compaction")
                              (:file "models")
                              (:file "harness")))))

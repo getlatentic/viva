@@ -54,6 +54,7 @@
            #:system-prompt #:tools #:steering-messages #:follow-up-messages
            #:prepare-next-turn #:should-stop-after-turn #:emit
            #:before-tool #:after-tool #:before-request #:after-response
+           #:call-in-tool-context
            #:queued-agent #:queue-steering #:queue-follow-up))
 
 (defpackage #:vivarium.stream

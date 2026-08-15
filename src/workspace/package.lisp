@@ -130,6 +130,16 @@
            #:object #:record-p #:entry #:entry-id #:entry-parent #:entry-kind #:entry-payload
            #:entry-time))
 
+(defpackage #:vivarium.operation
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:bt #:bordeaux-threads))
+  (:export #:operation #:operation-id #:operation-label #:operation-state
+           #:operation-result #:operation-error
+           #:start #:status #:await #:await-all #:finished-p
+           #:suspend #:resume #:cancel #:checkpoint #:cancelled
+           #:find-operation #:all-operations #:forget-finished #:*operation*))
+
 (defpackage #:vivarium.compaction
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
@@ -161,6 +171,7 @@
                     (#:extension #:vivarium.extension)
                     (#:session #:vivarium.session)
                     (#:compaction #:vivarium.compaction)
+                    (#:operation #:vivarium.operation)
                     (#:template #:vivarium.template))
   (:export #:workspace-agent #:make-workspace-agent #:agent-environment
            #:agent-skills #:agent-templates #:agent-session #:agent-extensions #:agent-listener
@@ -169,6 +180,6 @@
            #:agent-extension-directories #:agent-compaction #:agent-active-tools
            #:compact-now #:set-model #:set-active-tools #:apply-settings
            #:send-message #:append-custom #:navigate #:tree-lines #:close-agent
-           #:delegate #:delegate-tool #:sub-agent #:agent-lane
+           #:delegate #:delegate-tool #:sub-agent #:agent-lane #:delegate-async
            #:ask #:converse #:resume #:refresh-resources #:harness-tool-set #:record
            #:*agent* #:*default-model* #:*default-provider-name*))

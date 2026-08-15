@@ -109,6 +109,17 @@ NIL sends it unchanged; a list of messages replaces it.")
 NIL keeps it; a message replaces it.")
   (:method ((agent agent) message) (declare (ignore message)) nil))
 
+(defgeneric call-in-tool-context (agent thunk)
+  (:documentation "Call THUNK with whatever dynamic state a tool needs.
+
+The loop runs a parallel batch in spawned threads, and a dynamic REBINDING does
+not cross into one -- a thread sees the global value, not the caller's. So an
+agent whose tools read a special bound per run would have every tool in a
+parallel batch fail, and PARALLEL-TOOLS is a supported setting.
+
+The loop must not know WHICH specials matter; it knows only that the agent does.")
+  (:method ((agent agent) thunk) (funcall thunk)))
+
 (defgeneric emit (agent event)
   (:documentation "Receive one loop event, a plist beginning with :TYPE.")
   (:method ((agent agent) event) (declare (ignore event)) nil))

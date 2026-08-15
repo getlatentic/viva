@@ -36,7 +36,8 @@
                     (#:session #:vivarium.session)
                     (#:harness #:vivarium.harness)
                     (#:compaction #:vivarium.compaction)
-                    (#:template #:vivarium.template)))
+                    (#:template #:vivarium.template)
+                    (#:operation #:vivarium.operation)))
 
 (in-package #:vivarium.tests)
 
