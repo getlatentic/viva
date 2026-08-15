@@ -52,9 +52,10 @@ an instruction file. Returned as an unconfined environment over its root."
 (defun run-tool (tool &rest plist)
   "Run TOOL the way the loop does. Returns (values OUTPUT ERROR-P).
 
-Named RUN-TOOL, not CALL-TOOL: SUITE.LISP already has a CALL-TOOL that builds a
-scripted assistant message, every test file shares one package, and redefining
-it broke eleven tests in files this one never mentions."
+EVERY TEST FILE SHARES ONE PACKAGE, so a helper here silently replaces one of
+the same name anywhere else and breaks tests in files it never mentions. It has
+happened twice: CALL-TOOL, then SAY. `vivarium check` now refuses a duplicate
+rather than leaving it to be rediscovered a third time."
   (let ((result (tool:execute tool (apply #'args plist) nil)))
     (values (tool:tool-result-output result) (tool:tool-result-error-p result))))
 
@@ -359,10 +360,12 @@ it broke eleven tests in files this one never mentions."
       (session:append-record session :tool-finished "name" "read" "ms" 12)
       (session:append-record session :usage "prompt_tokens" 100 "completion_tokens" 7)
       (session:close-session session)
-      (let* ((entries (session:load-session (session:session-path session)))
-             (messages (session:session-messages entries)))
-        ;; A header, a message and two records.
-        (is = 4 (length entries))
+      (let* ((reloaded (session:load-session (session:session-path session)))
+             (entries (session:entries-of reloaded))
+             (messages (session:session-messages reloaded)))
+        ;; One message and two records. The header is not an entry -- it sets
+        ;; the session's own fields.
+        (is = 3 (length entries))
         (is = 1 (length messages))
         (is string= "hello" (msg:text-of (first messages)))
         (is = 2 (length (session:records-of entries)))
@@ -370,3 +373,98 @@ it broke eleven tests in files this one never mentions."
         (is = 100 (gethash "prompt_tokens"
                            (session:entry-payload
                             (first (session:records-of entries :usage)))))))))
+
+;;; The session tree
+
+(defun ws-scratch-session ()
+  (session:open-session
+   :directory (uiop:parse-native-namestring
+               (format nil "/tmp/vivarium-tests-session-~36r/" (random (expt 2 40) (make-random-state t))))
+   :cwd "/somewhere"))
+
+(defun ws-say (session role text)
+  (session:record-entry session :message
+                        (if (eq :user role)
+                            (msg:make-user-message :content (list (msg:make-text text)))
+                            (msg:make-assistant-message :content (list (msg:make-text text))))))
+
+(define-test "a session round-trips through the file, tree and all"
+  (let ((session (ws-scratch-session)))
+    (ws-say session :user "one")
+    (ws-say session :assistant "two")
+    (session:append-record session :usage "prompt_tokens" 10 "completion_tokens" 2)
+    (ws-say session :user "three")
+    (session:close-session session)
+    (let ((reloaded (session:load-session (session:session-path session))))
+      (is string= "/somewhere" (session:session-cwd reloaded))
+      ;; Records are in the file and out of the conversation.
+      (is = 1 (length (session:records-of reloaded)))
+      (is = 3 (length (session:context-entries reloaded)))
+      (is = 3 (length (session:session-messages reloaded)))
+      (is string= "three" (msg:text-of (first (last (session:session-messages reloaded)))))
+      ;; And the tree really is a chain, not a pile.
+      (let ((chain (session:context-entries reloaded)))
+        (false (session:entry-parent (first chain)))
+        (is string= (session:entry-id (first chain))
+            (session:entry-parent (second chain)))))))
+
+(define-test "a branch shares its history and neither side is copied"
+  (let ((session (ws-scratch-session)))
+    (ws-say session :user "shared")
+    (let ((fork-point (session:session-leaf session)))
+      (ws-say session :user "down the first branch")
+      (is = 2 (length (session:session-messages session)))
+      ;; Go back and take the other road.
+      (session:fork session fork-point)
+      (ws-say session :user "down the second branch")
+      (let ((messages (session:session-messages session)))
+        (is = 2 (length messages))
+        (is string= "shared" (msg:text-of (first messages)))
+        (is string= "down the second branch" (msg:text-of (second messages))))
+      ;; Both children hang off the same parent, in one file.
+      (is = 2 (length (session:children-of session fork-point))))))
+
+(define-test "compaction replaces the past and keeps the tail"
+  (let ((session (ws-scratch-session)))
+    (dolist (text '("first" "second" "third" "fourth"))
+      (ws-say session :user text))
+    (session:compact session "They discussed four things." :keep 1)
+    (ws-say session :user "after")
+    (let ((messages (session:session-messages session)))
+      ;; summary + retained tail + the new turn
+      (is = 3 (length messages))
+      (true (mentions "They discussed four things" (msg:text-of (first messages))))
+      (is string= "fourth" (msg:text-of (second messages)))
+      (is string= "after" (msg:text-of (third messages))))
+    ;; Nothing was destroyed: the pre-compaction turns are still on disk.
+    (session:close-session session)
+    (let ((reloaded (session:load-session (session:session-path session))))
+      ;; Four turns before the compaction, one after: all still on disk, and
+      ;; reachable by walking a leaf that predates the compaction.
+      (is = 5 (count :message (session:entries-of reloaded) :key #'session:entry-kind))
+      (is = 1 (count :compaction (session:entries-of reloaded) :key #'session:entry-kind)))))
+
+(define-test "a run can be resumed from what was written"
+  (with-repository (environment)
+    (let* ((directory (uiop:parse-native-namestring
+                       (format nil "~a/.sessions/" (env:env-cwd environment))))
+           (session (session:open-session :directory directory)))
+      (ws-say session :user "what is here?")
+      (session:record-entry session :message
+                            (msg:make-assistant-message
+                             :content (list (msg:make-tool-call :id "c1" :name "ls" :arguments (args)))
+                             :stop-reason :tool-calls))
+      (session:record-entry session :message
+                            (msg:make-tool-result-message :call-id "c1" :output "README.md"))
+      (session:close-session session)
+      (let ((agent (harness:make-workspace-agent :cwd (env:env-cwd environment)
+                                                 :load-resources nil)))
+        (multiple-value-bind (agent restored)
+            (harness:resume agent (session:session-path session))
+          (is = 3 restored)
+          ;; The tool call and its result must both come back, and in order, or
+          ;; the provider rejects the conversation on the very next request.
+          (let ((messages (loop*:context-messages (harness:agent-context agent))))
+            (is = 3 (length messages))
+            (is string= "c1" (msg:tool-call-id (first (msg:tool-calls-in (second messages)))))
+            (is string= "c1" (msg:tool-result-message-call-id (third messages)))))))))

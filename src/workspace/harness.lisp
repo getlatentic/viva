@@ -199,6 +199,18 @@ That is what makes an interactive shell and an IPC session the same object."
                          (loop*:run agent (list message) :context (agent-context agent)))))))
     (values (last-assistant-text produced) produced)))
 
+(defun resume (agent session)
+  "Continue a session written earlier: rebuild the live branch into the agent's
+context so the next request carries it.
+
+SESSION may be a loaded session or a path. The conversation reconstructed is the
+one at the leaf, so a session that was compacted resumes from its summary and a
+session that was branched resumes on the branch last worked on."
+  (let* ((session (if (session:session-p session) session (session:load-session session)))
+         (messages (session:session-messages session)))
+    (setf (agent-context agent) (loop*:make-context :messages messages))
+    (values agent (length messages))))
+
 (defun converse (agent prompts)
   "Ask each of PROMPTS in turn on one conversation. Returns the replies."
   (mapcar (lambda (prompt) (ask agent prompt)) prompts))

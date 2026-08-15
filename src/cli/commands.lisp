@@ -44,9 +44,53 @@ only exists once a model server is up."
         (when fasl (ignore-errors (delete-file fasl)))
         (values (not failure-p) (nreverse complaints))))))
 
+(defun suite-files ()
+  "The test files ASDF actually loads.
+
+Not every .lisp under tests/: live-*.lisp and smoke.lisp are standalone scripts
+run by hand against a real model, are never loaded together, and may reuse
+whatever names they like."
+  (handler-case
+      (mapcar #'asdf:component-pathname
+              (asdf:component-children
+               (asdf:find-component "vivarium/tests" "tests")))
+    (error () (directory (merge-pathnames "tests/*.lisp" (repository-root))))))
+
+(defun test-helpers ()
+  "Every (DEFUN NAME ...) in the loaded test files, as (name . file)."
+  (loop for file in (suite-files)
+        append (with-open-file (in file)
+                 (loop for line = (read-line in nil nil)
+                       while line
+                       when (a:starts-with-subseq "(defun " line)
+                         collect (cons (subseq line 7 (or (position #\Space line :start 7)
+                                                          (position #\( line :start 7)
+                                                          (length line)))
+                                       (file-namestring file))))))
+
+(defun duplicate-helpers ()
+  "Helpers defined in more than one test file.
+
+The test files share one package, so the later definition silently replaces the
+earlier and breaks tests in a file it never mentions. Diagnosing that from the
+failures is genuinely hard -- each broken test passes in isolation -- and it has
+happened twice, so it is checked rather than remembered."
+  (let ((seen (make-hash-table :test #'equal)) (clashes '()))
+    (loop for (name . file) in (test-helpers)
+          do (a:if-let ((first-file (gethash name seen)))
+               (unless (string= first-file file)
+                 (pushnew (format nil "~a is defined in both ~a and ~a" name first-file file)
+                          clashes :test #'string=))
+               (setf (gethash name seen) file)))
+    (nreverse clashes)))
+
 (defun command-check (parsed)
   (declare (ignore parsed))
   (let ((failed 0))
+    (a:when-let ((clashes (duplicate-helpers)))
+      (incf failed (length clashes))
+      (format t "~&duplicate test helpers:~%")
+      (dolist (clash clashes) (format t "~&  ~a~%" clash)))
     (format t "~&checking ~d experiment~:p~%" (length (experiment-files)))
     (dolist (file (experiment-files))
       (multiple-value-bind (ok-p complaints) (compile-quietly file)

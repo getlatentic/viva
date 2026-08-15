@@ -106,11 +106,14 @@
   (:local-nicknames (#:a #:alexandria)
                     (#:jzon #:com.inuoe.jzon)
                     (#:msg #:vivarium.message))
-  (:export #:session #:open-session #:session-path #:session-id #:session-entries
-           #:record-entry #:entries-of #:close-session #:load-session
-           #:session-messages #:latest-session #:session-directory #:usage-of
-           #:append-record #:records-of #:+format-version+
-           #:entry #:entry-kind #:entry-payload #:entry-time))
+  (:export #:session #:session-p #:open-session #:session-path #:session-id
+           #:session-entries #:session-cwd #:session-leaf #:session-parent
+           #:record-entry #:append-entry #:append-record #:entries-of #:records-of
+           #:close-session #:load-session #:session-messages #:latest-session
+           #:session-directory #:usage-of #:+format-version+ #:+conversation-kinds+
+           #:ancestry #:context-entries #:children-of #:entry-at #:compact #:fork
+           #:record-p #:entry #:entry-id #:entry-parent #:entry-kind #:entry-payload
+           #:entry-time))
 
 (defpackage #:vivarium.models
   (:use #:cl)
@@ -137,5 +140,5 @@
            #:agent-request-limit #:agent-requests #:agent-context #:agent-aborting
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
            #:agent-extension-directories
-           #:ask #:converse #:refresh-resources #:harness-tool-set #:record
+           #:ask #:converse #:resume #:refresh-resources #:harness-tool-set #:record
            #:*agent* #:*default-model* #:*default-provider-name*))
