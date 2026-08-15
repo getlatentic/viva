@@ -585,3 +585,43 @@ rather than leaving it to be rediscovered a third time."
         ;; by clearing the list could never re-enable anything.
         (setf (harness:agent-active-tools agent) nil)
         (is = 8 (length (agent:tools agent)))))))
+
+;;; Resume
+
+(define-test "a resumed session restores the settings it was run under"
+  ;; A conversation replayed under a different model or a wider tool set is not
+  ;; the conversation that was recorded, and the transcript gives no sign.
+  (with-repository (environment)
+    (let* ((directory (uiop:parse-native-namestring
+                       (format nil "~a/.sessions/" (env:env-cwd environment))))
+           (session (session:open-session :directory directory))
+           (agent (harness:make-workspace-agent :cwd (env:env-cwd environment)
+                                                :session session :load-resources nil)))
+      (ws-say session :user "hello")
+      (harness:set-model agent "some-other-model")
+      (harness:set-active-tools agent '("read"))
+      (session:close-session session)
+      (let ((fresh (harness:make-workspace-agent :cwd (env:env-cwd environment)
+                                                 :model "default-model" :load-resources nil)))
+        (harness:resume fresh (session:session-path session))
+        (is string= "some-other-model" (agent:agent-model fresh))
+        (is equal '("read") (harness:agent-active-tools fresh))
+        (is = 1 (length (agent:tools fresh)))))))
+
+(define-test "sessions are found by project, and by prefix of an id"
+  (let* ((where "/tmp/vivarium-tests-project")
+         (directory (session:session-directory where)))
+    (ignore-errors (uiop:delete-directory-tree directory :validate t))
+    (let ((session (session:open-session :directory directory :cwd where)))
+      (ws-say session :user "the opening question")
+      (session:close-session session)
+      (let ((found (session:list-sessions :cwd where)))
+        (is = 1 (length found))
+        (is string= where (session:summary-cwd (first found)))
+        (is = 1 (session:summary-messages (first found)))
+        (true (mentions "the opening question" (session:summary-opening (first found))))
+        ;; And by any unambiguous prefix, which is what a person types.
+        (let ((id (session:summary-id (first found))))
+          (is string= id (session:summary-id (session:find-session (subseq id 0 8) :cwd where)))
+          (is string= id (session:summary-id (session:latest-session where)))))
+      (ignore-errors (uiop:delete-directory-tree directory :validate t)))))

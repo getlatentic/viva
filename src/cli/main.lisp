@@ -35,6 +35,7 @@ ORDINARY WORK
       --root DIR              refuse any path outside DIR
       --limit N               model requests per prompt (default 60)
       --colour false          plain output, for a log
+      --resume [ID]           continue the last session here, or one by id
   ipc [options]               serve one agent over stdin/stdout as JSON lines
       (same options; --limit defaults to 200)
       --append TEXT           add one line to the system prompt

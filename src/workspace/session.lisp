@@ -49,14 +49,29 @@
   (index (make-hash-table :test #'equal) :type hash-table)
   (leaf nil))
 
-(defparameter +conversation-kinds+ '(:message :compaction :branch-summary :custom)
+(defparameter +conversation-kinds+
+  '(:message :compaction :branch-summary :custom
+    ;; Settings changes are part of the conversation's history, not telemetry:
+    ;; a session resumed under a different model or a wider tool set is not the
+    ;; session that was recorded.
+    :model-change :thinking-change :active-tools-change)
   "Kinds that live in the tree. Everything else is a record.")
 
 (defun record-p (entry)
   (not (member (entry-kind entry) +conversation-kinds+)))
 
-(defun session-directory ()
-  (merge-pathnames ".vivarium/sessions/" (user-homedir-pathname)))
+(defun slug (path)
+  "A directory name that survives being a path. Pi's --<path>-- scheme: the
+separators become dashes so one flat directory holds every project's sessions
+and `latest for this project` is a glob rather than a scan of every file."
+  (let ((flat (substitute #\- #\/ (string-trim "/" (or path "")))))
+    (if (zerop (length flat)) "root" flat)))
+
+(defun session-directory (&optional cwd)
+  "Where sessions live. Namespaced by working directory when one is given, so
+resuming asks for the last session HERE rather than the last session anywhere."
+  (let ((root (merge-pathnames ".vivarium/sessions/" (user-homedir-pathname))))
+    (if cwd (merge-pathnames (format nil "~a/" (slug cwd)) root) root)))
 
 (defun new-id ()
   (multiple-value-bind (second minute hour day month year) (decode-universal-time (get-universal-time))
@@ -350,6 +365,41 @@ Returns (values PROMPT COMPLETION REQUESTS-WITH-USAGE)."
           (incf completion (or (gethash "completion_tokens" usage) 0))
           (incf counted))))))
 
-(defun latest-session (&optional (directory (session-directory)))
-  (a:when-let ((files (ignore-errors (directory (merge-pathnames "*.jsonl" directory)))))
-    (first (sort files #'string> :key #'namestring))))
+(defstruct (summary (:conc-name summary-))
+  (id "" :type string) (path "" :type string) (cwd "" :type string)
+  (time 0 :type integer) (messages 0 :type integer) (opening "" :type string))
+
+(defun describe-session (path)
+  "Enough to choose one from a list, without loading the whole file into a
+picker: when it was, how long it ran, and what was first asked."
+  (let* ((session (ignore-errors (load-session path)))
+         (messages (and session (session-messages session))))
+    (when session
+      (make-summary :id (session-id session) :path (namestring path)
+                    :cwd (session-cwd session)
+                    :time (reduce #'max (mapcar #'entry-time (session-entries session))
+                                  :initial-value 0)
+                    :messages (length messages)
+                    :opening (a:if-let ((first-message (first messages)))
+                               (let ((text (substitute #\Space #\Newline (msg:text-of first-message))))
+                                 (subseq text 0 (min 70 (length text))))
+                               "")))))
+
+(defun list-sessions (&key cwd (limit 20))
+  "Sessions for CWD, or everywhere when CWD is NIL. Newest first."
+  (let ((files (if cwd
+                   (ignore-errors (directory (merge-pathnames "*.jsonl" (session-directory cwd))))
+                   (ignore-errors (directory (merge-pathnames "*/*.jsonl" (session-directory)))))))
+    (let ((found (sort (remove nil (mapcar #'describe-session files)) #'> :key #'summary-time)))
+      (subseq found 0 (min limit (length found))))))
+
+(defun find-session (id &key cwd)
+  "A session by id or by any unambiguous prefix of one."
+  (let ((matches (remove-if-not (lambda (each) (a:starts-with-subseq id (summary-id each)))
+                                (list-sessions :cwd cwd :limit 1000))))
+    (cond ((null matches) nil)
+          ((rest matches) (error "~a matches ~d sessions. Use more of the id." id (length matches)))
+          (t (first matches)))))
+
+(defun latest-session (&optional cwd)
+  (first (list-sessions :cwd cwd :limit 1)))

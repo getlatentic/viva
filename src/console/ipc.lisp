@@ -178,11 +178,32 @@
         ((string= "set_model" type)
          (handler-case
              (let ((choice (models:resolve-model (text-argument command "model"))))
-               (setf (agent:agent-model agent) (models:choice-model choice)
-                     (agent:agent-provider agent) (models:choice-provider choice)
+               (setf (agent:agent-provider agent) (models:choice-provider choice)
                      (agent:agent-reasoning-effort agent) (models:choice-effort choice))
+               (harness:set-model agent (models:choice-model choice))
                (respond server id type "model" (models:choice-model choice)))
            (error (condition) (fail server id type (princ-to-string condition)))))
+
+        ((string= "set_active_tools" type)
+         (let ((names (gethash "tools" command)))
+           (harness:set-active-tools agent (and names (coerce names 'list)))
+           (respond server id type "tools"
+                    (coerce (mapcar #'tool:tool-name (agent:tools agent)) 'vector))))
+
+        ((string= "compact" type)
+         (a:if-let ((context (harness:compact-now agent :reason :requested)))
+           (respond server id type "messages" (length (loop*:context-messages context)))
+           (fail server id type "Nothing to compact.")))
+
+        ((string= "list_sessions" type)
+         (respond server id type "sessions"
+                  (coerce (mapcar (lambda (each)
+                                    (object "id" (session:summary-id each)
+                                            "messages" (session:summary-messages each)
+                                            "opening" (session:summary-opening each)))
+                                  (session:list-sessions
+                                   :cwd (env:env-cwd (harness:agent-environment agent))))
+                          'vector)))
 
         ((string= "new_session" type)
          (setf (harness:agent-context agent) (loop*:make-context))
@@ -216,11 +237,11 @@
         (t (fail server id type (format nil "Unknown command type ~a." type)))))))
 
 (defun run-ipc (&key model cwd root (in *standard-input*) (out *standard-output*)
-                  (request-limit 200) extra-prompt extension-directories)
+                  (request-limit 200) extra-prompt extension-directories resume)
   "Serve one agent over stdin/stdout until EOF or an exit command."
   (let ((server (make-server :out out)))
     (multiple-value-bind (agent choice complaints)
-        (build-agent :model model :cwd cwd :root root
+        (build-agent :model model :cwd cwd :root root :resume resume
                      :extra-prompt extra-prompt :extension-directories extension-directories
                      :listener (ipc-listener server) :request-limit request-limit)
       (setf (server-agent server) agent)

@@ -9,13 +9,26 @@
 (in-package #:vivarium.console)
 
 (defun build-agent (&key model cwd root listener (request-limit 60) (stream t)
-                      session-directory (persist t) extra-prompt extension-directories)
-  "An agent configured from the environment. Returns (values AGENT CHOICE COMPLAINTS)."
+                      session-directory (persist t) extra-prompt extension-directories
+                      resume)
+  "An agent configured from the environment. Returns (values AGENT CHOICE COMPLAINTS).
+
+RESUME is a session id, a prefix of one, or T for the most recent in this
+directory. Sessions are namespaced by working directory, so `the last one` means
+the last one HERE."
   (let* ((choice (models:resolve-model model))
+         (where (or cwd (uiop:native-namestring (uiop:getcwd))))
+         (earlier (when resume
+                    (or (if (eq t resume)
+                            (session:latest-session where)
+                            (session:find-session resume :cwd where))
+                        (error "No session to resume in ~a." where))))
          (session (when persist
                     (if session-directory
-                        (session:open-session :directory session-directory)
-                        (session:open-session)))))
+                        (session:open-session :directory session-directory :cwd where)
+                        (session:open-session :directory (session:session-directory where)
+                                              :cwd where
+                                              :parent (and earlier (session:summary-id earlier)))))))
     (multiple-value-bind (agent complaints)
         (harness:make-workspace-agent
          :cwd (or cwd (uiop:native-namestring (uiop:getcwd)))
@@ -28,6 +41,11 @@
          :extra-prompt extra-prompt
          :extension-directories extension-directories
          :request-limit request-limit)
+      (when earlier
+        ;; Into a NEW file, with the old one named as its parent: resuming must
+        ;; not append to a transcript that another process may still hold open,
+        ;; and the parent link keeps the history findable.
+        (harness:resume agent (session:summary-path earlier)))
       (setf (agent:agent-stream-p agent) stream
             ;; The limit comes from the chosen model, so switching model changes
             ;; when compaction fires rather than leaving a default that is wrong
@@ -165,6 +183,18 @@
                          (declare (ignore argument))
                          (setf (harness:agent-context agent) (loop*:make-context))
                          (format out "  new conversation~%")))
+   (make-verb :name "sessions" :blurb "earlier sessions in this directory"
+              :handler (lambda (agent argument out)
+                         (declare (ignore argument))
+                         (let ((found (session:list-sessions
+                                       :cwd (env:env-cwd (harness:agent-environment agent))
+                                       :limit 10)))
+                           (if (null found)
+                               (format out "  none yet~%")
+                               (dolist (each found)
+                                 (format out "  ~a  ~3d msg  ~a~%"
+                                         (session:summary-id each) (session:summary-messages each)
+                                         (session:summary-opening each)))))))
    (make-verb :name "compact" :blurb "summarise the conversation so far and continue"
               :handler (lambda (agent argument out)
                          (declare (ignore argument))
@@ -221,15 +251,17 @@
           (length (harness:agent-extensions agent)))
   (dolist (complaint complaints)
     (format out "~a~%" (paint (format nil "  ! ~a" complaint) :yellow)))
+  (a:when-let ((restored (loop*:context-messages (harness:agent-context agent))))
+    (format out "  resumed ~d message(s)~%" (length restored)))
   (format out "  /help for commands, Ctrl-D to leave~%~%"))
 
 (defun run-shell (&key model cwd root (in *standard-input*) (out *standard-output*)
-                    (request-limit 60) extra-prompt extension-directories)
+                    (request-limit 60) extra-prompt extension-directories resume)
   "Read prompts from IN, run them, paint the result on OUT. Returns an exit code."
   (let ((view (make-view :stream out))
         (*running* t))
     (multiple-value-bind (agent choice complaints)
-        (build-agent :model model :cwd cwd :root root
+        (build-agent :model model :cwd cwd :root root :resume resume
                      :extra-prompt extra-prompt :extension-directories extension-directories
                      :listener (shell-listener view) :request-limit request-limit)
       (banner agent choice complaints out)

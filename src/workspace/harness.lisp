@@ -265,17 +265,52 @@ That is what makes an interactive shell and an IPC session the same object."
                          (loop*:run agent (list message) :context (agent-context agent)))))))
     (values (last-assistant-text produced) produced)))
 
+(defun apply-settings (agent session)
+  "Restore what the session recorded about how it was being run.
+
+A resumed conversation with the wrong model or a wider tool set than it had is
+not the same session: the transcript was produced under settings that are part
+of it, and silently changing them is how a resumed run stops reproducing."
+  (dolist (entry (session:entries-of session))
+    (case (session:entry-kind entry)
+      (:model-change
+       (a:when-let ((model (gethash "model" (session:entry-payload entry))))
+         (setf (agent:agent-model agent) model)))
+      (:active-tools-change
+       (let ((names (gethash "tools" (session:entry-payload entry))))
+         (setf (agent-active-tools agent)
+               (and names (plusp (length names)) (coerce names 'list))))))))
+
 (defun resume (agent session)
   "Continue a session written earlier: rebuild the live branch into the agent's
-context so the next request carries it.
+context, and restore the settings it was run under.
 
-SESSION may be a loaded session or a path. The conversation reconstructed is the
-one at the leaf, so a session that was compacted resumes from its summary and a
-session that was branched resumes on the branch last worked on."
-  (let* ((session (if (session:session-p session) session (session:load-session session)))
+SESSION may be a loaded session, a path, or a summary. The conversation
+reconstructed is the one at the leaf, so a compacted session resumes from its
+summary and a branched one resumes on the branch last worked on."
+  (let* ((session (etypecase session
+                    (session:session session)
+                    (session:summary (session:load-session (session:summary-path session)))
+                    ((or string pathname) (session:load-session session))))
          (messages (session:session-messages session)))
+    (apply-settings agent session)
     (setf (agent-context agent) (loop*:make-context :messages messages))
     (values agent (length messages))))
+
+(defun set-model (agent model)
+  "Change the model, recording it so a resume restores this and not the default."
+  (setf (agent:agent-model agent) model)
+  (a:when-let ((session (agent-session agent)))
+    (session:append-entry session :model-change (session:object "model" model)))
+  model)
+
+(defun set-active-tools (agent names)
+  "Narrow or widen the tool set, recording it for the same reason."
+  (setf (agent-active-tools agent) names)
+  (a:when-let ((session (agent-session agent)))
+    (session:append-entry session :active-tools-change
+                          (session:object "tools" (coerce (or names '()) 'vector))))
+  names)
 
 (defun converse (agent prompts)
   "Ask each of PROMPTS in turn on one conversation. Returns the replies."

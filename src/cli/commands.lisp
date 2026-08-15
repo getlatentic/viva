@@ -281,6 +281,8 @@ noise, not a result.~%")
         :extra-prompt (flag parsed "append")
         :extension-directories (a:when-let ((given (flag parsed "extension")))
                                  (list (namestring (truename given))))
+        :resume (a:when-let ((given (flag parsed "resume")))
+                  (if (string= "true" given) t given))
         :request-limit (flag-integer parsed "limit" 60)))
 
 (defun command-shell (parsed)

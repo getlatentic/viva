@@ -111,8 +111,11 @@
            #:record-entry #:append-entry #:append-record #:entries-of #:records-of
            #:close-session #:load-session #:session-messages #:latest-session
            #:session-directory #:usage-of #:+format-version+ #:+conversation-kinds+
+           #:list-sessions #:find-session #:describe-session #:slug
+           #:summary #:summary-id #:summary-path #:summary-cwd #:summary-time
+           #:summary-messages #:summary-opening
            #:ancestry #:context-entries #:children-of #:entry-at #:compact #:fork
-           #:record-p #:entry #:entry-id #:entry-parent #:entry-kind #:entry-payload
+           #:object #:record-p #:entry #:entry-id #:entry-parent #:entry-kind #:entry-payload
            #:entry-time))
 
 (defpackage #:vivarium.compaction
@@ -151,6 +154,6 @@
            #:agent-request-limit #:agent-requests #:agent-context #:agent-aborting
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
            #:agent-extension-directories #:agent-compaction #:agent-active-tools
-           #:compact-now
+           #:compact-now #:set-model #:set-active-tools #:apply-settings
            #:ask #:converse #:resume #:refresh-resources #:harness-tool-set #:record
            #:*agent* #:*default-model* #:*default-provider-name*))
