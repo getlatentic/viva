@@ -63,6 +63,7 @@
                              (:file "depth")
                              (:file "search")
                              (:file "impact")
+                             (:file "repetition")
                              (:file "burden")
                              (:file "attempt")))))
 

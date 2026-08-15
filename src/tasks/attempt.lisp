@@ -109,6 +109,19 @@ information from a case that ran and scored zero."
             (cons (car entry) (handler-case (funcall (cdr entry)) (error () nil))))
           cases))
 
+(defparameter +experiment-b-arms+
+  '(:control      ; can write functions, cannot invoke a new one
+    :generic-call ; install + call_function        -- case 2a, CREATE + CALL
+    :register)    ; install + register-tool        -- case 2b, CREATE + ELEVATE
+  "Experiment B's three arms. CONTROL is not 'no tools' -- it has the full
+observational floor and can install definitions. What it cannot do is RUN
+something it just wrote, which is the single capability under test.
+
+GENERIC-CALL and REGISTER are kept apart deliberately. call_function alone
+already delivers notice-gap -> build -> activate -> use, so a result credited to
+dynamic registration when the generic bridge was sufficient would be a false
+attribution. See docs/self-improvement-model.md.")
+
 (defun bench-tool-set (&optional oracle)
   "Arm A's fixed set, plus the observational floor, plus optionally an oracle.
 
@@ -123,8 +136,18 @@ burden is counted the same way the control arm's is."
   (burden:recording-tool-set
    (append (image-tools:tool-set) (inspect:tool-set) (a:ensure-list oracle))))
 
+(defun experiment-b-tool-set (arm)
+  "Arm A's tools plus inspection, minus or plus the ability to run what you wrote."
+  (burden:recording-tool-set
+   (append (image-tools:tool-set)
+           (list inspect:inspect-value)          ; observation, always
+           (ecase arm
+             (:control '())
+             (:generic-call (list inspect:call-function))
+             (:register (list inspect:call-function self:register-tool))))))
+
 (defun attempt-task (task &key provider model (limit 12) (reasoning-effort "low")
-                              (max-tokens 4096) on-event oracle)
+                              (max-tokens 4096) on-event oracle arm)
   "Set TASK up, let an agent attempt it, and score the image afterwards."
   (let* ((backend (make-instance 'image:sbcl-image :package (task-package task)))
          (label (or model "unnamed")))
@@ -136,7 +159,7 @@ burden is counted the same way the control arm's is."
                                   :reasoning-effort reasoning-effort
                                   :max-tokens max-tokens :on-event on-event
                                   :system-prompt image-tools:*system-prompt*
-                                  :tools (bench-tool-set oracle))))
+                                  :tools (if arm (experiment-b-tool-set arm) (bench-tool-set oracle)))))
         (let* ((jail (jail-directory task))
                (image-tools:*bash-commands* '())
                (burden:*log* '())
@@ -152,9 +175,12 @@ burden is counted the same way the control arm's is."
                            ;; looking -- see +HARNESS-TELLS+.
                            (image-tools:*bash-directory* jail))
                        (inspect:begin-inspection-session)
-                       (loop*:run agent (list (msg:make-user-message
-                                               :content (list (msg:make-text (task-prompt task))))))
-                       nil)
+                       ;; REGISTER's tools mutate the agent's own tool list, so
+                       ;; the agent has to be reachable from them.
+                       (self:with-self-extension (agent)
+                         (loop*:run agent (list (msg:make-user-message
+                                                 :content (list (msg:make-text (task-prompt task))))))
+                       nil))
                    (error (condition) (princ-to-string condition)))))
           (make-attempt :task (task-id task) :label label
                         :scores (score-cases cases)

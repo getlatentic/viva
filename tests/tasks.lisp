@@ -19,6 +19,12 @@
                  (let ((price (event-price event)))
                    (if price (* (event-qty event) price) 0)))
           :initial-value 0))"))
+    (:f1 . ("(defparameter *accounts*
+  (mapcar (lambda (a)
+            (list :id (getf a :id) :plan (getf a :plan) :region (getf a :region)
+                  :units (getf a :units)
+                  :charge (* (getf a :units) (rate-for (getf a :plan) (getf a :region)))))
+          *accounts*))"))
     (:e24 . ("(defparameter *quotes*
   (mapcar (lambda (q)
             (if (gethash (getf q :id) *negotiated*)
@@ -150,8 +156,8 @@ closes over the world it will compare against."
 ;;; The two properties
 
 (define-test "every task is registered exactly once, with a fixed split"
-  (is = 24 (length (tasks:all-tasks)))
-  (is = 16 (length (tasks:tasks-in :train)))
+  (is = 25 (length (tasks:all-tasks)))
+  (is = 17 (length (tasks:tasks-in :train)))
   (is = 8 (length (tasks:tasks-in :held-out)))
   ;; Both halves must carry every family, or the held-out set measures
   ;; something different from the training set rather than the same thing.
@@ -159,7 +165,7 @@ closes over the world it will compare against."
   ;; repair the three gates are measured on, and its held-out counterpart is
   ;; B14.2's work. If the gates pass and no held-out E-IMPACT task exists, the
   ;; family is incomplete and this exemption must come out, not be extended.
-  (is = 9 (length (tasks:task-families)))
+  (is = 10 (length (tasks:task-families)))
   (is = 1 (length (remove-if-not (lambda (task) (eq :e-impact (tasks:task-family task)))
                                  (tasks:tasks-in :train))))
   (is = 0 (length (remove-if-not (lambda (task) (eq :e-impact (tasks:task-family task)))
