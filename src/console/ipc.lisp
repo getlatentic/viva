@@ -195,6 +195,35 @@
            (respond server id type "messages" (length (loop*:context-messages context)))
            (fail server id type "Nothing to compact.")))
 
+        ;; Everything invocable by name, from all three sources, so a client
+        ;; can build a picker without knowing where a command came from.
+        ((string= "get_commands" type)
+         (respond server id type "commands"
+                  (coerce (append
+                           (mapcar (lambda (each)
+                                     (object "name" (extension:command-name each)
+                                             "description" (extension:command-description each)
+                                             "source" "extension"))
+                                   (extension:all-commands))
+                           (mapcar (lambda (each)
+                                     (object "name" (template:template-name each)
+                                             "description" (template:template-description each)
+                                             "source" "prompt"))
+                                   (harness:agent-templates agent))
+                           (mapcar (lambda (each)
+                                     (object "name" (skill:skill-name each)
+                                             "description" (skill:skill-description each)
+                                             "source" "skill"))
+                                   (harness:agent-skills agent)))
+                          'vector)))
+
+        ((string= "run_template" type)
+         (a:if-let ((found (template:find-template (harness:agent-templates agent)
+                                                   (text-argument command "name"))))
+           (progn (start-prompt server id (template:expand found (text-argument command "arguments")))
+                  (respond server id type "queued" "now"))
+           (fail server id type (format nil "No prompt template ~a." (text-argument command "name")))))
+
         ((string= "list_sessions" type)
          (respond server id type "sessions"
                   (coerce (mapcar (lambda (each)

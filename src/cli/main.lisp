@@ -46,9 +46,11 @@ ORDINARY WORK
       --session-dir DIR       record the transcript, for counting the work done
       --extension DIR         load extensions from DIR as well
 
-  Skills go in .vivarium/skills/<name>/SKILL.md, extensions in
-  .vivarium/extensions/*.lisp, and what the agent chooses to keep in
-  .vivarium/MEMORY.md. /help in the shell lists the rest.
+  Skills go in .vivarium/skills/<name>/SKILL.md, prompt templates in
+  .vivarium/prompts/*.md (invoked as /name, with $1..$9 and $ARGUMENTS),
+  extensions in .vivarium/extensions/*.lisp, and what the agent chooses to
+  keep in .vivarium/MEMORY.md. The same four work from ~/.vivarium/ for every
+  project. /help in the shell lists what is loaded.
 
 EXPERIMENTS
 

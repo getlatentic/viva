@@ -625,3 +625,46 @@ rather than leaving it to be rediscovered a third time."
           (is string= id (session:summary-id (session:find-session (subseq id 0 8) :cwd where)))
           (is string= id (session:summary-id (session:latest-session where)))))
       (ignore-errors (uiop:delete-directory-tree directory :validate t)))))
+
+;;; Prompt templates
+
+(define-test "a template substitutes positional arguments and the whole string"
+  (is string= "review src/a.lisp carefully"
+      (template:expand (template:make-template :name "r" :content "review $1 carefully")
+                       "src/a.lisp"))
+  (is string= "compare src/a.lisp with src/b.lisp"
+      (template:expand (template:make-template :name "r" :content "compare $1 with $2")
+                       "src/a.lisp src/b.lisp"))
+  (is string= "look at src/a.lisp src/b.lisp"
+      (template:expand (template:make-template :name "r" :content "look at $ARGUMENTS")
+                       "src/a.lisp src/b.lisp"))
+  ;; A missing argument becomes empty rather than leaving the marker in place --
+  ;; a literal $2 reaching the model is a prompt about a dollar sign.
+  (is string= "compare src/a.lisp with "
+      (template:expand (template:make-template :name "r" :content "compare $1 with $2")
+                       "src/a.lisp")))
+
+(define-test "a template with no placeholder still receives its arguments"
+  ;; The commonest template is a fixed instruction plus a path. Requiring a
+  ;; placeholder for that would make the simplest one the fiddliest to write.
+  (is string= (format nil "Review this for correctness.~%~%src/a.lisp")
+      (template:expand (template:make-template :name "r" :content "Review this for correctness.")
+                       "src/a.lisp"))
+  (is string= "Review this for correctness."
+      (template:expand (template:make-template :name "r" :content "Review this for correctness.")
+                       "")))
+
+(define-test "templates load from disk with their descriptions"
+  (with-repository (environment)
+    (env:ensure-directory environment ".vivarium/prompts")
+    (env:write-text environment ".vivarium/prompts/review.md"
+                    (format nil "---~%description: Review a file for correctness.~%---~%Review $1 and list what is wrong.~%"))
+    (env:write-text environment ".vivarium/prompts/notes.txt" "not a template")
+    (let ((templates (template:load-templates environment (list ".vivarium/prompts"))))
+      (is = 1 (length templates))
+      (is string= "review" (template:template-name (first templates)))
+      (is string= "Review a file for correctness." (template:template-description (first templates)))
+      (false (mentions "description:" (template:template-content (first templates))))
+      (is string= "Review src/x.lisp and list what is wrong."
+          (string-trim '(#\Newline)
+                       (template:expand (first templates) "src/x.lisp"))))))

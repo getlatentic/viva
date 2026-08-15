@@ -36,6 +36,7 @@ directory and in the home directory by design, and routing those reads through
 the confined environment made a rooted agent refuse to start at all, one second
 in, on a path the agent had not asked for.")
    (skills :initarg :skills :initform '() :accessor agent-skills)
+   (templates :initarg :templates :initform '() :accessor agent-templates)
    (session :initarg :session :initform nil :accessor agent-session)
    (listener :initarg :listener :initform nil :accessor agent-listener
              :documentation "Called with every loop event. The shell and the IPC
@@ -192,9 +193,13 @@ the harness knowing anything about retrieval."
 
 ;;; Construction
 
-(defun skill-directories (environment)
-  (list (env:join-path (uiop:native-namestring (user-homedir-pathname)) ".vivarium" "skills")
-        (env:join-path (env:env-cwd environment) ".vivarium" "skills")))
+(defun resource-directories (environment leaf)
+  "The machine's, then the project's. Later wins, because a project that ships a
+`review` template means its own."
+  (list (env:join-path (uiop:native-namestring (user-homedir-pathname)) ".vivarium" leaf)
+        (env:join-path (env:env-cwd environment) ".vivarium" leaf)))
+
+(defun skill-directories (environment) (resource-directories environment "skills"))
 
 (defun refresh-resources (agent)
   "Reload skills and extensions from disk. Returns any complaints, so a caller
@@ -207,6 +212,8 @@ the model chose not to use."
                                            (agent-extension-directories agent)))))
     (multiple-value-bind (skills warnings) (skill:load-skills environment (skill-directories environment))
       (setf (agent-skills agent) skills
+            (agent-templates agent) (template:load-templates
+                                     environment (resource-directories environment "prompts"))
             (agent-extensions agent) (extension:loaded-extensions))
       (append complaints
               (mapcar (lambda (each)

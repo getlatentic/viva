@@ -86,6 +86,14 @@
            #:memory-path #:read-memory #:record-memory
            #:remember #:memory-tool #:*memory-file*))
 
+(defpackage #:vivarium.template
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:env #:vivarium.env)
+                    (#:skill #:vivarium.skill))
+  (:export #:template #:make-template #:template-name #:template-description #:template-content
+           #:template-path #:load-templates #:find-template #:expand #:replace-all))
+
 (defpackage #:vivarium.extension
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
@@ -148,9 +156,10 @@
                     (#:memory #:vivarium.memory)
                     (#:extension #:vivarium.extension)
                     (#:session #:vivarium.session)
-                    (#:compaction #:vivarium.compaction))
+                    (#:compaction #:vivarium.compaction)
+                    (#:template #:vivarium.template))
   (:export #:workspace-agent #:make-workspace-agent #:agent-environment
-           #:agent-skills #:agent-session #:agent-extensions #:agent-listener
+           #:agent-skills #:agent-templates #:agent-session #:agent-extensions #:agent-listener
            #:agent-request-limit #:agent-requests #:agent-context #:agent-aborting
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
            #:agent-extension-directories #:agent-compaction #:agent-active-tools

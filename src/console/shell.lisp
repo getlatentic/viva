@@ -132,7 +132,7 @@ the last one HERE."
   (list
    (make-verb :name "help" :blurb "this list"
               :handler (lambda (agent argument out)
-                         (declare (ignore agent argument))
+                         (declare (ignore argument))
                          (dolist (verb +verbs+)
                            (format out "  /~a~@[ ~a~]~24t~a~%" (verb-name verb)
                                    (when (plusp (length (verb-argument verb))) (verb-argument verb))
@@ -141,6 +141,10 @@ the last one HERE."
                            (format out "  /~a~24t~a (extension)~%"
                                    (extension:command-name command)
                                    (extension:command-description command)))
+                         (dolist (each (harness:agent-templates agent))
+                           (format out "  /~a~24t~a (prompt)~%"
+                                   (template:template-name each)
+                                   (one-line (template:template-description each) :width 44)))
                          (format out "  !COMMAND~24trun a shell command directly~%")))
    (make-verb :name "tools" :blurb "what the model can call" :handler #'show-tools)
    (make-verb :name "skills" :blurb "skills loaded from disk" :handler #'show-skills)
@@ -237,6 +241,13 @@ the last one HERE."
                                   agent argument)))
              (when (stringp result) (format out "~a~%" result)))
            t)
+          ;; A template expands into an ordinary prompt. The model never sees a
+          ;; template, only the text it became.
+          ((template:find-template (harness:agent-templates agent) name)
+           (harness:ask agent (template:expand
+                               (template:find-template (harness:agent-templates agent) name)
+                               argument))
+           t)
           (t (format out "No command /~a. Try /help.~%" name) t))))
 
 ;;; The loop
@@ -245,9 +256,10 @@ the last one HERE."
   (format out "~a~%" (paint "vivarium" :bold))
   (format out "  ~a via ~a~%" (models:choice-model choice) (models:choice-label choice))
   (format out "  ~a~%" (env:env-cwd (harness:agent-environment agent)))
-  (format out "  ~d tools, ~d skills, ~d extensions~%"
+  (format out "  ~d tools, ~d skills, ~d prompts, ~d extensions~%"
           (length (agent:tools agent))
           (length (harness:agent-skills agent))
+          (length (harness:agent-templates agent))
           (length (harness:agent-extensions agent)))
   (dolist (complaint complaints)
     (format out "~a~%" (paint (format nil "  ! ~a" complaint) :yellow)))

@@ -53,6 +53,7 @@
                              (:file "prompt")
                              (:file "skills")
                              (:file "memory")
+                             (:file "templates")
                              (:file "extension")
                              (:file "session")
                              (:file "compaction")

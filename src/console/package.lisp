@@ -24,6 +24,7 @@
                     (#:session #:vivarium.session)
                     (#:models #:vivarium.models)
                     (#:harness #:vivarium.harness)
-                    (#:compaction #:vivarium.compaction))
+                    (#:compaction #:vivarium.compaction)
+                    (#:template #:vivarium.template))
   (:export #:run-shell #:run-ipc #:build-agent #:*colour*
            #:call-summary #:paint))
