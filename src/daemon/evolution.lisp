@@ -1,26 +1,30 @@
-;;;; evolution.lisp -- Phase 2's evolution lifecycle, born inside the proof.
+;;;; evolution.lisp -- Phase 2's evolution lifecycle, born inside the proof
+;;;; and revised through it: independent verification proved three holes
+;;;; against the tagged v1 before any wiring existed, which is the discipline
+;;;; doing what it was built for. The three repairs:
 ;;;;
-;;;; Mirrors spec/Evolution.tla clause for clause through the same DEFINE-OWNER
-;;;; as the session kernel and the task tree. Pure CL, no dependencies; the
-;;;; decision layer only. What is decided here is the LIFECYCLE of
-;;;; self-modification -- who may change which authority when -- never what an
-;;;; evolved function does: that is validated and capability-bounded at
-;;;; runtime, outside any proof this file carries.
+;;;;   FINDING 1  :discard is REFUSED while any task pins the version. A
+;;;;              candidate somebody is running may not become "will not be
+;;;;              kept" out from under them. NoResolutionToDiscarded is the
+;;;;              invariant v1 was blind to; TLC violates it against v1's
+;;;;              semantics in five states.
+;;;;
+;;;;   FINDING 2  the registry now remembers ENDED tasks, because the spec's
+;;;;              live-task guard on Activate had no mirror: a stale :activate
+;;;;              arriving after :task-ended recreated pins that no future
+;;;;              :task-ended would ever drop. Ended is forever; identities
+;;;;              are never reused; a posthumous activate is refused by name.
+;;;;
+;;;;   FINDING 3  (:task-spawned child parent) makes law 9's inheritance
+;;;;              REGISTRY-VISIBLE: the child's snapshot is copied into the
+;;;;              registry at spawn, so the discard guard can see what a
+;;;;              child still runs after its parent dies. Wiring consequence:
+;;;;              the task tree's spawn effect posts this message BEFORE the
+;;;;              child's worker starts.
 ;;;;
 ;;;; The registry is one immutable value, rebuilt by every transition:
 ;;;;
-;;;;   (:evolution MINTED VERSIONS LINEAGES PINS)
-;;;;
-;;;;   VERSIONS   alist id -> (:component NAME :status KEYWORD)
-;;;;   LINEAGES   alist component -> list of promoted ids, newest first
-;;;;   PINS       alist task -> alist component -> version id
-;;;;
-;;;; The laws, from the spec and from this project's own vocabulary, which has
-;;;; insisted since before Phase 2 existed that DEACTIVATED and REVERTED are
-;;;; different words: deactivation ends one task's local pin and is bounded by
-;;;; that task's lifetime; reversion moves the promoted lineage back for
-;;;; everyone. An unpromoted candidate reaches a task's resolution only
-;;;; through that task's own pin.
+;;;;   (:evolution MINTED VERSIONS LINEAGES PINS ENDED)
 
 (defpackage #:vivarium.evolution
   (:use #:cl #:vivarium.kernel)
@@ -34,19 +38,21 @@
 ;;; The registry: pure operations, prose names
 ;;; ---------------------------------------------------------------------------
 
-(defun empty-registry () '(:evolution 0 () () ()))
+(defun empty-registry () '(:evolution 0 () () () ()))
 
 (defun registry-minted (registry) (second registry))
 (defun registry-versions (registry) (third registry))
 (defun registry-lineages (registry) (fourth registry))
 (defun registry-pins (registry) (fifth registry))
+(defun registry-ended (registry) (sixth registry))
 
-(defun rebuild (registry &key minted versions lineages pins)
+(defun rebuild (registry &key minted versions lineages pins ended)
   (list :evolution
         (or minted (registry-minted registry))
         (or versions (registry-versions registry))
         (or lineages (registry-lineages registry))
-        (or pins (registry-pins registry))))
+        (or pins (registry-pins registry))
+        (or ended (registry-ended registry))))
 
 (defun version (registry id) (cdr (assoc id (registry-versions registry))))
 (defun version-status (registry id) (getf (version registry id) :status))
@@ -76,24 +82,37 @@
 (defun pins-of (registry task)
   (cdr (assoc task (registry-pins registry) :test #'equal)))
 
+(defun set-pins (registry task pins)
+  (rebuild registry
+           :pins (cons (cons task pins)
+                       (remove task (registry-pins registry)
+                               :key #'car :test #'equal))))
+
 (defun set-pin (registry task component id)
-  (let ((pins (cons (cons component id)
-                    (remove component (pins-of registry task)
-                            :key #'car :test #'equal))))
-    (rebuild registry
-             :pins (cons (cons task pins)
-                         (remove task (registry-pins registry)
-                                 :key #'car :test #'equal)))))
+  (set-pins registry task
+            (cons (cons component id)
+                  (remove component (pins-of registry task)
+                          :key #'car :test #'equal))))
 
 (defun drop-pins (registry task)
   (rebuild registry
            :pins (remove task (registry-pins registry) :key #'car :test #'equal)))
 
+(defun ended-p (registry task)
+  (member task (registry-ended registry) :test #'equal))
+
+(defun mark-ended (registry task)
+  (rebuild registry :ended (cons task (registry-ended registry))))
+
+(defun pinned-anywhere-p (registry id)
+  "Does ANY task pin ID? Ended tasks have no pins; a live child's inherited
+pin counts, which is the whole reason inheritance is registry-visible."
+  (loop for (task . pins) in (registry-pins registry)
+        thereis (rassoc id pins)))
+
 (defun resolve (registry task component)
   "THE isolation law as a definition: the task's own pin, else the promoted
-default, else NIL. An unpromoted candidate reaches a task only through that
-task's own pin -- the spec's CandidateOnlyByOwnPin, checked by TLC and
-demonstrated violable by its witness config."
+default, else NIL."
   (or (cdr (assoc component (pins-of registry task) :test #'equal))
       (current-promoted registry component)))
 
@@ -102,12 +121,12 @@ demonstrated violable by its witness config."
 ;;; ---------------------------------------------------------------------------
 
 (define-owner evolution
-  (:states (:evolution ?minted ?versions ?lineages ?pins))
+  (:states (:evolution ?minted ?versions ?lineages ?pins ?ended))
 
   ;; --- a candidate is created: identity minted here, never reused ---------
-  (:transition ((:evolution ?minted ?versions ?lineages ?pins)
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:create-candidate ?component))
-    => (let ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins)))
+    => (let ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)))
          (rebuild registry
                   :minted (1+ ?minted)
                   :versions (cons (cons (1+ ?minted)
@@ -115,33 +134,55 @@ demonstrated violable by its witness config."
                                   ?versions)))
     (list :publish :improvement.created (1+ ?minted) ?component))
 
-  ;; --- task-local activation: a pin, invisible outside the task -----------
-  (:transition ((:evolution ?minted ?versions ?lineages ?pins)
+  ;; --- task-local activation: a pin, invisible outside the task, and only
+  ;; within a lifetime -- a posthumous activate is the stale-message class
+  ;; and is refused by name ---------------------------------------------------
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:activate ?task ?id))
-    :when (eq :candidate (version-status
-                          `(:evolution ,?minted ,?versions ,?lineages ,?pins) ?id))
-    => (let ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins)))
+    :when (let ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)))
+            (and (not (ended-p registry ?task))
+                 (eq :candidate (version-status registry ?id))))
+    => (let ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)))
          (set-pin registry ?task (version-component registry ?id) ?id))
     (list :publish :improvement.activated ?id ?task)
     (list :rebind-task-context ?task))
 
-  (:transition ((:evolution ?minted ?versions ?lineages ?pins)
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:activate ?task ?id))
-    => :same (list :diagnostic :activate-refused ?id))
+    => :same (list :diagnostic :activate-refused ?id ?task))
+
+  ;; --- law 9's inheritance, registry-visible: the child is born holding its
+  ;; parent's snapshot, and the registry knows it ------------------------------
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
+                (:task-spawned ?child ?parent))
+    :when (let ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)))
+            (and (not (ended-p registry ?child))
+                 (not (ended-p registry ?parent))
+                 (null (pins-of registry ?child))))
+    => (let ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)))
+         (set-pins registry ?child (pins-of registry ?parent)))
+    (list :publish :improvement.inherited ?child ?parent))
+
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
+                (:task-spawned ?child ?parent))
+    => :same (list :diagnostic :inherit-refused ?child ?parent))
 
   ;; --- deactivation, bounded by task lifetime: the pins die with the task,
-  ;; and only the pins -- the lineage does not move ---------------------------
-  (:transition ((:evolution ?minted ?versions ?lineages ?pins)
+  ;; only the pins, and ENDED is forever ---------------------------------------
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:task-ended ?task))
-    => (drop-pins `(:evolution ,?minted ,?versions ,?lineages ,?pins) ?task)
+    => (mark-ended
+        (drop-pins `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended) ?task)
+        ?task)
     (list :publish-deactivations ?task))
 
   ;; --- promotion: the single owner moves the default forward --------------
-  (:transition ((:evolution ?minted ?versions ?lineages ?pins)
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:promote ?id))
     :when (eq :candidate (version-status
-                          `(:evolution ,?minted ,?versions ,?lineages ,?pins) ?id))
-    => (let* ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins))
+                          `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)
+                          ?id))
+    => (let* ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended))
               (component (version-component registry ?id))
               (previous (current-promoted registry component))
               (registry (if previous (set-status registry previous :retired) registry))
@@ -149,41 +190,45 @@ demonstrated violable by its witness config."
          (set-lineage registry component (cons ?id (lineage-of registry component))))
     (list :publish :improvement.promoted ?id))
 
-  (:transition ((:evolution ?minted ?versions ?lineages ?pins)
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:promote ?id))
     => :same (list :diagnostic :promote-refused ?id))
 
   ;; --- reversion: the lineage steps BACK, for everyone. Not deactivation:
   ;; no task's pin is touched ------------------------------------------------
-  (:transition ((:evolution ?minted ?versions ?lineages ?pins)
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:revert ?component))
     :when (> (length (lineage-of
-                      `(:evolution ,?minted ,?versions ,?lineages ,?pins) ?component))
+                      `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)
+                      ?component))
              1)
-    => (let* ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins))
+    => (let* ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended))
               (lineage (lineage-of registry ?component))
               (registry (set-status registry (first lineage) :retired))
               (registry (set-status registry (second lineage) :promoted)))
          (set-lineage registry ?component (rest lineage)))
     (list :publish :improvement.reverted ?component))
 
-  (:transition ((:evolution ?minted ?versions ?lineages ?pins)
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:revert ?component))
     => :same (list :diagnostic :revert-refused ?component))
 
-  ;; --- a candidate that will not be kept -----------------------------------
-  (:transition ((:evolution ?minted ?versions ?lineages ?pins)
+  ;; --- a candidate that will not be kept: refused while ANYBODY runs it ----
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:discard ?id))
-    :when (eq :candidate (version-status
-                          `(:evolution ,?minted ,?versions ,?lineages ,?pins) ?id))
-    => (set-status `(:evolution ,?minted ,?versions ,?lineages ,?pins) ?id :discarded))
+    :when (let ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)))
+            (and (eq :candidate (version-status registry ?id))
+                 (not (pinned-anywhere-p registry ?id))))
+    => (set-status `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)
+                   ?id :discarded)
+    (list :publish :improvement.discarded ?id))
 
-  (:transition ((:evolution ?minted ?versions ?lineages ?pins)
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:discard ?id))
     => :same (list :diagnostic :discard-refused ?id)))
 
 ;;; ---------------------------------------------------------------------------
-;;; Self-test: the invariants as traces
+;;; Self-test: the original traces plus the three findings as traces
 ;;; ---------------------------------------------------------------------------
 
 (defun run-evolution-self-test ()
@@ -193,11 +238,15 @@ demonstrated violable by its witness config."
                                  '(((:create-candidate "search")))))
     (assert (eq :candidate (version-status registry 1)))
     (assert (null (resolve registry "task-a" "search")))
-    ;; Task A pins it; task B still sees nothing. The isolation law as a trace.
+    ;; Task A pins it; task B still sees nothing. Isolation as a trace.
     (setf registry (replay-trace #'evolution-transition registry
                                  '(((:activate "task-a" 1)))))
     (assert (eql 1 (resolve registry "task-a" "search")))
     (assert (null (resolve registry "task-b" "search")))
+    ;; FINDING 1 as a trace: discard refused while A runs it.
+    (multiple-value-bind (next effects) (evolution-transition registry '(:discard 1))
+      (assert (equal next registry))
+      (assert (eq :discard-refused (second (first effects)))))
     ;; Promotion changes the default for everyone; a second candidate pinned
     ;; by B is B's alone.
     (setf registry (replay-trace #'evolution-transition registry
@@ -207,29 +256,44 @@ demonstrated violable by its witness config."
     (assert (eql 1 (current-promoted registry "search")))
     (assert (eql 2 (resolve registry "task-b" "search")))
     (assert (eql 1 (resolve registry "task-c" "search")))
-    ;; DEACTIVATION: B ends; its pin dies; the lineage does not move.
+    ;; FINDING 3 as a trace: B spawns a scoped child; the child inherits B's
+    ;; pin REGISTRY-VISIBLY. B ends; the child's pin holds the discard off.
     (setf registry (replay-trace #'evolution-transition registry
-                                 '(((:task-ended "task-b")))))
+                                 '(((:task-spawned "task-b-child" "task-b"))
+                                   ((:task-ended "task-b")))))
     (assert (null (pins-of registry "task-b")))
-    (assert (eql 1 (current-promoted registry "search")))
-    ;; Promote 2, then REVERSION: the lineage steps back to 1 for everyone.
-    ;; Different word, different effect, and the machine keeps them different.
+    (assert (eql 2 (resolve registry "task-b-child" "search")))
+    (multiple-value-bind (next effects) (evolution-transition registry '(:discard 2))
+      (assert (equal next registry))
+      (assert (eq :discard-refused (second (first effects)))))
+    ;; FINDING 2 as a trace: a stale activate for the DEAD parent is refused;
+    ;; no pin outlives a lifetime.
+    (multiple-value-bind (next effects) (evolution-transition registry '(:activate "task-b" 2))
+      (assert (equal next registry))
+      (assert (eq :activate-refused (second (first effects)))))
+    ;; The child ends; now the discard proceeds, and its judgment is published.
     (setf registry (replay-trace #'evolution-transition registry
-                                 '(((:promote 2))
+                                 '(((:task-ended "task-b-child")))))
+    (multiple-value-bind (next effects) (evolution-transition registry '(:discard 2))
+      (assert (eq :discarded (version-status next 2)))
+      (assert (eq :improvement.discarded (second (first effects))))
+      (setf registry next))
+    ;; DEACTIVATION vs REVERSION, still different words: promote a third
+    ;; candidate, revert, and the lineage steps back for everyone while no
+    ;; pin moves.
+    (setf registry (replay-trace #'evolution-transition registry
+                                 '(((:create-candidate "search"))
+                                   ((:promote 3))
                                    ((:revert "search")))))
     (assert (eql 1 (current-promoted registry "search")))
-    (assert (eq :retired (version-status registry 2)))
+    (assert (eq :retired (version-status registry 3)))
     (assert (eq :promoted (version-status registry 1)))
-    ;; Refusals refuse: promote a retired version, revert past the root,
-    ;; activate something that is not a candidate.
-    (multiple-value-bind (next effects) (evolution-transition registry '(:promote 2))
+    ;; Refusals still refuse.
+    (multiple-value-bind (next effects) (evolution-transition registry '(:promote 3))
       (assert (equal next registry))
       (assert (eq :promote-refused (second (first effects)))))
     (multiple-value-bind (next effects) (evolution-transition registry '(:revert "search"))
       (assert (equal next registry))
-      (assert (eq :revert-refused (second (first effects)))))
-    (multiple-value-bind (next effects) (evolution-transition registry '(:activate "task-c" 2))
-      (assert (equal next registry))
-      (assert (eq :activate-refused (second (first effects))))))
-  (format t "~&evolution self-test: all traces passed~%")
+      (assert (eq :revert-refused (second (first effects))))))
+  (format t "~&evolution self-test: all traces passed, three findings held~%")
   t)

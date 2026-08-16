@@ -1,32 +1,41 @@
-------------------------------- MODULE Evolution -------------------------------
-(* Phase 2's evolution lifecycle, entered through the proof before wiring.    *)
+--------------------------- MODULE Evolution ---------------------------
+(* Evolution.tla, revised after review found three holes. Diff from v1:       *)
 (*                                                                            *)
-(* What is modelled is the LIFECYCLE of self-modification, never the evolved  *)
-(* code: versions are opaque identities, and the guarantee this spec carries  *)
-(* is about who may change which authority when -- candidates reach authority *)
-(* only through these actions, promotion is serialized by construction (one   *)
-(* owner, one Next), a task's activation is invisible outside that task, and  *)
-(* deactivation is bounded by task lifetime. What an evolved function DOES    *)
-(* is validated and capability-bounded at runtime, not proven here.           *)
+(* FINDING 1, provable against v1: DISCARD ignored live pins. A task pinned   *)
+(* to a candidate kept resolving to it after the owner judged it "will not    *)
+(* be kept" -- and no invariant noticed, because CandidateOnlyByOwnPin only   *)
+(* speaks of candidates and PinsAreReal explicitly allowed pinned-discarded.  *)
+(* The blind spot is NoResolutionToDiscarded below; the BrokenDiscard flag    *)
+(* reproduces v1's unguarded semantics, and its witness config violates the   *)
+(* new invariant -- the hole is real, not imagined. The repair: discard is    *)
+(* REFUSED while any live task pins the version, in the refusal-with-reason   *)
+(* idiom every other owner already uses. Retired stays pinnable-after: a      *)
+(* retired version passed promotion once; a discarded one never did.          *)
 (*                                                                            *)
-(* DEACTIVATED and REVERTED are different words on purpose, as the event      *)
-(* vocabulary has insisted since before this file existed: deactivation ends  *)
-(* one task's local pin; reversion moves the promoted lineage back for        *)
-(* everyone.                                                                  *)
+(* FINDING 2: v1's mirror lacked the spec's live-task guard on ACTIVATE, so a *)
+(* stale activate arriving after task-ended recreated pins nobody would ever  *)
+(* drop. The spec now distinguishes unborn / live / ended so the mirror has   *)
+(* something to conform to: activation and inheritance require a LIVE task,   *)
+(* ended is forever, identities are never reused.                             *)
+(*                                                                            *)
+(* FINDING 3, the composition law for law 9: INHERIT makes spawn-time         *)
+(* context inheritance REGISTRY-VISIBLE. If inheritance were only a           *)
+(* thread-local snapshot, the parent's death would drop the last registry pin *)
+(* while the child still executes the candidate, and even the guarded discard *)
+(* would judge it unpinned. The registry must know what the child holds, or   *)
+(* the discard guard cannot see through spawns. Wiring consequence: the task  *)
+(* tree's spawn effect must post (:task-spawned child parent) to the          *)
+(* evolution owner BEFORE the child's worker starts.                          *)
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Components, MaxVersions, Tasks, Broken
+CONSTANTS Components, MaxVersions, Tasks, Broken, BrokenDiscard
 
 Versions == 1..MaxVersions
 
-VARIABLES minted,    \* versions created so far
-          vcomp,     \* [Versions -> Components] which component a version is of
-          status,    \* [Versions -> {"none","candidate","promoted","retired","discarded"}]
-          lineage,   \* [Components -> Seq(Versions)] promotion history; last is current
-          active,    \* [Tasks -> [Components -> 0..MaxVersions]] task-local pins
-          live       \* [Tasks -> BOOLEAN]
+VARIABLES minted, vcomp, status, lineage, active,
+          lifec      \* [Tasks -> {"unborn","live","ended"}]
 
-vars == <<minted, vcomp, status, lineage, active, live>>
+vars == <<minted, vcomp, status, lineage, active, lifec>>
 
 TypeOK ==
     /\ minted \in 0..MaxVersions
@@ -34,7 +43,7 @@ TypeOK ==
     /\ status \in [Versions -> {"none", "candidate", "promoted", "retired", "discarded"}]
     /\ lineage \in [Components -> Seq(Versions)]
     /\ active \in [Tasks -> [Components -> 0..MaxVersions]]
-    /\ live \in [Tasks -> BOOLEAN]
+    /\ lifec \in [Tasks -> {"unborn", "live", "ended"}]
 
 Init ==
     /\ minted = 0
@@ -42,16 +51,15 @@ Init ==
     /\ status = [v \in Versions |-> "none"]
     /\ lineage = [c \in Components |-> <<>>]
     /\ active = [t \in Tasks |-> [c \in Components |-> 0]]
-    /\ live = [t \in Tasks |-> TRUE]
+    /\ lifec = [t \in Tasks |-> "unborn"]
 
 CurrentPromoted(c) ==
     IF lineage[c] = <<>> THEN 0 ELSE lineage[c][Len(lineage[c])]
 
-(* What a task's resolution of a component yields: its own pin, else the      *)
-(* promoted default. The definition IS the isolation; the invariants below    *)
-(* check the state can never make it lie.                                     *)
 Resolution(t, c) ==
     IF active[t][c] /= 0 THEN active[t][c] ELSE CurrentPromoted(c)
+
+Pinned(v) == \E t \in Tasks : active[t][vcomp[v]] = v
 
 ------------------------------------------------------------------------------
 Create(c) ==
@@ -59,30 +67,39 @@ Create(c) ==
     /\ minted' = minted + 1
     /\ vcomp' = [vcomp EXCEPT ![minted + 1] = c]
     /\ status' = [status EXCEPT ![minted + 1] = "candidate"]
-    /\ UNCHANGED <<lineage, active, live>>
+    /\ UNCHANGED <<lineage, active, lifec>>
 
-(* Task-local activation: a live task pins a candidate of the right           *)
-(* component. Under BROKEN the activation also seizes the promoted lineage -- *)
-(* the leak the witness config demonstrates.                                  *)
+(* Tasks are born: a root with no pins, or a child INHERITING its live        *)
+(* parent's pins as a snapshot the registry can see. Identity is single-use:  *)
+(* unborn -> live -> ended, never back.                                       *)
+SpawnRoot(t) ==
+    /\ lifec[t] = "unborn"
+    /\ lifec' = [lifec EXCEPT ![t] = "live"]
+    /\ UNCHANGED <<minted, vcomp, status, lineage, active>>
+
+Inherit(t, p) ==
+    /\ lifec[t] = "unborn"
+    /\ lifec[p] = "live"
+    /\ t /= p
+    /\ lifec' = [lifec EXCEPT ![t] = "live"]
+    /\ active' = [active EXCEPT ![t] = active[p]]
+    /\ UNCHANGED <<minted, vcomp, status, lineage>>
+
 Activate(t, v) ==
-    /\ live[t]
+    /\ lifec[t] = "live"
     /\ status[v] = "candidate"
     /\ active' = [active EXCEPT ![t][vcomp[v]] = v]
     /\ IF Broken
            THEN lineage' = [lineage EXCEPT ![vcomp[v]] = Append(@, v)]
            ELSE UNCHANGED lineage
-    /\ UNCHANGED <<minted, vcomp, status, live>>
+    /\ UNCHANGED <<minted, vcomp, status, lifec>>
 
-(* Deactivation is bounded by task lifetime: the pins die with the task, and  *)
-(* only the pins -- the lineage does not move.                                *)
 TaskEnd(t) ==
-    /\ live[t]
-    /\ live' = [live EXCEPT ![t] = FALSE]
+    /\ lifec[t] = "live"
+    /\ lifec' = [lifec EXCEPT ![t] = "ended"]
     /\ active' = [active EXCEPT ![t] = [c \in Components |-> 0]]
     /\ UNCHANGED <<minted, vcomp, status, lineage>>
 
-(* Promotion: the single owner moves the default lineage forward. The         *)
-(* previously promoted version of that component retires.                     *)
 Promote(v) ==
     /\ status[v] = "candidate"
     /\ status' = [w \in Versions |->
@@ -91,11 +108,8 @@ Promote(v) ==
                              THEN "retired"
                              ELSE status[w]]
     /\ lineage' = [lineage EXCEPT ![vcomp[v]] = Append(@, v)]
-    /\ UNCHANGED <<minted, vcomp, active, live>>
+    /\ UNCHANGED <<minted, vcomp, active, lifec>>
 
-(* Reversion: the lineage steps BACK -- the current promoted version retires  *)
-(* and its predecessor is promoted again. Not deactivation: every task's pin  *)
-(* is untouched, and the change is for everyone.                              *)
 Revert(c) ==
     /\ Len(lineage[c]) > 1
     /\ LET current == lineage[c][Len(lineage[c])]
@@ -105,68 +119,76 @@ Revert(c) ==
                        ELSE IF w = previous THEN "promoted"
                        ELSE status[w]]
     /\ lineage' = [lineage EXCEPT ![c] = SubSeq(@, 1, Len(@) - 1)]
-    /\ UNCHANGED <<minted, vcomp, active, live>>
+    /\ UNCHANGED <<minted, vcomp, active, lifec>>
 
+(* THE REPAIR: a candidate somebody live is running may not be judged         *)
+(* "will not be kept" out from under them. Refused, named, retried after the  *)
+(* pinning tasks end. BrokenDiscard reproduces v1 for the witness.            *)
 Discard(v) ==
     /\ status[v] = "candidate"
+    /\ BrokenDiscard \/ ~Pinned(v)
     /\ status' = [status EXCEPT ![v] = "discarded"]
-    /\ UNCHANGED <<minted, vcomp, lineage, active, live>>
+    /\ UNCHANGED <<minted, vcomp, lineage, active, lifec>>
 
 Next ==
     \/ \E c \in Components : Create(c)
+    \/ \E t \in Tasks : SpawnRoot(t)
+    \/ \E t, p \in Tasks : Inherit(t, p)
     \/ \E t \in Tasks, v \in Versions : Activate(t, v)
     \/ \E t \in Tasks : TaskEnd(t)
     \/ \E v \in Versions : Promote(v)
     \/ \E c \in Components : Revert(c)
     \/ \E v \in Versions : Discard(v)
 
-(* A candidate is eventually resolved -- promoted, discarded, or retired --   *)
-(* under weak fairness on Discard alone, which is always available to a       *)
-(* candidate: nothing may sit in limbo forever.                               *)
-Fairness == \A v \in Versions : WF_vars(Discard(v))
+(* Liveness now states its real condition out loud: a pinned candidate        *)
+(* resolves only after its pinning tasks end, so candidate resolution is      *)
+(* bounded by task lifetime, exactly as deactivation is. Fairness on TaskEnd  *)
+(* is the model's form of "tasks end"; a STUCK session that never ends holds  *)
+(* its candidate open, visibly, which is that state's meaning everywhere      *)
+(* else in this system.                                                       *)
+Fairness ==
+    /\ \A v \in Versions : WF_vars(Discard(v))
+    /\ \A t \in Tasks : WF_vars(TaskEnd(t))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
 ------------------------------------------------------------------------------
-(* Safety: the frozen invariants of self-modification.                        *)
-
-(* At most one promoted version per component, and it is the lineage's last.  *)
 OnePromotedPerComponent ==
     \A c \in Components :
         /\ Cardinality({v \in Versions : status[v] = "promoted" /\ vcomp[v] = c}) <= 1
         /\ (lineage[c] /= <<>>) =>
               status[lineage[c][Len(lineage[c])]] \in {"promoted"}
 
-(* The lineage holds only versions that were actually created for it.         *)
 LineageIsReal ==
     \A c \in Components : \A i \in 1..Len(lineage[c]) :
         /\ lineage[c][i] <= minted
         /\ vcomp[lineage[c][i]] = c
 
-(* Deactivation bounded by lifetime: a dead task pins nothing.                *)
-NoPinsAfterDeath ==
-    \A t \in Tasks : ~live[t] => \A c \in Components : active[t][c] = 0
+(* Pins exist only inside a lifetime: none before birth, none after death.    *)
+NoPinsOutsideLife ==
+    \A t \in Tasks : lifec[t] /= "live" => \A c \in Components : active[t][c] = 0
 
-(* A pin refers to a real candidate-or-better of the right component.         *)
 PinsAreReal ==
     \A t \in Tasks, c \in Components :
         active[t][c] /= 0 =>
             /\ active[t][c] <= minted
             /\ vcomp[active[t][c]] = c
-            /\ status[active[t][c]] \in {"candidate", "promoted", "retired", "discarded"}
 
-(* THE isolation law: an unpromoted candidate reaches a task's resolution     *)
-(* only through that task's own pin. Under BROKEN, an activation leaks into   *)
-(* the shared lineage and every other task resolves to somebody's experiment  *)
-(* -- the witness violation.                                                  *)
 CandidateOnlyByOwnPin ==
     \A t \in Tasks, c \in Components :
         LET r == Resolution(t, c)
         IN (r /= 0 /\ status[r] = "candidate") => active[t][c] = r
 
-------------------------------------------------------------------------------
-(* Liveness under the stated fairness.                                        *)
+(* THE NEW LAW, v1's blind spot: no live task ever resolves a component to a  *)
+(* discarded version. Violated by the BrokenDiscard witness against v1's      *)
+(* semantics; held by the guarded discard, including through inheritance.     *)
+NoResolutionToDiscarded ==
+    \A t \in Tasks, c \in Components :
+        lifec[t] = "live" =>
+            LET r == Resolution(t, c)
+            IN r /= 0 => status[r] /= "discarded"
 
+------------------------------------------------------------------------------
 CandidateResolves ==
     \A v \in Versions :
         (status[v] = "candidate") ~>

@@ -40,7 +40,12 @@
     ;; deactivation ends a candidate's activation for one task or session,
     ;; while reversion moves the promoted lineage back to an earlier version
     ;; for everyone.
+    ;; INHERITED is law 9 made registry-visible -- a child born holding its
+    ;; parent's pins, announced -- and DISCARDED is the judgment a candidate
+    ;; never promoted; both arrived with the evolution table, which publishes
+    ;; them, and a name the vocabulary lacks is a silent drop at the wire.
     "improvement.created" "improvement.activated" "improvement.deactivated"
+    "improvement.inherited" "improvement.discarded"
     "improvement.promoted" "improvement.reverted"
     "component.version-created" "component.activated" "component.rolled-back")
   "Every event the organism may emit. Closed on purpose.")
