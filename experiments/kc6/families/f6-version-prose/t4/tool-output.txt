@@ -1,0 +1,6 @@
+Created version 3 of reshape. First attempt, splits on pipe.
+reshape failed: boom: field order wrong
+That did not compile: unmatched close parenthesis -- no version was created.
+Created version 8 of reshape. Second attempt, swaps first and last.
+Version 8 is in force for this task.
+Refused: live self-modification is disabled in this configuration.

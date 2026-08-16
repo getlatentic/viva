@@ -1,0 +1,8 @@
+Created version 3 of reshape. First cut.
+Created version 9 of parse-dialect. Handles the v2 framing.
+The v3 of reshape misordered fields; retrying.
+Created version 8 of reshape. Field order fixed.
+Run consumed 57384 tokens by 2026-08-16.
+Created version 12 of normalise. Strips 3 prefixes.
+That did not compile: candidate for widen did not compile.
+Version 12 is in force for this task.

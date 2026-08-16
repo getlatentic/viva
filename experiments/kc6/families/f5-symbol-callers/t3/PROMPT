@@ -1,0 +1,17 @@
+TRANSITION names two different symbols here: mini.kernel's exported one
+and mini.tools' internal one. Count each one's call sites across the corpus
+— package context decides which is which. Write answer.txt, exactly two
+lines:
+
+kernel <n>
+tools <n>
+
+The call rules, exactly: a CALL is an occurrence of the symbol in operator
+position — the first element of a compound form — resolved through the file's
+package context (in-package, package prefixes, local nicknames). #'x and 'x
+are references, not calls; comments and strings never count; a symbol's own
+definition form is not a call. Load order for package creation: kernel,
+ledger, actor, tools, cli.
+
+Grading runs against a pristine copy of these files plus your answer.txt, so
+editing the sources changes nothing.

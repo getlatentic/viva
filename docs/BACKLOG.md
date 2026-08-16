@@ -15,18 +15,18 @@ metered by `budget.py` between runs; model pinned to `deepseek-v4-flash` by
 a preflight gate that fails on any other value; scheduling off-peak
 mandatory** (amendment 13). What remains is authoring and running.
 
-- [ ] Author the six families, five tasks each, hidden tests written against
-      each task's specification before any arm runs — **the scored four are
-      frozen** (f1-f4, three-legged gate green on all; f3 and f4 reconcile
-      hand-computed answers against each check's independent derivation).
-      Held-out f5, f6 may now be authored — the scored four are fixed.
+- [x] Author the six families, five tasks each, hidden tests written against
+      each task's specification before any arm runs — **all six frozen**,
+      three-legged gate green on every task; f3, f4, f5 reconcile
+      hand-computed answers against each check's independent derivation
+      (f5's check builds the packages and walks operator positions itself).
+      Held-out f5, f6 authored last, after the scored four were fixed.
       Grading is pristine-plus-outputs per the families README and each
-      task's `graded` manifest. Split and order in families/README.md
-- [ ] Commit the fixed shuffle; the two held-out families are authored last,
-      after the scored four are frozen. Held out of pilots and authoring
-      knowledge, NEVER out of the analysis: all six enter the battery and the
-      primary n = 6 sign test (amendment 11 — review caught the reading where
-      the primary ran on four and significance was unreachable)
+      task's `graded` manifest
+- [x] Fixed split and order committed (families/README.md): scored 1-4,
+      held-out 5-6 authored last, battery order 3-1-4-2-6-5. Held out of
+      pilots and authoring knowledge, NEVER out of the analysis: all six
+      enter the battery and the primary n = 6 sign test (amendment 11)
 - [ ] Pilot slice: pre-check 2 (non-collapse, A-never-evolve vs B within 5%
       wall / 2% tokens) and pre-check 4 (capability floor) on the bound three
       (families 3, 1, 4 — amendment 12)

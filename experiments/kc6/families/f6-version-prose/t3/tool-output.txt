@@ -1,0 +1,5 @@
+Run started 2024-03-01, budget 17257 tokens, limit 30 requests.
+The v9 of the spec says amounts are integer cents.
+Reading 12 files took 3 seconds.
+Created version 12 of normalise. Strips the 3 legacy prefixes.
+Note: version numbering restarted twice in 2024.

@@ -1,0 +1,6 @@
+Created version 2 of format-record. Not in force yet -- activate_capability 2 to use it.
+Version 2 is in force for this task.
+Created version 4 of reshape. Converts pipe records to display form.
+Version 4 is in force for this task.
+Created version 9 of parse-dialect. Handles the v2 wire framing.
+Version 9 is in force for this task.

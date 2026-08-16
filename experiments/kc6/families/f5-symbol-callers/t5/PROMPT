@@ -1,0 +1,18 @@
+The full caller map of mini.actor's SPAWN: where it is defined, one line
+per calling file sorted by filename with that file's call count, then the
+total. Write answer.txt:
+
+defined <file>
+<file> <count>
+...
+total <n>
+
+The call rules, exactly: a CALL is an occurrence of the symbol in operator
+position — the first element of a compound form — resolved through the file's
+package context (in-package, package prefixes, local nicknames). #'x and 'x
+are references, not calls; comments and strings never count; a symbol's own
+definition form is not a call. Load order for package creation: kernel,
+ledger, actor, tools, cli.
+
+Grading runs against a pristine copy of these files plus your answer.txt, so
+editing the sources changes nothing.

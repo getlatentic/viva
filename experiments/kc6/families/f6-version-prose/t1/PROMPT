@@ -1,0 +1,12 @@
+tool-output.txt is one tool reply. What version was minted? Write
+answer.txt, exactly one line:
+
+version <n>
+
+The minting grammar, exactly: a version is minted only by a line containing
+`Created version <n> of <name>.` — digits, then `of`, then a name of
+non-space, non-period characters, then a literal period. Nothing else mints:
+not dates, not token counts, not `v9`-style mentions, not refusals. When a
+component is re-created, the LATEST minted version is the one in force.
+
+Grading runs against a pristine copy of these files plus your answer.txt.
