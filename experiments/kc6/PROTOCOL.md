@@ -81,8 +81,12 @@ are graded by hidden tests — `./check` exiting 0, as in the adaptation battery
 — never by a judge who can see `improvement.*` events.
 
 **Scale, fixed now: 6 families x 5 tasks, arms A and C at 3 repeats each,
-arm B at 3 repeats on 3 of the families. 225 runs, 13.5M tokens, $6.65 at the
-worst case of no cache at peak rates and $1.53 cached off-peak.**
+arm B at 3 repeats on families 3, 1, 4 — bound mechanically as the first
+three scored families in the committed battery order (3, 1, 4, 2, 6, 5), so
+the choice cannot follow the pilot. 225 runs.** Cost: 13.5M tokens and $6.65
+uncached-at-peak at the measured per-run anchor; the shape projections in the
+cost section bracket heavier families up to $45, and the caps are sized to
+the bracket, not the anchor.
 
 Twenty families was never buying significance. It was buying the power to
 detect a SMALL effect, and **a build decision does not need a small effect**:
@@ -169,7 +173,8 @@ shows the whole genealogy — `experiments/kc6/preflight.lisp`, plus
 
 **2. Non-collapse.** Arm A driven by a never-evolve policy must match arm B
 **within 5% on wall clock and 2% on tokens**, with solve rates equal within
-repeat noise, on a pilot slice of 3 non-held-out families. Above that, the
+repeat noise, on a pilot slice of the same mechanically bound three
+families arm B runs on (3, 1, 4). Above that, the
 machinery's mere presence is a material tax and is reported as one.
 
 **3. Instrumentality.** In arm A pilots, versions the agent creates must
@@ -205,8 +210,9 @@ across repeats.
 
 **Unit of analysis is the family, not the task.** Tasks within a family are
 sequential and dependent by construction — that dependence is the phenomenon —
-so treating 900 runs as 900 independent observations would inflate significance
-by roughly the family length. Twenty paired observations per comparison.
+so treating 225 runs as 225 independent observations would inflate
+significance by roughly the family length. Six paired observations for A
+against C; three for the arm-B control.
 
 ## Decision rule, set now
 
@@ -221,7 +227,12 @@ reduction in tokens per solved task**, or **+0.20 absolute in late-position
 solve rate**, in the same direction on both.
 
 **Keep the architecture** if A beats C at that effect size with all six
-families agreeing, and A beats B on the same terms.
+families agreeing, and A passes the arm-B control. The control is a
+consistency claim, not a significance claim — n = 3 cannot reach 0.05 and is
+not asked to, so "A beats B on the same terms" was impossible as written: on
+all three of arm B's bound families, A at least matches B on the primary
+metrics and no family shows B better by the effect size. The door's overhead
+is controlled, not adjudicated.
 
 **Kill criterion six fires** if A fails to beat C. The honest conclusion is
 then that external skills capture the value without the live image, and the
@@ -235,12 +246,16 @@ architecture on.
 
 **The ambiguous zone**, allowed once: if all six families agree in direction
 but the effect is under threshold, run one pre-sized extension of 4 further
-families, then decide on the combined set. No second extension; that is the
-infinite refinement loop wearing a lab coat.
+families, then decide on the combined set with the same one-sided sign test
+at n = 10: **keep only if at least nine of ten families agree** (p = 0.011);
+eight of ten is p = 0.055 and fails. Extension families are authored after
+the decision to extend but before any extension run, under the same three
+authorship mechanisms. No second extension; that is the infinite refinement
+loop wearing a lab coat.
 
-**The threshold never moves; N does.** If the pilot shows the noise floor makes
-a 20% effect undetectable at 20 families, the battery is *enlarged* from the
-fixed shuffle before any scored run. Lowering a pre-registered threshold to
+**The threshold never moves; N does.** If the pilot shows the noise floor
+makes the 30% effect undetectable at six families, the battery is *enlarged* —
+more families authored under the same mechanisms — before any scored run. Lowering a pre-registered threshold to
 meet the data is how a pre-registration becomes a rationalisation.
 
 ## Threats and their mechanisms
@@ -269,8 +284,9 @@ pre-check three could not fail before the ledger recorded use at all.
 
 ## Cost, and what is measured versus bounded
 
-Bounded by the harness, exactly: `--limit 30` model requests per task-run, 900
-task-runs, so **at most 27,000 model requests** for the full battery.
+Bounded by the harness, exactly: `--limit 30` model requests per task-run,
+225 task-runs, so **at most 6,750 model requests** for the full battery, and
+at most 2,700 for the 90-run pilot slice.
 
 **Measured anchors**, from two live runs of one toy task on the pinned model,
 the same prompt in both arms:
@@ -308,17 +324,20 @@ not request count — doubling the requests took misses from 3.0k to 5.0k while
 total tokens went from 17k to 57k. Multiplying total tokens by a miss price
 overstates the bill by an order of magnitude.
 
-Projected over 900 runs, three shapes of family task:
+Projected over the 225 runs, three shapes of family task:
 
 ```
           req  end ctx   tok/run     total tok    miss tok
-light      10    8,000    56,800    51,120,000   9,720,000
-medium     18   16,000   174,240   156,816,000  16,920,000
-heavy      28   28,000   439,040   395,136,000  27,720,000
+light      10    8,000    56,800    12,780,000   2,430,000
+medium     18   16,000   174,240    39,204,000   4,230,000
+heavy      28   28,000   439,040    98,784,000   6,930,000
 ```
 
-**The cap, fixed now: 400M total tokens and 30M cache-miss tokens for the full
-battery, and 20M total for the pilot slice.** Whichever binds first stops the
+**The cap, fixed now: 120M total tokens and 9M cache-miss tokens for the full
+battery, and 20M total for the pilot slice.** Amendment 12 tightened these
+from caps sized to the 900-run draft — a cap four times looser than its
+design is not a cap, and shrinking one before any data is safe in exactly the
+way loosening one is not. Whichever binds first stops the
 run. The cap is a limit rather than a prediction — the heavy column fits inside
 it — and the pilot still measures the real per-run figure before the battery
 starts, but no run waits on that measurement to be safe.
@@ -330,14 +349,14 @@ for nothing:
 
 ```
 shape      total tok        miss   off-peak     peak   no cache
-light     51,120,000   9,720,000      $4.07    $8.15     $24.71
-medium   156,816,000  16,920,000      $7.66   $15.33     $72.99
-heavy    395,136,000  27,720,000     $13.28   $26.56    $180.07
-pilot      15,681,600   1,692,000     $0.77    $1.53      $7.30
+light     12,780,000   2,430,000      $1.02    $2.04      $6.18
+medium    39,204,000   4,230,000      $1.92    $3.83     $18.25
+heavy     98,784,000   6,930,000      $3.32    $6.64     $45.02
+pilot     15,681,600   1,692,000      $0.77    $1.53      $7.30
 ```
 
-On `deepseek-v4-pro` every figure is three times larger: $40 off-peak at the
-heavy end, $540 peak and uncached. If the capability floor forces Pro, that is
+On `deepseek-v4-pro` every figure is three times larger: about $10 off-peak
+at the heavy end, $135 peak and uncached. If the capability floor forces Pro, that is
 the price of clearing it, and it is stated here rather than discovered.
 
 **THE CACHE IS NOT GUARANTEED, and the `no cache` column is the planning
@@ -419,6 +438,24 @@ original draft against the machinery before judging it.
    test was being advertised to the model with a malformed schema. Added as
    pre-check zero, which runs first and stops the gate. **No battery may run
    while it fails**, and no result obtained while it fails means anything.
+
+12. **The 900-run draft's last survivors, and the last open freedoms, on
+   review's sweep.** Five stale numbers, four caught by review and a fifth
+   found applying it: the unit-of-analysis paragraph argued from 900 runs
+   and twenty paired observations where the design is 225 and six; the
+   request bound was 27,000 against a design bounded at 6,750; the token
+   projection and the caps were sized to 900 runs, leaving the pre-registered
+   cap four times looser than the battery it capped — recomputed at 225, caps
+   tightened to 120M total / 9M miss; and the threshold-never-moves paragraph
+   itself still said "a 20% effect at 20 families" where the rule is 30% at
+   six. Two freedoms closed: arm B's families and the pilot slice are bound
+   mechanically to the first three scored families in the committed battery
+   order (3, 1, 4), and the combined-set test is named — nine of ten at
+   p = 0.011, eight of ten fails. One impossibility repaired: "A beats B on
+   the same terms" asked six families to agree about an arm that runs on
+   three; the arm-B control is now stated at the strength n = 3 carries —
+   consistency, not significance. All before family two exists and before
+   any pilot run.
 
 11. **"Held out" made unambiguous before family one, on review's catch.** The
    re-scoped text said the held-out pair was "opened only for the final

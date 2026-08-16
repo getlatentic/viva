@@ -9,9 +9,9 @@ else is a tripwire, armed and waiting.
 ## NOW — KC6, the gate
 
 The experiment is pre-registered (`experiments/kc6/PROTOCOL.md`), priced
-($6.65 worst-case uncached at peak; $1.53 cached off-peak), and gated
-(`./experiments/kc6/preflight.sh`, green). What remains is authoring and
-running.
+($6.65 uncached-at-peak at the measured anchor, shapes bracketed to $45
+heavy; $1-3 cached off-peak), and gated (`./experiments/kc6/preflight.sh`,
+green). What remains is authoring and running.
 
 - [ ] Author the six families, five tasks each, hidden tests written against
       each task's specification before any arm runs — **f1-paren-balance
@@ -23,11 +23,13 @@ running.
       primary n = 6 sign test (amendment 11 — review caught the reading where
       the primary ran on four and significance was unreachable)
 - [ ] Pilot slice: pre-check 2 (non-collapse, A-never-evolve vs B within 5%
-      wall / 2% tokens) and pre-check 4 (capability floor) on 3 families
+      wall / 2% tokens) and pre-check 4 (capability floor) on the bound three
+      (families 3, 1, 4 — amendment 12)
 - [ ] Fix the cost cap from the pilot measurement in RESULTS.md before run one
-      (cap already bounded: 400M total / 30M miss tokens, whichever first)
+      (caps: 120M total / 9M miss for the battery, 20M pilot, 6,750 requests
+      — re-tightened to the 225 design by amendment 12)
 - [ ] The battery: 225 runs — A and C at 3 repeats on all six families, B at
-      3 repeats on three
+      3 repeats on the bound three (3, 1, 4)
 - [ ] RESULTS.md: verdict section quotes the decision rule verbatim and fills
       in only the numbers
 
