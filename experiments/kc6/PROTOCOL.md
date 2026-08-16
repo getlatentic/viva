@@ -242,11 +242,39 @@ isolates the door. A against C carries 656 tokens of inherent asymmetry, since
 arm C cannot be given tools it is defined by not having; that is reported
 rather than corrected.
 
-Projected from those anchors, the full battery is of the order of 30M tokens
-and **tens of dollars**, not hundreds. The cap is still fixed by a measured
-pilot on the real families — these tasks are toys and a repo-navigation family
-will cost more per request — and stated in dollars and tokens in `RESULTS.md`
-before run one. The run stops at the cap.
+**Cache behaviour is the thing that decides this cost, and it is measured.**
+The conversation prefix is stable across a run, so each request misses only on
+what was appended since the last one:
+
+```
+arm A   5 requests   13,440 hit   2,991 miss     826 out    82% hit rate
+arm B  10 requests   49,024 hit   5,033 miss   3,327 out    91% hit rate
+```
+
+Cache-miss tokens are therefore roughly flat per run and track content READ,
+not request count — doubling the requests took misses from 3.0k to 5.0k while
+total tokens went from 17k to 57k. Multiplying total tokens by a miss price
+overstates the bill by an order of magnitude.
+
+Projected over 900 runs, three shapes of family task:
+
+```
+          req  end ctx   tok/run     total tok    miss tok
+light      10    8,000    56,800    51,120,000   9,720,000
+medium     18   16,000   174,240   156,816,000  16,920,000
+heavy      28   28,000   439,040   395,136,000  27,720,000
+```
+
+**The cap, fixed now: 400M total tokens and 30M cache-miss tokens for the full
+battery, and 20M total for the pilot slice.** Whichever binds first stops the
+run. The cap is a limit rather than a prediction — the heavy column fits inside
+it — and the pilot still measures the real per-run figure before the battery
+starts, but no run waits on that measurement to be safe.
+
+At deepseek-chat's published rates the battery is single-digit to low
+double-digit dollars, and the pilot slice about a dollar. Rates are the one
+input here not verified against the provider, so the tokens are the number and
+the dollars are an order of magnitude.
 
 **One ledger per run** is a requirement, not a convention: the analysis is a
 program over a single run's ledger and `instrumentality.py` refuses a file
