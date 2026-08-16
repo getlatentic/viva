@@ -596,6 +596,16 @@ GATED   replay barrier exact under concurrent publication; journal owner a
         supervised generation that restarts and heals; deregistration follows
         confirmed durability; startup acquisition unwind-protected; the
         journal queue bounded by a high-water mark
+BUILT   evolution wired: versions as function objects, one resolution door,
+        registry-visible inheritance ordered by a single sender, the
+        improvement.* events live on streams and in the durable ledger,
+        lineage reconstructible after restart
+
+HARDENING BACKLOG, with evidence: one full-suite deadlock observed once
+(nine threads on one mutex, holder unidentified), unreproduced across two
+instrumented 8-round hunts -- in-image and fresh-process -- and ~14 further
+clean runs. The stall tripwire in the suite is permanent: any recurrence
+self-diagnoses with every thread's Lisp backtrace and exit 99.
 NEXT    phase 1.5 -- compositional agency: TASK as the unit, scoped children
         for sub-agents, detached children for spawned work, a supervisor
         owning topology, task-to-task messaging, isolated conversations
