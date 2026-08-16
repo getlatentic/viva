@@ -144,9 +144,14 @@ diagnostic. Silently, because the diagnostic's own destructuring then missed.")
   (destructuring-bind (op &rest arguments) effect
     (ecase op
       (:start-task-worker
+       ;; Worker first, reply second: SPAWN-TASK returning must imply the
+       ;; whole chain ran -- inheritance posted and applied, worker started.
+       ;; With the reply first, the caller could read the child's box in the
+       ;; gap, and the ordering attack was not caught because the race
+       ;; happened to go the lucky way.
+       (start-task-worker supervisor (first arguments) options)
        (a:when-let ((reply (getf options :reply)))
-         (mailbox:send-message reply (first arguments)))
-       (start-task-worker supervisor (first arguments) options))
+         (mailbox:send-message reply (first arguments))))
       (:publish
        ;; Destructured per name: the shapes differ, and reading (:task.error
        ;; :spawn-refused parent) as (name id ...) published the refusal to
@@ -174,15 +179,18 @@ diagnostic. Silently, because the diagnostic's own destructuring then missed.")
        (destructuring-bind (id outcome) arguments
          (declare (ignore outcome))
          (let ((state (task-state supervisor id)))
-           (if (eq :draining state)
-               (task-publish supervisor id "task.draining" (event::object "task" id))
-               (task-publish supervisor id (terminal-event-name state)
-                             (event::object "task" id))))))
+           (cond ((eq :draining state)
+                  (task-publish supervisor id "task.draining" (event::object "task" id)))
+                 (t
+                  (task-publish supervisor id (terminal-event-name state)
+                                (event::object "task" id))
+                  (evolution-tell :task-ended id))))))
       (:publish-task-terminal
        (let* ((id (first arguments))
               (state (task-state supervisor id)))
          (task-publish supervisor id (terminal-event-name state)
-                       (event::object "task" id))))
+                       (event::object "task" id))
+         (evolution-tell :task-ended id)))
       (:notify-parent-if-resolved
        (let* ((id (first arguments))
               (task (tasktree:task (supervisor-tree supervisor) id)))
@@ -211,6 +219,10 @@ diagnostic. Silently, because the diagnostic's own destructuring then missed.")
 
 (defvar *task-lanes* 0)
 
+(defun task-terminal-p (supervisor id)
+  (vivarium.tasktree:terminal-p
+   (vivarium.tasktree:task (supervisor-tree supervisor) id)))
+
 (defun start-task-worker (supervisor id options)
   "The mechanics of a task: a sub-agent of the owning session's agent -- for a
 child, of its parent task's agent -- run on its own thread, reporting the
@@ -223,15 +235,32 @@ thread, never inherited ambiently."
          (seed (if parent-id
                    (getf (rig supervisor parent-id) :agent)
                    (cell-agent cell)))
-         (agent (harness:sub-agent seed (format nil "task-~d-~d" id (incf *task-lanes*))))
+         ;; The seed's own request budget, not SUB-AGENT's default of 20: a
+         ;; task worker on the default silently completed after twenty paced
+         ;; requests, so every `enduring` test agent endured about 1.6
+         ;; seconds -- roots completed mid-test, the tree correctly refused
+         ;; spawns under the completed parent, and the refusals were chased
+         ;; as three different phantom bugs before a probe printed the state.
+         (agent (harness:sub-agent seed (format nil "task-~d-~d" id (incf *task-lanes*))
+                                   :request-limit (harness:agent-request-limit seed)))
          (text (getf options :text)))
     (setf (gethash id (supervisor-rigging supervisor)) (list :agent agent :cell cell))
-    (bt:make-thread
-     (lambda ()
-       (let ((outcome
-               (handler-case
-                   (progn (agent:call-in-tool-context agent (lambda () (harness:ask agent text)))
-                          (if (agent:cancelled-p agent) :cancelled :completed))
-                 (error () :failed))))
-         (task-tell :task-finished id outcome)))
-     :name (format nil "vivarium-task-~d" id))))
+    ;; THE ORDERING OBLIGATION, as a mechanism: this thread -- the tree's one
+    ;; writer -- posts the spawn to the evolution owner and WAITS for the
+    ;; inheritance to be applied before the child's worker exists, so the
+    ;; child's first resolution already sees its parent's pins, and the
+    ;; registry can see through spawns when a discard asks who runs what.
+    (when parent-id
+      (evolution-ask :task-spawned id parent-id))
+    (let ((box (task-context-box id cell)))
+      (bt:make-thread
+       (lambda ()
+         (let ((*activation-box* box))
+           (let ((outcome
+                   (handler-case
+                       (progn (agent:call-in-tool-context
+                               agent (lambda () (harness:ask agent text :reset nil)))
+                              (if (agent:cancelled-p agent) :cancelled :completed))
+                     (error () :failed))))
+             (task-tell :task-finished id outcome))))
+       :name (format nil "vivarium-task-~d" id)))))

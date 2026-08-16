@@ -48,7 +48,11 @@
            #:shutdown #:await-shutdown #:await-turn
            #:subscribe #:subscribe-since #:unsubscribe #:since
            #:find-cell #:all-cells #:snapshot #:+terminal-events+ #:*journal-root*
-           #:spawn-task #:cancel-task #:task-tree-snapshot #:ensure-supervisor))
+           #:spawn-task #:cancel-task #:task-tree-snapshot #:ensure-supervisor
+           #:ensure-evolver #:create-candidate #:activate-candidate
+           #:promote-candidate #:revert-component #:discard-candidate
+           #:call-component #:resolve-component #:reconstruct-lineage
+           #:evolution-registry #:*activation-box*))
 
 (defpackage #:vivarium.daemon
   (:use #:cl)

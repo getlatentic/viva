@@ -76,6 +76,23 @@ same `define-owner` as the session kernel, and the supervisor
 `task.spawn` / `task.list` / `task.cancel` over RPC; task events on the
 owning session's stream.
 
+## Phase 2 — the evolution lifecycle. **Wired, through the proof.**
+
+Versions are first-class function objects compiled in the running image;
+components resolve through a task's activation context, never through
+`symbol-function`; promotion, reversion, discard and inheritance are the
+evolution owner performing `evolution-transition`, whose laws were
+TLC-verified -- twice, the second time after independent review proved three
+holes against the tagged model -- before any of this existed. The
+`improvement.*` events, declared in the vocabulary long before anything could
+emit them, are live on session streams and in the durable ledger.
+
+**Next, and named before we stand at it: kill criterion six.** The machinery
+the mission asked for now exists. The honest next artifact is not more
+substrate -- it is the experiment testing whether live self-modification
+measurably improves outcomes over external skills and tools, designed with
+the same discipline as everything above.
+
 ## Level 2 — live self-modification, for the current task
 
 The agent is working and finds its own capabilities inadequate, so it changes

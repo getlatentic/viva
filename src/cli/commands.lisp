@@ -121,6 +121,10 @@ growth."
 (defun command-test (parsed)
   (declare (ignore parsed))
   (asdf:load-system "vivarium/tests")
+  ;; The stall tripwire lives in tests/daemon.lisp and arms with the FIRST
+  ;; daemon test, not here: a watchdog thread alive from startup broke every
+  ;; fork-based trial test, because SBCL refuses to fork a multithreaded
+  ;; image -- nine failures from the instrument meant to catch one.
   (let ((status (uiop:symbol-call :parachute :status
                                   (uiop:symbol-call :parachute :test :vivarium.tests))))
     ;; PARACHUTE:STATUS returns :PASSED or :FAILED, and both are true. Testing

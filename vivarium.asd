@@ -74,6 +74,7 @@
                              (:file "package")
                              (:file "events")
                              (:file "actor")
+                             (:file "evolver")
                              (:file "supervisor")
                              (:file "server")))))
 

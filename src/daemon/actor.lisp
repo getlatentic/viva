@@ -171,6 +171,15 @@ if it is ever forced to evict them.")
 (defun journal-path-for (id)
   (format nil "~a~a-~d.jsonl" *journal-root* id (get-universal-time)))
 
+(defun evolution-ledger-path ()
+  (format nil "~aevolution.jsonl" *journal-root*))
+
+(defun journal-evolution (name data)
+  "Promotions and reversions are durable facts about the organism: the
+lineage must be reconstructible from the improvement.* ledger after a
+restart, because the registry is image state and the image is mortal."
+  (journal-post (list :evolution nil (cons name data))))
+
 (defun journal-post (message)
   "Offer MESSAGE to the current journal generation. Returns T if accepted.
 
@@ -232,6 +241,25 @@ answer the caller can act on."
                         ;; :SYNC confirms for a reader; :CLOSE also retires the
                         ;; session's stream.
                         (:sync (when extra (bt:signal-semaphore extra :count 1000)))
+                        (:evolution
+                         (handler-case
+                             (let ((out (or (gethash :evolution streams)
+                                            (setf (gethash :evolution streams)
+                                                  (open (evolution-ledger-path)
+                                                        :direction :output
+                                                        :if-exists :append
+                                                        :if-does-not-exist :create
+                                                        :external-format :utf-8)))))
+                               (jzon:with-writer* (:stream out)
+                                 (jzon:write-value*
+                                  (let ((table (make-hash-table :test #'equal)))
+                                    (setf (gethash "event" table) (car extra)
+                                          (gethash "data" table)
+                                          (or (cdr extra) (make-hash-table :test #'equal)))
+                                    table)))
+                               (terpri out)
+                               (force-output out))
+                           (error () nil)))
                         (:close
                          (a:when-let ((out (gethash (cell-id cell) streams)))
                            (ignore-errors (close out))
@@ -246,37 +274,79 @@ answer the caller can act on."
             do (ignore-errors (close out)))
       (journal-owner-exited service))))
 
-(defun journal-owner-exited (service)
-  "The exit boundary: verify the generation, then decide.
+(defvar *journal-machine* nil
+  "The journal owner's kernel state, (:available ?gen) or (:restarting ?gen).
+Owned by *JOURNAL-LOCK*. Decisions about generation death and restart go
+through KERNEL:JOURNAL-TRANSITION -- the table that was, until now, the one
+authority whose runtime did not consult it. Hardening item one, retired.")
 
-Policy is restart -- the failure that killed one write burst is rarely
-permanent -- and the restart heals: every cell's ring events above its
-committed watermark are re-posted to the new generation, so nothing still in
-memory is lost to the death. What the ring has already evicted uncommitted
-was declared degraded when it happened."
-  (bt:with-lock-held (*journal-lock*)
-    (when (eq service *journal-service*)
-      (setf (journal-state service) :failed
-            *journal-service* nil)))
-  ;; Outside the journal lock: restarting takes it again, and re-posting
-  ;; takes cell locks, which must never nest inside it the other way.
-  (when (eq :failed (journal-state service))
-    (ensure-journal)
-    (dolist (cell (all-cells))
-      (dolist (event (owning (cell) (remembered-since cell (cell-committed cell))))
-        (journal-post (list :append cell event))))))
+(defun journal-dispatch (message)
+  "Translate, transition, perform -- for the journal owner's own lifecycle.
+Callers hold *JOURNAL-LOCK*; the effects that must not run under it are
+returned to the caller instead of performed."
+  (multiple-value-bind (next effects)
+      (handler-bind ((kernel:unmatched-transition
+                       (lambda (condition)
+                         (declare (ignore condition))
+                         (invoke-restart 'kernel:ignore-message))))
+        (kernel:journal-transition *journal-machine* message))
+    (setf *journal-machine* next)
+    effects))
+
+(defun journal-owner-exited (service)
+  "The exit boundary: the GENERATION reports its death, and the checked table
+decides. A predecessor's late death is the table's stale clause -- diagnosed,
+restarting nothing -- which is the identity law this supervisor used to
+enforce by hand and now cannot get wrong differently from the spec."
+  (let ((effects (bt:with-lock-held (*journal-lock*)
+                   (when (eq service *journal-service*)
+                     (setf (journal-state service) :failed
+                           *journal-service* nil))
+                   (journal-dispatch (list :owner-exited (journal-id service))))))
+    ;; Outside the journal lock: spawning takes it again, and re-posting
+    ;; takes cell locks, which must never nest inside it the other way.
+    (dolist (effect effects)
+      (destructuring-bind (op &rest arguments) effect
+        (ecase op
+          (:spawn-owner (journal-spawn-generation (first arguments)))
+          (:diagnostic
+           (format *error-output* "~&vivarium journal: ~(~a~) generation ~a~%"
+                   (first arguments) (second arguments))))))))
+
+(defun journal-spawn-generation (generation)
+  "The :SPAWN-OWNER effect, then :OWNER-STARTED back through the table, whose
+:REPOST-UNCOMMITTED effect heals what the corpse left unconfirmed."
+  (let ((service (make-journal-service :id generation)))
+    (ensure-directories-exist *journal-root*)
+    (setf (journal-thread service)
+          (bt:make-thread (lambda () (run-journal-owner service))
+                          :name (format nil "vivarium-journal-~d" generation)))
+    (let ((effects (bt:with-lock-held (*journal-lock*)
+                     (setf *journal-service* service)
+                     (journal-dispatch (list :owner-started generation)))))
+      (dolist (effect effects)
+        (when (eq (first effect) :repost-uncommitted)
+          (dolist (cell (all-cells))
+            (dolist (event (owning (cell) (remembered-since cell (cell-committed cell))))
+              (journal-post (list :append cell event)))))))))
 
 (defun ensure-journal ()
-  "The current generation, starting one if none is available."
-  (bt:with-lock-held (*journal-lock*)
-    (or *journal-service*
-        (let ((service (make-journal-service :id (incf *journal-generation*))))
-          (ensure-directories-exist *journal-root*)
-          (setf (journal-thread service)
-                (bt:make-thread (lambda () (run-journal-owner service))
-                                :name (format nil "vivarium-journal-~d"
-                                              (journal-id service))))
+  "The current generation, bootstrapping the machine and generation one if
+none is available."
+  (let ((bootstrap nil))
+    (bt:with-lock-held (*journal-lock*)
+      (unless *journal-machine*
+        (setf *journal-machine* (list :available (incf *journal-generation*))
+              bootstrap *journal-generation*)))
+    (when bootstrap
+      (let ((service (make-journal-service :id bootstrap)))
+        (ensure-directories-exist *journal-root*)
+        (setf (journal-thread service)
+              (bt:make-thread (lambda () (run-journal-owner service))
+                              :name (format nil "vivarium-journal-~d" bootstrap)))
+        (bt:with-lock-held (*journal-lock*)
           (setf *journal-service* service)))))
+  *journal-service*)
 
 (defun journal-sync (&key (timeout 15))
   "Wait until everything posted so far is on disk. Returns T when confirmed."

@@ -26,12 +26,50 @@
       (format nil "/tmp/vivarium-test-journal-~36r/"
               (random (expt 2 40) (make-random-state t))))
 
+(defvar *suite-watchdog* nil)
+(defvar *suite-beat* 0)
+
+(defun ensure-suite-watchdog ()
+  "One full-suite deadlock has been OBSERVED -- nine threads on one mutex,
+holder unidentified, never reproduced across an instrumented 8-round hunt. If
+it ever recurs, this produces the diagnosis: on a stall far past any honest
+suite duration, every thread prints its Lisp backtrace and the run exits 99.
+
+Armed by the FIRST daemon test rather than at suite startup: the daemon tests
+are where the hang lived, they run after every fork-based trial test, and a
+watchdog thread alive during those forks broke all of them -- SBCL refuses to
+fork a multithreaded image."
+  (setf *suite-beat* (get-universal-time))
+  (unless *suite-watchdog*
+    (setf *suite-watchdog*
+          (bt:make-thread
+           (lambda ()
+             ;; A STALL detector, not a timer: the first version fired 1200
+             ;; seconds after arming regardless of progress, which would have
+             ;; killed any slow-but-healthy run with a false stall dump. The
+             ;; beat is refreshed by every daemon-test fixture; only silence
+             ;; past the window fires it.
+             (loop (sleep 60)
+                   (when (> (- (get-universal-time) *suite-beat*) 900)
+                     (return)))
+             (format t "~&======= SUITE STALLED: all-thread backtraces =======~%")
+             (dolist (thread (bt:all-threads))
+               (format t "~&----- ~a -----~%" (bt:thread-name thread))
+               (ignore-errors
+                (sb-thread:interrupt-thread
+                 thread (lambda () (sb-debug:print-backtrace :count 14))))
+               (sleep 0.3))
+             (finish-output)
+             (uiop:quit 99))
+           :name "suite-watchdog"))))
+
 (defun daemon-test-path ()
   (format nil "/tmp/vivarium-daemond-~36r.sock" (random (expt 2 48) (make-random-state t))))
 
 (defmacro with-daemon ((path) &body body)
   "A daemon of our own, on its own socket, stopped afterwards whatever happens."
   `(let ((,path (daemon-test-path)))
+     (ensure-suite-watchdog)
      (unwind-protect
           (progn (daemon:serve :path ,path :background t)
                  (loop repeat 100 until (daemon:running-p ,path) do (sleep 0.01))
@@ -190,6 +228,7 @@ traffic that put two client threads on one descriptor."
 
 (defmacro with-paced-cell ((cell agent &rest options) &body body)
   `(with-repository (environment)
+     (ensure-suite-watchdog)
      (let* ((,cell (paced-cell environment ,@options))
             (,agent (vivarium.actor::cell-agent ,cell)))
        (declare (ignorable ,agent))
@@ -1349,3 +1388,174 @@ class, and the class overrides the pacing initforms."))
   ;; lifetime; REVERTED moves the promoted lineage back for everyone; an
   ;; unpromoted candidate reaches a task only through that task's own pin.
   (true (vivarium.evolution:run-evolution-self-test)))
+
+;;; Evolution wired: the registry's laws driving real boxes, ledgers, tasks
+
+(define-test "the evolution lifecycle runs end to end through the one door"
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (multiple-value-bind (baseline condition)
+        (actor:create-candidate "greet" '(lambda (name) (format nil "hello, ~a" name))
+                                :cell cell)
+      (true (null condition))
+      (true (integerp baseline))
+      (actor:promote-candidate baseline :cell cell)
+      ;; Outside any task: the promoted default resolves.
+      (is string= "hello, world" (actor:call-component "greet" "world"))
+      ;; A task pins a candidate; visibility is FROM THE NEXT RESOLUTION,
+      ;; through the box -- the semantics, held by a test.
+      (multiple-value-bind (candidate c2)
+          (actor:create-candidate "greet" '(lambda (name) (format nil "HELLO, ~a" name)))
+        (true (null c2))
+        (let ((box (vivarium.actor::task-context-box "test-task" cell)))
+          (let ((vivarium.actor:*activation-box* box))
+            (is string= "hello, world" (actor:call-component "greet" "world"))
+            (actor:activate-candidate "test-task" candidate :cell cell)
+            (is string= "HELLO, world" (actor:call-component "greet" "world"))))
+        ;; Another context never sees the pin: isolation at the surface.
+        (is string= "hello, world" (actor:call-component "greet" "world"))
+        ;; Discard refused while pinned; after the task ends, it proceeds.
+        (true (member :refused (alexandria:ensure-list
+                                (actor:discard-candidate candidate))))
+        (vivarium.actor::evolution-tell :task-ended "test-task")
+        (true (daemon-wait
+               (lambda () (eql candidate (actor:discard-candidate candidate)))
+               :timeout 10)
+              "the discard never proceeded after the pin died")
+        ;; The story is on the session stream.
+        (let ((names (cell-event-names cell)))
+          (dolist (expected '("improvement.created" "improvement.activated"
+                              "improvement.deactivated"))
+            (true (member expected names :test #'string=)
+                  "~a never published" expected)))))))
+
+(define-test "a child's first resolution already sees its parent's pins"
+  ;; The ordering obligation as behaviour: the supervisor posts :task-spawned
+  ;; and WAITS before the child's worker exists, so there is no window where
+  ;; the child resolves without its inheritance.
+  (with-repository (environment)
+    (let ((cell (enduring-cell environment)))
+      (unwind-protect
+           (let ((root (actor:spawn-task cell "root work")))
+             (true (daemon-wait (lambda () (eq :running (task-state-now root))) :timeout 15))
+             (multiple-value-bind (candidate condition)
+                 (actor:create-candidate "search" '(lambda () :v2) :cell cell)
+               (declare (ignore condition))
+               (actor:activate-candidate root candidate :cell cell)
+               ;; Twenty spawns, each read immediately: fire-and-forget
+               ;; ordering wins this race sometimes, which is exactly why one
+               ;; spawn proved nothing when this attack first ran. Each child
+               ;; LANDS before the next spawns -- cancellation is asynchronous
+               ;; and a cancelling child is still live, so twenty rapid spawns
+               ;; piled into the fan-out bound and the tree correctly refused
+               ;; the ninth: the first version of this hammer failed against
+               ;; the law it was not testing.
+               (dotimes (round 20)
+                 ;; The evolver must be BUSY for the unordered interleaving to
+                 ;; exist at all: idle, it processes a fire-and-forget spawn in
+                 ;; microseconds and wins every race, which let the ordering
+                 ;; attack escape twice. Fifty queued messages of headroom turn
+                 ;; `the reply implies the inheritance ran` from luck into the
+                 ;; property under test.
+                 (dotimes (i 50)
+                   (vivarium.actor::evolution-tell
+                    :task-ended (format nil "noise-~d-~d" round i)))
+                 (let ((child (actor:spawn-task cell "scoped help" :parent root :scoped t)))
+                   (true (integerp child) "round ~d: spawn refused" round)
+                   (when (integerp child)
+                     (let ((box (vivarium.actor::task-context-box child nil)))
+                       (true (assoc "search" (car box) :test #'equal)
+                             "round ~d: the child's box is empty" round))
+                     (actor:cancel-task child)
+                     (true (daemon-wait (lambda () (eq :cancelled (task-state-now child)))
+                                        :timeout 20)
+                           "round ~d: the child never landed" round))))
+               (let ((child (actor:spawn-task cell "scoped help" :parent root :scoped t)))
+                 (true (integerp child))
+                 ;; And the registry can see through the spawn: the parent
+                 ;; dies, the child's inherited pin still blocks the discard.
+                 (actor:cancel-task root)
+                 (true (daemon-wait (lambda () (eq :cancelled (task-state-now root)))
+                                    :timeout 30)))))
+        (actor:shutdown cell)))))
+
+(define-test "setf of symbol-function is not a door"
+  ;; The enforcement point of the entire guarantee: call sites reach
+  ;; components only through the activation context. A setf of a symbol's
+  ;; function cell is promotion through the back door -- and here, it is a
+  ;; setf of something nothing resolves through.
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (multiple-value-bind (baseline condition)
+        (actor:create-candidate "bypass-probe" '(lambda () :honest) :cell cell)
+      (declare (ignore condition))
+      (actor:promote-candidate baseline)
+      (setf (symbol-function 'bypass-probe-decoy) (lambda () :bypassed))
+      (is eq :honest (actor:call-component "bypass-probe"))
+      ;; Even a symbol named like the component changes nothing: components
+      ;; are keys in the owner's table, not fbound names.
+      (setf (symbol-function (intern "BYPASS-PROBE")) (lambda () :bypassed))
+      (is eq :honest (actor:call-component "bypass-probe")))))
+
+(define-test "a candidate that will not compile is the caller's rejection"
+  (multiple-value-bind (id condition)
+      (actor:create-candidate "broken" '(lambda (x) (no-such-function-anywhere x)))
+    ;; Undefined functions warn rather than error at compile time; a
+    ;; malformed lambda errors. Use the malformed case for determinism.
+    (declare (ignore id condition)))
+  (multiple-value-bind (id condition)
+      (actor:create-candidate "broken" '(lambda (x)))
+    (declare (ignore id condition)))
+  (multiple-value-bind (id condition)
+      (actor:create-candidate "broken" '(lambda "not a lambda list" x))
+    (false id "a malformed candidate was accepted")
+    (true condition "the rejection carried no condition"))
+  ;; And the owner survived its caller's mistake.
+  (multiple-value-bind (id condition)
+      (actor:create-candidate "broken" '(lambda () :fine))
+    (true (null condition))
+    (true (integerp id))))
+
+(define-test "the lineage is reconstructible from the ledger after a restart"
+  ;; Promotions and reversions are durable facts about the organism; the
+  ;; registry is image state and the image is mortal.
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (multiple-value-bind (v1 c1) (actor:create-candidate "durable" '(lambda () 1))
+      (declare (ignore c1))
+      (multiple-value-bind (v2 c2) (actor:create-candidate "durable" '(lambda () 2))
+        (declare (ignore c2))
+        (actor:promote-candidate v1)
+        (actor:promote-candidate v2)
+        (actor:revert-component "durable")
+        (true (vivarium.actor::journal-sync) "the ledger never confirmed")
+        (let ((lineages (actor:reconstruct-lineage)))
+          (is eql v1 (first (cdr (assoc "durable" lineages :test #'equal)))
+              "reconstruction disagrees with the registry: ~s" lineages)
+          (is eql v1 (vivarium.evolution:current-promoted
+                      (actor:evolution-registry) "durable")))))))
+
+(define-test "a predecessor's late death restarts nothing, by the table"
+  ;; Hardening item one, retired: the journal supervisor's decisions now go
+  ;; through KERNEL:JOURNAL-TRANSITION, whose stale-generation clause is the
+  ;; identity law. A dead generation reporting twice -- or reporting after its
+  ;; successor is up -- is diagnosed, not restarted over the living.
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (vivarium.actor::ensure-journal)
+    (let ((corpse vivarium.actor::*journal-service*))
+      (sb-concurrency:send-message (vivarium.actor::journal-mailbox corpse)
+                                   (list :no-such-verb nil))
+      (true (daemon-wait (lambda ()
+                           (alexandria:when-let ((service vivarium.actor::*journal-service*))
+                             (> (vivarium.actor::journal-id service)
+                                (vivarium.actor::journal-id corpse))))
+                         :timeout 15))
+      (let ((survivor vivarium.actor::*journal-service*))
+        ;; The corpse reports its death AGAIN: the stale clause absorbs it.
+        ;; Identity, not arithmetic: the bypass attack spawned a fresh service
+        ;; carrying the SAME generation number, and a number comparison
+        ;; blessed it. The service OBJECT must be untouched.
+        (vivarium.actor::journal-owner-exited corpse)
+        (sleep 0.5)
+        (true (eq survivor vivarium.actor::*journal-service*)
+              "a stale exit replaced the living generation")
+        (dotimes (i 5) (vivarium.actor::publish cell "model.delta" nil))
+        (true (daemon-wait (lambda () (owning-committed-p cell)) :timeout 15)
+              "the surviving generation stopped committing")))))

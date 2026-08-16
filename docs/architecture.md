@@ -352,9 +352,37 @@ everyone and touches no pin. The guarantee is about the evolution LIFECYCLE;
 what an evolved function does is validated and capability-bounded, never
 proven. Wiring comes next and not before.
 
-Hardening item one, unchanged: the journal owner's table is conformance-only
--- the one authority whose decision layer is not yet the checked object, and
-the drift pattern that already bit once.
+The wiring carries its five known sharp edges as MECHANISMS, not conventions:
+
+```
+ORDERING       task lifecycle reaches the evolution owner through the
+               tasktree supervisor ALONE -- one sender, so mailbox FIFO is
+               the ordering proof; the spawn posts (:task-spawned child
+               parent) and WAITS before the child's worker exists
+TWO VIEWS      the REGISTRY is what lifecycle decisions consult; the
+               SNAPSHOT (an immutable alist in a per-task box) is what
+               workers resolve against; they may diverge within a turn, and
+               the box's only writer is the :rebind-task-context effect
+VISIBILITY     SBCL cannot rebind another thread's specials, so an
+               activation is visible from the task's NEXT component
+               resolution -- semantics stated and tested, never a surprise
+COMPILE        in the caller's worker, never the owner: a source that will
+               not compile is the caller's rejected candidate carrying its
+               condition (COMPILE returns a callable that fails plus
+               FAILURE-P, probed rather than assumed -- it does not signal)
+ONE DOOR       components are not fbound symbols; CALL-COMPONENT resolves
+               through the context and the owner's table, so SETF of
+               SYMBOL-FUNCTION changes nothing the organism resolves through
+               -- attacked in the suite, not merely asserted
+```
+
+Hardening item one, RETIRED: the journal supervisor's decisions now go
+through `kernel:journal-transition` -- generation death, restart and the
+stale-exit diagnosis are the checked table's, not hand-enforced -- and the
+journal carries the evolution ledger: promotions and reversions are durable
+facts, and `reconstruct-lineage` folds the promoted lineage back out of
+`improvement.*` events after a restart, because the registry is image state
+and the image is mortal.
 
 ### The closure gate, and the stopping rule
 

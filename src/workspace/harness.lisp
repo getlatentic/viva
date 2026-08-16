@@ -395,13 +395,21 @@ never a reason to refuse to start."
   (a:when-let ((message (find-if #'msg:assistant-message-p (reverse messages))))
     (msg:text-of message)))
 
-(defun ask (agent text)
+(defun ask (agent text &key (reset t))
   "Send TEXT and run until the agent stops. Returns (values REPLY MESSAGES).
 
 The conversation persists on the agent, so a second ASK continues the first.
-That is what makes an interactive shell and an IPC session the same object."
-  (setf (agent-requests agent) 0
-        (agent-aborting agent) nil)
+That is what makes an interactive shell and an IPC session the same object.
+
+RESET NIL is for a worker running a fresh agent exactly once: the default
+reset exists so a reused session starts each exchange clean, but it also
+ERASED a cancellation that landed between the worker being rigged and this
+line -- the task stayed :cancelling in its tree while its worker ran the full
+budget, which a probe caught as children stuck twenty seconds past their
+cancel. A cancel must not be erasable by the thing it cancels."
+  (setf (agent-requests agent) 0)
+  (when reset
+    (setf (agent-aborting agent) nil))
   (extension:fire :agent-start (list :agent agent :text text))
   ;; The environment is bound around the hook as well as the run: a
   ;; :BEFORE-REQUEST handler that reads a file -- which is exactly what a memory
