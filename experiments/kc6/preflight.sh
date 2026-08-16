@@ -9,6 +9,19 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
+root=$(cd "$here/../.." && pwd)
+
+# THE MODEL PIN, gated rather than promised (amendment 13): only
+# deepseek-v4-flash may spend. A pre-check that trusts the .env to be right
+# is a pre-check that discovers Pro pricing after the bill.
+pinned=$(sed -n 's/^DEEPSEEK_MODEL=//p' "$root/.env" 2>/dev/null | tail -1)
+if [ "$pinned" != "deepseek-v4-flash" ]; then
+  echo "MODEL PIN FAILED: DEEPSEEK_MODEL is '${pinned:-unset}', amendment 13"
+  echo "allows only deepseek-v4-flash. Fix $root/.env before anything spends."
+  exit 1
+fi
+echo "model pin: deepseek-v4-flash (gated)"
+echo
 
 # ZERO FIRST, because it is the one that can invalidate the other two. One and
 # three can both pass against an organism no model can reach: they drive the

@@ -9,9 +9,11 @@ else is a tripwire, armed and waiting.
 ## NOW — KC6, the gate
 
 The experiment is pre-registered (`experiments/kc6/PROTOCOL.md`), priced
-($6.65 uncached-at-peak at the measured anchor, shapes bracketed to $45
-heavy; $1-3 cached off-peak), and gated (`./experiments/kc6/preflight.sh`,
-green). What remains is authoring and running.
+(expected $1.78-$4.09 all-in, off-peak at measured cache behaviour), and
+gated (`./experiments/kc6/preflight.sh`, green). **Budget: $7.00 hard,
+metered by `budget.py` between runs; model pinned to `deepseek-v4-flash` by
+a preflight gate that fails on any other value; scheduling off-peak
+mandatory** (amendment 13). What remains is authoring and running.
 
 - [ ] Author the six families, five tasks each, hidden tests written against
       each task's specification before any arm runs — **f1-paren-balance and
@@ -31,6 +33,9 @@ green). What remains is authoring and running.
       — re-tightened to the 225 design by amendment 12)
 - [ ] The battery: 225 runs — A and C at 3 repeats on all six families, B at
       3 repeats on the bound three (3, 1, 4)
+- [ ] The runner: per-run `--journal-dir`, off-peak scheduler, `budget.py`
+      checkpoint before every run, arm switches, truncation priority as the
+      spend order (pilot, then A+C by battery order, then B)
 - [ ] RESULTS.md: verdict section quotes the decision rule verbatim and fills
       in only the numbers
 

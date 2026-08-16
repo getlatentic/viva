@@ -191,8 +191,10 @@ pilot family, produce a component version that both resolves and leaves the
 family's hidden test passing. A model that cannot write a working component
 turns KC6 into a measurement of that model's ceiling, and a kill criterion is
 the worst possible place to accept a false negative. If the floor fails, the
-pinned model is the finding, and the battery does not run until a model that
-clears it is pinned.
+pinned model is the finding, and the battery does not run. Amendment 13
+pins `deepseek-v4-flash` exclusively — there is no substitution model. A
+floor failure on Flash is a reported result and a user decision, never a
+silent reach for Pro.
 
 ## Metrics, pre-registered
 
@@ -337,7 +339,34 @@ heavy      28   28,000   439,040    98,784,000   6,930,000
 battery, and 20M total for the pilot slice.** Amendment 12 tightened these
 from caps sized to the 900-run draft — a cap four times looser than its
 design is not a cap, and shrinking one before any data is safe in exactly the
-way loosening one is not. Whichever binds first stops the
+way loosening one is not.
+
+**The budget: $7.00, hard, in dollars, metered — amendment 13.** The
+worst-case bracket exceeds $7 several times over, so no schedule can promise
+compliance; only a meter between runs can. `experiments/kc6/budget.py` prices
+every recorded reply at Flash rates — cache hit, cache miss, output — and the
+runner consults it before each run: a non-zero exit stops the battery. Every
+ambiguity in the meter resolves against the spender: peak rates are assumed
+unless the runner knows it is off-peak, and an entry without cache accounting
+is priced as all miss. The token caps above and the dollar meter both stand;
+whichever binds first stops the run.
+
+**Scheduling is off-peak, mandatorily**: outside 01:00–04:00 and 06:00–10:00
+UTC. It halves the worst case for nothing. Expected all-in spend at measured
+cache behaviour, off-peak: **$1.78–$4.09** across the three shapes, pilot
+included; the $7 is the ceiling, not the estimate.
+
+**Truncation priority, if the meter binds.** The order of spending protects
+the kill decision: (1) the pilot, sub-capped at $1.50 of the seven; (2) arms
+A and C, family by family in the committed battery order (3, 1, 4, 2, 6, 5)
+— the primary comparison; (3) arm B on its bound three, last. If the meter
+binds during (2), the current family's A and C cells complete, remaining
+families drop whole from the end of the order, and the primary sign test
+proceeds at n >= 5 — five is the pre-registered floor; below five there is no
+decision, only a report. If the meter binds during (3), the kill side of the
+decision rule is unaffected — it needs no arm B — and a keep verdict becomes
+**keep, control pending**: provisional until the remaining arm-B runs are
+funded and pass. Whichever binds first stops the
 run. The cap is a limit rather than a prediction — the heavy column fits inside
 it — and the pilot still measures the real per-run figure before the battery
 starts, but no run waits on that measurement to be safe.
@@ -355,9 +384,9 @@ heavy     98,784,000   6,930,000      $3.32    $6.64     $45.02
 pilot     15,681,600   1,692,000      $0.77    $1.53      $7.30
 ```
 
-On `deepseek-v4-pro` every figure is three times larger: about $10 off-peak
-at the heavy end, $135 peak and uncached. If the capability floor forces Pro, that is
-the price of clearing it, and it is stated here rather than discovered.
+`deepseek-v4-pro` is disallowed by amendment 13. Its bracket is retained
+only to show what the pin refuses: roughly three times every figure — about
+$10 off-peak at the heavy end, $135 peak and uncached.
 
 **THE CACHE IS NOT GUARANTEED, and the `no cache` column is the planning
 number.** DeepSeek's context cache is best-effort prefix matching, not a
@@ -438,6 +467,20 @@ original draft against the machinery before judging it.
    test was being advertised to the model with a malformed schema. Added as
    pre-check zero, which runs first and stops the gate. **No battery may run
    while it fails**, and no result obtained while it fails means anything.
+
+13. **The $7 budget and the Flash pin, on the user's directive.** The
+   worst-case bracket ($45 heavy, uncached, peak) exceeds the budget several
+   times over, so the budget is a metered hard stop, not a projection:
+   `budget.py` prices every reply conservatively (peak assumed, missing
+   cache accounting priced as all miss), self-tested to refuse and to
+   approve, and the runner stops on its word. Off-peak scheduling is
+   mandatory. The truncation priority protects the kill decision: pilot
+   sub-capped, then A and C in battery order, then B — with the primary
+   proceeding at n >= 5 if families must drop, and a keep verdict without a
+   completed control marked provisional. `deepseek-v4-flash` is the only
+   model allowed to spend; the pin is a preflight gate that fails on any
+   other value, proven in both directions, and a capability-floor failure on
+   Flash is a finding, never a reach for Pro.
 
 12. **The 900-run draft's last survivors, and the last open freedoms, on
    review's sweep.** Five stale numbers, four caught by review and a fifth
