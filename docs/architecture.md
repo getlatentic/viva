@@ -697,3 +697,45 @@ same widening. `experiments/kc6/visibility-window.lisp` keeps that experiment
 re-runnable, and the suite test says in its own comment that it is a regression
 guard and not the evidence. Three attacks in this project were already believed
 on a green they had not earned; this is the fourth, caught before it counted.
+
+### The model-facing door, and the question that found it missing
+
+KC6's pre-check zero asks one thing the other pre-checks cannot: can the entity
+under test reach the machinery at all? Measured through the real constructor
+rather than read from the code, a workspace agent received nine tools -- bash,
+delegate, edit, find, grep, ls, read, remember, write -- and not one of them
+created, activated or ran a version. Separately, `call-component` had no caller
+anywhere in `src/`.
+
+Together those said the thing plainly. The evolution owner was a proven,
+witnessed, task-scoped lifecycle for versions of components that nothing in the
+organism called and no model could create. Pre-check one passed throughout and
+could not have caught it: it drives the LISP wire with a scripted agent, and a
+model drives the TOOL surface. This project had already paid for that
+distinction once, when a tool passing a Lisp unit test was being advertised to
+the model with a malformed schema.
+
+The surface chosen is five tools -- create, activate, call, promote, list --
+where **a capability is `(lambda (input) ...)`: one string in, one value out**.
+That constraint is the reason this is five small tools rather than a language
+binding. A JSON schema can describe a string; describing an arbitrary Lisp
+lambda list would teach the model a second calling convention it will get
+wrong, and the experiment would measure that lesson instead of the machinery.
+The frictions the battery is built from are string to string anyway.
+
+The tools live daemon-side, because `vivarium/daemon` depends on
+`vivarium/workspace` and not the reverse, and they reach an agent through the
+`:extra-tools` seam `make-workspace-agent` already had. Nothing in the
+workspace layer learns about evolution. Arm B falls out of the proven table
+rather than out of the tool file: create stays open, activate and promote are
+refused by the door, and the refusal says so in words an agent can act on --
+a refusal that invites retries would charge that thrash to the machinery.
+
+Two things the wiring found on the way. The tools rigged their task with no
+cell, so an agent rewrote itself and the watching session saw nothing; every
+other improvement event reaches the session that caused it, and now these do.
+And the gate that validates the wire schema was itself unable to fail, because
+this codebase's schema builder refuses a bare `:array` at source -- so it is
+exercised on four synthetic malformed shapes plus one good one by
+`reachability.lisp --self-test`. An alarm that never fires and an alarm always
+firing are equally useless.

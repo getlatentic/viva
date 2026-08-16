@@ -37,6 +37,7 @@
                     (#:session #:vivarium.session)
                     (#:kernel #:vivarium.kernel)
                     (#:tasktree #:vivarium.tasktree)
+                    (#:tool #:vivarium.tool)
                     (#:event #:vivarium.event))
   ;; Sealed. A cell is an ownership boundary, not an object with a mailbox
   ;; attached: CELL-AGENT, CELL-STATE, CELL-EVENTS and CELL-QUEUED were
@@ -52,7 +53,8 @@
            #:ensure-evolver #:create-candidate #:activate-candidate
            #:promote-candidate #:revert-component #:discard-candidate
            #:call-component #:resolve-component #:reconstruct-lineage
-           #:evolution-registry #:*activation-box* #:*default-door*))
+           #:evolution-registry #:*activation-box* #:*default-door*
+           #:capability-tools))
 
 (defpackage #:vivarium.daemon
   (:use #:cl)

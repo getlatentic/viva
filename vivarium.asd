@@ -76,6 +76,7 @@
                              (:file "actor")
                              (:file "evolver")
                              (:file "supervisor")
+                             (:file "capability")
                              (:file "server")))))
 
 (defsystem "vivarium/console"

@@ -101,6 +101,19 @@ one and three run as one gate:
 ./experiments/kc6/preflight.sh
 ```
 
+Then pre-check zero asked the question none of the others could, and answered
+it no: **no model-visible tool reached the evolution owner, and nothing in
+src/ resolved a component at all.** A workspace agent saw nine tools and the
+proven lifecycle was a lifecycle for versions of things nobody called. So the
+door has a model-facing surface now -- five tools in `src/daemon/capability.lisp`
+through which an agent mints, keeps and runs compiled capability of its own,
+where a capability is `(lambda (input) ...)`, one string in and one value out.
+The arm is two switches, `--capabilities on|off` and `--door open|closed`.
+
+Tools-as-components -- the agent replacing its own `grep` for its own task --
+is the stronger claim and the named follow-on. It does not invalidate a result
+obtained here.
+
 What remains before run one is authoring: 20 families of 5 tasks with hidden
 tests, five families held out and authored last. The cost cap is fixed after a
 measured pilot rather than guessed -- the harness bounds the battery at 27,000

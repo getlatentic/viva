@@ -1762,3 +1762,128 @@ every candidate the rest of the suite created."
                 :name "kc6-visibility-worker"))
               (unless (eq :seen seen) (incf missed))))))
       (is = 0 missed "~d of 50 activations were invisible to their own task" missed))))
+
+;;; ---------------------------------------------------------------------------
+;;; The model-facing door
+;;;
+;;; Driven through TOOL:EXECUTE with a string-keyed argument table -- the shape
+;;; the agent loop hands a tool after parsing the model's JSON -- and never by
+;;; calling the tool body directly. A tool that works when called from Lisp and
+;;; fails from the wire is the exact bug that cost B14 an entire experiment.
+;;; ---------------------------------------------------------------------------
+
+(defun tool-named (name)
+  (find name (actor:capability-tools) :key #'tool:tool-name :test #'string=))
+
+(defun run-capability-tool (name &rest arguments)
+  "Execute as the loop does: one hash table of string keys, one context."
+  (let ((table (make-hash-table :test #'equal)))
+    (loop for (key value) on arguments by #'cddr do (setf (gethash key table) value))
+    (tool:execute (tool-named name) table nil)))
+
+(defun created-version (result)
+  "The version id out of CREATE_CAPABILITY's prose. Scans for the first run of
+digits rather than counting spaces: the note the model supplies lands in the
+middle of that sentence, and the first version of this test parsed the word
+`version` and asked the tool to activate NIL."
+  (let ((output (tool:tool-result-output result)))
+    (let ((start (position-if #'digit-char-p output)))
+      (and start (parse-integer output :start start :junk-allowed t)))))
+
+(defmacro with-capability-agent ((agent) &body body)
+  "A tool reaches its caller through HARNESS:*AGENT*, so a test that does not
+bind it is testing nothing the agent loop does."
+  `(let ((vivarium.harness:*agent* ,agent)) ,@body))
+
+(define-test "an agent mints a capability, puts it in force, and runs it"
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (with-capability-agent (agent)
+      (let ((created (run-capability-tool
+                      "create_capability"
+                      "name" "kc6-shout"
+                      "source" "(lambda (input) (string-upcase input))"
+                      "note" "the friction this family repeats")))
+        (false (tool:tool-result-error-p created)
+               "create refused: ~a" (tool:tool-result-output created))
+        (let ((version (created-version created)))
+          (true (integerp version) "no version in ~s" (tool:tool-result-output created))
+          ;; Before activation the capability resolves to nothing: creating is
+          ;; not using, which is the whole distinction the ledger records.
+          (let ((early (run-capability-tool "call_capability" "name" "kc6-shout" "input" "x")))
+            (true (tool:tool-result-error-p early)
+                  "an unactivated version was callable"))
+          (let ((activated (run-capability-tool "activate_capability" "version" version)))
+            (false (tool:tool-result-error-p activated)
+                   "activate refused: ~a" (tool:tool-result-output activated)))
+          (let ((called (run-capability-tool "call_capability"
+                                             "name" "kc6-shout" "input" "quiet")))
+            (false (tool:tool-result-error-p called)
+                   "call failed: ~a" (tool:tool-result-output called))
+            (is string= "QUIET" (tool:tool-result-output called)))
+          ;; And the ledger heard about the use, which is what pre-check three
+          ;; will read.
+          (true (daemon-wait
+                 (lambda () (member "improvement.resolved" (cell-event-names cell)
+                                    :test #'string=))
+                 :timeout 15)
+                "the agent ran its own capability and the ledger recorded no use"))))))
+
+(define-test "the closed door refuses the model, and says so in words it can act on"
+  ;; Arm B, through the tools rather than through the Lisp API: the agent may
+  ;; still create -- it pays the same cost for the same attempt, which is the
+  ;; overhead the arm exists to price -- and may never put anything in force.
+  (with-door (:closed)
+    (with-paced-cell (cell agent :pause 0.01 :limit 1)
+      (with-capability-agent (agent)
+        (let ((created (run-capability-tool
+                        "create_capability" "name" "kc6-frozen"
+                        "source" "(lambda (input) (string-downcase input))")))
+          (false (tool:tool-result-error-p created)
+                 "arm B refused CREATE, which it is pre-registered to allow")
+          (let* ((version (created-version created))
+                 (activated (run-capability-tool "activate_capability" "version" version)))
+            (true (tool:tool-result-error-p activated) "the closed door let one through")
+            (true (search "disabled in this configuration"
+                          (tool:tool-result-output activated))
+                  "the refusal does not say the door is shut: ~s"
+                  (tool:tool-result-output activated))
+            (true (search "do not retry" (tool:tool-result-output activated))
+                  "a refusal that invites retries charges thrash to the machinery")
+            ;; ClosedDoorIsInert, reached the way a model would reach it.
+            (let ((called (run-capability-tool "call_capability"
+                                               "name" "kc6-frozen" "input" "X")))
+              (true (tool:tool-result-error-p called)
+                    "a closed run resolved something it created"))
+            (let ((promoted (run-capability-tool "promote_capability" "version" version)))
+              (true (tool:tool-result-error-p promoted) "promotion survived a closed door"))))))))
+
+(define-test "the model's mistakes come back as results, never as the run's death"
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (with-capability-agent (agent)
+      ;; Will not read.
+      (let ((result (run-capability-tool "create_capability" "name" "kc6-bad"
+                                                             "source" "(lambda (input")))
+        (true (tool:tool-result-error-p result) "unreadable source was accepted"))
+      ;; Reads, but is not a lambda.
+      (let ((result (run-capability-tool "create_capability" "name" "kc6-bad"
+                                                             "source" "42")))
+        (true (tool:tool-result-error-p result) "a non-lambda was accepted"))
+      ;; Reads as a lambda and will not compile: COMPILE does not signal on a
+      ;; malformed lambda list, it returns a callable that fails later.
+      (let ((result (run-capability-tool "create_capability" "name" "kc6-bad"
+                                                             "source" "(lambda \"nope\" x)")))
+        (true (tool:tool-result-error-p result) "a malformed lambda was accepted"))
+      ;; Compiles, then fails at run time. The agent sees the error and the
+      ;; process lives -- this is the one place authored code executes.
+      (let* ((created (run-capability-tool
+                       "create_capability" "name" "kc6-explodes"
+                       "source" "(lambda (input) (error \"boom: ~a\" input))"))
+             (version (created-version created)))
+        (false (tool:tool-result-error-p created))
+        (run-capability-tool "activate_capability" "version" version)
+        (let ((called (run-capability-tool "call_capability"
+                                           "name" "kc6-explodes" "input" "now")))
+          (true (tool:tool-result-error-p called) "an exploding capability reported success")
+          (true (search "boom: now" (tool:tool-result-output called))
+                "the agent was not told what went wrong: ~s"
+                (tool:tool-result-output called)))))))

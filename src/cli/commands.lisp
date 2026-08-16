@@ -298,10 +298,30 @@ noise, not a result.~%")
                                  (list (namestring (truename given))))
         :resume (a:when-let ((given (flag parsed "resume")))
                   (if (string= "true" given) t given))
-        :request-limit (flag-integer parsed "limit" 60)))
+        :request-limit (flag-integer parsed "limit" 60)
+        ;; The arm, as two independent switches, because three configurations
+        ;; come out of them and conflating them would collapse two:
+        ;;
+        ;;   --capabilities on  --door open     arm A, the organism
+        ;;   --capabilities on  --door closed   arm B, the same tools refused
+        ;;   --capabilities off                 arm C, no live compile at all
+        :extra-tools (when (string= "on" (flag parsed "capabilities" "off"))
+                       (actor:capability-tools))))
+
+(defun apply-door-flag (parsed)
+  "Set the arm's door once, before anything can have created an owner. The
+owner announces it into the ledger from its own thread, so a run's arm is a
+fact about its evidence rather than about the directory it was written to."
+  (let ((door (flag parsed "door" "open")))
+    (unless (member door '("open" "closed") :test #'string=)
+      (format *error-output* "~&--door takes open or closed, not ~a~%" door)
+      (return-from apply-door-flag nil))
+    (setf actor:*default-door* (if (string= door "closed") :closed :open))
+    t))
 
 (defun command-shell (parsed)
   "Interactive work in a directory. Reads stdin, so it also runs a script."
+  (unless (apply-door-flag parsed) (return-from command-shell 2))
   (let ((console:*colour* (not (string= "false" (flag parsed "colour" "true")))))
     (apply #'console:run-shell (workspace-options parsed))))
 
@@ -436,6 +456,7 @@ it finds nobody home."
 
 (defun command-do (parsed)
   "One prompt, one answer. What a script or a CI job wants."
+  (unless (apply-door-flag parsed) (return-from command-do 2))
   (let* ((prompt (or (a:when-let ((file (flag parsed "file")))
                        (uiop:read-file-string file))
                      (format nil "~{~a~^ ~}" (args-positional parsed))))

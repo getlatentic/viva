@@ -44,6 +44,21 @@ adaptation battery already exercises. This is the criterion's named competitor
 and the arm that decides the kill: external skills are what any framework
 offers without a live image.
 
+The arms are two switches, so the three configurations come out of them without
+conflating any two:
+
+```
+--capabilities on  --door open     arm A, the organism
+--capabilities on  --door closed   arm B, the same tools, refused
+--capabilities off                 arm C, no live compile at all
+```
+
+A capability is `(lambda (input) ...)` — one string in, one value out. The
+constraint is deliberate: a JSON schema can describe a string, and teaching a
+model a second calling convention for arbitrary lambda lists would measure that
+lesson rather than the machinery. The frictions this exists for — reshape this
+format, parse this dialect, normalise this output — are string to string.
+
 All arms share the base model, pinned to one provider version, same harness,
 same budgets, temperature fixed at 0. Capability descriptions in the system
 prompt are matched in length and specificity across arms so the door's
@@ -83,31 +98,25 @@ as an overfit result, not a win.
 
 ## The five pre-checks, before a model runs
 
-**0. Reachable by the entity under test. CURRENTLY FAILING, and it blocks the
-battery.** `experiments/kc6/reachability.lisp` asks two questions and answers
-both NO today:
+**0. Reachable by the entity under test.** `experiments/kc6/reachability.lisp`
+asks three questions and now answers all three yes, having answered the first
+two no when it was written:
 
-- No model-visible tool reaches the evolution owner. A workspace agent sees
-  nine tools — bash, delegate, edit, find, grep, ls, read, remember, write —
-  and not one of them creates, activates or promotes a version. Arm A as
-  written describes capabilities no model can invoke, and arm B's door closes
-  a path no model could take, so A-vs-B would compare two identical
-  configurations.
-- Nothing in `src/` resolves a component. `call-component` has no caller in
-  the shipped organism. A version the agent created would be run by nothing,
-  making instrumentality zero by construction.
+- Does a model-visible tool reach the evolution owner? Armed, an agent sees
+  fourteen tools rather than nine: `create_capability`, `activate_capability`,
+  `call_capability`, `promote_capability`, `list_capabilities`.
+- Does anything in the shipped organism resolve a component?
+  `src/daemon/capability.lisp` does, which is what `call_capability` runs.
+- Is the JSON the model is actually SENT well formed? Checked on the wire, not
+  on the Lisp objects, because B14 concluded a model could not derive a
+  predicate when the truth was that its tool advertised `args` as an array with
+  no `items`. That check is proven able to fail by
+  `reachability.lisp --self-test`, which feeds it four malformed shapes and one
+  good one.
 
-The evolution owner is, today, a proven and witnessed lifecycle for versions of
-components that nothing calls. That is a scope fact, not a defect in the
-proofs, and it is the real work standing between here and run one. Deciding
-what a component IS — which parts of the agent's own execution resolve through
-the door — is a design decision with materially different experiments behind
-each answer, so it is made deliberately and not by whichever surface was
-easiest to wire.
-
-This check runs FIRST in `preflight.sh`, and the gate stops there while it
-fails: one and three can both pass against an organism no model can reach,
-because they drive the Lisp wire and a model drives the tool surface.
+This runs FIRST in `preflight.sh` and stops the gate if it fails: pre-checks
+one and three both pass against an organism no model can reach, because they
+drive the Lisp wire and a model drives the tool surface.
 
 **1. Lifecycle through the real wire.** A scripted agent, no LLM, traverses
 create, activate, resolve, inherit, promote, revert, discard, and the ledger
@@ -280,3 +289,11 @@ original draft against the machinery before judging it.
    test was being advertised to the model with a malformed schema. Added as
    pre-check zero, which runs first and stops the gate. **No battery may run
    while it fails**, and no result obtained while it fails means anything.
+
+9. **The surface it demanded now exists**, chosen deliberately rather than by
+   whichever wiring was easiest: five tools through which an agent mints,
+   keeps and runs compiled capability of its own, in
+   `src/daemon/capability.lisp`. Tools-as-components — the agent replacing its
+   own `grep` or `edit` — is the stronger claim and the named follow-on;
+   adding it later does not invalidate a result obtained here. Pre-check zero
+   passes, and the gate is green end to end.
