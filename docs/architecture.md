@@ -266,6 +266,33 @@ still current, never "is any daemon up": the sweeper that looped on a bare
 global left one sweeper per cycled daemon behind, a hundred and twenty of them
 after one test.
 
+### The closure gate, and the stopping rule
+
+Phase 1 closed with a frozen list of four defects -- the replay gap under
+concurrent publication, journal-owner truth by `thread-alive-p`, deregistration
+before durability, unprotected startup acquisition -- plus a fifth found while
+testing the first: the journal's own mailbox was the last unbounded queue, and
+a flat-out publisher exhausted the heap through it. Each got a deterministic
+reproduction, a fix, and an attack showing the reproduction fails without it.
+
+**The stopping rule, adopted so the loop terminates:** after this gate, a newly
+imagined race is NOT a Phase 1 blocker. It becomes one only when at least one
+holds:
+
+```
+it has a concrete reproduction
+it violates a frozen invariant by direct code analysis
+it appears in the soak, diagnostics, or real operation
+the next phase depends directly on the unsafe path
+```
+
+Everything else goes to the hardening backlog. `Fixed` never meant `no
+concurrency bug can exist` -- it means the ownership rules are explicit, known
+violations reproduce and fail fixed, resources plateau under churn, failures
+are contained and visible, and no known reproduced defect contradicts a core
+invariant. The kernel seeks exactness; the organism seeks resilience; neither
+substitutes for the other.
+
 ### Phase 1.5 thread discipline, decided now
 
 A task is an **ownership domain, not a thread entitlement**. Sessions already
@@ -447,6 +474,10 @@ BUILT   acknowledged journal, generation-scoped daemon, sealed actor API
 SOAKED  614,048 session lifecycles over three hours: heap 64->65MB,
         threads 4->4, descriptors 14->14, journal queue never above zero,
         16,850 hostile disconnects contained and counted (docs/soak-*.log)
+GATED   replay barrier exact under concurrent publication; journal owner a
+        supervised generation that restarts and heals; deregistration follows
+        confirmed durability; startup acquisition unwind-protected; the
+        journal queue bounded by a high-water mark
 NEXT    phase 1.5 -- compositional agency: TASK as the unit, scoped children
         for sub-agents, detached children for spawned work, a supervisor
         owning topology, task-to-task messaging, isolated conversations

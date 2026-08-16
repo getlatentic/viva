@@ -80,6 +80,7 @@
   ;; loss has not been announced; :REPORTED it has. Degradation is a state the
   ;; session is allowed to be in and required to say out loud.
   (degraded nil)
+  (flush-declared nil :type boolean)
   (journal-path "" :type string)
   (subscribers '() :type list)
   (running t :type boolean))
@@ -115,88 +116,186 @@ a status read never catches state, turn and queue describing three different
 instants. Never PUBLISH inside: publishing takes the same lock."
   `(bt:with-lock-held ((cell-lock ,cell)) ,@body))
 
-;;; The journal: one owner, acknowledged writes
+;;; The journal: an identified service, supervised
 ;;;
-;;; A session's history is what makes reattaching different from starting
-;;; again, and later it is the provenance of everything the organism does to
-;;; itself. So it has the same shape as every other authority here:
+;;;     cells --(:append)--> JOURNAL SERVICE ----> one JSONL file per session
+;;;                              |        \------> commits the watermark
+;;;                         exit boundary
+;;;                              |
+;;;                        supervisor: restart as a new generation,
+;;;                        re-post whatever was not yet committed
 ;;;
-;;;     cells ----(:append)----> JOURNAL OWNER ----> one JSONL file per session
-;;;                                   |
-;;;                            commits the watermark
-;;;
-;;; ONE owner thread for the whole image, not one per session -- twenty
-;;; sessions must not mean twenty threads fsyncing twenty files. Durability is
-;;; acknowledged, not assumed: the owner advances a per-cell watermark after
-;;; each write, and the ring may only overwrite events at or below it. And its
-;;; failures are LOUD: a journal that swallows a full disk and keeps accepting
-;;; appends is an unbounded queue in front of a dead letter box, claiming to
-;;; be an authoritative history.
+;;; ONE owner for the whole image, not one per session. Whether the service
+;;; exists is a STATE it owns, never a THREAD-ALIVE-P answer -- SBCL says that
+;;; answer can be stale before it returns, and deciding service truth from it
+;;; is the exact pattern BUSY-P was cured of. The owner's thread exits through
+;;; a boundary that reports to the supervisor; the supervisor verifies the
+;;; generation, restarts, and re-posts every cell's uncommitted ring events to
+;;; the new generation, so an owner death loses nothing that was still in
+;;; memory. Appends offered while no generation is available are dropped and
+;;; the ring's no-evict-before-commit machinery declares the degradation.
 
 (defvar *journal-root*
   (namestring (merge-pathnames ".vivarium/journal/" (user-homedir-pathname)))
   "Where session journals live. Tests point this at a temporary directory;
 they wrote 26MB into the real home before it was configurable.")
 
-(defvar *journal* nil "The owner's mailbox, while an owner runs.")
-(defvar *journal-thread* nil)
+(defstruct (journal-service (:conc-name journal-))
+  (id 0 :type integer)
+  (mailbox (mailbox:make-mailbox))
+  (thread nil)
+  ;; :available | :failed  -- owned state, written under *JOURNAL-LOCK*.
+  (state :available))
+
+(defvar *journal-service* nil "The current generation, or NIL.")
 (defvar *journal-lock* (bt:make-lock "vivarium.journal"))
+(defvar *journal-generation* 0)
+
+(defparameter *flush-grace* 30
+  "Seconds one flush attempt waits for the journal's confirmation.")
+
+(defparameter +journal-high-water+ 100000
+  "Appends the journal may fall behind by before new ones are refused.
+
+An unbounded queue in front of a disk is an allocation with a delay on it: a
+publisher that outruns the writer for long enough exhausts the heap -- found
+empirically, as a GC crash under a flat-out publisher, not imagined. Refused
+appends stay in the ring uncommitted, and the ring declares the degradation
+if it is ever forced to evict them.")
 
 (defun journal-path-for (id)
   (format nil "~a~a-~d.jsonl" *journal-root* id (get-universal-time)))
 
-(defun run-journal-owner (mailbox)
+(defun journal-post (message)
+  "Offer MESSAGE to the current journal generation. Returns T if accepted.
+
+No lock: a single special read and a lock-free send, because PUBLISH calls
+this while holding a cell's lock and must not nest another. A message offered
+to a generation that is failed or mid-restart is refused, and refusal is an
+answer the caller can act on."
+  (let ((service *journal-service*))
+    (when (and service
+               (eq :available (journal-state service))
+               (< (mailbox:mailbox-count (journal-mailbox service))
+                  +journal-high-water+))
+      (mailbox:send-message (journal-mailbox service) message)
+      t)))
+
+(defun run-journal-owner (service)
   (let ((streams (make-hash-table :test #'equal))
         (troubled (make-hash-table :test #'equal)))
-    (flet ((stream-for (cell)
-             (or (gethash (cell-id cell) streams)
-                 (setf (gethash (cell-id cell) streams)
-                       (open (cell-journal-path cell) :direction :output
-                             :if-exists :append :if-does-not-exist :create
-                             :external-format :utf-8)))))
-      (loop for message = (mailbox:receive-message mailbox)
-            until (eq message :shutdown)
-            do (destructuring-bind (verb cell &optional extra) message
-                 (ecase verb
-                   (:append
-                    (handler-case
-                        (let ((out (stream-for cell)))
-                          (write-line (jzon:stringify (event:as-json extra)) out)
-                          (force-output out)
-                          ;; The acknowledgement. Only now may the ring let
-                          ;; this event go.
-                          (owning (cell)
-                            (setf (cell-committed cell)
-                                  (event:event-sequence extra))))
-                      (error (condition)
-                        ;; Announced through the cell's own coordinator, once
-                        ;; per episode -- not swallowed, and not a message per
-                        ;; failed write when a full disk fails thousands.
-                        (unless (gethash (cell-id cell) troubled)
-                          (setf (gethash (cell-id cell) troubled) t)
-                          (tell cell :journal-failed
-                                :detail (princ-to-string condition))))))
-                   (:close
-                    ;; FIFO: every :append for this cell precedes this, so
-                    ;; signalling here confirms they are all on disk.
-                    (a:when-let ((out (gethash (cell-id cell) streams)))
-                      (ignore-errors (close out))
-                      (remhash (cell-id cell) streams))
-                    (remhash (cell-id cell) troubled)
-                    (when extra (bt:signal-semaphore extra :count 1000))))))
+    (unwind-protect
+         ;; HANDLER-CASE as well as UNWIND-PROTECT: unwinding cleans up but
+         ;; does not CATCH, and under `sbcl --script` an unhandled condition in
+         ;; any thread quits the whole process -- the first owner-death test
+         ;; did not fail, it took the organism with it.
+         (handler-case
+         (flet ((stream-for (cell)
+                  (or (gethash (cell-id cell) streams)
+                      (setf (gethash (cell-id cell) streams)
+                            (open (cell-journal-path cell) :direction :output
+                                  :if-exists :append :if-does-not-exist :create
+                                  :external-format :utf-8)))))
+           (loop for message = (mailbox:receive-message (journal-mailbox service))
+                 until (eq message :shutdown)
+                 do (destructuring-bind (verb cell &optional extra) message
+                      (ecase verb
+                        (:append
+                         (handler-case
+                             (let ((out (stream-for cell)))
+                               (write-line (jzon:stringify (event:as-json extra)) out)
+                               (force-output out)
+                               ;; The acknowledgement. Only now may the ring
+                               ;; let this event go. The committed watermark is
+                               ;; journal-owned state stored on the cell for
+                               ;; locality; only this thread writes it.
+                               (owning (cell)
+                                 (setf (cell-committed cell)
+                                       (max (cell-committed cell)
+                                            (event:event-sequence extra)))))
+                           (error (condition)
+                             ;; Announced through the cell's coordinator, once
+                             ;; per episode -- not swallowed, and not a message
+                             ;; per failed write when a full disk fails
+                             ;; thousands.
+                             (unless (gethash (cell-id cell) troubled)
+                               (setf (gethash (cell-id cell) troubled) t)
+                               (tell cell :journal-failed
+                                     :detail (princ-to-string condition))))))
+                        ;; FIFO: every :append queued before this marker has
+                        ;; been processed, so signalling confirms them written.
+                        ;; :SYNC confirms for a reader; :CLOSE also retires the
+                        ;; session's stream.
+                        (:sync (when extra (bt:signal-semaphore extra :count 1000)))
+                        (:close
+                         (a:when-let ((out (gethash (cell-id cell) streams)))
+                           (ignore-errors (close out))
+                           (remhash (cell-id cell) streams))
+                         (remhash (cell-id cell) troubled)
+                         (when extra (bt:signal-semaphore extra :count 1000)))))))
+           (error () nil))
+      ;; However this thread ends -- :shutdown or a condition -- the streams
+      ;; are closed and the supervisor hears about it with the generation
+      ;; attached, so it can never confuse this death with a successor's.
       (loop for out being the hash-values of streams
-            do (ignore-errors (close out))))))
+            do (ignore-errors (close out)))
+      (journal-owner-exited service))))
 
-(defun ensure-journal-owner ()
+(defun journal-owner-exited (service)
+  "The exit boundary: verify the generation, then decide.
+
+Policy is restart -- the failure that killed one write burst is rarely
+permanent -- and the restart heals: every cell's ring events above its
+committed watermark are re-posted to the new generation, so nothing still in
+memory is lost to the death. What the ring has already evicted uncommitted
+was declared degraded when it happened."
   (bt:with-lock-held (*journal-lock*)
-    (unless (and *journal-thread* (bt:thread-alive-p *journal-thread*))
-      (ensure-directories-exist *journal-root*)
-      (setf *journal* (mailbox:make-mailbox)
-            *journal-thread* (bt:make-thread
-                              (let ((mine *journal*))
-                                (lambda () (run-journal-owner mine)))
-                              :name "vivarium-journal")))
-    *journal*))
+    (when (eq service *journal-service*)
+      (setf (journal-state service) :failed
+            *journal-service* nil)))
+  ;; Outside the journal lock: restarting takes it again, and re-posting
+  ;; takes cell locks, which must never nest inside it the other way.
+  (when (eq :failed (journal-state service))
+    (ensure-journal)
+    (dolist (cell (all-cells))
+      (dolist (event (owning (cell) (remembered-since cell (cell-committed cell))))
+        (journal-post (list :append cell event))))))
+
+(defun ensure-journal ()
+  "The current generation, starting one if none is available."
+  (bt:with-lock-held (*journal-lock*)
+    (or *journal-service*
+        (let ((service (make-journal-service :id (incf *journal-generation*))))
+          (ensure-directories-exist *journal-root*)
+          (setf (journal-thread service)
+                (bt:make-thread (lambda () (run-journal-owner service))
+                                :name (format nil "vivarium-journal-~d"
+                                              (journal-id service))))
+          (setf *journal-service* service)))))
+
+(defun journal-sync (&key (timeout 15))
+  "Wait until everything posted so far is on disk. Returns T when confirmed."
+  (let ((semaphore (bt:make-semaphore :count 0)))
+    (and (journal-post (list :sync nil semaphore))
+         (bt:wait-on-semaphore semaphore :timeout timeout)
+         t)))
+
+(defun read-journal (cell from through)
+  "Journalled events with sequence in (FROM, THROUGH], oldest first.
+
+Sorted rather than trusted: a restart re-posts uncommitted events, so a file
+can hold a healed gap out of order."
+  (let ((path (cell-journal-path cell)))
+    (when (probe-file path)
+      (sort (with-open-file (in path :external-format :utf-8)
+              (loop for line = (read-line in nil nil)
+                    while line
+                    for event = (ignore-errors (event:from-json line))
+                    when (and event
+                              (< from (event:event-sequence event))
+                              (<= (event:event-sequence event) through))
+                      collect event))
+            #'< :key #'event:event-sequence))))
 
 (defun remember-event (cell event)
   "Ring the event in and post it for the journal. Under the cell lock."
@@ -212,7 +311,7 @@ they wrote 26MB into the real home before it was configurable.")
                (null (cell-degraded cell)))
       (setf (cell-degraded cell) :unreported))
     (setf (svref (cell-tail cell) slot) event))
-  (mailbox:send-message *journal* (list :append cell event)))
+  (journal-post (list :append cell event)))
 
 (defun remembered-since (cell sequence)
   "Ring events after SEQUENCE, oldest first. Under the cell lock."
@@ -223,25 +322,6 @@ they wrote 26MB into the real home before it was configurable.")
         for event = (svref (cell-tail cell) (mod n +tail-limit+))
         when (and event (= (event:event-sequence event) n))
           collect event))
-
-(defun recover-events (cell sequence limit)
-  "Journalled events in (SEQUENCE, LIMIT], read from disk, outside the lock.
-
-LIMIT is a committed watermark captured by the caller. Committed only grows,
-so everything at or below it is durably on disk however much the ring moves
-while this reads -- which is what makes the disk half and the ring half meet
-without a gap: the caller serves (LIMIT, ...] from the ring afterwards."
-  (when (< sequence limit)
-    (let ((path (cell-journal-path cell)))
-      (when (probe-file path)
-        (with-open-file (in path :external-format :utf-8)
-          (loop for line = (read-line in nil nil)
-                while line
-                for event = (ignore-errors (event:from-json line))
-                when (and event
-                          (< sequence (event:event-sequence event))
-                          (<= (event:event-sequence event) limit))
-                  collect event))))))
 
 ;;; Events
 ;;;
@@ -294,39 +374,97 @@ and it is a known non-blocking primitive."
     (setf (cell-subscribers cell)
           (remove key (cell-subscribers cell) :key #'car :test #'equal))))
 
-(defun since (cell sequence)
-  "Events after SEQUENCE, oldest first, from the journal and then the ring."
-  (let* ((committed (owning (cell) (cell-committed cell)))
-         (older (recover-events cell sequence committed)))
-    (append older
-            (owning (cell) (remembered-since cell (max sequence committed))))))
+(defun ring-covers-p (cell sequence)
+  "Is everything after SEQUENCE still within the ring? Under the cell lock."
+  (< (- (cell-sequence cell) sequence) +tail-limit+))
 
 (defun subscribe-since (cell key sequence mailbox)
-  "Catch up and start listening, with nothing missed and nothing repeated.
+  "Catch up and start listening: every event after SEQUENCE exactly once, in
+order, however fast the session is publishing meanwhile. Returns (VALUES KEY
+BARRIER), where BARRIER is the newest sequence the catch-up covers.
 
-Taking the history and then subscribing loses whatever was published in
-between; subscribing and then taking the history delivers those twice. Both
-decisions happen in one critical section here, so SEQUENCE is a barrier: at or
-below it an event is replayed, above it an event is delivered live, and no
-event is on both sides or neither.
+When everything after SEQUENCE is still in the ring, replay and subscription
+happen in one critical section and there is nothing to race. Otherwise the old
+composition -- snapshot a boundary, read the disk, then read the ring -- lost
+whatever crossed from ring to disk DURING the read: with a 4096 ring, a
+subscriber replaying 1..1000 while the session published 5000 more found
+events 1001..1904 in neither half. Its comment claimed the halves meet; under
+concurrent publication that was false.
 
-The replay is delivered inside that section too, so a client receives its
-history and then its live events in one unbroken run of sequence numbers.
-Handing the replay over after releasing the lock would interleave it with
-whatever was published meanwhile -- nothing lost and nothing repeated, but
-arriving out of order, which every frontend would then have to repair."
-  (let* ((committed (owning (cell) (cell-committed cell)))
-         (older (recover-events cell sequence committed)))
+So the slow path stages:
+
+    1  under the lock: BARRIER = current sequence, subscribe a STAGING mailbox
+    2  journal sync -- FIFO means everything <= BARRIER is then on disk
+    3  read the file through BARRIER into the destination
+    4  under the lock: drain staging into the destination, then swap the
+       registration to the destination
+
+Everything <= BARRIER arrives from disk; everything after arrives through
+staging or live; the swap happens with the publisher excluded, so no event
+falls between the two registrations. If the sync cannot be confirmed -- the
+journal owner is dead or restarting -- the ring supplements what the file is
+missing, and whatever fell out of the ring uncommitted was declared degraded
+when it happened."
+  (let ((staging (mailbox:make-mailbox))
+        (barrier nil)
+        (fast nil))
     (owning (cell)
-      (push (cons key mailbox) (cell-subscribers cell))
-      ;; Disk covers (SEQUENCE, COMMITTED]; the ring covers the rest, read
-      ;; inside the same section that adds the subscriber, so the join to the
-      ;; live stream is seamless. COMMITTED only grows, so nothing falls
-      ;; between the two however far the ring moved during the disk read.
-      (dolist (event older) (mailbox:send-message mailbox event))
-      (dolist (event (remembered-since cell (max sequence committed)))
-        (mailbox:send-message mailbox event))))
-  key)
+      (cond ((ring-covers-p cell sequence)
+             (dolist (event (remembered-since cell sequence))
+               (mailbox:send-message mailbox event))
+             (push (cons key mailbox) (cell-subscribers cell))
+             (setf fast t barrier (cell-sequence cell)))
+            (t
+             (setf barrier (cell-sequence cell))
+             (push (cons key staging) (cell-subscribers cell)))))
+    (unless fast
+      (let* ((synced (journal-sync))
+             (from-disk (read-journal cell sequence barrier))
+             (reached sequence))
+        (dolist (event from-disk)
+          (mailbox:send-message mailbox event)
+          (setf reached (event:event-sequence event)))
+        (owning (cell)
+          ;; The ring's contribution: empty when the sync was confirmed, the
+          ;; best available truth when it was not.
+          (unless synced
+            (dolist (event (remembered-since cell reached))
+              (when (<= (event:event-sequence event) barrier)
+                (mailbox:send-message mailbox event))))
+          (loop for event = (mailbox:receive-message-no-hang staging)
+                while event
+                do (mailbox:send-message mailbox event))
+          (setf (cell-subscribers cell)
+                (mapcar (lambda (subscriber)
+                          (if (eq (cdr subscriber) staging) (cons key mailbox) subscriber))
+                        (cell-subscribers cell))))))
+    (values key barrier)))
+
+(defun since (cell sequence &key (timeout 30))
+  "Events after SEQUENCE, oldest first, as of the moment of asking.
+
+Through the subscription barrier rather than a private composition: the old
+one had the same replay gap SUBSCRIBE-SINCE had, and one correct mechanism
+beats two half-correct ones. Subscribes a scratch mailbox, drains it until the
+barrier event arrives, unsubscribes."
+  (a:when-let ((cell (resolve cell)))
+    (let ((mailbox (mailbox:make-mailbox))
+          (key (gensym "SINCE")))
+      (multiple-value-bind (key barrier) (subscribe-since cell key sequence mailbox)
+        (unwind-protect
+             (let ((events '())
+                   (deadline (+ (get-internal-real-time)
+                                (* timeout internal-time-units-per-second))))
+               (loop while (< (if events (event:event-sequence (first events)) sequence)
+                              barrier)
+                     do (let ((left (/ (- deadline (get-internal-real-time))
+                                       internal-time-units-per-second)))
+                          (unless (plusp left) (return))
+                          (a:if-let ((event (mailbox:receive-message mailbox :timeout left)))
+                            (push event events)
+                            (return))))
+               (nreverse events))
+          (unsubscribe cell key))))))
 
 (defun snapshot (cell)
   "A coherent description of the cell, taken at one instant.
@@ -585,17 +723,39 @@ fresh 120 seconds, so a session with any traffic at all never times out."
          ;; saying it does not mean what it says.
          (publish cell "session.error"
                   (event::object "detail" "shutdown timed out with a turn still running")))
-        (t (deregister cell)
-           (publish cell "session.completed" nil)))
-  ;; Confirmed, not assumed: the owner signals after writing everything queued
-  ;; ahead of the :CLOSE, so when this returns the session's history -- the
-  ;; completion event included -- is on disk. If it does not return, that is
-  ;; said, because a shutdown that cannot prove persistence must not imply it.
+        (t
+         ;; Completion is published, then PROVEN durable, and only then does
+         ;; the session leave the registry -- so AWAIT-SHUTDOWN cannot report
+         ;; success while the terminal record is unresolved. It used to
+         ;; deregister first and warn to stderr if the flush never confirmed:
+         ;; externally complete, durably unknown, inspectable by nobody.
+         (publish cell "session.completed" nil)
+         (if (flush-session cell)
+             (deregister cell)
+             ;; Inspectable, announced, and still trying: the flush loop below
+             ;; keeps offering as long as the session exists, so a healed
+             ;; journal completes the shutdown late rather than never.
+             (loop until (flush-session cell)
+                   do (sleep 1)
+                   finally (deregister cell))))))
+
+(defun flush-session (cell)
+  "Ask the journal to write everything pending for CELL and close its stream.
+Returns T on confirmation. Declares the failure -- once -- if it cannot."
   (let ((flushed (bt:make-semaphore :count 0)))
-    (mailbox:send-message *journal* (list :close cell flushed))
-    (unless (bt:wait-on-semaphore flushed :timeout 30)
-      (format *error-output* "~&vivarium: session ~a ended without journal flush confirmation~%"
-              (cell-id cell)))))
+    (cond ((and (journal-post (list :close cell flushed))
+                (bt:wait-on-semaphore flushed :timeout *flush-grace*))
+           t)
+          (t
+           (let ((first-time nil))
+             (owning (cell)
+               (unless (cell-flush-declared cell)
+                 (setf (cell-flush-declared cell) t
+                       first-time t)))
+             (when first-time
+               (publish cell "session.error"
+                        (event::object "detail" "journal close unconfirmed; session retained until it is"))))
+           nil))))
 
 (defun spawn (&key (label "") agent)
   "Start a session that outlives whoever started it."
@@ -609,7 +769,7 @@ fresh 120 seconds, so a session with any traffic at all never times out."
           (lambda (loop-event)
             (multiple-value-bind (name data) (event:from-loop loop-event)
               (when name (publish cell name data)))))
-    (ensure-journal-owner)
+    (ensure-journal)
     (setf (cell-journal-path cell) (journal-path-for id))
     (bt:with-lock-held (*registry-lock*) (setf (gethash id *cells*) cell))
     (setf (cell-thread cell)

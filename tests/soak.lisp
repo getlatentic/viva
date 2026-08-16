@@ -32,7 +32,9 @@
         :fds (soak-descriptors)
         ;; A growing depth here is the journal owner falling behind or dead --
         ;; the exact unbounded-queue failure the acknowledged design guards.
-        :journal-depth (sb-concurrency:mailbox-count vivarium.actor::*journal*)))
+        :journal-depth (alexandria:when-let ((service vivarium.actor::*journal-service*))
+                         (sb-concurrency:mailbox-count
+                          (vivarium.actor::journal-mailbox service)))))
 
 (defun soak-rotate-journals ()
   "Completed sessions' journals are rotated out, as a long-lived organism

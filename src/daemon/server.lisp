@@ -538,60 +538,74 @@ all reported `listening on`, and four of them were not."
 (defun serve-bound (path background announce token)
   "Everything stays thread-local until the one installing transition.
 
-Nothing global is assigned before the generation is complete: the fd, the
-socket and the path travel as locals into a DAEMON-INSTANCE, and either the
-whole instance becomes current in one locked step or -- if STOP cancelled the
-startup meanwhile -- the whole instance is dismantled locally, having never
-been visible to anyone. There is no window in which STOP can see half a
-daemon, and nothing for a failed startup to release except its claim."
-  (let ((fd (acquire-instance path)))
-    (unless fd
-      (error 'daemon-error :detail (format nil "A daemon is already running on ~a." path)))
-    ;; We hold the OS lock, so nothing else is serving: any file here is what a
-    ;; crash left behind. This is the only place that unlinks a socket.
-    (ignore-errors (delete-file path))
-    (let ((socket (make-instance 'sockets:local-socket :type :stream)))
-      (sockets:socket-bind socket path)
-      ;; SOMAXCONN, not a token depth. A full backlog answers ECONNREFUSED,
-      ;; which is the same answer as no daemon at all. Measured: 24
-      ;; simultaneous connects against a backlog of 16 refused two.
-      (sockets:socket-listen socket 128)
-      (let ((instance (make-daemon-instance :socket socket :path path :fd fd)))
-        (bt:with-lock-held (*lock*)
-          (unless (eq token *starting*)
-            ;; STOP ran during the bind. Dismantle locally; nothing global
-            ;; ever referred to this generation.
-            (ignore-errors (sockets:socket-close socket))
-            (ignore-errors (delete-file path))
-            (ignore-errors (sb-posix:close fd))
-            (error 'daemon-error :detail "Startup was cancelled."))
-          (setf *current* instance
-                *starting* nil
-                *state* :running))
-        (start-sweeper instance)
-        (when announce (funcall announce path))
-        (flet ((accept-loop ()
-                 (unwind-protect
-                      (loop with failures = 0
-                            ;; This generation, not `some daemon`.
-                            while (current-p instance)
-                            do (let ((connection (handler-case (sockets:socket-accept socket)
-                                                   (error () nil))))
-                                 (cond (connection
-                                        (setf failures 0)
-                                        (serve-connection connection))
-                                       ;; STOP closed the listener: the
-                                       ;; ordinary exit. Anything else is one
-                                       ;; refused connection, which must not
-                                       ;; retire the listener.
-                                       ((or (not (current-p instance))
-                                            (> (incf failures) 32))
-                                        (loop-finish)))))
-                   (retire instance))))
-          (if background
-              (bt:make-thread #'accept-loop :name "vivariumd")
-              (accept-loop)))
-        path))))
+Acquisition is inside UNWIND-PROTECT from the first descriptor: a signal from
+socket creation, bind, listen or a cancelled install dismantles exactly what
+this startup acquired -- fd, socket, path -- and nothing else, because nothing
+global refers to any of it until the instance publishes. The old shape only
+dismantled in the explicit cancelled branch, so a bind that signalled leaked
+the held OS lock and its descriptor, and the next startup found the lock
+taken by a daemon that did not exist.
+
+ANNOUNCE runs after publication and under its own guard: a callback that
+signals must not convert a started daemon into an apparent failure -- the
+daemon IS running by then, and unwinding would tell the caller otherwise
+while the accept loop serves on."
+  (let ((fd nil) (socket nil) (published nil))
+    (unwind-protect
+         (progn
+           (setf fd (acquire-instance path))
+           (unless fd
+             (error 'daemon-error :detail (format nil "A daemon is already running on ~a." path)))
+           ;; We hold the OS lock, so nothing else is serving: any file here is
+           ;; what a crash left behind. The only place that unlinks a socket.
+           (ignore-errors (delete-file path))
+           (setf socket (make-instance 'sockets:local-socket :type :stream))
+           (sockets:socket-bind socket path)
+           ;; SOMAXCONN, not a token depth. A full backlog answers
+           ;; ECONNREFUSED, which is the same answer as no daemon at all.
+           ;; Measured: 24 simultaneous connects against a backlog of 16
+           ;; refused two.
+           (sockets:socket-listen socket 128)
+           (let ((instance (make-daemon-instance :socket socket :path path :fd fd)))
+             (bt:with-lock-held (*lock*)
+               (unless (eq token *starting*)
+                 (error 'daemon-error :detail "Startup was cancelled."))
+               (setf *current* instance
+                     *starting* nil
+                     *state* :running))
+             (setf published t)
+             (handler-case (start-sweeper instance)
+               (error (condition) (note-failure "sweeper" condition)))
+             (when announce
+               (handler-case (funcall announce path)
+                 (error (condition) (note-failure "announce" condition))))
+             (flet ((accept-loop ()
+                      (unwind-protect
+                           (loop with failures = 0
+                                 ;; This generation, not `some daemon`.
+                                 while (current-p instance)
+                                 do (let ((connection (handler-case (sockets:socket-accept socket)
+                                                        (error () nil))))
+                                      (cond (connection
+                                             (setf failures 0)
+                                             (serve-connection connection))
+                                            ;; STOP closed the listener: the
+                                            ;; ordinary exit. Anything else is
+                                            ;; one refused connection, which
+                                            ;; must not retire the listener.
+                                            ((or (not (current-p instance))
+                                                 (> (incf failures) 32))
+                                             (loop-finish)))))
+                        (retire instance))))
+               (if background
+                   (bt:make-thread #'accept-loop :name "vivariumd")
+                   (accept-loop)))
+             path))
+      (unless published
+        (when socket
+          (ignore-errors (sockets:socket-close socket))
+          (ignore-errors (delete-file path)))
+        (when fd (ignore-errors (sb-posix:close fd)))))))
 
 (defun current-p (instance)
   (bt:with-lock-held (*lock*) (eq instance *current*)))

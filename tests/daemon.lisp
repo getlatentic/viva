@@ -947,3 +947,173 @@ checkpoint."))
                               :key (lambda (each) (gethash "where" each))
                               :test #'string=)))
             (is = 0 leaks "~d connections leaked their descriptor" leaks)))))))
+
+;;; The closure gate: four defects, frozen as a list, each attacked
+;;;
+;;; After these, a newly imagined race is backlog unless it has a concrete
+;;; reproduction, violates a frozen invariant by direct analysis, appears in
+;;; operation, or Phase 1.5 depends on the unsafe path.
+
+(define-test "replay under concurrent publication delivers every event exactly once"
+  ;; The old composition froze the disk boundary, read the file, then read the
+  ;; ring -- and whatever crossed from ring to disk DURING the read was in
+  ;; neither half. With a small ring and a publisher running flat out, that
+  ;; gap opens on nearly every subscription.
+  (let ((previous vivarium.actor::+tail-limit+))
+    (unwind-protect
+         (progn
+           (setf vivarium.actor::+tail-limit+ 64)
+           (with-repository (environment)
+             (let* ((cell (paced-cell environment :pause 0.01 :limit 1))
+                    (stop nil)
+                    ;; Fast enough that events cross the ring/disk boundary
+                    ;; during every replay, paced enough that the journal keeps
+                    ;; up overall -- a publisher that outruns the disk for the
+                    ;; whole test genuinely loses data past a 64-slot ring, and
+                    ;; that is the declared-degradation case, not this one.
+                    (publisher (bt:make-thread
+                                (lambda ()
+                                  (loop until stop
+                                        do (dotimes (i 20)
+                                             (vivarium.actor::publish cell "model.delta" nil))
+                                           (sleep 0.001))))))
+               (unwind-protect
+                    (progn
+                      ;; A journal file big enough that reading it takes real
+                      ;; time: the gap under attack only opens when more than
+                      ;; a ring's worth of events commit DURING the read, so a
+                      ;; small file closes the window and proves nothing --
+                      ;; the first version of this test passed against the
+                      ;; broken composition for exactly that reason.
+                      (true (daemon-wait (lambda ()
+                                           (> (vivarium.actor::cell-sequence cell) 20000))
+                                         :timeout 60))
+                      (dotimes (round 3)
+                        (let* ((mailbox (sb-concurrency:make-mailbox))
+                               (key (gensym "GATE")))
+                          (multiple-value-bind (key barrier)
+                              (actor:subscribe-since cell key 0 mailbox)
+                            (let ((seen '()))
+                              (loop for event = (sb-concurrency:receive-message mailbox :timeout 10)
+                                    while event
+                                    do (push (event:event-sequence event) seen)
+                                    until (>= (event:event-sequence event) barrier))
+                              (actor:unsubscribe cell key)
+                              (let* ((numbers (nreverse seen))
+                                     (through (remove-if (lambda (n) (> n barrier)) numbers)))
+                                (true (plusp barrier))
+                                (is equal through (alexandria:iota barrier :start 1)
+                                    "round ~d: gap or disorder in ~d events through barrier ~d"
+                                    round (length through) barrier)))))))
+                 (setf stop t)
+                 (ignore-errors (bt:join-thread publisher :timeout 10))
+                 ;; Fully gone BEFORE the limit is restored: the coordinator's
+                 ;; own flush still indexes this cell's 64-slot ring, and a
+                 ;; restored 4096 limit would send it off the end of the
+                 ;; vector.
+                 (actor:await-shutdown cell :timeout 30)))))
+      (setf vivarium.actor::+tail-limit+ previous))))
+
+(define-test "a dead journal owner is restarted as a new generation, and heals"
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (dotimes (i 50) (vivarium.actor::publish cell "model.delta" nil))
+    (let ((before (vivarium.actor::journal-id vivarium.actor::*journal-service*)))
+      ;; A message the owner's ECASE cannot answer: the thread dies, and the
+      ;; exit boundary -- not any caller's THREAD-ALIVE-P -- must notice.
+      (sb-concurrency:send-message
+       (vivarium.actor::journal-mailbox vivarium.actor::*journal-service*)
+       (list :no-such-verb nil))
+      (true (daemon-wait (lambda ()
+                           (alexandria:when-let ((service vivarium.actor::*journal-service*))
+                             (> (vivarium.actor::journal-id service) before)))
+                         :timeout 15)
+            "no successor generation appeared")
+      ;; Publishing keeps working, and the successor commits what the corpse
+      ;; left uncommitted: the watermark catches all the way up.
+      (dotimes (i 50) (vivarium.actor::publish cell "model.delta" nil))
+      (true (daemon-wait (lambda ()
+                           (owning-committed-p cell))
+                         :timeout 20)
+            "committed ~d of ~d after restart"
+            (vivarium.actor::cell-committed cell)
+            (vivarium.actor::cell-sequence cell)))))
+
+(defun owning-committed-p (cell)
+  (vivarium.actor::owning (cell)
+    (>= (vivarium.actor::cell-committed cell)
+        (vivarium.actor::cell-sequence cell))))
+
+(define-test "a session stays inspectable until its journal confirms the close"
+  ;; Deregistering first meant AWAIT-SHUTDOWN reported success while the
+  ;; terminal record was unresolved -- externally complete, durably unknown,
+  ;; inspectable by nobody, with the truth on stderr.
+  (let ((grace vivarium.actor::*flush-grace*)
+        (service vivarium.actor::*journal-service*))
+    (unwind-protect
+         (with-repository (environment)
+           (setf vivarium.actor::*flush-grace* 1)
+           (let* ((cell (paced-cell environment :pause 0.01 :limit 1))
+                  (id (actor:cell-id cell)))
+             (actor:await-turn cell (actor:submit cell "go") :timeout 20)
+             ;; The journal refuses everything: unavailable, not merely slow.
+             (setf (vivarium.actor::journal-state vivarium.actor::*journal-service*) :failed)
+             (false (actor:await-shutdown cell :timeout 5)
+                    "shutdown claimed success with the close unconfirmed")
+             (true (actor:find-cell id) "the session left the registry anyway")
+             (true (find "session.error" (vivarium.actor::remembered-since cell 0)
+                         :key #'event:event-name :test #'string=)
+                   "the retention was never announced")
+             ;; Heal, and the shutdown completes late rather than never.
+             (setf (vivarium.actor::journal-state vivarium.actor::*journal-service*) :available)
+             (true (daemon-wait (lambda () (null (actor:find-cell id))) :timeout 20)
+                   "the healed journal did not release the session")))
+      (setf vivarium.actor::*flush-grace* grace)
+      (alexandria:when-let ((current vivarium.actor::*journal-service*))
+        (when (eq current service)
+          (setf (vivarium.actor::journal-state current) :available))))))
+
+(defun daemon-descriptors ()
+  (ignore-errors
+   (1- (count #\Newline
+              (uiop:run-program (list "lsof" "-p" (format nil "~d" (sb-posix:getpid)))
+                                :output :string :error-output nil)))))
+
+(define-test "a startup that fails to bind leaks nothing and blocks nothing"
+  ;; The OS lock is held by the process, so the same process CAN reacquire it
+  ;; -- which is why `the next startup succeeds` alone proves nothing. The
+  ;; descriptor count is what a leaked lock fd cannot hide from.
+  ;; The socket path IS a directory: the lock fd (path.lock, a sibling file)
+  ;; is acquired first, DELETE-FILE cannot remove a directory, and BIND then
+  ;; signals -- failure exactly in the window where a leak would live. The
+  ;; first two triggers tried did not trigger: a nonexistent parent directory
+  ;; is politely created by SERVE itself, and an over-long path is silently
+  ;; truncated by the kernel and binds.
+  (let* ((impossible (format nil "/tmp/vivarium-bind-blocker-~36r/sock"
+                             (random (expt 2 40) (make-random-state t))))
+         (baseline (daemon-descriptors)))
+    (ensure-directories-exist (format nil "~a/" impossible))
+    (dotimes (i 10)
+      (fail (daemon:serve :path impossible :background t) 'error))
+    (alexandria:when-let ((now (daemon-descriptors)))
+      (true (<= now (+ baseline 2))
+            "descriptors grew ~d -> ~d over ten failed startups" baseline now))
+    ;; And the failed startups left the process able to serve.
+    (with-daemon (path)
+      (true (daemon:running-p path)))
+    (ignore-errors
+     (uiop:delete-directory-tree
+      (uiop:parse-native-namestring
+       (format nil "~a/" (directory-namestring impossible))) :validate t))))
+
+(define-test "an announce callback that signals does not un-start the daemon"
+  (let ((path (daemon-test-path)))
+    (unwind-protect
+         (progn
+           (daemon:serve :path path :background t
+                         :announce (lambda (p) (declare (ignore p)) (error "boom")))
+           (loop repeat 100 until (daemon:running-p path) do (sleep 0.01))
+           (true (daemon:running-p path)
+                 "a signalling announce turned a started daemon into a failure")
+           (true (gethash "success" (daemon-ask path "type" "ping"))))
+      (daemon:stop)
+      (ignore-errors (delete-file path)))))
