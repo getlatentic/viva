@@ -1,0 +1,105 @@
+# Backlog
+
+The one tracker. Lanes mirror the manifesto's ratified sequencing; moving an
+item between lanes is a decision and gets a commit of its own. The stopping
+rule applies here as everywhere: a concern enters as WORK only with a
+reproduction, a counterexample, or a mission clause behind it — everything
+else is a tripwire, armed and waiting.
+
+## NOW — KC6, the gate
+
+The experiment is pre-registered (`experiments/kc6/PROTOCOL.md`), priced
+($6.65 worst-case uncached at peak; $1.53 cached off-peak), and gated
+(`./experiments/kc6/preflight.sh`, green). What remains is authoring and
+running.
+
+- [ ] Author the six families, five tasks each, hidden tests written against
+      each task's specification before any arm runs
+- [ ] Commit the fixed shuffle; the two held-out families are authored last
+      and opened only for the final analysis
+- [ ] Pilot slice: pre-check 2 (non-collapse, A-never-evolve vs B within 5%
+      wall / 2% tokens) and pre-check 4 (capability floor) on 3 families
+- [ ] Fix the cost cap from the pilot measurement in RESULTS.md before run one
+      (cap already bounded: 400M total / 30M miss tokens, whichever first)
+- [ ] The battery: 225 runs — A and C at 3 repeats on all six families, B at
+      3 repeats on three
+- [ ] RESULTS.md: verdict section quotes the decision rule verbatim and fills
+      in only the numbers
+
+### The six families
+
+Every one is a friction this repository's own development actually produced —
+the commits show them happening before anyone chose them as tasks, which is
+what makes them cheap to author honestly and hard to rig.
+
+| # | family | the receipt |
+|---|--------|-------------|
+| 1 | paren balance in a Lisp edit | broken twice in one session; fixed only when a probe printed depth per line |
+| 2 | usage totals out of JSONL transcripts | the same parse written four separate times (harness count, cost scripts, live measurements) |
+| 3 | what tools an agent actually SEES | answerable only through the real constructor — reading the code said nine tools were fourteen |
+| 4 | TLC output → holds or violates | needed a config-to-expectation table before thirteen configs could be one command (`spec/verify.sh`) |
+| 5 | a symbol's definition and callers across packages | repeated grep archaeology; the `call-component`-has-no-caller finding took three searches |
+| 6 | a version id out of tool prose | the first test parsed the word `version` instead of the number and activated NIL |
+
+## THROUGH THE DOOR MEANWHILE — one item, by ratified rule
+
+- [ ] **RECONCILE** — the open stage of the component lifecycle: a co-effect
+      ledger and compensation semantics, repairing what a reverted version
+      already did. Mission clause, not feature. Spec first, TLC second, table
+      third, wiring last.
+
+## BEHIND THE GATE, in order
+
+- [ ] **Retention policy (Level 3)** — something that decides when a
+      capability deserves promotion, instead of a human saying so. First
+      artifact after the gate *whichever way it goes*: if capabilities win it
+      governs capabilities, if they lose it governs skills. Waits because
+      building it mid-experiment would change what arm A does.
+- [ ] **Tools as components** — the organism's own grep/edit/bash resolving
+      through the door. Stronger claim, bigger blast radius. Pulled earlier
+      only if pre-check 3 shows the `(lambda (input))` surface is too narrow
+      to be used at all.
+- [ ] **Attachments** — the placeless-organism contract: explicit named
+      working-set lists, no ambient inheritance, grants dying with the task,
+      siblings isolated. Ratified as design in the manifesto; not yet
+      mechanism.
+- [ ] **Peer messaging (TaskTree v2)** — laws already writable: tree-minted
+      identities both ends, delivery only between live tasks, refusal with
+      reason otherwise, immutable payloads, bounded inboxes with declared
+      overflow, terminal tasks receive nothing. Spec is the entry artifact.
+- [ ] **Learning policy** — the mission's second clause is PARTIAL: skills
+      and memory exist, nothing decides when to write one. Same shape as the
+      retention policy, one level down; likely the same artifact family.
+
+## ARMED — tripwires, not work items until they fire
+
+- [ ] `extra-tools` third loss ⇒ the context-object refactor is mandatory,
+      one object threaded whole. Two losses so far (build-agent, sub-agent),
+      both seams pinned by tests.
+- [ ] Suite-deadlock tripwire fires ⇒ the two locks in the holder's frame get
+      a small lock-order model — reviewer's addendum, adopted: lock ordering
+      in the mechanics is the one concurrency class TLC has never been
+      pointed at here, deliberately. Incident record: one occurrence, nine
+      threads on one mutex, 16 instrumented hunt rounds + ~14 clean runs, no
+      reproduction; tripwire self-diagnoses with every thread's backtrace,
+      exit 99.
+- [ ] A witness config stops violating ⇒ `spec/verify.sh` already fails on
+      it; treat as evidence rot, not as a pass.
+- [ ] Anything mutates a request's prompt prefix per-request ⇒ the measured
+      82–91% within-run cache hit rate breaks and the battery price triples.
+
+## HYGIENE — user actions, standing
+
+- [ ] **Rotate the credentials pasted in the earlier session** — DeepSeek API
+      key, AWS keys, Bedrock token. They went only into gitignored `.env`,
+      but pasted is pasted.
+- [ ] Delete `~/.pi/agent/models.json` (contains the DeepSeek key).
+
+## RECORDED, deliberately not levers
+
+- Prompt stable-parts-first ordering would recover ~2.3M cross-run miss
+  tokens over the battery — worth about fifty cents on Flash. Tidy, not a
+  lever; do it only if touching that code anyway.
+- Cordis itself: probed (B12), declined, trigger documented in
+  `docs/cordis-probe.md` — reopens only if components ever need spatial
+  scoping the current tree cannot express.

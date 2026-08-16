@@ -289,6 +289,9 @@ mandatory — one context object threaded whole, never a fourth manual line.
 
 ## What remains
 
+The living tracker is `docs/BACKLOG.md` — lanes mirror this section's
+sequencing, and moving an item between lanes is a decision with a commit.
+
 **KC6, the gate.** Six families of five tasks drawn from frictions this
 repository's own development actually produced, 225 runs, three arms,
 thresholds raised to build-decision size: a 30 percent token reduction or a
