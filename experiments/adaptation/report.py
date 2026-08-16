@@ -22,8 +22,9 @@ def read(path):
                 continue
             row = dict(zip(header, values))
             for key in ("sequence", "position", "solved", "requests", "toolcalls",
-                        "seconds", "remembered"):
-                row[key] = int(row[key] or 0)
+                        "seconds", "remembered", "prompt", "completion"):
+                row[key] = int(row.get(key) or 0)
+            row["tokens"] = row["prompt"] + row["completion"]
             rows.append(row)
     return rows
 
@@ -51,6 +52,17 @@ def main(path):
         print(f"{arm:<12}{sum(r['solved'] for r in mine):>4}/{len(mine):<4}"
               f"{mean([r['toolcalls'] for r in mine]):>12.1f}"
               f"{mean(early):>12.1f}{mean(late):>13.1f}{change:>+9.1f}")
+
+    # Cost per SOLVED task, which is the metric KC6 pre-registers: an arm that
+    # gets cheap by giving up is not cheaper, and a mean over all attempts
+    # would score it as though it were.
+    print(f"\n{'arm':<12}{'tokens/task':>13}{'tokens/solved':>15}{'seconds/task':>14}")
+    for arm in arms:
+        mine = [row for row in rows if row["arm"] == arm]
+        solved = [row for row in mine if row["solved"]]
+        print(f"{arm:<12}{mean([r['tokens'] for r in mine]):>13.0f}"
+              f"{(mean([r['tokens'] for r in solved]) if solved else 0):>15.0f}"
+              f"{mean([r['seconds'] for r in mine]):>14.1f}")
 
     print(f"\n{'':14}" + "".join(f"{p:>7}" for p in positions) + "   (tool calls by position)")
     for arm in arms:

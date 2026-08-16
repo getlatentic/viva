@@ -1559,3 +1559,206 @@ class, and the class overrides the pacing initforms."))
         (dotimes (i 5) (vivarium.actor::publish cell "model.delta" nil))
         (true (daemon-wait (lambda () (owning-committed-p cell)) :timeout 15)
               "the surviving generation stopped committing")))))
+
+;;; ---------------------------------------------------------------------------
+;;; KC6: the door, and the ledger's account of USE
+;;;
+;;; Arm B of the protocol is this organism with the two verbs that change what
+;;; it runs refused, so the refusal is a guard beside the other guards and
+;;; spec/Evolution.tla's ClosedDoorIsInert is its law. These tests are the
+;;; mirror's evidence.
+;;; ---------------------------------------------------------------------------
+
+(defun ledger-event-names (&optional (path (vivarium.actor::evolution-ledger-path)))
+  "Event names from the durable ledger, in the order they were committed. The
+ORDER is load-bearing: KC6 joins an activation to the resolutions that follow
+it, and a resolution recorded before its activation would score as a use of
+something not yet activated."
+  (when (probe-file path)
+    (with-open-file (in path :external-format :utf-8)
+      (loop for line = (read-line in nil nil)
+            while line
+            for table = (ignore-errors (com.inuoe.jzon:parse line))
+            when table collect (gethash "event" table)))))
+
+(defmacro with-door ((door) &body body)
+  "Run BODY against an owner born into DOOR, then put the suite's own owner
+back. The displaced owner is RESTORED rather than discarded: its registry is
+every candidate the rest of the suite created."
+  `(let ((displaced vivarium.actor::*evolver*)
+         (previous vivarium.actor::*default-door*))
+     (unwind-protect
+          (progn
+            (setf vivarium.actor::*evolver* nil
+                  vivarium.actor::*default-door* ,door)
+            (vivarium.actor::ensure-evolver)
+            ,@body)
+       (alexandria:when-let ((mine vivarium.actor::*evolver*))
+         (unless (eq mine displaced)
+           (sb-concurrency:send-message (vivarium.actor::evolver-mailbox mine)
+                                        (list :shutdown))))
+       (setf vivarium.actor::*evolver* displaced
+             vivarium.actor::*default-door* previous))))
+
+(define-test "the door decides the arm, and the open arm proves this can lose"
+  ;; ONE body, both arms, opposite expectations. Written this way on purpose:
+  ;; a closed-door test that only asserts refusals passes just as well against
+  ;; an owner that refuses everything, or one whose activate never worked at
+  ;; all -- which would quietly turn arm B into "the broken arm" and hand KC6
+  ;; a result about a bug. The open pass is the control on the instrument.
+  (dolist (arm '((:open t) (:closed nil)))
+    (destructuring-bind (door expect-effect) arm
+      (with-door (door)
+        (with-paced-cell (cell agent :pause 0.01 :limit 1)
+          (let ((task (format nil "kc6-~(~a~)" door))
+                (component (format nil "kc6-door-~(~a~)" door)))
+            (multiple-value-bind (id condition)
+                (actor:create-candidate component '(lambda () :evolved) :cell cell)
+              ;; CREATE is open in both arms by pre-registration: arm B pays
+              ;; the same cost for the same attempt and gets no effect, which
+              ;; is the overhead the arm exists to price.
+              (false condition "~(~a~): create was refused" door)
+              (true (integerp id) "~(~a~): no version was minted" door)
+              (let ((answer (actor:activate-candidate task id :cell cell)))
+                (if expect-effect
+                    (is eql id answer "open: activation did not take")
+                    (is equal '(:refused :door) answer
+                        "closed: activation was not refused by the door")))
+              ;; ClosedDoorIsInert, in Lisp: with the door shut nothing this
+              ;; run produced resolves for anybody, through either channel.
+              (let ((box (vivarium.actor::task-context-box task nil)))
+                (let ((vivarium.actor::*activation-box* box)
+                      (vivarium.actor::*resolution-task* task)
+                      (vivarium.actor::*resolutions-seen* (make-hash-table :test #'equal)))
+                  (if expect-effect
+                      (is eq :evolved (actor:call-component component))
+                      (false (actor:resolve-component component)
+                             "closed: a pin exists that the door refused"))))
+              (let ((answer (actor:promote-candidate id :cell cell)))
+                (if expect-effect
+                    (is eql id answer "open: promotion did not take")
+                    (is equal '(:refused :door) answer
+                        "closed: promotion was not refused by the door")))
+              (if expect-effect
+                  (is eql id (vivarium.evolution:current-promoted
+                              (actor:evolution-registry) component))
+                  (false (vivarium.evolution:current-promoted
+                          (actor:evolution-registry) component)
+                         "closed: a promoted default appeared"))
+              ;; The refusal is DATA. An analysis counting what arm B tried to
+              ;; do reads this; a line on *error-output* would be unreadable.
+              (let ((names (cell-event-names cell)))
+                (if expect-effect
+                    (false (member "improvement.door-refused" names :test #'string=)
+                           "open: the door refused something")
+                    (is = 2 (count "improvement.door-refused" names :test #'string=)
+                        "closed: the two refusals were not both published"))))))))))
+
+(define-test "the ledger records use, once per task and version, after the activation"
+  ;; KC6's instrumentality pre-check joins improvement.activated to the
+  ;; resolutions that follow it. Before this the ledger held every decision
+  ;; the organism made and nothing about whether any of it was ever RUN, so
+  ;; the pre-check that exists to catch a placebo result was itself unable to
+  ;; fail. Bounded to first use per pair: a per-call event would put the
+  ;; journal on the hot path.
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (let ((task "kc6-use") (component "kc6-instrument"))
+      (multiple-value-bind (id condition)
+          (actor:create-candidate component '(lambda () :used) :cell cell)
+        (false condition)
+        (actor:activate-candidate task id :cell cell)
+        ;; Rigged with the CELL and resolved in ANOTHER THREAD, because that is
+        ;; what the supervisor does: a first version of this test rigged the
+        ;; task with NIL, sent the event to the ledger alone, and reported a
+        ;; broken instrument as a broken product.
+        (let ((box (vivarium.actor::task-context-box task cell))
+              (results '()))
+          (bt:join-thread
+           (bt:make-thread
+            (lambda ()
+              (let ((vivarium.actor::*activation-box* box)
+                    (vivarium.actor::*resolution-task* task)
+                    (vivarium.actor::*resolutions-seen* (make-hash-table :test #'equal)))
+                (dotimes (i 25) (push (actor:call-component component) results))))
+            :name "kc6-resolution-worker"))
+          (is = 25 (count :used results) "the worker did not resolve the pin"))
+        (true (daemon-wait
+               (lambda () (member "improvement.resolved" (cell-event-names cell)
+                                  :test #'string=))
+               :timeout 15)
+              "twenty-five uses and the ledger heard about none of them")
+        (is = 1 (count "improvement.resolved" (cell-event-names cell) :test #'string=)
+            "use is reported per call rather than per version")
+        (true (vivarium.actor::journal-sync) "the ledger never confirmed")
+        ;; THE ORDERING CLAIM, at the ledger the analysis will actually read.
+        ;; A worker journalling its own use would race the owner's activation
+        ;; publish -- the reply is sent before it -- and the join would see a
+        ;; resolution of something not yet activated.
+        (let* ((names (ledger-event-names))
+               (activated (position "improvement.activated" names :test #'string=
+                                                                  :from-end t))
+               (resolved (position "improvement.resolved" names :test #'string=
+                                                                :from-end t)))
+          (true (and activated resolved) "the ledger is missing one of the pair")
+          (when (and activated resolved)
+            (true (< activated resolved)
+                  "use was recorded before the activation that caused it")))))))
+
+(define-test "telemetry is not a transition"
+  ;; :RESOLVED is handled ahead of the table because an action that leaves
+  ;; every variable unchanged is what stuttering already permits, and a clause
+  ;; for it would put a non-decision where the decisions live. That argument
+  ;; is only honest if the message provably cannot move the registry.
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (let ((before (actor:evolution-registry)))
+      (dotimes (i 10)
+        (vivarium.actor::evolution-tell :resolved "ghost-task" "ghost" 999))
+      (sleep 0.3)
+      (is eq before (actor:evolution-registry)
+          "a telemetry message rewrote the registry")
+      ;; And a task nobody rigged reaches no session's stream: telemetry for
+      ;; an unknown task is a ledger fact, never another session's event.
+      (false (member "improvement.resolved" (cell-event-names cell) :test #'string=)
+             "a ghost task's telemetry leaked into an unrelated session"))))
+
+(define-test "an activation is visible to the task that asked for it"
+  ;; The reply used to be sent INSIDE the publish effect, so :ACTIVATE
+  ;; answered before :REBIND-TASK-CONTEXT wrote the task's box: a worker could
+  ;; activate a candidate and then fail to resolve it, having missed its own
+  ;; activation. The suite never lost that race; KC6's preflight lost it on its
+  ;; second run, which is the whole argument for building the end-to-end thing
+  ;; before trusting the unit tests around it.
+  ;;
+  ;; A regression GUARD, not the evidence. Fifty unwidened rounds pass against
+  ;; the broken ordering too -- the owner reaches the box write before a caller
+  ;; can start a thread -- so this test cannot lose and must not be quoted as
+  ;; though it caught anything. The evidence is
+  ;; experiments/kc6/visibility-window.lisp, which widens the window by one line
+  ;; and separates completely: 200 of 200 invisible before the fix, 0 of 200
+  ;; after. Three attacks in this project were already believed on a green they
+  ;; had not earned.
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (let ((missed 0))
+      (dotimes (round 50)
+        (let ((task (format nil "kc6-visible-~d" round))
+              (component (format nil "kc6-visible-~d" round)))
+          (multiple-value-bind (id condition)
+              (actor:create-candidate component '(lambda () :seen) :cell cell)
+            (false condition "round ~d: create refused" round)
+            (actor:activate-candidate task id :cell cell)
+            ;; No sleep, no wait: the answer to ACTIVATE is the only thing
+            ;; standing between here and the resolution, which is precisely
+            ;; the claim under test.
+            (let ((box (vivarium.actor::task-context-box task cell))
+                  (seen nil))
+              (bt:join-thread
+               (bt:make-thread
+                (lambda ()
+                  (let ((vivarium.actor::*activation-box* box)
+                        (vivarium.actor::*resolution-task* task)
+                        (vivarium.actor::*resolutions-seen*
+                          (make-hash-table :test #'equal)))
+                    (setf seen (ignore-errors (actor:call-component component)))))
+                :name "kc6-visibility-worker"))
+              (unless (eq :seen seen) (incf missed))))))
+      (is = 0 missed "~d of 50 activations were invisible to their own task" missed))))

@@ -31,6 +31,11 @@
 
 (in-package #:vivarium.actor)
 
+(defparameter +tail-limit+ 4096
+  "Events kept in memory per session. Older ones are read back from the journal.
+Above the struct because a slot initform is compiled, and below it this was a
+live undefined-variable warning that every later warning would have hidden in.")
+
 (defstruct (cell (:conc-name cell-))
   (id "" :type string)
   (label "" :type string)
@@ -93,9 +98,6 @@
 (defvar *cells* (make-hash-table :test #'equal))
 (defvar *registry-lock* (bt:make-lock "vivarium.cells"))
 (defvar *counter* 0)
-
-(defparameter +tail-limit+ 4096
-  "Events kept in memory per session. Older ones are read back from the journal.")
 
 (defparameter +stopping-grace+ 120
   "Seconds a shutting-down session waits for its turn to report. After this the
@@ -177,7 +179,15 @@ if it is ever forced to evict them.")
 (defun journal-evolution (name data)
   "Promotions and reversions are durable facts about the organism: the
 lineage must be reconstructible from the improvement.* ledger after a
-restart, because the registry is image state and the image is mortal."
+restart, because the registry is image state and the image is mortal.
+
+ENSURE-JOURNAL first, because JOURNAL-POST refuses when no generation exists
+and this caller has nowhere to put a refusal. The ledger used to depend on
+some session having spawned earlier: evolution driven from the CLI or a
+preflight wrote its whole genealogy into a dropped message and reported
+nothing wrong. Safe from here -- this runs on the evolution owner's thread,
+which holds no cell lock."
+  (ensure-journal)
   (journal-post (list :evolution nil (cons name data))))
 
 (defun journal-post (message)

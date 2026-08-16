@@ -87,11 +87,24 @@ holes against the tagged model -- before any of this existed. The
 `improvement.*` events, declared in the vocabulary long before anything could
 emit them, are live on session streams and in the durable ledger.
 
-**Next, and named before we stand at it: kill criterion six.** The machinery
-the mission asked for now exists. The honest next artifact is not more
-substrate -- it is the experiment testing whether live self-modification
-measurably improves outcomes over external skills and tools, designed with
-the same discipline as everything above.
+**Kill criterion six is pre-registered.** `experiments/kc6/PROTOCOL.md` fixes
+three arms, four pre-checks, the metrics and the decision rule before any model
+runs. Two of its arms did not exist when it was written. Arm B needed a door in
+the organism, so the door is a guard in the evolution table with
+`ClosedDoorIsInert` proving that a closed run resolves nothing it creates, and
+a witness proving that guard load-bearing. Its instrumentality check joined
+activations to uses over a relation the ledger did not contain, so
+`improvement.resolved` now records first use per task and version. Pre-checks
+one and three run as one gate:
+
+```
+./experiments/kc6/preflight.sh
+```
+
+What remains before run one is authoring: 20 families of 5 tasks with hidden
+tests, five families held out and authored last. The cost cap is fixed after a
+measured pilot rather than guessed -- the harness bounds the battery at 27,000
+model requests, and nothing measured yet says what a request costs on it.
 
 ## Level 2 — live self-modification, for the current task
 

@@ -25,18 +25,37 @@
 ;;;; The registry is one immutable value, rebuilt by every transition:
 ;;;;
 ;;;;   (:evolution MINTED VERSIONS LINEAGES PINS ENDED)
+;;;;
+;;;; THE DOOR is the one input that is not the state or the message. KC6's
+;;;; arm B is this organism with self-modification refused, so the refusal
+;;;; has to be somewhere -- and putting it at the tool boundary would be the
+;;;; second door the no-back-door law forbids, reachable around by any
+;;;; sub-agent, extension or console that talks to the owner directly. It
+;;;; belongs with the other guards. It is not registry state: nothing in a
+;;;; lifecycle ever moves it, and a run-level constant that no transition
+;;;; rewrites would only be a seventh slot to carry correctly ten times.
+;;;; It is *DOOR*, a dynamic constant, mirroring spec/Evolution.tla's CONSTANT
+;;;; Door: fixed for a run's extent, bound by the owner thread from its own
+;;;; slot -- law 9 doing visible work -- and by a LET in any test that wants
+;;;; the other arm.
 
 (defpackage #:vivarium.evolution
   (:use #:cl #:vivarium.kernel)
   (:export #:evolution-transition #:empty-registry #:resolve
            #:registry-minted #:version-status #:current-promoted #:pins-of
-           #:run-evolution-self-test))
+           #:*door* #:door-open-p #:run-evolution-self-test))
 
 (in-package #:vivarium.evolution)
 
 ;;; ---------------------------------------------------------------------------
 ;;; The registry: pure operations, prose names
 ;;; ---------------------------------------------------------------------------
+
+(defvar *door* :open
+  "Whether this run may change what it runs. :OPEN or :CLOSED, fixed for a
+run. Mirrors CONSTANT Door; ClosedDoorIsInert is the law it buys.")
+
+(defun door-open-p () (eq *door* :open))
 
 (defun empty-registry () '(:evolution 0 () () () ()))
 
@@ -140,12 +159,22 @@ default, else NIL."
   (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:activate ?task ?id))
     :when (let ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)))
-            (and (not (ended-p registry ?task))
+            (and (door-open-p)
+                 (not (ended-p registry ?task))
                  (eq :candidate (version-status registry ?id))))
     => (let ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)))
          (set-pin registry ?task (version-component registry ?id) ?id))
     (list :publish :improvement.activated ?id ?task)
     (list :rebind-task-context ?task))
+
+  ;; A door refusal is NOT an ordinary refusal and must never look like one:
+  ;; the arm-B analysis has to tell "the agent tried and the arm refused it"
+  ;; from "the candidate was already spent", and one shared diagnostic would
+  ;; have merged the treatment with the noise.
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
+                (:activate ?task ?id))
+    :when (not (door-open-p))
+    => :same (list :publish :improvement.door-refused ?id ?task :activate))
 
   (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:activate ?task ?id))
@@ -179,9 +208,10 @@ default, else NIL."
   ;; --- promotion: the single owner moves the default forward --------------
   (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:promote ?id))
-    :when (eq :candidate (version-status
-                          `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)
-                          ?id))
+    :when (and (door-open-p)
+               (eq :candidate (version-status
+                               `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended)
+                               ?id)))
     => (let* ((registry `(:evolution ,?minted ,?versions ,?lineages ,?pins ,?ended))
               (component (version-component registry ?id))
               (previous (current-promoted registry component))
@@ -189,6 +219,11 @@ default, else NIL."
               (registry (set-status registry ?id :promoted)))
          (set-lineage registry component (cons ?id (lineage-of registry component))))
     (list :publish :improvement.promoted ?id))
+
+  (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
+                (:promote ?id))
+    :when (not (door-open-p))
+    => :same (list :publish :improvement.door-refused ?id nil :promote))
 
   (:transition ((:evolution ?minted ?versions ?lineages ?pins ?ended)
                 (:promote ?id))
@@ -295,5 +330,27 @@ default, else NIL."
     (multiple-value-bind (next effects) (evolution-transition registry '(:revert "search"))
       (assert (equal next registry))
       (assert (eq :revert-refused (second (first effects))))))
-  (format t "~&evolution self-test: all traces passed, three findings held~%")
+  ;; THE DOOR as a trace: the same organism, the other arm. Everything a
+  ;; closed run can still do -- create, spawn, end, discard -- it does; the
+  ;; two things that would let it change what it runs are refused by name,
+  ;; and ClosedDoorIsInert's Lisp form holds: nothing resolves to anything.
+  (let ((*door* :closed)
+        (registry (empty-registry)))
+    (setf registry (replay-trace #'evolution-transition registry
+                                 '(((:create-candidate "search")))))
+    (assert (eq :candidate (version-status registry 1)))
+    (multiple-value-bind (next effects) (evolution-transition registry '(:activate "task-a" 1))
+      (assert (equal next registry))
+      (assert (eq :improvement.door-refused (second (first effects))))
+      (assert (eq :activate (fifth (first effects)))))
+    (multiple-value-bind (next effects) (evolution-transition registry '(:promote 1))
+      (assert (equal next registry))
+      (assert (eq :improvement.door-refused (second (first effects))))
+      (assert (eq :promote (fifth (first effects)))))
+    (assert (null (resolve registry "task-a" "search")))
+    ;; Still lively: a candidate nobody can pin is discardable, which is why
+    ;; EvolutionClosed carries the liveness property and not only the safety.
+    (setf registry (replay-trace #'evolution-transition registry '(((:discard 1)))))
+    (assert (eq :discarded (version-status registry 1))))
+  (format t "~&evolution self-test: all traces passed, three findings and the door held~%")
   t)

@@ -255,7 +255,12 @@ thread, never inherited ambiently."
     (let ((box (task-context-box id cell)))
       (bt:make-thread
        (lambda ()
-         (let ((*activation-box* box))
+         ;; Law 9 again, and the reason the seen-table is bound HERE: it is
+         ;; the worker's own, fresh per task, so first-use is first-use for
+         ;; this task and no thread ever writes another's.
+         (let ((*activation-box* box)
+               (*resolution-task* id)
+               (*resolutions-seen* (make-hash-table :test #'equal)))
            (let ((outcome
                    (handler-case
                        (progn (agent:call-in-tool-context

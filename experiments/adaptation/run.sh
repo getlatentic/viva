@@ -81,12 +81,17 @@ done
 
 rm -rf "$work"; mkdir -p "$work"
 results="$work/results.tsv"
-printf 'arm\tsequence\tposition\ttask\tsolved\trequests\ttoolcalls\tseconds\tremembered\n' > "$results"
+printf 'arm\tsequence\tposition\ttask\tsolved\trequests\ttoolcalls\tseconds\tremembered\tprompt\tcompletion\n' > "$results"
 
-count_events() {   # transcript-dir -> "requests toolcalls"
+count_events() {   # transcript-dir -> "requests toolcalls prompt completion"
+  # TOKENS, not only requests. Cost per solved task is a headline metric and a
+  # request count is a poor stand-in: an arm that reads a retained note spends
+  # its budget in the prompt while one that rediscovers spends it in tool
+  # output, at identical request counts. Each reply's usage was already in the
+  # transcript; nothing needed adding but the sum.
   python3 - "$1" <<'PY'
 import json, pathlib, sys
-requests = calls = 0
+requests = calls = prompt = completion = 0
 for path in pathlib.Path(sys.argv[1]).glob("*.jsonl"):
     for line in path.read_text(errors="replace").splitlines():
         try: entry = json.loads(line)
@@ -96,7 +101,14 @@ for path in pathlib.Path(sys.argv[1]).glob("*.jsonl"):
             requests += 1
             calls += sum(1 for block in (payload.get("content") or [])
                          if block.get("type") == "tool_call")
-print(requests, calls)
+            usage = payload.get("usage") or {}
+            # Providers disagree on the names, and a missing key is a zero
+            # rather than a crash: a run that dies costing itself is worse
+            # than one that reports a visible zero somebody can chase.
+            prompt += usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+            completion += (usage.get("completion_tokens")
+                           or usage.get("output_tokens") or 0)
+print(requests, calls, prompt, completion)
 PY
 }
 
@@ -133,7 +145,7 @@ run_sequence() {
 
     if ( cd "$sandbox" && ./check >/dev/null 2>&1 ); then solved=1; else solved=0; fi
     set -- $(count_events "$transcripts")
-    requests=$1; calls=$2
+    requests=$1; calls=$2; prompt=$3; completion=$4
 
     remembered=0
     if [ -f "$sandbox/.vivarium/MEMORY.md" ]; then
@@ -147,8 +159,9 @@ run_sequence() {
       rm -rf "$carried/.vivarium/sessions" "$carried/.vivarium/.transcripts"
     fi
 
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$arm" "$sequence" "$position" \
-      "$task" "$solved" "$requests" "$calls" "$((finished - started))" "$remembered" >> "$results"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$arm" "$sequence" "$position" \
+      "$task" "$solved" "$requests" "$calls" "$((finished - started))" "$remembered" \
+      "$prompt" "$completion" >> "$results"
     printf '  %-10s seq %s  %d. %-16s %s  %2s req  %2s calls  %3ss  mem:%s\n' \
       "$arm" "$sequence" "$position" "$task" \
       "$([ "$solved" = 1 ] && echo solved || echo '  --  ')" \

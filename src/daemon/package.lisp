@@ -52,7 +52,7 @@
            #:ensure-evolver #:create-candidate #:activate-candidate
            #:promote-candidate #:revert-component #:discard-candidate
            #:call-component #:resolve-component #:reconstruct-lineage
-           #:evolution-registry #:*activation-box*))
+           #:evolution-registry #:*activation-box* #:*default-door*))
 
 (defpackage #:vivarium.daemon
   (:use #:cl)

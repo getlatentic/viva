@@ -26,9 +26,23 @@
 (* the discard guard cannot see through spawns. Wiring consequence: the task  *)
 (* tree's spawn effect must post (:task-spawned child parent) to the          *)
 (* evolution owner BEFORE the child's worker starts.                          *)
+(*                                                                            *)
+(* THE DOOR, added for KC6's arm B. The experiment needs an arm that is the   *)
+(* identical organism with self-modification refused, or "A beats B" measures *)
+(* nothing. A run-level configuration is a CONSTANT, not a variable: the door *)
+(* never moves during a run, and making it state would inflate a lifecycle    *)
+(* space with a dimension that has no lifecycle. Refusing at the tool         *)
+(* boundary instead was rejected outright -- that is the second door the      *)
+(* no-back-door law forbids, and arm B's whole validity is that no path       *)
+(* reaches promotion. So the guard sits where the other guards sit, and       *)
+(* ClosedDoorIsInert states arm B's guarantee as a checkable law: with the    *)
+(* door closed nothing the run creates can ever be resolved by anybody.       *)
+(* BrokenDoor removes the guard for the witness -- the attack can lose.       *)
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Components, MaxVersions, Tasks, Broken, BrokenDiscard
+CONSTANTS Components, MaxVersions, Tasks, Broken, BrokenDiscard, Door, BrokenDoor
+
+DoorOpen == Door = "open" \/ BrokenDoor
 
 Versions == 1..MaxVersions
 
@@ -86,6 +100,7 @@ Inherit(t, p) ==
     /\ UNCHANGED <<minted, vcomp, status, lineage>>
 
 Activate(t, v) ==
+    /\ DoorOpen
     /\ lifec[t] = "live"
     /\ status[v] = "candidate"
     /\ active' = [active EXCEPT ![t][vcomp[v]] = v]
@@ -101,6 +116,7 @@ TaskEnd(t) ==
     /\ UNCHANGED <<minted, vcomp, status, lineage>>
 
 Promote(v) ==
+    /\ DoorOpen
     /\ status[v] = "candidate"
     /\ status' = [w \in Versions |->
                     IF w = v THEN "promoted"
@@ -187,6 +203,16 @@ NoResolutionToDiscarded ==
         lifec[t] = "live" =>
             LET r == Resolution(t, c)
             IN r /= 0 => status[r] /= "discarded"
+
+(* ARM B'S GUARANTEE, as one law rather than a promise in a protocol: with    *)
+(* the door closed nothing this run produces is ever resolved by anybody.     *)
+(* Stated over Resolution rather than over status and active separately,      *)
+(* because the two channels -- a task's pin and the promoted default -- are   *)
+(* exactly what Resolution already joins, and an arm that leaks through       *)
+(* either one is not frozen. The BrokenDoor witness violates it.              *)
+ClosedDoorIsInert ==
+    (Door = "closed") =>
+        \A t \in Tasks, c \in Components : Resolution(t, c) = 0
 
 ------------------------------------------------------------------------------
 CandidateResolves ==

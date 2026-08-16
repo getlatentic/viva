@@ -635,3 +635,65 @@ event vocabulary and must stay separate. Deactivation ends a candidate's
 activation for one task or session; reversion moves the promoted lineage back
 for everyone. Collapsing them loses the distinction that makes task-scoped
 self-modification safe to try.
+
+### The door, and what building KC6's preflight cost the contained layer
+
+Kill criterion six needs an arm that is this organism with self-modification
+refused. That refusal had nowhere honest to live except beside the other
+guards: at the tool boundary it would be the second door the no-back-door law
+forbids, reachable around by any sub-agent, extension or console that talks to
+the owner directly, and arm B's entire validity is that no path reaches
+promotion. So the door is a guard on `:activate` and `:promote`, mirrored by
+`CONSTANT Door` in `spec/Evolution.tla`. It is a constant rather than registry
+state because nothing in a lifecycle ever moves it, and `ClosedDoorIsInert`
+states arm B's guarantee as a checkable law: with the door closed, nothing a
+run creates is ever resolved through either channel -- the task pin or the
+promoted default. `EvolutionWitnessDoor` violates that law in 33 states with
+the guard removed, so the guard is load-bearing rather than decorative.
+
+`spec/verify.sh` now re-proves all thirteen configs in one command, six of them
+expected to VIOLATE. A witness that quietly stops violating has stopped being
+evidence, and would otherwise rot into a green line nobody reads.
+
+The ledger gained one event of a new kind. Every `improvement.*` name recorded
+a DECISION; none recorded a USE, so KC6's instrumentality pre-check -- are
+created versions ever actually run? -- was computing a join over a relation
+that did not exist, and the check written to catch a placebo result could not
+itself fail. `improvement.resolved` reports first use per task and version:
+bounded by activations rather than calls, deduplicated in the worker's own
+dynamic context so the box keeps its single writer, and routed through the
+owner's mailbox so a use can never be journalled before the activation that
+caused it.
+
+**Then the contained layer bit three more times, all of them found by building
+the preflight rather than by the suite.**
+
+`(second arguments)` in the diagnostic effect was the version id, not the
+reason: `DESTRUCTURING-BIND` had already taken the op off. Every refusal
+answered `(:refused 4)` instead of naming itself, and the log line printed an
+id where the reason belongs. A caller cannot tell "already promoted" from "no
+such candidate" by an id, and arm A needs exactly that distinction.
+
+`journal-evolution` dropped the entire durable ledger when no session had ever
+started. `journal-post` refuses when no generation exists -- "refusal is an
+answer the caller can act on" -- and this caller had nowhere to put one.
+Evolution driven from the CLI or a preflight wrote its whole genealogy into a
+dropped message and reported nothing wrong.
+
+The third is the one worth the most. `:ACTIVATE`'s answer was sent from inside
+the publish effect, before the later `:REBIND-TASK-CONTEXT` effect wrote the
+task's box, so "your activation succeeded" could reach a worker before the
+activation was visible to it. The inherit branch was correct only by accident
+of intra-branch ordering. The reply now goes after every effect of the message,
+so an answer means the transition is complete and cannot mean anything else.
+
+**And the discipline that made that one honest.** The preflight failed this way
+once. A 50-round test in the suite passed against the broken ordering; a
+200-round probe passed against it too. Rather than claim a fix for a race
+neither instrument could catch, the window was forced open by one line --
+`(sleep 0.01)` between the reply and the box write -- and it separated
+completely: 200 of 200 invisible with the old ordering, 0 of 200 with the new,
+same widening. `experiments/kc6/visibility-window.lisp` keeps that experiment
+re-runnable, and the suite test says in its own comment that it is a regression
+guard and not the evidence. Three attacks in this project were already believed
+on a green they had not earned; this is the fourth, caught before it counted.
