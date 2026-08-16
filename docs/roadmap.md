@@ -114,10 +114,43 @@ Tools-as-components -- the agent replacing its own `grep` for its own task --
 is the stronger claim and the named follow-on. It does not invalidate a result
 obtained here.
 
-What remains before run one is authoring: 20 families of 5 tasks with hidden
-tests, five families held out and authored last. The cost cap is fixed after a
-measured pilot rather than guessed -- the harness bounds the battery at 27,000
-model requests, and nothing measured yet says what a request costs on it.
+**Re-scoped to a gate, deliberately.** 225 runs, 13.5M tokens, $6.65 at the
+worst case where the cache never hits. Six families of five tasks, drawn from
+frictions this repository's own development actually produced, because a build
+decision needs a large effect and not a small one: paired by family with a
+directional hypothesis, six families agreeing gives p = 0.016, and five is the
+floor at which significance is reachable at all. Twenty families was buying
+the power to detect a hair, and an architecture that wins by a hair has not
+earned itself.
+
+The bill was never the constraint -- 900 runs is about $27. The authoring was,
+and so was the drift. **This document exists because the project drifted into
+perfecting a benchmark while the harness could not edit a file, and a 100-task
+battery with hidden tests is that same drift wearing a lab coat.**
+
+### Against the mission, stated plainly
+
+```
+do normal work                      BUILT     Pi parity, level-1.md
+learn from that work                PARTIAL   skills and memory exist; nothing
+                                              decides when to write one
+modify how it operates              BUILT     create/activate/call capability,
+                                              live, proven, ledgered, and used
+                                              by a real model
+retain useful modifications         MECHANISM promote exists; the POLICY does
+                                              not -- the agent must be told
+safely replace or undo parts        PARTIAL   components revert; the organism's
+                                              own tools are not components yet
+```
+
+Two of those five are the honest next work, and neither is more substrate.
+**A retention policy** -- something that decides when a capability is worth
+promoting, rather than a human saying so -- is the whole of Level 3 and the
+gap between a mechanism and an organism. **Applying it to real work** is the
+other: this harness has only ever been pointed at fixtures and benchmark
+repos, and the mission says apply it to tasks. The KC6 families come from this
+repository's own frictions for exactly that reason -- it is the first time the
+organism is measured on work that actually happened.
 
 ## Level 2 — live self-modification, for the current task
 

@@ -80,11 +80,49 @@ dialects. Within a family, tasks run in order so retention can matter. Tasks
 are graded by hidden tests — `./check` exiting 0, as in the adaptation battery
 — never by a judge who can see `improvement.*` events.
 
-**Scale, fixed now: 20 families x 5 tasks x 3 arms x 3 repeats = 900 runs.**
-Fifteen families are scored; **five are held out** and never seen during any
-pilot, measuring transfer of promoted defaults. Families are ordered by a
-shuffle fixed and committed before authoring finishes; if the cost cap forces a
-cut, families are dropped whole from the end of that order, never by results.
+**Scale, fixed now: 6 families x 5 tasks, arms A and C at 3 repeats each,
+arm B at 3 repeats on 3 of the families. 225 runs, 13.5M tokens, $6.65 at the
+worst case of no cache at peak rates and $1.53 cached off-peak.**
+
+Twenty families was never buying significance. It was buying the power to
+detect a SMALL effect, and **a build decision does not need a small effect**:
+if live self-modification wins only by a hair, the architecture has not earned
+itself. Paired by family with a directional hypothesis — the criterion asks
+whether self-modification *helps* — the one-sided sign test reaches p = 0.031
+at five families and p = 0.016 at six. Five is the floor; six is five plus one
+family of slack.
+
+Arm B carries fewer runs on purpose. It controls a nuisance parameter — the
+door's overhead — while A against C is the comparison that decides the kill, so
+the runs go where the decision is.
+
+Two of the six families are held out. **At this size transfer is descriptive,
+not inferential**, and is reported as an observation rather than a test. That
+is the honest cost of the smaller battery and it is stated rather than
+discovered in the analysis.
+
+The binding constraint here was never the bill: 900 runs is about $27 at these
+rates. It is the authoring — 100 tasks with hidden tests is weeks of work that
+is not the mission — and the drift that comes with it. This project has drifted
+into perfecting a benchmark once already.
+
+**The six families, drawn from this session's own record.** Every one is a
+friction that actually recurred while building the machinery under test, which
+is why they are cheap to author honestly and hard to rig: the commits show them
+happening before anyone chose them as tasks.
+
+```
+1  paren balance in a Lisp edit        broken twice; a depth-printing probe fixed it
+2  usage totals out of JSONL           the same parse written four times
+3  what tools does an agent SEE        answerable only through the real constructor
+4  TLC output -> holds or violates     needed a config-to-expectation table
+5  a symbol's definition and callers   repeated greps across packages
+6  a version id out of tool prose      parsed the word `version` instead of the number
+```
+
+Each family is five tasks over the same friction with different particulars, so
+a retained abstraction can pay from task two onward. Hidden tests are written
+against each task's specification before any arm runs.
 
 **Authorship is a threat and is named here.** These families are authored by
 the same agent the experiment tests, which can build the answer key into the
@@ -166,25 +204,33 @@ by roughly the family length. Twenty paired observations per comparison.
 
 ## Decision rule, set now
 
-Comparisons are paired by family. Test: two-sided Wilcoxon signed-rank at
-**alpha = 0.05**.
+Comparisons are paired by family. Test: **one-sided sign test at n = 6,
+alpha = 0.05**, which requires all six families to agree in direction — p =
+0.016 when they do. The hypothesis is directional by construction: the
+criterion asks whether self-modification helps, not whether it differs.
 
-Minimum effect that counts, chosen for practical significance before any data:
-**a 20% reduction in tokens per solved task**, or **+0.15 absolute in
-late-position solve rate**, in the same direction on both.
+Minimum effect that counts, chosen for practical significance before any data,
+and deliberately large because a build decision needs a large effect: **a 30%
+reduction in tokens per solved task**, or **+0.20 absolute in late-position
+solve rate**, in the same direction on both.
 
-**Keep the architecture** if A beats C at that effect size and significance on
-the held-out families, and A beats B on the same terms.
+**Keep the architecture** if A beats C at that effect size with all six
+families agreeing, and A beats B on the same terms.
 
-**Kill criterion six fires** if A fails to beat C after the full battery. The
-honest conclusion is then that external skills capture the value without the
-live image, and the roadmap's Elixir/external question reopens with data
-instead of taste.
+**Kill criterion six fires** if A fails to beat C. The honest conclusion is
+then that external skills capture the value without the live image, and the
+roadmap's Elixir/external question reopens with data instead of taste.
 
-**The ambiguous zone**, allowed once: if effects are positive and consistent in
-direction but under threshold, run one pre-sized extension of 10 further
-families from the fixed shuffle, then decide on the combined set. No second
-extension; that is the infinite refinement loop wearing a lab coat.
+**What this size cannot do, said out loud.** It cannot detect a small effect,
+it cannot test transfer inferentially, and a split decision — some families
+one way, some the other — is not an ambiguous result to be resolved by more
+runs. It is the answer: an effect that inconsistent is not one to build an
+architecture on.
+
+**The ambiguous zone**, allowed once: if all six families agree in direction
+but the effect is under threshold, run one pre-sized extension of 4 further
+families, then decide on the combined set. No second extension; that is the
+infinite refinement loop wearing a lab coat.
 
 **The threshold never moves; N does.** If the pilot shows the noise floor makes
 a 20% effect undetectable at 20 families, the battery is *enlarged* from the
@@ -367,6 +413,16 @@ original draft against the machinery before judging it.
    test was being advertised to the model with a malformed schema. Added as
    pre-check zero, which runs first and stops the gate. **No battery may run
    while it fails**, and no result obtained while it fails means anything.
+
+10. **Re-scoped to a build decision, not a publication.** 900 runs became 225,
+   20 families became 6, and the test became a one-sided sign test at the size
+   where significance is still reachable. The bill was never the constraint —
+   900 runs is about $27 — the authoring was, and so was the drift: this
+   project has already spent a phase perfecting a benchmark while the harness
+   could not edit a file. What the smaller battery gives up is stated in the
+   decision rule rather than discovered in the analysis: no small effects, no
+   inferential transfer, and a split result is an answer rather than a reason
+   to run more.
 
 9. **The surface it demanded now exists**, chosen deliberately rather than by
    whichever wiring was easiest: five tools through which an agent mints,
