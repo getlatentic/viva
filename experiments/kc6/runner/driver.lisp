@@ -25,9 +25,12 @@
   (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/cli :silent t))
 
 (destructuring-bind (family-dir arm out-dir) (rest sb-ext:*posix-argv*)
+  ;; AN is pre-check 2's arm: arm A's exact configuration -- tools present,
+  ;; door open -- plus a policy instruction never to use them. It isolates
+  ;; the machinery's presence-tax from its use.
   (let* ((family (uiop:ensure-directory-pathname family-dir))
          (out (uiop:ensure-directory-pathname out-dir))
-         (capabilities (member arm '("A" "B") :test #'string=)))
+         (capabilities (member arm '("A" "B" "AN") :test #'string=)))
     (ensure-directories-exist out)
 
     ;; The arm, before any owner exists.
@@ -74,6 +77,8 @@
                                  :request-limit 30
                                  :session-directory transcripts
                                  :persist t
+                                 :extra-prompt (when (string= arm "AN")
+                                                 "Policy for this run: never create, activate, or promote capabilities. Solve every task with the ordinary tools only.")
                                  :extra-tools (when capabilities
                                                 (vivarium.actor:capability-tools)))))
                      (handler-case

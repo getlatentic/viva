@@ -35,12 +35,12 @@ mandatory** (amendment 13). What remains is authoring and running.
       — re-tightened to the 225 design by amendment 12)
 - [ ] The battery: 225 runs — A and C at 3 repeats on all six families, B at
       3 repeats on the bound three (3, 1, 4)
-- [ ] The runner: cell mode BUILT and smoke-validated live (f3 arm A, five
-      for five solved, $0.02, one image serving the whole family sequence so
-      arm A's compiled retention can exist at all). Three gates live: model
-      pin, off-peak refusal, budget.py checkpoint. Remains: batch mode
-      driving the truncation spend order (pilot, then A+C by battery order,
-      then B), and the never-evolve policy flag for pre-check 2
+- [x] The runner: cell mode smoke-validated live; batch mode drives the
+      truncation spend order (pilot with its $1.50 sub-cap, then A+C in
+      battery order with the pre-check 3/4 checkpoint after the bound
+      three's A cells, then B — whose cells the pilot already ran,
+      amendment 14). AN is arm A plus a never-use policy, for pre-check 2.
+      Idempotent: completed cells skip on re-invocation
 - [ ] RESULTS.md: verdict section quotes the decision rule verbatim and fills
       in only the numbers
 

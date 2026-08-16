@@ -468,6 +468,19 @@ original draft against the machinery before judging it.
    pre-check zero, which runs first and stops the gate. **No battery may run
    while it fails**, and no result obtained while it fails means anything.
 
+14. **Three implementation bindings, logged before the pilot spends.** Arm
+   B's pilot cells and its battery cells are the same configuration, so they
+   are the same runs — a re-run would buy independent noise and nothing
+   else; the pilot's marginal cost is therefore the nine never-evolve cells.
+   Pre-checks 3 and 4 need real arm-A runs the 90-run pilot does not
+   contain, so they are evaluated at a checkpoint over the battery's own
+   arm-A cells on the bound three, before any cell past them spends — a
+   failure stops the battery there with the spend still pilot-sized. And
+   the capability floor is operationalized: a family clears it when at
+   least one of its A repeats minted a version that later resolved and
+   solved at least one task. No threshold moved; these bind sequencing and
+   reading, not standards.
+
 13. **The $7 budget and the Flash pin, on the user's directive.** The
    worst-case bracket ($45 heavy, uncached, peak) exceeds the budget several
    times over, so the budget is a metered hard stop, not a projection:

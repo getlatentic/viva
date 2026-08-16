@@ -77,6 +77,64 @@ PY
     echo "--- meter after ---"
     python3 "$kc6/budget.py" --limit 7.00 "$results" $anchors || true
     ;;
+  pilot)
+    # Pre-check 2's runs: AN and B on the bound three, three repeats each.
+    # B's cells double as battery cells (amendment 14) -- identical
+    # configuration, so a re-run would buy independent noise and nothing else.
+    # Sub-cap: the pilot may spend at most $1.50 of the seven.
+    for family in f3-agent-surface f1-paren-balance f4-tlc-verdicts; do
+      for repeat in 1 2 3; do
+        for arm in AN B; do
+          done_rows=$(awk -F'	' -v a="$arm" -v f="$family" -v r="$repeat"             '$1==a && $2==f && $3==r' "$results/results.tsv" | wc -l)
+          [ "$done_rows" -ge 5 ] && { echo "skip $family $arm r$repeat (done)"; continue; }
+          pilot_dirs=$(ls -d "$results"/*-AN-r* "$results"/*-B-r* 2>/dev/null || true)
+          if [ -n "$pilot_dirs" ]; then
+            python3 "$kc6/budget.py" --limit 1.50 $pilot_dirs || {
+              echo "PILOT SUB-CAP REACHED" >&2; exit 1; }
+          fi
+          python3 "$kc6/budget.py" --limit 7.00 "$results" $anchors || exit 1
+          "$0" cell "$family" "$arm" "$repeat"
+        done
+      done
+    done
+    echo "=== pre-check 2 ==="
+    python3 "$here/precheck2.py" "$results/results.tsv"
+    ;;
+
+  battery)
+    # The truncation spend order: A and C family by family in battery order,
+    # with the pre-check 3/4 checkpoint after the bound three's A cells;
+    # then B -- whose cells the pilot already ran.
+    checkpointed=0
+    for family in f3-agent-surface f1-paren-balance f4-tlc-verdicts                   f2-usage-totals f6-version-prose f5-symbol-callers; do
+      for arm in A C; do
+        for repeat in 1 2 3; do
+          done_rows=$(awk -F'	' -v a="$arm" -v f="$family" -v r="$repeat"             '$1==a && $2==f && $3==r' "$results/results.tsv" | wc -l)
+          [ "$done_rows" -ge 5 ] && { echo "skip $family $arm r$repeat (done)"; continue; }
+          python3 "$kc6/budget.py" --limit 7.00 "$results" $anchors || {
+            echo "BUDGET: families drop whole from the end of the order." >&2; exit 1; }
+          "$0" cell "$family" "$arm" "$repeat"
+        done
+      done
+      if [ "$checkpointed" = 0 ] && [ "$family" = f4-tlc-verdicts ]; then
+        echo "=== checkpoint: pre-checks 3 and 4 over the bound three's A cells ==="
+        python3 "$here/precheck34.py" "$results" || {
+          echo "CHECKPOINT FAILED: the battery stops here, by protocol." >&2; exit 1; }
+        checkpointed=1
+      fi
+    done
+    for family in f3-agent-surface f1-paren-balance f4-tlc-verdicts; do
+      for repeat in 1 2 3; do
+        done_rows=$(awk -F'	' -v a="B" -v f="$family" -v r="$repeat"           '$1=="B" && $2==f && $3==r' "$results/results.tsv" | wc -l)
+        [ "$done_rows" -ge 5 ] && { echo "skip $family B r$repeat (done)"; continue; }
+        python3 "$kc6/budget.py" --limit 7.00 "$results" $anchors || {
+          echo "BUDGET during B: kill side unaffected; keep becomes provisional." >&2; exit 1; }
+        "$0" cell "$family" "B" "$repeat"
+      done
+    done
+    echo "battery complete"
+    ;;
+
   *)
-    echo "usage: ./run.sh cell FAMILY ARM REPEAT" >&2; exit 2 ;;
+    echo "usage: ./run.sh cell FAMILY ARM REPEAT | pilot | battery" >&2; exit 2 ;;
 esac
