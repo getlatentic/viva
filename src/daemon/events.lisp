@@ -24,6 +24,12 @@
     "tool.started" "tool.updated" "tool.completed" "tool.failed"
     ;; harness-level suspension, which is native rather than provider-supplied
     "task.suspended" "task.resumed"
+    ;; The task tree: TASK.DRAINING is the parked outcome -- own work decided,
+    ;; live scoped children still resolving -- the same lie-prevention as a
+    ;; session's :FLUSHING one level down. Exactly one of the three terminal
+    ;; names follows each TASK.STARTED, after TASK.DRAINING when it parked.
+    "task.started" "task.draining"
+    "task.completed" "task.failed" "task.cancelled" "task.error"
     ;; things needing a person
     "question.requested" "approval.requested"
     ;; what the organism does to itself. Not emitted yet; named now so the

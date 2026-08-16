@@ -69,9 +69,11 @@
   :components ((:module "src/daemon"
                 :serial t
                 :components ((:file "kernel")
+                             (:file "tasktree")
                              (:file "package")
                              (:file "events")
                              (:file "actor")
+                             (:file "supervisor")
                              (:file "server")))))
 
 (defsystem "vivarium/console"

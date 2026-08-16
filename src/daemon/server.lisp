@@ -362,6 +362,33 @@ falls in the gap and none arrives twice."
                                   'vector))
              (no "No such session.")))
 
+        ;; The task tree. Spawn returns the identity the task WILL have, so a
+        ;; caller can await or cancel exactly what it asked for; events flow
+        ;; through the owning session's stream, which WATCH already covers.
+        ((string= "task.spawn" type)
+         (cond ((null cell) (no "No such session."))
+               ((null (text-of command "text")) (no "task.spawn needs text."))
+               (t (a:if-let ((id (actor:spawn-task
+                                  cell (text-of command "text")
+                                  :parent (gethash "parent" command)
+                                  :scoped (not (eq (gethash "detached" command) t)))))
+                    (ok "task" id)
+                    (no "spawn refused")))))
+
+        ((string= "task.list" type)
+         (ok "tasks" (coerce (mapcar (lambda (task)
+                                       (object "id" (getf task :id)
+                                               "state" (string-downcase (symbol-name (getf task :state)))
+                                               "parent" (getf task :parent)
+                                               "scoped" (and (getf task :scoped) t)))
+                                     (actor:task-tree-snapshot))
+                             'vector)))
+
+        ((string= "task.cancel" type)
+         (a:if-let ((id (gethash "task" command)))
+           (progn (actor:cancel-task id) (ok))
+           (no "task.cancel needs a task.")))
+
         ((string= "diagnostics" type)
          (multiple-value-bind (kept total) (diagnostics)
            (ok "failures" total "recent" (coerce kept 'vector))))

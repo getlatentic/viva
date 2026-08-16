@@ -1177,3 +1177,166 @@ checkpoint."))
                 (+ vivarium.kernel:+subscriber-capacity+ 2))
             "~d messages accumulated past capacity"
             (sb-concurrency:mailbox-count deaf)))))
+
+;;; The task tree: the first feature born inside the proof
+;;;
+;;; TASKTREE-TRANSITION was verified by TLC before the coordinator learned
+;;; these verbs (spec/TaskTree.tla: five invariants and terminal-is-forever
+;;; over the full space, liveness over the complete smaller one, and two
+;;; witness configs whose violations demonstrate detached survival). These
+;;; tests drive the WIRING: real sub-agent workers, real mailboxes, the
+;;; supervisor performing what the checked table decides.
+
+(defclass enduring-agent (paced-agent) ()
+  (:documentation "Workers that run until cancelled: sub-agents share the
+class, and the class overrides the pacing initforms."))
+
+(defmethod initialize-instance :after ((agent enduring-agent) &key)
+  (setf (paced-pause agent) 0.08
+        (paced-limit agent) 1000))
+
+(defun enduring-cell (environment)
+  (actor:spawn :label "tasks"
+               :agent (make-instance 'enduring-agent
+                                     :environment environment
+                                     :resource-environment environment
+                                     :request-limit 2000)))
+
+(defun task-state-now (id)
+  (getf (find id (actor:task-tree-snapshot) :key (lambda (task) (getf task :id)))
+        :state))
+
+(define-test "the tasktree self-test replays its invariant traces"
+  (true (vivarium.tasktree:run-tasktree-self-test)))
+
+(define-test "a root task runs a real worker to completion on the session stream"
+  (with-paced-cell (cell agent :pause 0.01 :limit 2)
+    (let ((id (actor:spawn-task cell "count the files")))
+      (true (daemon-wait (lambda () (eq :completed (task-state-now id))) :timeout 30)
+            "task ~a is ~a" id (task-state-now id))
+      (let ((names (cell-event-names cell)))
+        (true (member "task.started" names :test #'string=))
+        (true (member "task.completed" names :test #'string=)))
+      ;; Late completion for a finished task is a diagnostic, not a rewrite.
+      (vivarium.actor::task-tell :task-finished id :failed)
+      (true (daemon-wait
+             (lambda ()
+               (find-if (lambda (event)
+                          (and (string= "task.error" (event:event-name event))
+                               (search "late-task-completion"
+                                       (gethash "detail" (event:event-data event)))))
+                        (vivarium.actor::remembered-since cell 0)))
+             :timeout 10))
+      (is eq :completed (task-state-now id)))))
+
+(define-test "cancellation crosses scoped edges only, and the detached child survives"
+  (with-repository (environment)
+    (let ((cell (enduring-cell environment)))
+      (unwind-protect
+           (let* ((root (actor:spawn-task cell "root work"))
+                  (scoped (actor:spawn-task cell "scoped help" :parent root :scoped t))
+                  (detached (actor:spawn-task cell "independent discovery"
+                                              :parent root :scoped nil)))
+             (true (daemon-wait (lambda () (and (eq :running (task-state-now root))
+                                                (eq :running (task-state-now scoped))
+                                                (eq :running (task-state-now detached))))
+                                :timeout 15))
+             (actor:cancel-task root)
+             (true (daemon-wait (lambda () (eq :cancelled (task-state-now root))) :timeout 30)
+                   "root is ~a" (task-state-now root))
+             (true (daemon-wait (lambda () (eq :cancelled (task-state-now scoped))) :timeout 30)
+                   "scoped child is ~a" (task-state-now scoped))
+             ;; The witness, live: past its parent's terminal state, the
+             ;; detached child is running and was never told to stop.
+             (is eq :running (task-state-now detached))
+             (let ((task (vivarium.tasktree:task
+                          (vivarium.actor::supervisor-tree (actor:ensure-supervisor))
+                          detached)))
+               (false (getf task :cancelled) "the cancel leaked across a detached edge"))
+             (actor:cancel-task detached)
+             (true (daemon-wait (lambda () (eq :cancelled (task-state-now detached)))
+                                :timeout 30)))
+        (actor:shutdown cell)))))
+
+(define-test "a parent's outcome parks in draining until its last scoped child lands"
+  (with-repository (environment)
+    (let ((cell (enduring-cell environment)))
+      (unwind-protect
+           (let* ((root (actor:spawn-task cell "root work"))
+                  (scoped (actor:spawn-task cell "scoped help" :parent root :scoped t)))
+             (true (daemon-wait (lambda () (and (eq :running (task-state-now root))
+                                                (eq :running (task-state-now scoped))))
+                                :timeout 15))
+             ;; The parent's own outcome arrives while the child is live: the
+             ;; tree must PARK it, and say so.
+             (vivarium.actor::task-tell :task-finished root :completed)
+             (true (daemon-wait (lambda () (eq :draining (task-state-now root))) :timeout 10)
+                   "root is ~a, not draining" (task-state-now root))
+             (true (daemon-wait
+                    (lambda () (find "task.draining" (vivarium.actor::remembered-since cell 0)
+                                     :key #'event:event-name :test #'string=))
+                    :timeout 10))
+             (vivarium.actor::task-tell :task-finished scoped :completed)
+             (true (daemon-wait (lambda () (eq :completed (task-state-now root))) :timeout 10)
+                   "the parked outcome never landed: root is ~a" (task-state-now root))
+             (is eq :completed (task-state-now scoped)))
+        ;; The real workers are still out there; their late reports are
+        ;; consumed as diagnostics. Stop them.
+        (dolist (task (actor:task-tree-snapshot))
+          (alexandria:when-let ((rig (vivarium.actor::rig (actor:ensure-supervisor)
+                                                          (getf task :id))))
+            (harness:cancel-agent (getf rig :agent))))
+        (actor:shutdown cell)))))
+
+(define-test "fan-out past the child limit is refused with the parent named"
+  (with-repository (environment)
+    (let ((cell (enduring-cell environment)))
+      (unwind-protect
+           (let ((root (actor:spawn-task cell "root work")))
+             (true (daemon-wait (lambda () (eq :running (task-state-now root))) :timeout 15))
+             (dotimes (i vivarium.tasktree:+child-limit+)
+               (actor:spawn-task cell "child" :parent root :scoped t))
+             (true (daemon-wait
+                    (lambda ()
+                      (= vivarium.tasktree:+child-limit+
+                         (length (vivarium.tasktree:live-scoped-children
+                                  (vivarium.actor::supervisor-tree (actor:ensure-supervisor))
+                                  root))))
+                    :timeout 20))
+             (false (actor:spawn-task cell "one too many" :parent root :scoped t)
+                    "the refused spawn returned an identity")
+             (true (daemon-wait
+                    (lambda ()
+                      (find-if (lambda (event)
+                                 (and (string= "task.error" (event:event-name event))
+                                      (search "spawn-refused"
+                                              (gethash "detail" (event:event-data event)))))
+                               (vivarium.actor::remembered-since cell 0)))
+                    :timeout 10)
+                   "the overflow was never refused")
+             (actor:cancel-task root)
+             (true (daemon-wait (lambda () (eq :cancelled (task-state-now root))) :timeout 60)))
+        (actor:shutdown cell)))))
+
+(define-test "the task tree speaks RPC through the session that owns it"
+  (with-daemon (path)
+    (with-repository (environment)
+      (let ((cell (paced-cell environment :pause 0.01 :limit 2)))
+        (unwind-protect
+             (daemon:with-connection (stream path)
+               (read-line stream nil nil)
+               (let ((spawned (daemon:request stream "type" "task.spawn"
+                                              "session" (actor:cell-id cell)
+                                              "text" "over the wire")))
+                 (true (gethash "success" spawned))
+                 (let ((id (gethash "task" spawned)))
+                   (true (integerp id))
+                   (true (daemon-wait (lambda () (eq :completed (task-state-now id)))
+                                      :timeout 30))
+                   (let ((listed (daemon:request stream "type" "task.list")))
+                     (true (gethash "success" listed))
+                     (true (find-if (lambda (task)
+                                      (and (eql id (gethash "id" task))
+                                           (equal "completed" (gethash "state" task))))
+                                    (coerce (gethash "tasks" listed) 'list)))))))
+          (actor:shutdown cell))))))

@@ -65,6 +65,17 @@ failing to match it would have meant Level 1 was not real.
 
 Level 1 is not self-improvement. It is the baseline organism, and it now exists.
 
+## Phase 1.5 — compositional agency. **Built, through the proof.**
+
+TASK is the unit of agency: one primitive, where a sub-agent is a task with a
+scoped parent and spawned work is a task with a detached lifecycle. The
+lifecycle was TLC-verified in `spec/TaskTree.tla` before the supervisor
+existed, the table (`src/daemon/tasktree.lisp`) mirrors the spec through the
+same `define-owner` as the session kernel, and the supervisor
+(`src/daemon/supervisor.lisp`) wires its effects to real sub-agent threads.
+`task.spawn` / `task.list` / `task.cancel` over RPC; task events on the
+owning session's stream.
+
 ## Level 2 — live self-modification, for the current task
 
 The agent is working and finds its own capabilities inadequate, so it changes

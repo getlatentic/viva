@@ -297,11 +297,28 @@ the drop announced on the stream. An unbounded mailbox is not a complete
 concurrency design; every boundary declares its capacity and its overload
 action in the kernel's constants.
 
-Phase 1.5 enters through this object: spawn-scoped-child, spawn-detached,
-cancel-parent and late-child-completion become `define-owner` messages and
-`TaskTree.tla` actions FIRST, TLC runs, and only then does the coordinator
-learn the new verbs. New features enter through the proof, so the proof
-never goes stale.
+Phase 1.5 entered through this object, as the rule required. The task tree
+was specified first — `spec/TaskTree.tla`, five invariants plus
+terminal-is-forever over the full space, liveness over the complete smaller
+one, and two witness configs whose *violations* are the demonstration: TLC
+exhibits a detached child alive past its parent's terminal state, and alive
+and uncancelled past its parent's cancellation — then mirrored clause for
+clause as `define-owner tasktree`, and only then did the supervisor learn the
+verbs. One supervisor owns the tree as its single writer; workers are
+sub-agents of the owning session's agent — shared world, isolated
+conversation, their own lane — reporting through the supervisor's mailbox
+with the identity of the task they finished; tasks publish through the
+session that owns their root, so watching a session is watching its tasks.
+
+The tree's own laws, each adversarially broken and caught: a parent's outcome
+PARKS in `:draining` until its last scoped child resolves — the same
+lie-prevention `:flushing` does one level down; cancel is a request that
+propagates one delivery at a time across scoped edges only, so a detached
+child survives its parent's cancellation by construction; identities are
+minted monotonically by the owner and never reused, which makes a late
+completion for a finished task decidable forever; fan-out past
+`+child-limit+` is refused with the parent named, and a refused spawn answers
+its caller `NIL` rather than a timeout.
 
 ### The closure gate, and the stopping rule
 

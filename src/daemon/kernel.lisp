@@ -35,9 +35,13 @@
 
 (defpackage #:vivarium.kernel
   (:use #:cl)
+  ;; => is API: DEFINE-OWNER's clause assertion compares the arrow by EQ, so
+  ;; an owner defined in another package -- which is exactly what Phase 1.5's
+  ;; task tree is -- silently reads its own package's => and every clause
+  ;; fails the malformed-clause assertion. Found by the first outside user.
   (:export #:transition #:unmatched-transition #:ignore-message
            #:unmatched-state #:unmatched-message
-           #:define-owner #:owner-transitions #:owner-states
+           #:define-owner #:owner-transitions #:owner-states #:=>
            #:replay-trace #:trace-step-failed
            #:cell-transition #:journal-transition
            #:+queue-limit+ #:+subscriber-capacity+

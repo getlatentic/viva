@@ -36,6 +36,7 @@
                     (#:operation #:vivarium.operation)
                     (#:session #:vivarium.session)
                     (#:kernel #:vivarium.kernel)
+                    (#:tasktree #:vivarium.tasktree)
                     (#:event #:vivarium.event))
   ;; Sealed. A cell is an ownership boundary, not an object with a mailbox
   ;; attached: CELL-AGENT, CELL-STATE, CELL-EVENTS and CELL-QUEUED were
@@ -46,7 +47,8 @@
   (:export #:cell #:cell-id #:spawn #:tell #:submit #:ask-now
            #:shutdown #:await-shutdown #:await-turn
            #:subscribe #:subscribe-since #:unsubscribe #:since
-           #:find-cell #:all-cells #:snapshot #:+terminal-events+ #:*journal-root*))
+           #:find-cell #:all-cells #:snapshot #:+terminal-events+ #:*journal-root*
+           #:spawn-task #:cancel-task #:task-tree-snapshot #:ensure-supervisor))
 
 (defpackage #:vivarium.daemon
   (:use #:cl)
