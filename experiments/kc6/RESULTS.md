@@ -51,3 +51,21 @@ Solve rates are saturated so far — every arm solves everything (smoke A 5/5,
 AN 45/45, B 45/45). If arm C saturates too, the primary decision rides
 entirely on cost per solved task, which the decision rule anticipates with
 its "or": a 30% token reduction OR +0.20 solve rate.
+
+## The checkpoint, and amendment 15
+
+**Pre-check 3 FAILED at the checkpoint** — nine arm-A cells on the bound
+three, 45 task-runs, zero door entries; the battery stopped by protocol at
+$0.58 total spend. The decisive diagnostic came from the arms comparison:
+**arm C invested nothing either** — zero `remember` calls, no MEMORY.md in
+any of its 45 runs. All three arms behaved identically.
+
+So the finding is not "the capability surface is too narrow"; it is
+"recurrence was invisible." Each task ran as a fresh conversation with
+nothing saying four more of the same kind follow, while the hypothesis
+presupposes perceptible recurrence. Amendment 15 adds one matched sentence
+per task — count and kind, never mechanism — archives every pre-framing row
+(spend retained in the meter), and re-runs all arms. The pre-framing rows
+live in `results-preframing.tsv`; they are evidence about unprompted
+behavior, and they say: without a recurrence signal, nobody invests in
+anything, capability or text alike.

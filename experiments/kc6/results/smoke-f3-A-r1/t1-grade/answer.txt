@@ -1,6 +1,0 @@
-bash-tool
-edit-tool
-grep
-read
-remember
-search

@@ -468,6 +468,27 @@ original draft against the machinery before judging it.
    pre-check zero, which runs first and stops the gate. **No battery may run
    while it fails**, and no result obtained while it fails means anything.
 
+15. **The recurrence framing, after pre-check 3 fired.** The checkpoint
+   stopped the battery at $0.58: nine arm-A cells, 45 task-runs, zero door
+   entries — and the diagnostic that decides the meaning: zero `remember`
+   calls in arm C and no MEMORY.md anywhere either. All three arms behaved
+   identically, because recurrence was invisible: each task is a fresh
+   conversation and nothing says four more of the same kind follow, while
+   the hypothesis presupposes perceptible recurrence. The precedent is this
+   repository's own adaptation battery, where ACCUMULATE returned mem:0 on
+   all twelve runs until one sentence named a CATEGORY and never a content.
+   The repair is the same shape: every task's prompt now opens with one
+   matched sentence — "this is task N of 5 in one sitting; the five tasks
+   share one recurring kind of work" — identical across arms, varying only
+   in N, naming no mechanism. All pre-framing model rows are archived
+   (their spend still counts; their dirs keep the preframe- prefix) and
+   every arm re-runs under the amended framing, pilot included, so
+   pre-check 2's comparison stays internally consistent. The
+   tools-as-components trigger is deliberately NOT pulled: unreached is not
+   the same finding as too narrow, and the cheap, precedented, arm-neutral
+   repair goes first. If arm A still never enters the door with recurrence
+   visible, THAT is the surface finding, and it is the user's trigger.
+
 14. **Three implementation bindings, logged before the pilot spends.** Arm
    B's pilot cells and its battery cells are the same configuration, so they
    are the same runs — a re-run would buy independent noise and nothing

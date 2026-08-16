@@ -83,7 +83,12 @@
                                                 (vivarium.actor:capability-tools)))))
                      (handler-case
                          (vivarium.harness:ask
-                          agent (uiop:read-file-string (merge-pathnames "PROMPT" task-dir)))
+                          agent
+                          ;; Amendment 15: recurrence, named once, identically
+                          ;; in every arm -- count and kind, never mechanism.
+                          (format nil "Working-session context: this is task ~d of 5 in one sitting; the five tasks share one recurring kind of work.~%~%~a"
+                                  position
+                                  (uiop:read-file-string (merge-pathnames "PROMPT" task-dir))))
                        (error (condition)
                          (format *error-output* "~&~a errored: ~a~%" task condition)))
                      (alexandria:when-let ((session (vivarium.harness:agent-session agent)))
