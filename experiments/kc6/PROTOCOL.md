@@ -96,10 +96,16 @@ Arm B carries fewer runs on purpose. It controls a nuisance parameter — the
 door's overhead — while A against C is the comparison that decides the kill, so
 the runs go where the decision is.
 
-Two of the six families are held out. **At this size transfer is descriptive,
-not inferential**, and is reported as an observation rather than a test. That
-is the honest cost of the smaller battery and it is stated rather than
-discovered in the analysis.
+Two of the six families are held out. **Held out means held out of authoring
+iteration and of pilots — never out of the analysis.** All six families run in
+the battery and all six enter the primary sign test: n = 6 IS the six, and a
+reading where the primary ran on four would make significance unreachable by
+construction (four agreeing gives p = 0.0625). What the held-out pair is
+excluded from is the pilot slice and authoring-time knowledge — authored last,
+after the scored four are frozen, their sandboxes opened only when the battery
+runs. **At this size transfer is descriptive, not inferential**, and is
+reported as an observation rather than a test. That is the honest cost of the
+smaller battery and it is stated rather than discovered in the analysis.
 
 The binding constraint here was never the bill: 900 runs is about $27 at these
 rates. It is the authoring — 100 tasks with hidden tests is weeks of work that
@@ -129,10 +135,10 @@ the same agent the experiment tests, which can build the answer key into the
 battery by choosing frictions whose abstraction it already has in mind. Three
 mechanisms: the friction of each family is drawn from a real recurring cost in
 this repository's own history rather than invented; hidden tests are written
-against the task's specification before any arm runs; and the five held-out
-families are authored last, from the same rule, and opened only for the final
-analysis. A positive result carried only by non-held-out families is reported
-as an overfit result, not a win.
+against the task's specification before any arm runs; and the two held-out
+families are authored last, from the same rule, after the scored four are
+frozen. A positive result carried only by non-held-out families is reported as
+an overfit result, not a win.
 
 ## The five pre-checks, before a model runs
 
@@ -413,6 +419,17 @@ original draft against the machinery before judging it.
    test was being advertised to the model with a malformed schema. Added as
    pre-check zero, which runs first and stops the gate. **No battery may run
    while it fails**, and no result obtained while it fails means anything.
+
+11. **"Held out" made unambiguous before family one, on review's catch.** The
+   re-scoped text said the held-out pair was "opened only for the final
+   analysis," which permits a reading where the primary sign test runs on
+   four families — and four cannot reach 0.05 at all (p = 0.0625). The
+   intended design is now stated: all six families enter the battery and the
+   primary test; held-out excludes only pilots and authoring-time knowledge.
+   A stale "five held-out families" from the 20-family draft was corrected in
+   the same pass. Exactly the class of ambiguity that becomes a post-hoc
+   argument once results exist, which is why it is closed while there are
+   none.
 
 10. **Re-scoped to a build decision, not a publication.** 900 runs became 225,
    20 families became 6, and the test became a one-sided sign test at the size

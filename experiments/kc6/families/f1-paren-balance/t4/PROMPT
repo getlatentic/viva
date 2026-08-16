@@ -1,0 +1,6 @@
+The file report.lisp defines summarise, reading a title line then a count
+line inside nested with-open-file and let*. The format has grown a header
+line between them. Add two bindings after title, in this order:
+(header (read-line stream)) then (width (length header)). The count binding
+stays last and unchanged, and the let* body must not change. ./check must
+exit 0.

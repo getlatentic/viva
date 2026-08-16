@@ -14,9 +14,14 @@ The experiment is pre-registered (`experiments/kc6/PROTOCOL.md`), priced
 running.
 
 - [ ] Author the six families, five tasks each, hidden tests written against
-      each task's specification before any arm runs
-- [ ] Commit the fixed shuffle; the two held-out families are authored last
-      and opened only for the final analysis
+      each task's specification before any arm runs — **f1-paren-balance
+      frozen** (5 tasks, gate green: every check fails-before/passes-after);
+      split and order fixed in families/f1-paren-balance/README.md
+- [ ] Commit the fixed shuffle; the two held-out families are authored last,
+      after the scored four are frozen. Held out of pilots and authoring
+      knowledge, NEVER out of the analysis: all six enter the battery and the
+      primary n = 6 sign test (amendment 11 — review caught the reading where
+      the primary ran on four and significance was unreachable)
 - [ ] Pilot slice: pre-check 2 (non-collapse, A-never-evolve vs B within 5%
       wall / 2% tokens) and pre-check 4 (capability floor) on 3 families
 - [ ] Fix the cost cap from the pilot measurement in RESULTS.md before run one
@@ -46,7 +51,9 @@ what makes them cheap to author honestly and hard to rig.
 - [ ] **RECONCILE** — the open stage of the component lifecycle: a co-effect
       ledger and compensation semantics, repairing what a reverted version
       already did. Mission clause, not feature. Spec first, TLC second, table
-      third, wiring last.
+      third, wiring last. Spec obligation, from review: model a compensation
+      that FAILS PARTWAY — a ledger whose repairs are assumed atomic repeats
+      the exact comfort the Cordis probe rejected.
 
 ## BEHIND THE GATE, in order
 
@@ -66,7 +73,12 @@ what makes them cheap to author honestly and hard to rig.
 - [ ] **Peer messaging (TaskTree v2)** — laws already writable: tree-minted
       identities both ends, delivery only between live tasks, refusal with
       reason otherwise, immutable payloads, bounded inboxes with declared
-      overflow, terminal tasks receive nothing. Spec is the entry artifact.
+      overflow, terminal tasks receive nothing. Spec is the entry artifact,
+      and one decision is made THERE, not discovered in wiring: whether a
+      draining parent still receives. Review's answer, adopted as the spec's
+      starting position: yes — draining is live. Carve-out ruled on: gate
+      first, no spec work during KC6; the one exception is a multi-day
+      external stall, entered by an explicit lane-move commit.
 - [ ] **Learning policy** — the mission's second clause is PARTIAL: skills
       and memory exist, nothing decides when to write one. Same shape as the
       retention policy, one level down; likely the same artifact family.
@@ -88,7 +100,7 @@ what makes them cheap to author honestly and hard to rig.
 - [ ] Anything mutates a request's prompt prefix per-request ⇒ the measured
       82–91% within-run cache hit rate breaks and the battery price triples.
 
-## HYGIENE — user actions, standing
+## HYGIENE — user actions, standing. Outranks family one in urgency, not lane
 
 - [ ] **Rotate the credentials pasted in the earlier session** — DeepSeek API
       key, AWS keys, Bedrock token. They went only into gitignored `.env`,

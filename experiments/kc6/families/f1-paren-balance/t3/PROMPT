@@ -1,0 +1,6 @@
+The file batch.lisp defines process-batch, which acquires a lock, stages
+items, flushes, and releases the lock. If staging or flushing signals, the
+lock leaks. Restructure so release-lock runs on every exit: acquire stays
+first, everything between acquire and release becomes the protected form of
+an unwind-protect, and (release-lock lock) is its cleanup. release-lock must
+appear exactly once. ./check must exit 0.

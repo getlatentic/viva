@@ -1,0 +1,12 @@
+The file gate.lisp holds a define-owner form for a counting gate. A close
+on a gate opened more than once must step the count down instead of matching
+nothing. Append ONE new clause, as the LAST clause:
+
+  (:transition ((:open ?count) (:close))
+    :when (> ?count 1)
+    => `(:open ,(1- ?count))
+    (list :publish :gate.stepped (1- ?count)))
+
+Note the backquote and unquote — the new state interpolates (1- ?count). The
+existing clauses must be untouched and their order preserved. ./check must
+exit 0.

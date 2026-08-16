@@ -1,0 +1,4 @@
+The file codec.lisp defines frame-layout: a let over an ecase on the
+protocol version. Add version :v3 with a 24-byte header — the clause body is
+(list* :header 24 table) — as the LAST ecase clause. The let binding and the
+:v1/:v2 clauses must be untouched. ./check must exit 0.

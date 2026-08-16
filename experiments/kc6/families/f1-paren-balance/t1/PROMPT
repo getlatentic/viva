@@ -1,0 +1,5 @@
+The file rates.lisp defines shipping-rate, a cond over shipment kinds.
+Add support for :overnight — rate is (* base 2) — as a new cond clause placed
+immediately BEFORE the final t clause. Change nothing else: the existing
+clauses and their order must survive byte-for-byte in structure. ./check
+must exit 0.
