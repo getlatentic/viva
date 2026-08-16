@@ -308,6 +308,17 @@ noise, not a result.~%")
         :extra-tools (when (string= "on" (flag parsed "capabilities" "off"))
                        (actor:capability-tools))))
 
+(defun apply-journal-flag (parsed)
+  "Point this run's journal -- and so its evolution ledger -- somewhere of its
+own. KC6's analysis is a program over one run's ledger, and the checker refuses
+a file holding two arms rather than blending them, so a battery sharing the
+home journal would produce one unreadable ledger and no results."
+  (a:when-let ((given (flag parsed "journal-dir")))
+    (let ((directory (if (a:ends-with #\/ given) given (concatenate 'string given "/"))))
+      (ensure-directories-exist directory)
+      (setf actor:*journal-root* (namestring (truename directory)))))
+  t)
+
 (defun apply-door-flag (parsed)
   "Set the arm's door once, before anything can have created an owner. The
 owner announces it into the ledger from its own thread, so a run's arm is a
@@ -322,6 +333,7 @@ fact about its evidence rather than about the directory it was written to."
 (defun command-shell (parsed)
   "Interactive work in a directory. Reads stdin, so it also runs a script."
   (unless (apply-door-flag parsed) (return-from command-shell 2))
+  (apply-journal-flag parsed)
   (let ((console:*colour* (not (string= "false" (flag parsed "colour" "true")))))
     (apply #'console:run-shell (workspace-options parsed))))
 
@@ -457,6 +469,7 @@ it finds nobody home."
 (defun command-do (parsed)
   "One prompt, one answer. What a script or a CI job wants."
   (unless (apply-door-flag parsed) (return-from command-do 2))
+  (apply-journal-flag parsed)
   (let* ((prompt (or (a:when-let ((file (flag parsed "file")))
                        (uiop:read-file-string file))
                      (format nil "~{~a~^ ~}" (args-positional parsed))))

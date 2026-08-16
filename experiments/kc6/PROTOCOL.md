@@ -217,18 +217,41 @@ pre-check three could not fail before the ledger recorded use at all.
 
 ## Cost, and what is measured versus bounded
 
-Bounded by the harness, exactly: `--limit 30` model requests per task-run,
-900 task-runs, so **at most 27,000 model requests** for the full battery,
-plus 1,080 for the pilot slice (3 families x 5 tasks x 2 arms x 3 repeats
-plus preflight).
+Bounded by the harness, exactly: `--limit 30` model requests per task-run, 900
+task-runs, so **at most 27,000 model requests** for the full battery.
 
-Not yet measured: tokens per request on this battery. No costed transcript of
-the adaptation harness survives, and the nearest measured anchors are B10's
-3,810 and 5,680 tokens per attempt on a different battery and a local model,
-which is not a number this experiment may quote as its own. **The cost cap is
-therefore fixed after a measured pilot of one family, one arm — at most 150
-requests — and before any scored run.** The cap is stated in dollars and in
-tokens in `RESULTS.md` before run one; the run stops at the cap.
+**Measured anchors**, from two live runs of one toy task on the pinned model,
+the same prompt in both arms:
+
+```
+arm A (door open)      5 requests   6 tool calls   17,257 tokens   $0.0053
+arm B (door closed)   10 requests  10 tool calls   57,384 tokens   $0.0183
+```
+
+Arm A compiled a converter, activated it, ran it three times, and stopped. Arm
+B compiled the same converter, was refused, verified once that nothing
+resolved, and fell back to `awk` — getting the field order wrong on the first
+attempt and fixing it on the second. That is the door's overhead appearing in
+the direction the protocol expects, and it is **n=1 on a toy task**: an anchor
+for projection, not a result, and not the pilot.
+
+Fixed per-request prompt overhead, measured: **1,870 tokens for arm C, 2,526
+for arms A and B**, the difference being the five capability schemas. A and B
+are therefore *exactly* matched on prompt surface, which is the comparison that
+isolates the door. A against C carries 656 tokens of inherent asymmetry, since
+arm C cannot be given tools it is defined by not having; that is reported
+rather than corrected.
+
+Projected from those anchors, the full battery is of the order of 30M tokens
+and **tens of dollars**, not hundreds. The cap is still fixed by a measured
+pilot on the real families — these tasks are toys and a repo-navigation family
+will cost more per request — and stated in dollars and tokens in `RESULTS.md`
+before run one. The run stops at the cap.
+
+**One ledger per run** is a requirement, not a convention: the analysis is a
+program over a single run's ledger and `instrumentality.py` refuses a file
+holding two arms rather than blending them. `--journal-dir` gives each run its
+own, and is mandatory for every battery run.
 
 ## Artifacts
 

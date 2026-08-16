@@ -10,7 +10,7 @@
 
 (defun build-agent (&key model cwd root listener (request-limit 60) (stream t)
                       session-directory (persist t) extra-prompt extension-directories
-                      resume)
+                      extra-tools resume)
   "An agent configured from the environment. Returns (values AGENT CHOICE COMPLAINTS).
 
 RESUME is a session id, a prefix of one, or T for the most recent in this
@@ -40,6 +40,10 @@ the last one HERE."
          :session session
          :extra-prompt extra-prompt
          :extension-directories extension-directories
+         ;; Passed through rather than assembled here: which tools an agent
+         ;; gets beyond the standard set is the caller's decision, and KC6's
+         ;; arms are exactly that decision made three different ways.
+         :extra-tools extra-tools
          :request-limit request-limit)
       (when earlier
         ;; Into a NEW file, with the old one named as its parent: resuming must
