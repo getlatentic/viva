@@ -81,12 +81,38 @@ families are authored last, from the same rule, and opened only for the final
 analysis. A positive result carried only by non-held-out families is reported
 as an overfit result, not a win.
 
-## The four pre-checks, before a model runs
+## The five pre-checks, before a model runs
 
-**1. Reachability.** A scripted agent, no LLM, traverses create, activate,
-resolve, inherit, promote, revert through the real wire, and the ledger shows
-the whole genealogy. This is the wiring's existing test re-run as preflight:
-`tests/daemon.lisp`, the evolution block, plus `spec/verify.sh` green.
+**0. Reachable by the entity under test. CURRENTLY FAILING, and it blocks the
+battery.** `experiments/kc6/reachability.lisp` asks two questions and answers
+both NO today:
+
+- No model-visible tool reaches the evolution owner. A workspace agent sees
+  nine tools — bash, delegate, edit, find, grep, ls, read, remember, write —
+  and not one of them creates, activates or promotes a version. Arm A as
+  written describes capabilities no model can invoke, and arm B's door closes
+  a path no model could take, so A-vs-B would compare two identical
+  configurations.
+- Nothing in `src/` resolves a component. `call-component` has no caller in
+  the shipped organism. A version the agent created would be run by nothing,
+  making instrumentality zero by construction.
+
+The evolution owner is, today, a proven and witnessed lifecycle for versions of
+components that nothing calls. That is a scope fact, not a defect in the
+proofs, and it is the real work standing between here and run one. Deciding
+what a component IS — which parts of the agent's own execution resolve through
+the door — is a design decision with materially different experiments behind
+each answer, so it is made deliberately and not by whichever surface was
+easiest to wire.
+
+This check runs FIRST in `preflight.sh`, and the gate stops there while it
+fails: one and three can both pass against an organism no model can reach,
+because they drive the Lisp wire and a model drives the tool surface.
+
+**1. Lifecycle through the real wire.** A scripted agent, no LLM, traverses
+create, activate, resolve, inherit, promote, revert, discard, and the ledger
+shows the whole genealogy — `experiments/kc6/preflight.lisp`, plus
+`spec/verify.sh` green and the evolution block of `tests/daemon.lisp`.
 
 **2. Non-collapse.** Arm A driven by a never-evolve policy must match arm B
 **within 5% on wall clock and 2% on tokens**, with solve rates equal within
@@ -244,3 +270,13 @@ original draft against the machinery before judging it.
 7. **The capability floor did not exist.** A model too weak to write a working
    component would produce a false negative on a kill criterion — the most
    expensive possible error here. Added as pre-check four.
+
+8. **Arm A is not reachable by a model, and pre-check one could not tell.**
+   Found by asking what tools a workspace agent actually receives, through the
+   real constructor rather than by reading the code: nine, none of which reach
+   evolution, and `call-component` has no caller in `src/`. Pre-check one
+   passes anyway because it drives the Lisp wire with a scripted agent — the
+   same gap this project has paid for before, when a tool passing a Lisp unit
+   test was being advertised to the model with a malformed schema. Added as
+   pre-check zero, which runs first and stops the gate. **No battery may run
+   while it fails**, and no result obtained while it fails means anything.

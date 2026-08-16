@@ -9,6 +9,19 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
+
+# ZERO FIRST, because it is the one that can invalidate the other two. One and
+# three can both pass against an organism no model can reach: they drive the
+# Lisp wire, and a model drives the tool surface.
+echo "--- pre-check zero, reachability by the entity under test ---"
+sbcl --script "$here/reachability.lisp" || {
+  echo
+  echo "STOPPING: arm A is not reachable, so nothing below would mean anything."
+  exit 1
+}
+
+echo
+echo "--- pre-check one, the lifecycle through the real wire ---"
 sbcl --script "$here/preflight.lisp" "$@"
 
 ledger=$(cat /tmp/kc6-preflight-ledger-path)
