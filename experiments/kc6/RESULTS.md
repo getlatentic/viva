@@ -69,3 +69,23 @@ per task — count and kind, never mechanism — archives every pre-framing row
 live in `results-preframing.tsv`; they are evidence about unprompted
 behavior, and they say: without a recurrence signal, nobody invests in
 anything, capability or text alike.
+
+## Pre-check 2 under amendment 15's framing — FAIL again, reported again
+
+```
+AN: 45 task-runs, 547s, 1,170,910 tokens, 45/45 solved
+B:  45 task-runs, 520s, 1,111,280 tokens, 45/45 solved
+wall gap  5.1% (limit 5%)   FAIL (was 2.5% pre-framing)
+token gap 5.2% (limit 2%)   FAIL (was 3.6% pre-framing)
+```
+
+The tax grew under framing, and its direction is stable across both
+readings: AN — the open door plus a policy never to use it — costs more than
+B's closed door. Both readings stand in the record; the consequence remains
+reporting, per the protocol's own sentence.
+
+And the behavioral null persists in the constrained arms: under framing,
+AN and B still made zero `remember` calls, wrote no MEMORY.md, and B never
+attempted the door (no ledger exists — not even a refused activation). The
+arms that can actually invest — A and C — run next; the checkpoint over A's
+bound-three cells decides whether the framing moved anyone.

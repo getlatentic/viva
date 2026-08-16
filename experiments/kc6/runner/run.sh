@@ -98,7 +98,11 @@ PY
       done
     done
     echo "=== pre-check 2 ==="
-    python3 "$here/precheck2.py" "$results/results.tsv"
+    # Report-only, by the protocol's own sentence: a failure here is "reported
+    # as a tax", never a gate. The first version of this line let the
+    # comparison's exit code block the battery, which quietly promoted a
+    # reporting check into a stopping one.
+    python3 "$here/precheck2.py" "$results/results.tsv" || true
     ;;
 
   battery)
