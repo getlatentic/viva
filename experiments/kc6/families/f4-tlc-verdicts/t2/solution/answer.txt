@@ -1,0 +1,5 @@
+CellSafety expected holds actual holds ok
+GateLiveness expected holds actual holds ok
+QueueBound expected violates actual violates ok
+WitnessDrop expected holds actual violates MISMATCH
+mismatches 1

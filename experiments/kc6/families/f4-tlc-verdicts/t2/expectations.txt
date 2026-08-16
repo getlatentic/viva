@@ -1,0 +1,4 @@
+CellSafety holds
+GateLiveness holds
+QueueBound violates
+WitnessDrop holds

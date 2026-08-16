@@ -1,0 +1,6 @@
+CellSafety holds
+DeadEnd error
+ParseBroken error
+ReplayGap violates
+StaleWitness holds
+rotted StaleWitness

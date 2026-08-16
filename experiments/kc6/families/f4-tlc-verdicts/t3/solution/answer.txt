@@ -1,0 +1,3 @@
+states 979297
+distinct 979297
+depth 23

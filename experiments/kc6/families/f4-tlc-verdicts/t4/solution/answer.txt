@@ -1,0 +1,2 @@
+invariant CandidateOnlyByOwnPin
+trace 7

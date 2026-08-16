@@ -1,0 +1,41 @@
+import pathlib, re
+
+def verdict(text):
+    if "is violated." in text or "Temporal properties were violated" in text:
+        return "violates"
+    if "No error has been found." in text:
+        return "holds"
+    return "error"
+
+def invariant(text):
+    found = re.search(r"Error: Invariant (\S+) is violated\.", text)
+    return found.group(1) if found else "-"
+
+def trace_length(text):
+    return sum(1 for line in text.splitlines() if re.match(r"State \d+", line))
+
+def compute(root):
+    text = (root / "logs" / "run.log").read_text()
+    states = re.search(r"(\d+) states generated", text).group(1)
+    distinct = re.search(r"(\d+) distinct states found", text).group(1)
+    depth = re.search(r"depth of the complete state graph search is (\d+)", text).group(1)
+    return f"states {states}\ndistinct {distinct}\ndepth {depth}"
+
+
+def main():
+    import pathlib, sys
+    expected = compute(pathlib.Path("."))
+    answer_path = pathlib.Path("answer.txt")
+    if not answer_path.exists():
+        print("FAIL: no answer.txt"); return 1
+    got = "\n".join(line.rstrip() for line in
+                     answer_path.read_text().strip().splitlines())
+    if got == expected:
+        print("ok"); return 0
+    print("FAIL: answer.txt does not match")
+    print("--- expected ---"); print(expected)
+    print("--- got ---"); print(got)
+    return 1
+
+if __name__ == "__main__":
+    import sys; sys.exit(main())

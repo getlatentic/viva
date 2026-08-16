@@ -1,0 +1,16 @@
+logs/run.log is a clean TLC run. Extract its counters. Write answer.txt,
+exactly three lines:
+
+states <n>
+distinct <n>
+depth <n>
+
+The verdict rules, exactly: a log VIOLATES iff it contains "is violated."
+or "Temporal properties were violated"; it HOLDS iff it contains "No error
+has been found."; anything else — parse errors, deadlocks, truncation — is
+ERROR. The violated invariant's name is the <Name> in "Error: Invariant
+<Name> is violated." A counterexample's trace length is the number of lines
+beginning "State <n>".
+
+Grading runs against a pristine copy of these files plus your answer.txt,
+so editing the logs changes nothing.

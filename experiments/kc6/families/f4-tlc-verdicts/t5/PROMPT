@@ -1,0 +1,19 @@
+logs/ holds five runs; expectations.txt maps each to its expected verdict.
+Classify every log by the rules — parse errors and deadlocks are ERROR — and
+find the rotted witness: a config EXPECTED to violate whose run actually
+HOLDS, which is evidence rot, not a pass. Write answer.txt: one line per
+config sorted by name, then the rot line ("-" if none):
+
+<name> <holds|violates|error>
+...
+rotted <name|->
+
+The verdict rules, exactly: a log VIOLATES iff it contains "is violated."
+or "Temporal properties were violated"; it HOLDS iff it contains "No error
+has been found."; anything else — parse errors, deadlocks, truncation — is
+ERROR. The violated invariant's name is the <Name> in "Error: Invariant
+<Name> is violated." A counterexample's trace length is the number of lines
+beginning "State <n>".
+
+Grading runs against a pristine copy of these files plus your answer.txt,
+so editing the logs changes nothing.
