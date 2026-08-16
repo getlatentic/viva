@@ -89,3 +89,31 @@ AN and B still made zero `remember` calls, wrote no MEMORY.md, and B never
 attempted the door (no ledger exists — not even a refused activation). The
 arms that can actually invest — A and C — run next; the checkpoint over A's
 bound-three cells decides whether the framing moved anyone.
+
+## Checkpoint two, under the framing — the null is the finding
+
+Pre-check 3 fired a second time: nine arm-A cells on the bound three, zero
+door entries. The instrument was suspected first and cleared — the framing
+sentence is verbatim in every task's first user message on the wire. And the
+decisive diagnostic: **arm C invested nothing either.** Zero remember calls,
+zero MEMORY.md, across all framed C cells. The battery stopped at $1.13.
+
+Twice-measured, instrument-verified: on tasks this model solves directly in
+5-20 seconds, it invests in NO retention mechanism — compiled capability and
+text notes alike — even when told the work recurs. The tasks are too cheap
+for tooling to be rational, and pre-check 3 did precisely what it exists to
+do: prevent a null-null battery from firing the kill criterion on a
+comparison in which neither mechanism was ever used. "A fails to beat C"
+would have been true by the letter and wrong in substance — external skills
+captured nothing either.
+
+The tools-as-components diagnosis is defeated twice over: C's text channel
+is exactly as unreached as A's compile channel. The surface is not the
+problem; the investment incentive is.
+
+Open fork, user's decision: invited-mode framing (the adaptation battery's
+NUDGED precedent — names the category of investment, relabels the measured
+question to "when invited to retain, does compiled capability beat text"),
+or harder families where direct solving is expensive enough that investment
+is rational within five tasks, or stop here and take the finding back to
+design.
