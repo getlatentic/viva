@@ -1,0 +1,4 @@
+hit 6528
+miss 5939
+out 750
+hitrate 52%

@@ -14,9 +14,10 @@ heavy; $1-3 cached off-peak), and gated (`./experiments/kc6/preflight.sh`,
 green). What remains is authoring and running.
 
 - [ ] Author the six families, five tasks each, hidden tests written against
-      each task's specification before any arm runs — **f1-paren-balance
-      frozen** (5 tasks, gate green: every check fails-before/passes-after);
-      split and order fixed in families/f1-paren-balance/README.md
+      each task's specification before any arm runs — **f1-paren-balance and
+      f2-usage-totals frozen** (gate green on both, now three-legged:
+      fails-before, passes-after, and a corrupted answer fails); split and
+      order fixed in families/f1-paren-balance/README.md
 - [ ] Commit the fixed shuffle; the two held-out families are authored last,
       after the scored four are frozen. Held out of pilots and authoring
       knowledge, NEVER out of the analysis: all six enter the battery and the

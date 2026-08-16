@@ -13,8 +13,11 @@ failures=0
 for task in "$family"/t*/; do
   name=$(basename "$task")
   work=$(mktemp -d)
-  # The sandbox view: everything except the reference solution.
-  (cd "$task" && find . -maxdepth 1 -type f -exec cp {} "$work/" \;)
+  # The sandbox view: everything except the reference solution -- files AND
+  # directories, because family two's tasks carry a transcripts/ tree and the
+  # first version of this line silently copied only top-level files.
+  (cd "$task" && find . -mindepth 1 -maxdepth 1 ! -name solution \
+      -exec cp -R {} "$work/" \;)
   if (cd "$work" && ./check >/dev/null 2>&1)
   then before=PASSED; failures=$((failures + 1))
   else before=failed; fi
@@ -22,7 +25,18 @@ for task in "$family"/t*/; do
   if (cd "$work" && ./check >/dev/null 2>&1)
   then after=passed
   else after=FAILED; failures=$((failures + 1)); (cd "$work" && ./check) || true; fi
-  printf '%-4s initial: %-7s reference: %s\n' "$name" "$before" "$after"
+  # Third leg, when the answer is a file: a CORRUPTED answer must fail.
+  # Fail-before/pass-after cannot see a bug shared by check and solution;
+  # this at least proves the check reads the answer rather than waving at it.
+  corrupt=-
+  if [ -f "$task"/solution/answer.txt ]; then
+    printf 'x' >> "$work/answer.txt"
+    if (cd "$work" && ./check >/dev/null 2>&1)
+    then corrupt=PASSED; failures=$((failures + 1))
+    else corrupt=failed; fi
+  fi
+  printf '%-4s initial: %-7s reference: %-7s corrupted: %s\n' \
+    "$name" "$before" "$after" "$corrupt"
   rm -rf "$work"
 done
 

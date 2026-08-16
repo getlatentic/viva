@@ -1,0 +1,9 @@
+{"payload": {"role": "user", "content": [{"type": "text", "text": "go"}]}}
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "looking"}, {"type": "tool_call", "name": "read"}]}}
+{"payload": {"role": "tool", "content": [{"type": "text", "text": "file text"}]}}
+{"payload": {"role": "assistant", "content": [{"type": "tool_call", "name": "grep"}, {"type": "tool_call", "name": "read"}, {"type": "text", "text": "found it"}]}}
+{"payload": {"role": "user", "content": [{"type": "text", "text": "and?"}]}}
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "plain reply, no calls"}]}}
+{"payload": {"role": "tool", "content": [{"type": "text", "text": "..."}]}}
+{"payload": {"role": "assistant", "content": [{"type": "tool_call", "name": "edit"}, {"type": "tool_call", "name": "bash"}, {"type": "tool_call", "name": "read"}]}}
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "done"}]}}

@@ -1,0 +1,10 @@
+transcripts/run.jsonl is dirty: some lines are not JSON at all, and some
+carry a top-level "role" that disagrees with payload.role. The rules: a line
+is valid iff it parses as a JSON object; a valid line is a request iff its
+payload.role is "assistant" — the top-level role never decides. Skip invalid
+lines; never crash on them.
+
+Write answer.txt, exactly two lines:
+
+valid <n>
+requests <n>

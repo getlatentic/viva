@@ -1,0 +1,9 @@
+The directory transcripts/ holds run.jsonl, one JSON object per line. An
+entry is an assistant request iff its payload.role is "assistant". Tool calls
+are the blocks of type "tool_call" inside an assistant entry's payload
+content array.
+
+Count them and write answer.txt, exactly two lines:
+
+requests <n>
+toolcalls <n>

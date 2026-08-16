@@ -1,0 +1,10 @@
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "real one"}]}}
+{"payload": {"role": "assistant", "content": [{"type"
+{"role": "assistant", "payload": {"role": "tool", "content": [{"type": "text", "text": "decoy"}]}}
+not json at all
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "second real"}]}}
+{"role": "user", "payload": {"role": "assistant", "content": [{"type": "text", "text": "counts"}]}}
+
+{"payload": {"role": "user", "content": [{"type": "text", "text": "q"}]}}
+{"truncated": tr
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "third real"}]}}

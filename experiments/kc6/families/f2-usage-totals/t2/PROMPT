@@ -1,0 +1,11 @@
+transcripts/run.jsonl mixes two providers' usage spellings. For each entry
+whose payload.role is "assistant", read payload.usage: prompt tokens are
+"prompt_tokens" if present else "input_tokens" else 0; completion tokens are
+"completion_tokens" if present else "output_tokens" else 0. Entries without a
+usage object contribute zero. Usage on non-assistant entries does not count.
+
+Write answer.txt, exactly three lines:
+
+prompt <n>
+completion <n>
+total <n>

@@ -1,0 +1,13 @@
+transcripts/run.jsonl carries cache accounting. For each entry whose
+payload.role is "assistant" and which has a payload.usage object: hit is
+"prompt_cache_hit_tokens" (0 when absent); miss is
+"prompt_cache_miss_tokens" when present, else "prompt_tokens" minus that
+entry's hit; out is "completion_tokens" (0 when absent). Sum across entries.
+The hit rate is hit / (hit + miss) as a whole percent, rounded half up.
+
+Write answer.txt, exactly four lines:
+
+hit <n>
+miss <n>
+out <n>
+hitrate <p>%

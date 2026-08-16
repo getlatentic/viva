@@ -1,0 +1,2 @@
+{"payload": {"role": "user", "content": [{"type": "text", "text": "only"}]}}
+{"payload": {"role": "tool", "content": [{"type": "text", "text": "plumbing"}]}}

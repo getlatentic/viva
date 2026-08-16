@@ -1,0 +1,7 @@
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "a"}], "usage": {"prompt_tokens": 2833, "completion_tokens": 52}}}
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "b"}], "usage": {"input_tokens": 2946, "output_tokens": 397}}}
+{"payload": {"role": "tool", "content": [{"type": "text", "text": "x"}], "usage": {"prompt_tokens": 99999, "completion_tokens": 99999}}}
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "c"}]}}
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "d"}], "usage": {"prompt_tokens": 3408, "completion_tokens": 59}}}
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "e"}], "usage": {}}}
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "f"}], "usage": {"input_tokens": 3756, "output_tokens": 105}}}

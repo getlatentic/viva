@@ -1,0 +1,8 @@
+transcripts/ holds several .jsonl files, one run each — including possibly
+empty ones. Requests are entries whose payload.role is "assistant". Report
+per file and in total. Write answer.txt: one line per file sorted by
+filename, then the total, exactly:
+
+file <name> requests <n>
+...
+total requests <n>

@@ -1,0 +1,4 @@
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "a1"}]}}
+{"payload": {"role": "tool", "content": []}}
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "a2"}]}}
+{"payload": {"role": "assistant", "content": [{"type": "text", "text": "a3"}]}}
