@@ -70,6 +70,7 @@
                 :serial t
                 :components ((:file "kernel")
                              (:file "tasktree")
+                             (:file "evolution")
                              (:file "package")
                              (:file "events")
                              (:file "actor")

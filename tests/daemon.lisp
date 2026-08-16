@@ -1340,3 +1340,12 @@ class, and the class overrides the pacing initforms."))
                                            (equal "completed" (gethash "state" task))))
                                     (coerce (gethash "tasks" listed) 'list)))))))
           (actor:shutdown cell))))))
+
+(define-test "the evolution self-test replays the lifecycle laws as traces"
+  ;; Phase 2's door: the lifecycle of self-modification entered the proof --
+  ;; spec/Evolution.tla, safety over the complete space, liveness, and a
+  ;; witness whose violation demonstrates the isolation law is violable --
+  ;; before any wiring exists. DEACTIVATED ends one task's pin with its
+  ;; lifetime; REVERTED moves the promoted lineage back for everyone; an
+  ;; unpromoted candidate reaches a task only through that task's own pin.
+  (true (vivarium.evolution:run-evolution-self-test)))

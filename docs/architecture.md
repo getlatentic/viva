@@ -320,6 +320,42 @@ completion for a finished task decidable forever; fan-out past
 `+child-limit+` is refused with the parent named, and a refused spawn answers
 its caller `NIL` rather than a timeout.
 
+### The safety boundary, stated exactly
+
+Three layers hold, and the discipline is to never claim one layer more:
+
+```
+PROVEN      no interleaving of the modeled alphabet violates a frozen
+            invariant -- TLC, complete state spaces, witnesses proving the
+            invariants violable rather than vacuous
+PINNED      the Lisp tables cannot drift from the specs (one object), and
+            the coordinators cannot drift from the tables (each attack
+            breaks exactly one law and is caught by exactly its guard)
+CONTAINED   mailboxes, threads, locks and wiring: 1,000+ tests, attack
+            batches, churn plateaus -- evidence, not proof, and where every
+            integration bug so far has actually lived
+```
+
+Beneath everything sit SBCL, the OS and the filesystem, where conditions and
+restarts give recovery, never correctness. Each phase extends the guarantee
+only by entering through the proof first.
+
+Phase 2's door is open: `spec/Evolution.tla` (safety over the complete space,
+liveness, and a witness whose violation demonstrates the isolation law) with
+`src/daemon/evolution.lisp` as its `define-owner` mirror. The lifecycle laws:
+at most one promoted version per component and it is the lineage's last;
+promotion and reversion serialized through the one owner; a task's activation
+is a pin invisible outside that task -- an unpromoted candidate reaches a
+resolution only through the resolving task's own pin; deactivation is bounded
+by task lifetime and moves no lineage; REVERTED moves the lineage back for
+everyone and touches no pin. The guarantee is about the evolution LIFECYCLE;
+what an evolved function does is validated and capability-bounded, never
+proven. Wiring comes next and not before.
+
+Hardening item one, unchanged: the journal owner's table is conformance-only
+-- the one authority whose decision layer is not yet the checked object, and
+the drift pattern that already bit once.
+
 ### The closure gate, and the stopping rule
 
 Phase 1 closed with a frozen list of four defects -- the replay gap under
