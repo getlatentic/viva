@@ -552,7 +552,8 @@ recorded as a custom message so the transcript keeps the attribution."
 (defun sub-agent (parent lane &key (request-limit 20))
   "A worker sharing PARENT's world but not its conversation.
 
-Shares the environment, the session, the tools and the model; keeps its own
+Shares the environment, the session, every tool including the extras, and the
+model; keeps its own
 context and its own lane, so its turns are recorded in the same file on their
 own branch and neither conversation is in the other's context window. That
 separation is the point: a sub-agent exists to keep a search out of the main
@@ -573,6 +574,14 @@ thread, and one that inherited the transcript would defeat itself."
                               :session (agent-session parent)
                               :listener (agent-listener parent)
                               :active-tools (agent-active-tools parent)
+                              ;; EXTRA-TOOLS travels too. Without it a parent
+                              ;; could self-modify and its workers could not,
+                              ;; while the evolution table faithfully copied
+                              ;; the parent's pins into a child holding no tool
+                              ;; able to resolve them. Third place in this
+                              ;; codebase where extra-tools had to be threaded
+                              ;; by hand and the second where it was dropped.
+                              :extra-tools (agent-extra-tools parent)
                               :request-limit request-limit)))
     (setf (agent-lane child) lane
           (agent-compaction child) (agent-compaction parent))

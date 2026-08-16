@@ -1887,3 +1887,17 @@ bind it is testing nothing the agent loop does."
           (true (search "boom: now" (tool:tool-result-output called))
                 "the agent was not told what went wrong: ~s"
                 (tool:tool-result-output called)))))))
+
+(define-test "a worker inherits its parent's capability tools"
+  ;; The evolution table copies a parent's pins into its child at spawn, by
+  ;; proven law. That is worth nothing if the child has no tool able to resolve
+  ;; them -- and SUB-AGENT copied environment, session, model, skills,
+  ;; templates, listener and active-tools while silently dropping extra-tools.
+  ;; A parent could self-modify and its workers could not.
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (setf (vivarium.harness::agent-extra-tools agent) (actor:capability-tools))
+    (let* ((child (harness:sub-agent agent "kc6-inherit-lane"))
+           (names (mapcar #'tool:tool-name (vivarium.agent:tools child))))
+      (dolist (verb '("create_capability" "activate_capability" "call_capability"))
+        (true (member verb names :test #'string=)
+              "a worker cannot ~a; its parent can" verb)))))
