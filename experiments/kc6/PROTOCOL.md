@@ -271,10 +271,37 @@ run. The cap is a limit rather than a prediction — the heavy column fits insid
 it — and the pilot still measures the real per-run figure before the battery
 starts, but no run waits on that measurement to be safe.
 
-At deepseek-chat's published rates the battery is single-digit to low
-double-digit dollars, and the pilot slice about a dollar. Rates are the one
-input here not verified against the provider, so the tokens are the number and
-the dollars are an order of magnitude.
+**Priced at DeepSeek V4 published rates, on `deepseek-v4-flash`** — the model
+these runs used. Off-peak is half of peak, and peak is only 01:00-04:00 and
+06:00-10:00 UTC, so a battery scheduled outside those windows halves its bill
+for nothing:
+
+```
+shape      total tok        miss   off-peak     peak   no cache
+light     51,120,000   9,720,000      $4.07    $8.15     $24.71
+medium   156,816,000  16,920,000      $7.66   $15.33     $72.99
+heavy    395,136,000  27,720,000     $13.28   $26.56    $180.07
+pilot      15,681,600   1,692,000     $0.77    $1.53      $7.30
+```
+
+On `deepseek-v4-pro` every figure is three times larger: $40 off-peak at the
+heavy end, $540 peak and uncached. If the capability floor forces Pro, that is
+the price of clearing it, and it is stated here rather than discovered.
+
+**THE CACHE IS NOT GUARANTEED, and the `no cache` column is the planning
+number.** DeepSeek's context cache is best-effort prefix matching, not a
+contract. Within a run the 82-91% hit rate measured above is structural — the
+prefix is append-only and requests are seconds apart — but it would break if
+anything mutated the prefix per request, so nothing may be injected there.
+Across runs it is already worthless: the first request of both live runs cached
+**256 of 2,833 tokens**, because the working directory appears early in the
+system prompt and every run has a different sandbox. Moving the varying parts
+of the prompt after the stable ones would recover roughly 2.3M miss tokens
+across the battery, worth about fifty cents on Flash — a tidy fix, not a lever,
+and recorded here so it is not mistaken for one.
+
+The cap above is stated in TOKENS on purpose. Tokens do not move with the hit
+rate; only the bill does.
 
 **One ledger per run** is a requirement, not a convention: the analysis is a
 program over a single run's ledger and `instrumentality.py` refuses a file
