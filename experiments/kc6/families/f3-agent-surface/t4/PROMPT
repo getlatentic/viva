@@ -1,0 +1,9 @@
+The files in this directory are a small agent harness. The question is what
+tool names (sub-agent (make-workspace-agent :extras (list audit-tool))) actually receives — and the only reliable way to answer
+is to RUN the constructor, because registration is conditional, names can be
+overridden, and definition is not registration. sbcl is available:
+`sbcl --script yourprobe.lisp` (or --non-interactive --eval).
+
+Write answer.txt: the model-visible tool names, one per line, sorted
+ascending by string<. Grading runs against a pristine copy of these files
+plus your answer.txt, so editing the harness changes nothing.

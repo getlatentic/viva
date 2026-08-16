@@ -16,10 +16,12 @@ a preflight gate that fails on any other value; scheduling off-peak
 mandatory** (amendment 13). What remains is authoring and running.
 
 - [ ] Author the six families, five tasks each, hidden tests written against
-      each task's specification before any arm runs — **f1-paren-balance and
-      f2-usage-totals frozen** (gate green on both, now three-legged:
-      fails-before, passes-after, and a corrupted answer fails); split and
-      order fixed in families/f1-paren-balance/README.md
+      each task's specification before any arm runs — **f1, f2, f3 frozen**
+      (three-legged gate green on all; f3's pass-after leg reconciles
+      hand-computed answers against the check's runtime derivation through
+      the real constructor). Grading is pristine-plus-outputs per the
+      families README and each task's `graded` manifest. Split and order in
+      families/README.md
 - [ ] Commit the fixed shuffle; the two held-out families are authored last,
       after the scored four are frozen. Held out of pilots and authoring
       knowledge, NEVER out of the analysis: all six enter the battery and the
