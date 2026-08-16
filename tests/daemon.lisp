@@ -1117,3 +1117,63 @@ checkpoint."))
            (true (gethash "success" (daemon-ask path "type" "ping"))))
       (daemon:stop)
       (ignore-errors (delete-file path)))))
+
+;;; The kernel: one checked table, and the coordinator merely performs it
+
+(define-test "the kernel self-test replays its incident traces"
+  (true (vivarium.kernel:run-self-test)))
+
+(define-test "a lifecycle hole is a published diagnostic, not a silence or a death"
+  ;; :FLUSH-CONFIRMED in :IDLE is a state/message pair the table does not
+  ;; know. The kernel signals, the coordinator's policy answers, the session
+  ;; stays alive with its state intact.
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (actor:tell cell :flush-confirmed)
+    (true (daemon-wait (lambda ()
+                         (find-if (lambda (event)
+                                    (and (string= "session.error" (event:event-name event))
+                                         (search "unhandled"
+                                                 (gethash "detail" (event:event-data event)))))
+                                  (vivarium.actor::remembered-since cell 0)))
+                       :timeout 10)
+          "the hole was silent")
+    (let ((turn (actor:submit cell "still alive?")))
+      (is string= "turn.completed" (actor:await-turn cell turn :timeout 20)))))
+
+(define-test "a prompt past the queue limit is refused with its turn named"
+  (with-paced-cell (cell agent :pause 0.2 :limit 500)
+    (actor:submit cell "running")
+    (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
+    (dotimes (i vivarium.kernel:+queue-limit+)
+      (actor:tell cell :user-message :text "queued" :turn (format nil "q~d" i)))
+    (let ((refused (actor:submit cell "one too many")))
+      (true (daemon-wait
+             (lambda ()
+               (find-if (lambda (event)
+                          (and (string= "session.error" (event:event-name event))
+                               (equal refused (gethash "turn" (event:event-data event)))))
+                        (vivarium.actor::remembered-since cell 0)))
+             :timeout 10)
+            "the overflow was absorbed rather than refused"))
+    (actor:tell cell :cancel)))
+
+(define-test "a subscriber that stops draining is dropped and the drop announced"
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (let ((deaf (sb-concurrency:make-mailbox))
+          (key (gensym "DEAF")))
+      (actor:subscribe cell key deaf)
+      (dotimes (i (+ vivarium.kernel:+subscriber-capacity+ 50))
+        (vivarium.actor::publish cell "model.delta" nil))
+      (true (daemon-wait
+             (lambda ()
+               (find-if (lambda (event)
+                          (and (string= "session.error" (event:event-name event))
+                               (search "dropped" (gethash "detail" (event:event-data event)))))
+                        (vivarium.actor::remembered-since cell 0)))
+             :timeout 10)
+            "the overload was never announced")
+      ;; And the mailbox stopped growing: the drop is the bound.
+      (true (<= (sb-concurrency:mailbox-count deaf)
+                (+ vivarium.kernel:+subscriber-capacity+ 2))
+            "~d messages accumulated past capacity"
+            (sb-concurrency:mailbox-count deaf)))))

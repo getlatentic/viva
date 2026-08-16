@@ -68,7 +68,8 @@
   :serial t
   :components ((:module "src/daemon"
                 :serial t
-                :components ((:file "package")
+                :components ((:file "kernel")
+                             (:file "package")
                              (:file "events")
                              (:file "actor")
                              (:file "server")))))

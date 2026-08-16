@@ -35,6 +35,7 @@
                     (#:harness #:vivarium.harness)
                     (#:operation #:vivarium.operation)
                     (#:session #:vivarium.session)
+                    (#:kernel #:vivarium.kernel)
                     (#:event #:vivarium.event))
   ;; Sealed. A cell is an ownership boundary, not an object with a mailbox
   ;; attached: CELL-AGENT, CELL-STATE, CELL-EVENTS and CELL-QUEUED were

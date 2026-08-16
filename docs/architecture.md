@@ -266,6 +266,43 @@ still current, never "is any daemon up": the sweeper that looped on a bare
 global left one sweeper per cycled daemon behind, a hundred and twenty of them
 after one test.
 
+### The kernel: the decision layer as one checked object
+
+The cell lifecycle is a pure function in `src/daemon/kernel.lisp`:
+
+```
+    transition : State x Message -> State x Effects
+```
+
+written once as a `define-owner` table, executed by the coordinator, mirrored
+action for action by `spec/CellLifecycle.tla`, and replayed by a self-test
+whose traces are this project's actual past incidents -- the stale completion,
+the resume resurrection, the flush-retained shutdown. The coordinator's
+`handle` is mechanical: translate the mailbox message into the kernel
+alphabet, call `cell-transition`, perform the returned effects. A state and
+message the table does not know SIGNALS `unmatched-transition`, and policy
+turns that into a published diagnostic: a lifecycle hole is a condition,
+never a silence, never an improvisation.
+
+What this bought on integration day: walking the runtime's real message set
+against the delivered table found the table and the spec DISAGREEING about
+resume-with-queued-prompts -- the table resumed into a working state with
+nobody working, the spec resumed to idle with the queue stranded, both wrong,
+each plausible alone. One object to check is the point.
+
+The queue policy is uniform now: the journal has its high-water mark, the
+prompt queue refuses past `+queue-limit+` with the refused turn named, and a
+subscriber more than `+subscriber-capacity+` events behind is dropped with
+the drop announced on the stream. An unbounded mailbox is not a complete
+concurrency design; every boundary declares its capacity and its overload
+action in the kernel's constants.
+
+Phase 1.5 enters through this object: spawn-scoped-child, spawn-detached,
+cancel-parent and late-child-completion become `define-owner` messages and
+`TaskTree.tla` actions FIRST, TLC runs, and only then does the coordinator
+learn the new verbs. New features enter through the proof, so the proof
+never goes stale.
+
 ### The closure gate, and the stopping rule
 
 Phase 1 closed with a frozen list of four defects -- the replay gap under

@@ -60,7 +60,12 @@
   ;; indefinitely, and a broken worker is held in :STOPPING forever by a
   ;; mailbox that merely happens to be busy.
   (stop-deadline nil)
-  ;; Prompts that arrived while a turn was running, oldest first.
+  ;; The kernel state: the DECISION lives here, in the alphabet CELL-TRANSITION
+  ;; is checked over. The slots around it are mechanics -- threads, queues of
+  ;; actual text, gates -- that the coordinator maintains as the effects say.
+  (machine '(:idle) :type list)
+  ;; Prompts that arrived while a turn was running, oldest first, as
+  ;; (turn . text). The machine tracks the COUNT; this holds the content.
   (queued '() :type list)
   (lock (bt:make-lock "vivarium.cell"))
   (sequence 0 :type integer)
@@ -346,7 +351,7 @@ SUBSCRIBE with something that waits would have frozen the session that
 published to it. SEND-MESSAGE is the only thing that runs under this lock now,
 and it is a known non-blocking primitive."
   (when (event:name-valid-p name)
-    (let ((event nil) (declare-loss nil))
+    (let ((event nil) (declare-loss nil) (dropped '()))
       (owning (cell)
         (setf event (event:make-event :name name :session (cell-id cell)
                                       :sequence (incf (cell-sequence cell))
@@ -357,11 +362,29 @@ and it is a known non-blocking primitive."
           (setf (cell-degraded cell) :reported
                 declare-loss t))
         (dolist (subscriber (cell-subscribers cell))
-          (mailbox:send-message (cdr subscriber) event)))
-      ;; Outside the lock: this is itself a publish.
+          ;; The kernel's law: every asynchronous boundary has a declared
+          ;; capacity and overload action. A subscriber that stops draining is
+          ;; DROPPED, not accumulated -- the daemon happens to disconnect slow
+          ;; clients, but that is the daemon's manners, and the next subscriber
+          ;; (an evaluator, a Phase 1.5 parent link) does not inherit manners.
+          ;; Delivery stays non-blocking either way; what changes is that
+          ;; overload has one announced outcome instead of a heap exhaustion
+          ;; with a delay on it.
+          (if (< (mailbox:mailbox-count (cdr subscriber)) kernel:+subscriber-capacity+)
+              (mailbox:send-message (cdr subscriber) event)
+              (push (car subscriber) dropped)))
+        (when dropped
+          (setf (cell-subscribers cell)
+                (remove-if (lambda (subscriber) (member (car subscriber) dropped))
+                           (cell-subscribers cell)))))
+      ;; Outside the lock: these are themselves publishes.
       (when declare-loss
         (publish cell "session.error"
                  (event::object "detail" "journal lagging: unsynced events overwritten; history has a gap")))
+      (dolist (key dropped)
+        (publish cell "session.error"
+                 (event::object "detail" (format nil "subscriber ~a dropped: ~d events behind"
+                                                 key kernel:+subscriber-capacity+))))
       event)))
 
 (defun subscribe (cell key mailbox)
@@ -491,7 +514,12 @@ unfinished as far as this session is concerned -- and a prompt arriving in that
 window used to start a second turn whose identity the first turn's late
 completion then destroyed."
   (a:when-let ((cell (resolve cell)))
-    (and (cell-turn cell) t)))
+    (and (current-turn cell) t)))
+
+(defun current-turn (cell)
+  "The identity of the running turn, from the machine, or NIL."
+  (let ((designated (second (cell-machine cell))))
+    (and (stringp designated) designated)))
 
 ;;; The data plane and the control plane
 ;;;
@@ -521,11 +549,9 @@ or a turn declining to take another, and only the agent knows whether any of
 that was what someone asked for."
   (if (agent:cancelled-p agent) :cancelled :completed))
 
-(defun start-turn (cell turn text)
-  (owning (cell)
-    (setf (cell-turn cell) turn
-          (cell-state cell) :working))
-  (publish cell "turn.started" (event::object "turn" turn))
+(defun start-worker (cell turn text)
+  "The mechanics of a turn: one thread around HARNESS:ASK, reporting back
+through the mailbox with the identity of the turn it finished."
   (let ((worker (bt:make-thread
                  (lambda ()
                    (multiple-value-bind (outcome detail reply)
@@ -538,7 +564,7 @@ that was what someone asked for."
                      ;; Back through the mailbox rather than publishing here:
                      ;; the terminal event belongs to the one thread that owns
                      ;; this cell's state. The reply and the model travel WITH
-                     ;; the completion: a caller that waited for turn N and
+                     ;; the completion -- a caller that waited for turn N and
                      ;; then read the live agent could read state already
                      ;; being rewritten by turn N+1, started from the queue.
                      (mailbox:send-message (cell-mailbox cell)
@@ -548,138 +574,160 @@ that was what someone asked for."
                                                            :reply reply
                                                            :model (agent:agent-model (cell-agent cell))))))
                  :name (format nil "vivarium-turn-~a" turn))))
-    (owning (cell) (setf (cell-worker cell) worker)))
-  turn)
+    (owning (cell) (setf (cell-worker cell) worker))))
 
-(defun finish-turn (cell outcome detail reply)
-  (let ((turn (cell-turn cell))
-        (next nil))
-    (owning (cell)
-      (setf (cell-turn cell) nil
-            (cell-worker cell) nil
-            (cell-state cell) (if (eq :stopping (cell-state cell)) :stopping :idle)
-            next (pop (cell-queued cell))))
-    ;; Carrying the turn it ended and the reply it produced. The event is the
-    ;; immutable record of the turn; reading the live agent after waiting for
-    ;; this event reads whatever turn is running by then.
-    (publish cell (ecase outcome
-                    (:completed "turn.completed")
-                    (:cancelled "turn.cancelled")
-                    (:failed "turn.failed"))
-             (event::object "turn" turn "detail" detail "text" reply))
-    (cond ((eq :stopping (cell-state cell))
-           ;; The last turn has reported. Nothing this session owns is running,
-           ;; which is the only condition under which the session may end.
-           (owning (cell) (setf (cell-running cell) nil)))
-          ;; A prompt that arrived mid-turn waited rather than being lost or
-          ;; running beside the turn it arrived during.
-          (next (start-turn cell (car next) (cdr next))))))
+;;; Translation: the mailbox protocol into the kernel's alphabet
+;;;
+;;; The kernel (src/daemon/kernel.lisp) owns the DECISION: cell states,
+;;; messages and transitions as one checked table, mirrored action for action
+;;; by spec/CellLifecycle.tla. The coordinator here owns the MECHANICS. Each
+;;; mailbox message is translated to a kernel message, CELL-TRANSITION says
+;;; what happens, and the effects are performed below. A state/message pair
+;;; the table does not know SIGNALS, and the policy here turns that into a
+;;; published diagnostic -- a lifecycle hole is a condition, never a silence.
 
-(defun complete-turn (cell options)
-  (let ((turn (getf options :turn)))
-    (if (equal turn (cell-turn cell))
-        (progn
-          (a:when-let ((model (getf options :model)))
-            (owning (cell) (setf (cell-model cell) (string model))))
-          (finish-turn cell (getf options :outcome) (getf options :detail)
-                       (getf options :reply)))
-        ;; A completion for a turn that is no longer current. Applying it would
-        ;; clear the identity of the turn now running and publish a terminal
-        ;; event for work that is still going.
-        (publish cell "session.error"
-                 (event::object "detail" (format nil "stale completion for turn ~a" turn))))))
+(defun kernel-message (cell verb options)
+  "The kernel message for a mailbox message, or NIL for one that is not a
+lifecycle decision (or names a turn that is already gone, the old APPLIES-P)."
+  (case verb
+    (:user-message (list :submit (getf options :turn)))
+    (:finished (list :finished (getf options :turn) (getf options :outcome)))
+    (:cancel (a:when-let ((turn (or (getf options :turn) (current-turn cell))))
+               (list :cancel turn)))
+    (:steer (a:when-let ((turn (or (getf options :turn) (current-turn cell))))
+              (list :steer turn)))
+    ((:suspend :resume)
+     ;; A named turn is honoured only while it is current; unnamed means now.
+     (let ((named (getf options :turn)))
+       (when (or (null named) (equal named (current-turn cell)))
+         (list verb))))
+    (:shutdown '(:shutdown))
+    ((:stop-deadline :flush-confirmed :flush-failed) (list verb))
+    (t nil)))
 
-(defun applies-p (cell options)
-  "Whether a control message is about the present.
+(defun refusal-detail (reason)
+  (ecase reason
+    (:prompt-refused-stopping "prompt refused: the session is stopping")
+    (:prompt-refused-queue-full "prompt refused: queue full")
+    (:shutdown-timed-out "shutdown timed out with a turn still running")))
 
-No :TURN means `whatever is going on now`, which is what a person at a terminal
-means. A named turn is honoured only while it is current: a cancel for turn 17
-arriving after 17 ended would otherwise cancel turn 18, which nobody asked for."
-  (let ((turn (getf options :turn)))
-    (or (null turn) (equal turn (cell-turn cell)))))
+(defun terminal-name (outcome)
+  (ecase outcome
+    (:completed "turn.completed")
+    (:cancelled "turn.cancelled")
+    (:failed "turn.failed")))
 
-(defun current-turn-p (cell options)
-  "APPLIES-P, and there is a turn to apply it to. For control that is
-meaningless without running work -- steering nothing, cancelling nothing."
-  (and (cell-turn cell) (applies-p cell options)))
-
-(defun accept-prompt (cell options)
-  (let ((turn (or (getf options :turn) (mint-turn cell)))
-        (text (getf options :text)))
-    (cond ((eq :stopping (cell-state cell))
-           (publish cell "session.error"
-                    (event::object "detail" "prompt refused: the session is stopping")))
-          ((busy-p cell)
+(defun run-effect (cell effect options)
+  "Perform one kernel effect. OPTIONS is the original mailbox message's plist,
+carrying what the alphabet abstracts away: prompt text, detail, reply, model."
+  (destructuring-bind (op &rest arguments) effect
+    (ecase op
+      (:publish
+       (destructuring-bind (name &rest detail) arguments
+         (case name
+           (:turn.started
+            (publish cell "turn.started" (event::object "turn" (first detail))))
+           (:session.error
+            (publish cell "session.error"
+                     (event::object "detail" (refusal-detail (first detail))
+                                    "turn" (second detail))))
+           (:session.completed (publish cell "session.completed" nil))
+           (:task.suspended (publish cell "task.suspended" nil))
+           (:task.resumed (publish cell "task.resumed" nil)))))
+      (:publish-terminal
+       (destructuring-bind (turn outcome) arguments
+         (a:when-let ((model (getf options :model)))
+           (owning (cell) (setf (cell-model cell) (string model))))
+         (publish cell (terminal-name outcome)
+                  (event::object "turn" turn
+                                 "detail" (getf options :detail)
+                                 "text" (getf options :reply)))))
+      (:start-worker (start-worker cell (first arguments) (getf options :text)))
+      (:queue-prompt
+       (owning (cell)
+         (setf (cell-queued cell)
+               (append (cell-queued cell)
+                       (list (cons (first arguments) (getf options :text)))))))
+      (:start-next-queued
+       ;; The machine designated :NEXT-QUEUED; the actual identity lives in
+       ;; the mechanics. Pop it, fix the placeholder, announce, start.
+       (let ((next (owning (cell) (pop (cell-queued cell)))))
+         (when next
            (owning (cell)
-             (setf (cell-queued cell) (append (cell-queued cell) (list (cons turn text))))))
-          (t (start-turn cell turn text)))))
+             (setf (cell-machine cell)
+                   (substitute (car next) :next-queued (cell-machine cell))))
+           (publish cell "turn.started" (event::object "turn" (car next)))
+           (start-worker cell (car next) (cdr next)))))
+      (:request-cancel (harness:cancel-agent (cell-agent cell)))
+      (:queue-steering
+       (agent:queue-steering (cell-agent cell)
+                             (msg:make-user-message
+                              :content (list (msg:make-text (getf options :text))))))
+      (:close-gate (harness:suspend-agent (cell-agent cell)))
+      (:open-gate (harness:resume-agent (cell-agent cell)))
+      (:cancel-agent (harness:cancel-agent (cell-agent cell)))
+      (:discard-queue (owning (cell) (setf (cell-queued cell) '())))
+      (:arm-stop-deadline
+       (owning (cell)
+         (setf (cell-stop-deadline cell)
+               (+ (get-internal-real-time)
+                  (* +stopping-grace+ internal-time-units-per-second)))))
+      (:post-flush (attempt-flush cell))
+      (:retry-flush (sleep 1) (attempt-flush cell))
+      (:declare-flush-failure
+       (let ((first-time nil))
+         (owning (cell)
+           (unless (cell-flush-declared cell)
+             (setf (cell-flush-declared cell) t
+                   first-time t)))
+         (when first-time
+           (publish cell "session.error"
+                    (event::object "detail" "journal close unconfirmed; session retained until it is")))))
+      (:deregister (deregister cell))
+      (:diagnostic
+       (destructuring-bind (kind &rest detail) arguments
+         (publish cell "session.error"
+                  (event::object "detail" (format nil "~(~a~): ~{~a~^ ~}" kind detail))))))))
 
-(defun begin-stopping (cell)
-  "Stop accepting work and let the running turn end.
+(defun attempt-flush (cell)
+  "One flush attempt, reported back into the mailbox as a kernel message: the
+coordinator stays a loop of receive-transition-perform even for its own
+epilogue, which is what lets the machine's :FLUSHING state absorb whatever
+else arrives meanwhile."
+  (let ((flushed (bt:make-semaphore :count 0)))
+    (tell cell (if (and (journal-post (list :close cell flushed))
+                        (bt:wait-on-semaphore flushed :timeout *flush-grace*))
+                   :flush-confirmed
+                   :flush-failed))))
 
-The coordinator keeps receiving. It used to leave the mailbox loop here, so the
-worker's completion arrived at nobody: the session reported completed with its
-last turn having published no terminal event at all."
+(defun sync-mechanics (cell)
+  "Mirror the machine into the display slots the rest of the system reads."
   (owning (cell)
-    (setf (cell-state cell) :stopping
-          (cell-queued cell) '()
-          (cell-stop-deadline cell) (+ (get-internal-real-time)
-                                       (* +stopping-grace+
-                                          internal-time-units-per-second))))
-  (harness:cancel-agent (cell-agent cell))
-  ;; Nothing running, so nothing to wait for.
-  (unless (cell-turn cell)
-    (owning (cell) (setf (cell-running cell) nil))))
-
-(defun stopping-p (cell)
-  (member (cell-state cell) '(:stopping :stuck)))
+    (setf (cell-state cell) (first (cell-machine cell))
+          (cell-turn cell) (current-turn cell))))
 
 (defun handle (cell message)
   (destructuring-bind (verb &rest options) message
-    ;; A stopping session is waiting for one thing. Control that arrives now is
-    ;; about a session that is going away, and :RESUME in particular used to set
-    ;; the state back to :WORKING or :IDLE -- so one late resume resurrected a
-    ;; shutting-down session and put its coordinator back on an unbounded wait,
-    ;; which is exactly the hang the stop deadline exists to prevent.
-    (when (and (stopping-p cell)
-               (member verb '(:steer :cancel :suspend :resume :shutdown)))
-      (return-from handle nil))
-    (ecase verb
-      (:user-message (accept-prompt cell options))
-      (:finished (complete-turn cell options))
-      ;; The journal owner cannot publish -- publishing appends to the journal
-      ;; -- so it reports here and the coordinator says it out loud.
+    (case verb
+      ;; Not a lifecycle decision: the journal owner cannot publish --
+      ;; publishing appends to the journal -- so it reports here and the
+      ;; coordinator says it out loud.
       (:journal-failed
        (owning (cell) (setf (cell-degraded cell) :reported))
        (publish cell "session.error"
                 (event::object "detail" (format nil "journal write failed: ~a; continuing non-durable"
                                                 (getf options :detail)))))
-
-      ;; Control. Each of these reaches a turn that is still running, which is
-      ;; the point of the coordinator/worker split, and each is ignored if the
-      ;; turn it names has already ended.
-      (:steer (when (current-turn-p cell options)
-                (agent:queue-steering (cell-agent cell)
-                                      (msg:make-user-message
-                                       :content (list (msg:make-text (getf options :text)))))))
-      ;; No event here. The loop reports the cancellation when it takes effect,
-      ;; and publishing from both places would put a second terminal event on
-      ;; the wire. The coordinator requests; the loop reports.
-      (:cancel (when (current-turn-p cell options)
-                 (harness:cancel-agent (cell-agent cell))))
-      ;; Suspension outlives a turn: closing the gate with nothing running holds
-      ;; whatever runs next, which is what someone stopping a session to look
-      ;; at something means.
-      (:suspend (when (applies-p cell options)
-                  (harness:suspend-agent (cell-agent cell))
-                  (owning (cell) (setf (cell-state cell) :suspended))
-                  (publish cell "task.suspended" nil)))
-      (:resume (when (applies-p cell options)
-                 (harness:resume-agent (cell-agent cell))
-                 (owning (cell)
-                   (setf (cell-state cell) (if (cell-turn cell) :working :idle)))
-                 (publish cell "task.resumed" nil)))
-      (:shutdown (begin-stopping cell)))))
+      (t
+       (a:when-let ((translated (kernel-message cell verb options)))
+         (handler-bind ((kernel:unmatched-transition
+                          (lambda (condition)
+                            (declare (ignore condition))
+                            (invoke-restart 'kernel:ignore-message))))
+           (multiple-value-bind (next effects)
+               (kernel:cell-transition (cell-machine cell) translated)
+             (owning (cell) (setf (cell-machine cell) next))
+             (dolist (effect effects) (run-effect cell effect options))
+             (sync-mechanics cell))))))))
 
 (defun seconds-left (cell)
   (/ (- (cell-stop-deadline cell) (get-internal-real-time))
@@ -695,7 +743,7 @@ rather than an idle session behaving correctly.
 The wait is what remains of one absolute deadline, recomputed each time. Passing
 the grace period to each RECEIVE-MESSAGE instead gives every arriving message a
 fresh 120 seconds, so a session with any traffic at all never times out."
-  (cond ((not (eq :stopping (cell-state cell)))
+  (cond ((not (eq :stopping (first (cell-machine cell))))
          (mailbox:receive-message (cell-mailbox cell)))
         ((plusp (seconds-left cell))
          (mailbox:receive-message (cell-mailbox cell) :timeout (seconds-left cell)))
@@ -705,57 +753,21 @@ fresh 120 seconds, so a session with any traffic at all never times out."
   (bt:with-lock-held (*registry-lock*) (remhash (cell-id cell) *cells*)))
 
 (defun run-cell (cell)
+  "Receive, translate, transition, perform. The lifecycle lives in the kernel
+table; this loop is deliberately mechanical, including its own end: shutdown
+drives the machine through :STOPPING and :FLUSHING to :COMPLETED, and the
+flush's confirmation arrives as a message like everything else. A session the
+deadline declared :STUCK keeps receiving -- the table absorbs late completions
+as diagnostics -- and stays registered, visibly, until an operator resolves it."
   (publish cell "session.started" (event::object "label" (cell-label cell)))
-  (loop while (cell-running cell)
-        do (a:if-let ((message (next-message cell)))
-             (handler-case (handle cell message)
+  (loop until (eq :completed (first (cell-machine cell)))
+        do (let ((message (next-message cell)))
+             (handler-case (handle cell (or message '(:stop-deadline)))
                ;; Nothing a message can do may kill the session's thread. A cell
                ;; whose thread died looks exactly like one that is merely quiet.
                (error (condition)
                  (publish cell "session.error"
-                          (event::object "detail" (princ-to-string condition)))))
-             (owning (cell) (setf (cell-state cell) :stuck
-                                  (cell-running cell) nil))))
-  (cond ((eq :stuck (cell-state cell))
-         ;; Left in the registry on purpose. The session did not finish: a
-         ;; worker is still out there, and SESSION.COMPLETED would be a claim
-         ;; about the world that is untrue. An event name must not need a flag
-         ;; saying it does not mean what it says.
-         (publish cell "session.error"
-                  (event::object "detail" "shutdown timed out with a turn still running")))
-        (t
-         ;; Completion is published, then PROVEN durable, and only then does
-         ;; the session leave the registry -- so AWAIT-SHUTDOWN cannot report
-         ;; success while the terminal record is unresolved. It used to
-         ;; deregister first and warn to stderr if the flush never confirmed:
-         ;; externally complete, durably unknown, inspectable by nobody.
-         (publish cell "session.completed" nil)
-         (if (flush-session cell)
-             (deregister cell)
-             ;; Inspectable, announced, and still trying: the flush loop below
-             ;; keeps offering as long as the session exists, so a healed
-             ;; journal completes the shutdown late rather than never.
-             (loop until (flush-session cell)
-                   do (sleep 1)
-                   finally (deregister cell))))))
-
-(defun flush-session (cell)
-  "Ask the journal to write everything pending for CELL and close its stream.
-Returns T on confirmation. Declares the failure -- once -- if it cannot."
-  (let ((flushed (bt:make-semaphore :count 0)))
-    (cond ((and (journal-post (list :close cell flushed))
-                (bt:wait-on-semaphore flushed :timeout *flush-grace*))
-           t)
-          (t
-           (let ((first-time nil))
-             (owning (cell)
-               (unless (cell-flush-declared cell)
-                 (setf (cell-flush-declared cell) t
-                       first-time t)))
-             (when first-time
-               (publish cell "session.error"
-                        (event::object "detail" "journal close unconfirmed; session retained until it is"))))
-           nil))))
+                          (event::object "detail" (princ-to-string condition))))))))
 
 (defun spawn (&key (label "") agent)
   "Start a session that outlives whoever started it."
