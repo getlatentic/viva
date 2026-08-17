@@ -283,3 +283,50 @@ live-image compile path as the retention mechanism, per the criterion's own
 sentence. The Elixir/external question reopens with data.
 
 Total spend, all eras, all firings, verdict included: **$3.50 of $7.00.**
+
+## Composition of the gap — the wire-level rider, on review's challenge
+
+The verdict above reported the aggregate; review asked whether the aggregate
+hid a language-fluency confound, pointing at compile errors in the run log.
+It did hide one, and quantifying it sharpens the verdict without reversing
+it. Counted from every arm-A transcript (a first counter read the wrong key
+— tool results live under `output` — and reported zero; the instrument was
+fixed before the numbers below):
+
+```
+create_capability attempts       59
+  failed to compile              19   (32%)  — LOOP syntax, block returns:
+                                             the model's CL fluency, not
+                                             the mechanism
+runtime call failures            26
+requests per task   A 8.5-12.0   C 5.3-8.7   B 6.3-9.5
+```
+
+The failures concentrate exactly where the gap is widest: f2 (10 compile
+fails, -178%) and f6 (9, -176%). **Those two extremes are
+fluency-inflated** — deepseek-v4-flash writes shaky Common Lisp, every
+bounce is a charged turn, and a CL-fluent model would shrink them.
+
+**What the confound does not explain is the kill itself.** The controls
+inside the battery:
+
+- f1: arm A never used the door — 6.6 requests/task, identical to C — and
+  still cost +23%: the pure schema-surface plus reflection overhead.
+- f4 r1 and r2: door used with ZERO compile failures and ZERO call
+  failures — the cleanest, most fluent door use in the battery — cost
+  36,267 and 43,751 tok/solved against C's 25,304. **Fluent mechanism,
+  +43% to +73%.** The create-activate-call-promote round-trip itself burns
+  turns that buy nothing a saturated battery can pay back.
+
+So the sharpened statement: roughly, +23 points of the gap is carrying the
+door, the leap to -70% is using it even fluently, and the leap to -178% is
+using it in a language the model fumbles. The kill stands on the middle
+term alone; the pinned model's fluency only decides how much worse than
+killed it looks.
+
+Options that reopen it, all user-rank: amend the pin to probe a CL-fluent
+model (amendment 13 currently forbids Pro); add a language-ergonomics
+scaffold to the door (its tool descriptions shipping a LOOP-free idiom
+guide — legitimate, since a door's ergonomics include its language); or
+accept the kill for this stack and take the architecture question forward
+with this decomposition attached.
