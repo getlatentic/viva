@@ -1041,3 +1041,31 @@ rather than leaving it to be rediscovered a third time."
           (false (mentions "No environment bound" (msg:tool-result-message-output result))))
         (true (mentions "README.md" (msg:tool-result-message-output (first results))))
         (true (mentions "defun total" (msg:tool-result-message-output (second results))))))))
+
+(define-test "reflection never overrides a cancellation"
+  ;; The retention policy's law 3: a cancellation that landed during the work
+  ;; stays in force. REFLECT on an aborting agent must return NIL without
+  ;; touching the request limit -- an aborted task that then got six more
+  ;; requests of budget would be a cancellation with an asterisk.
+  (let ((agent (make-instance 'harness::workspace-agent
+                              :environment (env:make-local-environment :cwd "/tmp")
+                              :resource-environment (env:make-local-environment :cwd "/tmp")
+                              :provider nil :model "none"
+                              :request-limit 7)))
+    (setf (harness:agent-aborting agent) t)
+    (false (harness:reflect agent) "reflection ran on an aborting agent")
+    (is = 7 (harness:agent-request-limit agent)
+        "reflection touched the limit of a cancelled task")))
+
+(define-test "the reflection prompt carries the policy"
+  ;; The v1 policy text is load-bearing: both channels named with their
+  ;; division of labour, parsimony demanded, declining made explicit. A prompt
+  ;; that lost one of these is a different policy shipping under this name.
+  (let ((prompt harness:*reflection-prompt*))
+    (true (search "remember" prompt) "the text channel is unnamed")
+    (true (search "create_capability" prompt) "the compile channel is unnamed")
+    (true (search "promote_capability only if it worked" prompt)
+          "promotion lost its evidence requirement")
+    (true (search "nothing to retain" prompt) "declining is no longer explicit")
+    (true (search "only what transfers" prompt)
+          "the answer-key guard is gone")))

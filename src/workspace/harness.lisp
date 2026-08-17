@@ -80,6 +80,8 @@ how it operates, not merely what it knows.")
 sub-agent gets its own, so its turns land on their own branch of the same file.")
    (context :initform (loop*:make-context) :accessor agent-context)))
 
+(defvar delegate-tool)  ; defined with the other tools below; referenced here
+
 (defun available-tools (agent)
   (append (workspace:tool-set)
           (list memory:remember delegate-tool)

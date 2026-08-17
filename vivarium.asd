@@ -60,7 +60,8 @@
                              (:file "operation")
                              (:file "compaction")
                              (:file "models")
-                             (:file "harness")))))
+                             (:file "harness")
+                             (:file "reflection")))))
 
 (defsystem "vivarium/daemon"
   :description "The organism: one long-lived process, sessions living inside it."

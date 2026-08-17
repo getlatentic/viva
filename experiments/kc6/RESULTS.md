@@ -186,3 +186,45 @@ tools-as-components (its trigger is now met), or take the Level 3 retention
 policy as the next artifact and re-pose KC6 against it (harder families are
 already filed as its evaluation), or spend one more ~$1.30 on a
 NUDGED-exact probe before deciding.
+
+## Level 3 v1: the retention policy beats the baseline — both channels
+
+The fork resolved Level-3-first, and the policy's v1 shipped the same night:
+one bounded reflection turn after every task, in the task's own conversation,
+retaining only through the existing doors (`src/workspace/reflection.lisp`,
+`docs/retention-policy.md`). The arc, measured:
+
+```
+                        text channel        compile channel
+uninstructed (90 runs)  0                   0
+invited      (45 A-runs) epsilon (1 call)   0
+under policy (2 cells)  active, clean       f1: 0   f2: 4 created,
+                                            4 activated, 3 resolved,
+                                            1 PROMOTED
+```
+
+The split between f1 and f2 under the policy is the finding that
+reframes the surface question: **the door opens when the content is
+transformation-shaped.** f1's frictions are knowledge (what the validator
+wants) and the policy correctly retained them as text; f2's friction is a
+parser — string to string — and the policy minted it, tested it, and
+promoted it to the durable default: the first unforced promotion in the
+organism's history. Instrumentality on that cell: 75% versions resolved,
+100% of creating tasks resolving — both thresholds passed, unforced.
+
+The smoke also caught three instrument defects (relative-path copies that
+find silently swallowed, producing an empty sandbox the model repaired by
+reading sibling runs; grading after reflection, letting reflection un-solve
+work; sandboxes confineable by :root but not by bash) — all three fixed in
+the driver: absolute paths with an empty-sandbox tripwire, grade before
+reflect, per-cell /tmp isolation. The model's sibling-reading repair is
+preserved in results-preframing-era notes as live evidence for the
+confinement item.
+
+Peak exceptions: three smoke cells ran inside the 06:00-10:00 window under
+amendment 13's logged escape, ~$0.09 total. Meter: $1.66 of $7.00.
+
+**KC6 is now well-posed for the first time**: arms A and C both under the
+retention policy — compiled versus text, GIVEN that retention happens —
+which is what the kill criterion always meant. Ready to run on the user's
+go: ~$1.30, off-peak.

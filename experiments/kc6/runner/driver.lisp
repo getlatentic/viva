@@ -25,6 +25,17 @@
   (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/cli :silent t))
 
 (destructuring-bind (family-dir arm out-dir) (rest sb-ext:*posix-argv*)
+  ;; Absolute from the first line: a relative out-dir once survived Lisp-side
+  ;; merges while the shell's cd re-based it into a nonexistent tree -- find
+  ;; swallowed every cp failure, the sandbox arrived EMPTY, and the model
+  ;; reconstructed the task from sibling runs. Normalizing here makes the
+  ;; driver impossible to misuse that way.
+  (setf family-dir (namestring (truename family-dir))
+        out-dir (namestring (ensure-directories-exist
+                             (uiop:ensure-directory-pathname
+                              (uiop:ensure-absolute-pathname
+                               (uiop:ensure-directory-pathname out-dir)
+                               (uiop:getcwd))))))
   ;; AN is pre-check 2's arm: arm A's exact configuration -- tools present,
   ;; door open -- plus a policy instruction never to use them. It isolates
   ;; the machinery's presence-tax from its use.
@@ -51,18 +62,34 @@
         (loop for task-dir in tasks
               for position from 1
               do (let* ((task (car (last (pathname-directory task-dir))))
+                        ;; Isolated OUTSIDE the results tree: bash is not
+                        ;; confined by :root, so a sandbox that is a sibling
+                        ;; of other runs' solved sandboxes leaks answers --
+                        ;; and the reflection policy turns that leak into
+                        ;; carried notes. Proven live, once.
+                        (isolation (ensure-directories-exist
+                                    (merge-pathnames
+                                     (format nil "kc6-cells/~a/~a/"
+                                             (car (last (pathname-directory out))) task)
+                                     (uiop:temporary-directory))))
                         (sandbox (ensure-directories-exist
-                                  (merge-pathnames (format nil "~a-sandbox/" task) out)))
+                                  (merge-pathnames "sandbox/" isolation)))
                         (transcripts (namestring
                                       (ensure-directories-exist
                                        (merge-pathnames (format nil "~a-transcripts/" task) out))))
                         (grade (ensure-directories-exist
-                                (merge-pathnames (format nil "~a-grade/" task) out))))
+                                (merge-pathnames "grade/" isolation))))
                    ;; The sandbox: everything but the reference solution.
                    (uiop:run-program
                     (list "/bin/sh" "-c"
                           (format nil "cd ~a && find . -mindepth 1 -maxdepth 1 ! -name solution -exec cp -R {} ~a \\;"
                                   (namestring task-dir) (namestring sandbox))))
+                   ;; The silent-cp tripwire: a sandbox that arrives empty
+                   ;; means the copy failed, and once that produced a model
+                   ;; reconstructing its task from sibling runs while find
+                   ;; swallowed every cp error.
+                   (when (null (uiop:directory-files sandbox))
+                     (error "sandbox arrived empty for ~a -- the task copy failed" task))
                    ;; Arm-agnostic carry of workspace memory between tasks.
                    (when carried
                      (uiop:run-program
@@ -91,8 +118,10 @@
                                   (uiop:read-file-string (merge-pathnames "PROMPT" task-dir))))
                        (error (condition)
                          (format *error-output* "~&~a errored: ~a~%" task condition)))
-                     (alexandria:when-let ((session (vivarium.harness:agent-session agent)))
-                       (vivarium.session:close-session session))
+                     ;; Grade BEFORE reflection: the reflection turn edits in
+                     ;; the same sandbox, and a capability test or an
+                     ;; experiment during reflection must never be able to
+                     ;; un-solve work that was already done.
                      ;; Grade: pristine task, graded outputs overlaid.
                      (uiop:run-program
                       (list "/bin/sh" "-c"
@@ -111,6 +140,16 @@
                        (format tsv "~d	~a	~d	~d~%" position task (if solved 1 0) seconds)
                        (finish-output tsv)
                        (format t "~&  ~a ~a: ~:[  --  ~;solved~]  ~ds~%"
-                               arm task solved seconds)))
+                               arm task solved seconds))
+                     ;; The Level 3 retention policy, when armed: one bounded
+                     ;; reflection turn in the task's own conversation, after
+                     ;; the grade is banked.
+                     (when (uiop:getenv "KC6_REFLECT")
+                       (handler-case (vivarium.harness:reflect agent)
+                         (error (condition)
+                           (format *error-output* "~&~a reflection errored: ~a~%"
+                                   task condition))))
+                     (alexandria:when-let ((session (vivarium.harness:agent-session agent)))
+                       (vivarium.session:close-session session)))
                    (setf carried (namestring sandbox))))))
     (format t "~&cell done: ~a ~a~%" (car (last (pathname-directory family))) arm)))

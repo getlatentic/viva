@@ -140,10 +140,12 @@ learn from that work                PARTIAL   skills and memory exist; nothing
 modify how it operates              BUILT     create/activate/call capability,
                                               live, proven, ledgered, and used
                                               by a real model
-retain useful modifications         MECHANISM promote exists; the POLICY does
-                                              not -- the agent must be told.
-                                              Now data, not assumption: see
-                                              the KC6 spontaneity null
+retain useful modifications         BUILT     promote + the Level 3 policy
+                                              v1 (always-reflect, bounded):
+                                              beats the measured null on both
+                                              channels; first unforced
+                                              promotion in the organism's
+                                              history (KC6 RESULTS.md)
 safely replace or undo parts        PARTIAL   components revert; the organism's
                                               own tools are not components yet
 ```

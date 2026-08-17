@@ -41,6 +41,9 @@ mandatory** (amendment 13). What remains is authoring and running.
       three's A cells, then B — whose cells the pilot already ran,
       amendment 14). AN is arm A plus a never-use policy, for pre-check 2.
       Idempotent: completed cells skip on re-invocation
+- [ ] **KC6 re-posed, now well-posed**: arms A and C both under the
+      retention policy — compiled vs text GIVEN retention. ~$1.30 off-peak,
+      ready on the user's go; the checkpoint gates it as before
 - [ ] RESULTS.md: verdict section quotes the decision rule verbatim and fills
       in only the numbers
 
@@ -70,11 +73,15 @@ what makes them cheap to author honestly and hard to rig.
 
 ## BEHIND THE GATE, in order
 
-- [ ] **Retention policy (Level 3)** — something that decides when a
-      capability deserves promotion, instead of a human saying so. First
-      artifact after the gate *whichever way it goes*: if capabilities win it
-      governs capabilities, if they lose it governs skills. Waits because
-      building it mid-experiment would change what arm A does.
+- [x] **Retention policy (Level 3) — v1 BUILT and validated live.** The
+      harness owns WHEN (always-reflect at task end, bounded), reflection
+      owns WHAT, retention through existing doors only
+      (src/workspace/reflection.lisp, docs/retention-policy.md). Beats the
+      spontaneity-null baseline on both channels: text active on f1, and on
+      f2 the door's first unforced promotion — 4 created, 3 resolved, 1
+      promoted, instrumentality thresholds passed. v2 (friction-gated
+      trigger, retention validator) needs v1 data and follows the re-posed
+      KC6.
 - [ ] **Tools as components** — the organism's own grep/edit/bash resolving
       through the door. Stronger claim, bigger blast radius. Pulled earlier
       only if pre-check 3 shows the `(lambda (input))` surface is too narrow

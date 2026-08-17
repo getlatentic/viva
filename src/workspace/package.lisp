@@ -185,4 +185,5 @@
            #:send-message #:append-custom #:navigate #:tree-lines #:close-agent
            #:delegate #:delegate-tool #:sub-agent #:agent-lane #:delegate-async
            #:ask #:converse #:resume #:refresh-resources #:harness-tool-set #:record
+           #:reflect #:*reflection-budget* #:*reflection-prompt*
            #:*agent* #:*default-model* #:*default-provider-name*))
