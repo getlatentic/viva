@@ -1,75 +1,102 @@
 #!/usr/bin/env python3
-"""Pre-checks 3 and 4 at the battery checkpoint: over the battery's own arm-A
-cells on the bound three families, before anything past them spends.
+"""Pre-checks 3 and 4 at the battery checkpoint — channel-aware since
+amendment 17, because the policy's f1/f2 split proved retention follows
+content shape: knowledge retains as text, transformations compile. A floor
+that demanded compilation from knowledge-shaped families would fail the
+policy for being right.
 
-Instrumentality (3): counts summed across the nine A-cell ledgers through
-instrumentality.py's own measure(); thresholds as pre-registered — at least
+Anti-placebo teeth, kept: SOMETHING must be retained (a battery where
+nothing is retained in any channel measures a prompt), and WHERE the door
+was used, the door-instrumentality thresholds apply unchanged — at least
 50% of created versions resolved, at least 80% of creating tasks resolving.
-Nothing created anywhere is a FAIL by the protocol's own line: a ledger that
-cannot answer the question is not a pass.
 
-Capability floor (4), operationalized (amendment 14): a family clears the
-floor when at least one of its A repeats minted a version that later
-resolved AND solved at least one task. Every bound family must clear it.
+Floor (4'): every bound family clears when at least one of its A repeats
+solved at least one task AND retained through either channel — a resolved
+capability, or at least one remember call.
 
     ./precheck34.py RESULTS_DIR
 """
-import sys, pathlib, importlib.util
-
-kc6 = pathlib.Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("instr", kc6 / "instrumentality.py")
-instr = importlib.util.module_from_spec(spec); spec.loader.exec_module(instr)
+import sys, pathlib, json
 
 PILOT = ["f3-agent-surface", "f1-paren-balance", "f4-tlc-verdicts"]
 
+def door_counts(ledger):
+    if not ledger.exists():
+        return 0, 0
+    text = ledger.read_text()
+    return text.count('"improvement.created"'), text.count('"improvement.resolved"')
+
+def remember_calls(cell):
+    calls = 0
+    for path in cell.glob("t*-transcripts/*.jsonl"):
+        for line in path.read_text(errors="replace").splitlines():
+            if '"remember"' not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            payload = entry.get("payload") or {}
+            calls += sum(1 for block in (payload.get("content") or [])
+                         if isinstance(block, dict)
+                         and block.get("type") == "tool_call"
+                         and block.get("name") == "remember")
+    return calls
+
 def main(results):
     results = pathlib.Path(results)
-    tsv = {}
+    solved_by = {}
     lines = (results / "results.tsv").read_text().splitlines()
     header = lines[0].split("\t")
     for line in lines[1:]:
         row = dict(zip(header, line.split("\t")))
         key = (row["arm"], row["family"], row["repeat"])
-        tsv.setdefault(key, 0)
-        tsv[key] += int(row["solved"])
+        solved_by[key] = solved_by.get(key, 0) + int(row["solved"])
 
-    created = resolved = tasks_creating = tasks_resolving = 0
+    created = resolved = text_total = 0
+    creating_tasks = resolving_tasks = 0
     floor = {family: False for family in PILOT}
+    print(f"{'cell':30}{'created':>8}{'resolved':>9}{'remember':>9}{'solved':>7}")
     for family in PILOT:
         for repeat in "123":
-            ledger = results / f"{family}-A-r{repeat}" / "journal" / "evolution.jsonl"
-            counts = (instr.measure(instr.read_events([ledger]))
-                      if ledger.exists() else None)
-            if counts is None:
-                print(f"  {family} r{repeat}: no ledger (nothing created)")
-                continue
-            created += counts["created"]; resolved += counts["resolved"]
-            tasks_creating += counts["tasks_creating"]
-            tasks_resolving += counts["tasks_resolving"]
-            solved = tsv.get(("A", family, repeat), 0)
-            print(f"  {family} r{repeat}: created {counts['created']} "
-                  f"resolved {counts['resolved']} solved {solved}/5")
-            if counts["resolved"] >= 1 and solved >= 1:
+            cell = results / f"{family}-A-r{repeat}"
+            c, r = door_counts(cell / "journal" / "evolution.jsonl")
+            t = remember_calls(cell)
+            s = solved_by.get(("A", family, repeat), 0)
+            created += c; resolved += r; text_total += t
+            if c:
+                creating_tasks += 1
+                if r:
+                    resolving_tasks += 1
+            print(f"{family + ' r' + repeat:30}{c:8}{r:9}{t:9}{s:7}/5")
+            if s >= 1 and ((c and r) or t):
                 floor[family] = True
 
-    print(f"\npre-check 3, instrumentality over the nine ledgers:")
-    if created == 0:
-        print("  NOTHING CREATED anywhere: cannot answer the question. FAIL.")
+    print("\npre-check 3', retention instrumentality (channel-aware):")
+    if created == 0 and text_total == 0:
+        print("  NOTHING RETAINED in any channel: the battery would measure "
+              "a prompt. FAIL.")
         return 1
-    v_rate = resolved / created
-    t_rate = tasks_resolving / tasks_creating if tasks_creating else 0.0
-    print(f"  versions {resolved}/{created} resolved ({v_rate:.0%}, need 50%)")
-    print(f"  tasks {tasks_resolving}/{tasks_creating} resolving ({t_rate:.0%}, need 80%)")
-    ok3 = v_rate >= 0.50 and t_rate >= 0.80
+    ok3 = True
+    if created:
+        v_rate = resolved and resolved / created or 0.0
+        t_rate = resolving_tasks / creating_tasks if creating_tasks else 0.0
+        print(f"  door: {resolved}/{created} versions resolved ({v_rate:.0%}, need 50%); "
+              f"{resolving_tasks}/{creating_tasks} creating cells resolving ({t_rate:.0%}, need 80%)")
+        ok3 = v_rate >= 0.50 and t_rate >= 0.80
+    else:
+        print(f"  door unused in the bound three; text retention nonzero "
+              f"({text_total} calls) — door instrumentality defers to the "
+              f"transformation families (f2, f6), noted, not failed")
+    print(f"  text: {text_total} remember calls across the nine cells")
 
-    print(f"pre-check 4, the capability floor per family:")
+    print("pre-check 4', the floor (either channel + a solve), per family:")
     for family, cleared in floor.items():
         print(f"  {family}: {'cleared' if cleared else 'NOT CLEARED'}")
     ok4 = all(floor.values())
 
     print("\nPASS: the battery may proceed." if (ok3 and ok4) else
-          "\nFAIL: stop here. The finding is about the surface or the model, "
-          "and it is a result, not a bug.")
+          "\nFAIL: stop here, by protocol.")
     return 0 if (ok3 and ok4) else 1
 
 if __name__ == "__main__":

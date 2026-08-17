@@ -17,6 +17,11 @@ results="$kc6/results"
 mkdir -p "$results"
 
 set -a; . "$root/.env"; set +a
+
+# Amendment 17: the re-posed KC6 runs every arm under the Level 3 retention
+# policy -- one bounded reflection turn after each task. Compiled vs text,
+# GIVEN retention, which is what the kill criterion always meant.
+KC6_REFLECT=1; export KC6_REFLECT
 [ "${DEEPSEEK_MODEL:-}" = "deepseek-v4-flash" ] || {
   echo "MODEL PIN FAILED: '$DEEPSEEK_MODEL' is not deepseek-v4-flash" >&2; exit 1; }
 

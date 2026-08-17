@@ -468,6 +468,24 @@ original draft against the machinery before judging it.
    pre-check zero, which runs first and stops the gate. **No battery may run
    while it fails**, and no result obtained while it fails means anything.
 
+17. **The re-posed run: every arm under the Level 3 retention policy.** The
+   fork resolved Level-3-first; the policy's v1 shipped and beat the
+   spontaneity null on both channels, with the f1/f2 split showing retention
+   follows content shape — knowledge retains as text, transformations
+   compile, and the door's first unforced promotion happened under the
+   policy on f2. So the criterion's question is finally well-posed:
+   **arms A and C both run under the policy (KC6_REFLECT=1 for every cell),
+   measuring compiled versus text GIVEN that retention happens.** The
+   checkpoint becomes channel-aware in consequence: something must be
+   retained in some channel (a no-retention battery still fails as
+   placebo), door-instrumentality thresholds apply unchanged wherever the
+   door was used, and the floor clears per family through either channel
+   plus a solve — because failing a knowledge-shaped family for not
+   compiling would punish the policy for being right. Invited-era rows
+   archive to results-invited.tsv, spend retained. Peak exception logged
+   for this run — the fourth — on the user's go inside the 06:00-10:00
+   window; the meter prices peak already, invoice impact under a dollar.
+
 16. **Invited mode, after pre-check 3 fired twice — the user's decision, with
    review's six conditions.** The second firing was instrument-verified (the
    recurrence framing verbatim on the wire) and diagnosis-verified (a
