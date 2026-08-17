@@ -82,9 +82,13 @@ what makes them cheap to author honestly and hard to rig.
       (src/workspace/reflection.lisp, docs/retention-policy.md). Beats the
       spontaneity-null baseline on both channels: text active on f1, and on
       f2 the door's first unforced promotion — 4 created, 3 resolved, 1
-      promoted, instrumentality thresholds passed. v2 (friction-gated
-      trigger, retention validator) needs v1 data and follows the re-posed
-      KC6.
+      promoted, instrumentality thresholds passed. **v2 ratified in design
+      (docs/retention-policy.md): three tiers — future-prompt skill,
+      code-carrying skill, registered tool — with graduation to the door
+      only on demonstrated reuse.** Build is the next mechanism work; it
+      repairs exactly what the kill measured (premature tier-3
+      registration) and narrows the live-image question to mid-task
+      graduation and composition.
 - [ ] **Tools as components** — the organism's own grep/edit/bash resolving
       through the door. Stronger claim, bigger blast radius. Pulled earlier
       only if pre-check 3 shows the `(lambda (input))` surface is too narrow

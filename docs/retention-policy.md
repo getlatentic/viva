@@ -83,3 +83,38 @@ but a policy's whole job is to direct retention.
 Not friction detection (v2, needs v1 data). Not auto-extraction without the
 model (the reflection turn IS the selector). Not a new authority (law 1).
 Not a scheduler — reflection rides the task's own worker and lifecycle.
+
+## v2, ratified in design: three tiers and a graduation rule
+
+KC6's arms forced text and compile to compete for the same content; the
+user's differentiation un-forces it. Retention has three forms, not two:
+
+```
+tier 1  future-prompt skill      knowledge that shapes reasoning; loads
+                                 into context; can never be code, because
+                                 its value is bending at read time
+tier 2  code-carrying skill      a deterministic snippet in a text skill;
+                                 the model pastes and runs it — no
+                                 re-derivation, model still the invoker,
+                                 durable as a file, no door
+tier 3  registered tool          the same content as tier 2 with the model
+                                 removed from execution: named, versioned,
+                                 promoted, callable — the door
+```
+
+**The router: content shape picks text-vs-code (tier 1 vs 2); use count
+picks skill-vs-tool (tier 2 vs 3).** A tier-2 snippet graduates to tier 3
+only on demonstrated reuse — the ledger already counts resolutions, so the
+graduation signal exists. This is the direct repair of what KC6 measured:
+the kill punished premature tier-3 registration (a big fixed install cost,
+32% inflated by language fumbling, amortized over four uses); under v2 that
+cost is paid only after the amortization inequality is evidenced, never
+speculatively.
+
+Consequence for the reopened architecture question, stated exactly: tiers
+1-2 need only files. Tier 3 needs registration, invocation, and lifecycle —
+not necessarily an in-process live compile. The live image's residual,
+still-untested claim narrows to mid-task graduation and composition
+(capabilities calling capabilities), and any future probe of it should be
+designed for that regime: high use-counts, expensive re-derivation, not
+five cheap tasks.
