@@ -228,3 +228,58 @@ amendment 13's logged escape, ~$0.09 total. Meter: $1.66 of $7.00.
 retention policy — compiled versus text, GIVEN that retention happens —
 which is what the kill criterion always meant. Ready to run on the user's
 go: ~$1.30, off-peak.
+
+## VERDICT
+
+The decision rule, quoted verbatim from the protocol, numbers filled in:
+
+> **Keep the architecture** if A beats C at that effect size with all six
+> families agreeing, and A passes the arm-B control.
+
+A beat C in **0 of 6** families. Not split — unanimous the other way:
+
+```
+family                 A tok/solved  C tok/solved   A vs C     A helps?
+f1-paren-balance             29,967        24,323    -23.2%      NO
+f2-usage-totals              66,083        23,728   -178.5%      NO
+f3-agent-surface             69,725        37,757    -84.7%      NO
+f4-tlc-verdicts              44,161        25,304    -74.5%      NO
+f5-symbol-callers            73,953        44,241    -67.2%      NO
+f6-version-prose             45,121        16,326   -176.4%      NO
+
+solve rates: 100% in every arm, every family, every position
+overall: A 54,835 tokens/solved · C 28,613 — the door costs 1.9x
+arm-B control: FAIL (f3: A worse than B by 51.2%, past the effect size)
+pre-check 2, 4th reading: FAIL again (10.7% token gap; tax direction stable)
+```
+
+> **Kill criterion six fires** if A fails to beat C after the full battery.
+> The honest conclusion is then that external skills capture the value
+> without the live image, and the roadmap's Elixir/external question reopens
+> with data instead of taste.
+
+**It fires.** The ambiguous zone does not apply — that clause requires all
+six agreeing that A helps with the effect under threshold, and this is the
+opposite: unanimous that A hurts. The split-decision clause speaks here:
+"it is the answer: an effect that inconsistent is not one to build an
+architecture on" — and a unanimous negative is stronger than a split.
+
+This was not a placebo null. The door was genuinely used: 47 capabilities
+created and 10 promoted across the battery's A cells, 8 of 9
+transformation-family cells minting, instrumentality thresholds passed at
+the checkpoint. Given retention happens, compiled capability cost roughly
+twice what text cost and bought nothing a saturated battery could show.
+
+**Scope, stated exactly.** One model (deepseek-v4-flash), six cheap families
+(5-20s solves, saturated everywhere — the risk pre-named in amendment 16
+condition 5), a five-task horizon, n = 6. Within that scope the verdict is
+clean and pre-registered. Outside it, the finding licenses reopening the
+architecture question, not burning the substrate.
+
+**What survives the kill, on this run's own evidence:** the Level 3
+retention policy and the text channel — arm C under the policy was the
+cheapest configuration in the battery. What loses its justification: the
+live-image compile path as the retention mechanism, per the criterion's own
+sentence. The Elixir/external question reopens with data.
+
+Total spend, all eras, all firings, verdict included: **$3.50 of $7.00.**

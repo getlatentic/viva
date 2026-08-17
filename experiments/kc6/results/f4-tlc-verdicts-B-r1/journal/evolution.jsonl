@@ -1,0 +1,3 @@
+{"event":"improvement.door","data":{"door":"closed"}}
+{"event":"improvement.created","data":{"version":1,"component":"tlc-verdict"}}
+{"event":"improvement.door-refused","data":{"version":1,"verb":"activate"}}

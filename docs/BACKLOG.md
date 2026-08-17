@@ -41,11 +41,14 @@ mandatory** (amendment 13). What remains is authoring and running.
       three's A cells, then B — whose cells the pilot already ran,
       amendment 14). AN is arm A plus a never-use policy, for pre-check 2.
       Idempotent: completed cells skip on re-invocation
-- [ ] **KC6 re-posed, now well-posed**: arms A and C both under the
-      retention policy — compiled vs text GIVEN retention. ~$1.30 off-peak,
-      ready on the user's go; the checkpoint gates it as before
-- [ ] RESULTS.md: verdict section quotes the decision rule verbatim and fills
-      in only the numbers
+- [x] **KC6 re-posed, run to completion**: checkpoint passed on the first
+      honest attempt (door 100% creating-cells-resolving, floor cleared per
+      family), 54 cells, 270 task-runs, $3.50 total
+- [x] RESULTS.md verdict, decision rule verbatim: **KILL CRITERION SIX
+      FIRED** — 0/6 families favored A, door genuinely used (47 minted, 10
+      promoted) and 1.9x the cost of text; arm-B control failed; scope
+      stated. The Elixir/external question reopens with data — a
+      manifesto-rank decision, the user's
 
 ### The six families
 

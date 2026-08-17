@@ -1,0 +1,8 @@
+{"event":"improvement.door","data":{"door":"open"}}
+{"event":"improvement.created","data":{"version":1,"component":"probe"}}
+{"event":"improvement.created","data":{"version":2,"component":"json-probe"}}
+{"event":"improvement.activated","data":{"version":2,"task":"agent-1"}}
+{"event":"improvement.resolved","data":{"version":2,"component":"json-probe","task":"agent-1"}}
+{"event":"improvement.created","data":{"version":3,"component":"jzon-probe"}}
+{"event":"improvement.activated","data":{"version":3,"task":"agent-1"}}
+{"event":"improvement.resolved","data":{"version":3,"component":"jzon-probe","task":"agent-1"}}

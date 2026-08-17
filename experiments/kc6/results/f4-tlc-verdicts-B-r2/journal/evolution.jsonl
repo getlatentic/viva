@@ -1,0 +1,10 @@
+{"event":"improvement.door","data":{"door":"closed"}}
+{"event":"improvement.created","data":{"version":1,"component":"tlc-verdict"}}
+{"event":"improvement.door-refused","data":{"version":1,"verb":"activate"}}
+{"event":"improvement.created","data":{"version":2,"component":"tlc-counters"}}
+{"event":"improvement.door-refused","data":{"version":2,"verb":"activate"}}
+{"event":"improvement.door-refused","data":{"version":2,"verb":"promote"}}
+{"event":"improvement.created","data":{"version":3,"component":"tlc-verdict"}}
+{"event":"improvement.door-refused","data":{"version":3,"verb":"activate"}}
+{"event":"improvement.created","data":{"version":4,"component":"tlc-verdict"}}
+{"event":"improvement.door-refused","data":{"version":4,"verb":"activate"}}

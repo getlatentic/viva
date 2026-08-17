@@ -1,0 +1,14 @@
+{"event":"improvement.door","data":{"door":"open"}}
+{"event":"improvement.created","data":{"version":1,"component":"tlc-verdict"}}
+{"event":"improvement.activated","data":{"version":1,"task":"agent-1"}}
+{"event":"improvement.resolved","data":{"version":1,"component":"tlc-verdict","task":"agent-1"}}
+{"event":"improvement.promoted","data":{"version":1}}
+{"event":"improvement.resolved","data":{"version":1,"component":"tlc-verdict","task":"agent-2"}}
+{"event":"improvement.created","data":{"version":2,"component":"tlc-counters"}}
+{"event":"improvement.activated","data":{"version":2,"task":"agent-3"}}
+{"event":"improvement.resolved","data":{"version":2,"component":"tlc-counters","task":"agent-3"}}
+{"event":"improvement.created","data":{"version":3,"component":"tlc-counters"}}
+{"event":"improvement.activated","data":{"version":3,"task":"agent-3"}}
+{"event":"improvement.resolved","data":{"version":3,"component":"tlc-counters","task":"agent-3"}}
+{"event":"improvement.promoted","data":{"version":3}}
+{"event":"improvement.resolved","data":{"version":1,"component":"tlc-verdict","task":"agent-4"}}

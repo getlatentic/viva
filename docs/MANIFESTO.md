@@ -69,9 +69,11 @@ criteria fire.
 It is not unconditional. Six kill criteria stand, and the decisive one is
 number six: if live self-modification produces no measurable gain over
 external skills and tools, SBCL loses its main justification and the
-architecture question reopens. The experiment for that is pre-registered,
-re-scoped to a build decision rather than a publication, and is the next
-gate.
+architecture question reopens. **The experiment ran, pre-registered, and the
+criterion FIRED**: 0 of 6 families favored the live image, with the door
+genuinely used — 47 capabilities minted, 10 promoted — and costing 1.9x what
+text retention cost (experiments/kc6/RESULTS.md, verdict section). The
+architecture question is reopened by the organism's own rule.
 
 ## The organism
 
