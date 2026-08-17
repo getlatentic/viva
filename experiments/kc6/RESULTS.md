@@ -143,3 +143,46 @@ investment rate joins as a secondary metric. Risk named before running:
 cheap tasks compress the absolute effect; the pre-registered answer to
 under-threshold agreement is the ambiguous-zone extension, never a threshold
 move.
+
+## Checkpoint three, invited — the channels finally split, and the run stops
+
+Pre-check 3 fired a third time, and condition 3 of amendment 16 makes this a
+hard stop. Instrument verified again: the invitation is verbatim in every
+first user message. Total spend at stop: $1.58 of $7.00.
+
+The diagnostic that changes the finding's identity — per-arm investment under
+invitation (`investment.py`, 45 task-runs per arm):
+
+```
+arm A   created 0  promoted 0   remember calls 1   memory lines 2
+arm AN  created 0  promoted 0   remember calls 0   memory lines 0
+arm B   created 0  promoted 0   remember calls 2   memory lines 4
+arm C   created 0  promoted 0   remember calls 1   memory lines 2
+```
+
+**The text channel moved — barely, but from exact zero to first life, in
+three arms. The compile channel moved nowhere, including in arm A, the one
+arm holding both channels.** Invited, told the work recurs, holding compile
+and text in the same hands, the model reached for text once and for the door
+never.
+
+Three readings, in descending order of what the evidence supports:
+
+1. **Surface**: with both channels available and investment invited, revealed
+   preference went text-over-compile 1-0. The backlog's tools-as-components
+   trigger condition — "the surface is too narrow to be used at all" — is
+   now formally met for the first time. One datum wide.
+2. **Economics**: 1-2 investments per 45 runs is epsilon; on 5-20 second
+   tasks even text barely rationalizes. The harder-families/Level-3 path
+   addresses this and is already filed.
+3. **Invitation strength**: the ratified sentence ran faithfully, but the
+   adaptation precedent's NUDGED lived in the SYSTEM prompt with sharper
+   category wording ("anything you had to work out"); this invitation rode
+   the user message. A stronger, precedent-exact probe exists below the
+   compliance ceiling. Caveat, not excuse.
+
+The stop is pre-registered and the next lever is the user's: pull
+tools-as-components (its trigger is now met), or take the Level 3 retention
+policy as the next artifact and re-pose KC6 against it (harder families are
+already filed as its evaluation), or spend one more ~$1.30 on a
+NUDGED-exact probe before deciding.
