@@ -117,3 +117,29 @@ question to "when invited to retain, does compiled capability beat text"),
 or harder families where direct solving is expensive enough that investment
 is rational within five tasks, or stop here and take the finding back to
 design.
+
+## The spontaneity null — a standing result, condition 2 of amendment 16
+
+**This model does not spontaneously invest in retention on tasks it solves
+directly in 5-20 seconds: 90 task-runs, two framings (bare, and with
+recurrence named), zero investment in every mechanism — no capability
+minted, no note remembered, no MEMORY.md written, in any arm.** The
+system-prompt audit is part of the record: every affordance was described to
+the model (remember's description even names cross-task persistence), and
+the only behavioral instruction was "finish what you were asked."
+
+This is the baseline the Level 3 retention policy must beat, measured before
+that policy exists. The roadmap's "promote exists; the POLICY does not" is
+now data, not assumption.
+
+## Amendment 16: invited mode
+
+The invitation, identical in every arm, category never mechanism: "Durable
+improvements you make carry into the later tasks." The measured question is
+relabeled honestly: **when invited to retain, does compiled capability beat
+external text?** The kill inference survives the relabel — a perfect policy
+deciding WHEN to retain cannot make a worthless WHAT worthwhile. Per-arm
+investment rate joins as a secondary metric. Risk named before running:
+cheap tasks compress the absolute effect; the pre-registered answer to
+under-threshold agreement is the ambiguous-zone extension, never a threshold
+move.

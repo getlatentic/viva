@@ -133,12 +133,17 @@ battery with hidden tests is that same drift wearing a lab coat.**
 ```
 do normal work                      BUILT     Pi parity, level-1.md
 learn from that work                PARTIAL   skills and memory exist; nothing
-                                              decides when to write one
+                                              decides when to write one --
+                                              measured: 90 runs, two framings,
+                                              zero spontaneous investment
+                                              (experiments/kc6/RESULTS.md)
 modify how it operates              BUILT     create/activate/call capability,
                                               live, proven, ledgered, and used
                                               by a real model
 retain useful modifications         MECHANISM promote exists; the POLICY does
-                                              not -- the agent must be told
+                                              not -- the agent must be told.
+                                              Now data, not assumption: see
+                                              the KC6 spontaneity null
 safely replace or undo parts        PARTIAL   components revert; the organism's
                                               own tools are not components yet
 ```

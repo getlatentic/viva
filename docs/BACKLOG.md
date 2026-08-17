@@ -95,6 +95,14 @@ what makes them cheap to author honestly and hard to rig.
 - [ ] **Learning policy** — the mission's second clause is PARTIAL: skills
       and memory exist, nothing decides when to write one. Same shape as the
       retention policy, one level down; likely the same artifact family.
+- [ ] **Harder families — the Level 3 retention-policy evaluation**
+      (re-filed here by amendment 16, condition 6): task families where
+      direct solving is expensive enough that investment is rational within
+      five tasks, measuring SPONTANEOUS retention against the KC6
+      spontaneity-null baseline. Triggered only if invited mode shows the
+      mechanism earns a policy. Not a KC6 confirmatory — a policy-less
+      model may decline expensive tasks too, and tuning cost until
+      investment appears would author the answer key by another route.
 
 ## ARMED — tripwires, not work items until they fire
 

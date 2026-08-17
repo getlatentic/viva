@@ -468,6 +468,49 @@ original draft against the machinery before judging it.
    pre-check zero, which runs first and stops the gate. **No battery may run
    while it fails**, and no result obtained while it fails means anything.
 
+16. **Invited mode, after pre-check 3 fired twice — the user's decision, with
+   review's six conditions.** The second firing was instrument-verified (the
+   recurrence framing verbatim on the wire) and diagnosis-verified (a
+   system-prompt audit: every affordance described, no behavior beyond
+   "finish what you were asked" invited). The reframe that settles it: the
+   roadmap already declared "promote exists; the POLICY does not — the agent
+   must be told." Spontaneous investment IS the missing Level 3 retention
+   policy, so the experiment was accidentally measuring a known-missing
+   component, and pre-check 3 refused, twice, to let 225 runs measure the
+   wrong thing. The invitation is a policy oracle standing in for Level 3,
+   and the kill inference survives the relabel: a perfect policy deciding
+   WHEN to retain cannot make a worthless WHAT worthwhile, so if invited-A
+   cannot beat invited-C, no future policy rescues the mechanism.
+
+   The six conditions, binding: (1) the invitation is one sentence,
+   identical across arms, category never mechanism — "Durable improvements
+   you make carry into the later tasks." — appended to the recurrence
+   framing; the asymmetry that A may choose compile or text while C may
+   choose only text is the question, not a flaw. (2) The spontaneity null
+   is a standing result, not a discard: 90 runs, two framings, zero
+   investment in any mechanism — the baseline the Level 3 policy must beat,
+   recorded in RESULTS.md and cited in the roadmap. (3) Pre-check 3 re-runs
+   under invitation over the bound three's A cells before the battery
+   proceeds past them; a third firing stops everything again, and the
+   finding is then about surface or tasks. (4) Per-arm investment rate
+   becomes a secondary metric (`runner/investment.py`): door events from
+   ledgers, remember calls and MEMORY.md growth from transcripts, per cell.
+   (5) Risk, named now: tasks this cheap compress the absolute effect, so
+   under-threshold agreement is live, and the pre-registered answer is the
+   ambiguous-zone extension, never a threshold move — while the arm-B
+   anchor's 17k-vs-57k shows the cost side can still separate; a risk, not
+   a prediction. (6) Harder families are re-filed as the Level 3
+   retention-policy evaluation, BEHIND THE GATE, triggered only if invited
+   mode shows the mechanism earns a policy — tuning task cost until
+   investment becomes rational would author the answer key by another
+   route, and a policy-less model may decline expensive tasks too.
+
+   Framed-run rows archive to results-framing1.tsv (spend retained); all
+   arms re-run invited. Peak-hours exception invoked for this run under
+   amendment 13's escape — deliberate, logged here: the user directed
+   completion tonight; the meter already prices at peak so cap tracking is
+   unchanged; the invoice-side cost of the exception is under a dollar.
+
 15. **The recurrence framing, after pre-check 3 fired.** The checkpoint
    stopped the battery at $0.58: nine arm-A cells, 45 task-runs, zero door
    entries — and the diagnostic that decides the meaning: zero `remember`
