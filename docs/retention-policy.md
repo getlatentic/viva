@@ -111,6 +111,16 @@ the kill punished premature tier-3 registration (a big fixed install cost,
 cost is paid only after the amortization inequality is evidenced, never
 speculatively.
 
+**Tier 3 is language-free, ratified.** The door as built coupled
+"registered tool" to "compiled into the SBCL image", which forced the
+organism's implementation language on the model — the entire 32% fluency
+tax traces to that coupling. v2's registered tools are scripts in whatever
+language the model writes best, plus a manifest, in a registry the harness
+loads: named, versioned, promoted, model-out-of-the-loop, no live compile
+required. The evolution table's lifecycle laws (activate/promote/revert,
+pins, lineage) apply to script-tools unchanged — the proofs were about the
+LIFECYCLE, never about Lisp.
+
 Consequence for the reopened architecture question, stated exactly: tiers
 1-2 need only files. Tier 3 needs registration, invocation, and lifecycle —
 not necessarily an in-process live compile. The live image's residual,
