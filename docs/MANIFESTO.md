@@ -41,8 +41,10 @@ Four capability levels, and where the spine's tags sit on them:
 
 ```
 1  GENERAL AGENT HARNESS     built    phase1-substrate, kernel-v1
-2  LIVE SELF-MODIFICATION    built    tasktree-v1, evolution-v1,
-                                      the capability door
+2  LIVE SELF-MODIFICATION    built,   tasktree-v1, evolution-v1, the
+                             parked   door — measured by KC6, killed for
+                                      retention, future work by user
+                                      ratification; retention goes external
 3  SELF-IMPROVEMENT          open     the retention policy: something
                                       that decides what is worth keeping
 4  EVOLUTIONARY RUNTIME      later    everything a component, replaceable,
@@ -85,6 +87,15 @@ Detach and the organism continues; reattach tomorrow and the history is
 there, journaled and replayable with exactness that is proven, not assumed.
 It is an operating system for work in the precise sense that turning it off
 is an event, not a routine.
+
+**The process is the body; everything retained is outside it — ratified
+after kill criterion six.** The long-lived process carries the work in
+motion: sessions, the task tree, streams, policies, the single-writer
+authorities. The organism's accumulated self lives in files the process
+rehydrates from: skills as markdown, memory, AGENTS.md, the journal, and
+tools as scripts or MCP servers in any language. Kill the process and the
+work in flight is lost; the identity is not. KC6 measured the alternative —
+retention trapped in the image — and it lost unanimously.
 
 The organism is placeless; work happens at named sites. **This is ratified
 design, not yet mechanism**: today a task inherits one working root whole,

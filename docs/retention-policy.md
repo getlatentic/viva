@@ -115,9 +115,11 @@ speculatively.
 "registered tool" to "compiled into the SBCL image", which forced the
 organism's implementation language on the model — the entire 32% fluency
 tax traces to that coupling. v2's registered tools are scripts in whatever
-language the model writes best, plus a manifest, in a registry the harness
-loads: named, versioned, promoted, model-out-of-the-loop, no live compile
-required. The evolution table's lifecycle laws (activate/promote/revert,
+language the model writes best — bash, python, lisp — plus a manifest, in a
+registry the harness loads; **an MCP server is the same artifact in the
+industry's manifest format**, making a tool the organism writes consumable
+by any client, not only itself. Named, versioned, promoted,
+model-out-of-the-loop, no live compile required. The evolution table's lifecycle laws (activate/promote/revert,
 pins, lineage) apply to script-tools unchanged — the proofs were about the
 LIFECYCLE, never about Lisp.
 

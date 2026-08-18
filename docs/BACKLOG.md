@@ -89,10 +89,13 @@ what makes them cheap to author honestly and hard to rig.
       repairs exactly what the kill measured (premature tier-3
       registration) and narrows the live-image question to mid-task
       graduation and composition.
-- [ ] **Tools as components** — the organism's own grep/edit/bash resolving
-      through the door. Stronger claim, bigger blast radius. Pulled earlier
-      only if pre-check 3 shows the `(lambda (input))` surface is too narrow
-      to be used at all.
+- [ ] **Retention v2 build — the next mechanism work.** The three-tier
+      router in the reflection prompt; tier-2 code-skills as the default
+      code retention; tier 3 as EXTERNAL script tools and MCP servers in
+      any language (bash/python/lisp), registry on disk, lifecycle laws
+      carried over; graduation wired to ledger-counted reuse. Plus the
+      externalization pass: skills as markdown (exists), memory files
+      (exists), AGENTS.md read as an instruction source alongside them.
 - [ ] **Attachments** — the placeless-organism contract: explicit named
       working-set lists, no ambient inheritance, grants dying with the task,
       siblings isolated. Ratified as design in the manifesto; not yet
@@ -117,6 +120,21 @@ what makes them cheap to author honestly and hard to rig.
       mechanism earns a policy. Not a KC6 confirmatory — a policy-less
       model may decline expensive tasks too, and tuning cost until
       investment appears would author the answer key by another route.
+
+## FUTURE WORK — parked by the kill, user-ratified
+
+- **Self-editing code / live in-image compile** — the door as retention
+  lost 0/6 with the mechanism genuinely used; its narrowed residual claim
+  (mid-task graduation, tool composition) waits for graduation data to make
+  tier 3 load-bearing. The proven lifecycle survives and governs external
+  tools instead.
+- **Tools as components** — subsumed: with tier 3 external, the organism's
+  own tools becoming versioned artifacts is the same registry, not a
+  special door.
+- **Multiplexer frontend** — a Superlogical-shaped surface over vivarium's
+  typed streams, steering, and retention: the behaviors a PTY multiplexer
+  cannot offer. Product-rank; revisit when the ecosystem ships its session
+  layer.
 
 ## ARMED — tripwires, not work items until they fire
 
