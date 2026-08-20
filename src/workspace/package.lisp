@@ -81,7 +81,7 @@
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:env #:vivarium.env))
-  (:export #:trust #:trusted-p #:trust-file #:trusted-roots #:permitted-p #:canonical #:*trust-file*
+  (:export #:trust #:trusted-p #:trust-file #:trusted-roots #:permitted-p #:canonical #:within-p #:*trust-file*
            #:machine-directory-p #:home-directory))
 
 (defpackage #:vivarium.registry
@@ -206,7 +206,7 @@
                     (#:models #:vivarium.models)
                     (#:template #:vivarium.template))
   (:export #:workspace-agent #:make-workspace-agent #:agent-environment
-           #:registry-directories #:agent-registry-warnings #:agent-skills #:agent-templates #:agent-session #:agent-extensions #:agent-listener
+           #:registry-directories #:skill-directories #:agent-registry-warnings #:agent-skills #:agent-templates #:agent-session #:agent-extensions #:agent-listener
            #:agent-request-limit #:agent-requests #:agent-context #:agent-aborting
            #:agent-gate #:suspend-agent #:resume-agent #:agent-suspended-p #:cancel-agent
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
@@ -217,3 +217,18 @@
            #:ask #:converse #:resume #:refresh-resources #:harness-tool-set #:record
            #:reflect #:*reflection-budget* #:*reflection-prompt*
            #:*agent* #:*default-model* #:*default-provider-name*))
+
+;; Last: its nicknames name packages defined above it.
+(defpackage #:vivarium.germline
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:env #:vivarium.env)
+                    (#:trust #:vivarium.trust)
+                    (#:skill #:vivarium.skill)
+                    (#:memory #:vivarium.memory)
+                    (#:registry #:vivarium.registry)
+                    (#:harness #:vivarium.harness))
+  (:export #:inspect-directory
+           #:view #:view-cwd #:view-notes #:view-skills #:view-tools
+           #:view-warnings #:view-trusted-p #:view-refused
+           #:item #:item-name #:item-detail #:item-scope #:item-path))

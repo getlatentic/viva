@@ -168,3 +168,43 @@ DOES rather than about what it says."
     (true (search "describe-existing" source))
     (true (search "not this repository's launcher" source)
           "overwriting a stranger's binary is not an installer's decision")))
+
+;;; Seeing what a project's agent knows
+
+(define-test "a refused tool is reported as refused, never as absent"
+  ;; LOAD-ENTRIES returns nothing for an untrusted project, so `no tools here`
+  ;; and `tools here that cannot run` produced identical output -- opposite
+  ;; situations reading the same. The germline reads the disk separately so it
+  ;; can tell them apart.
+  (let ((trust:*trust-file* (format nil "/tmp/vivarium-germline-~36r.sexp"
+                                    (random (expt 2 48) (make-random-state t))))
+        (root (format nil "/tmp/vivarium-germline-~36r/" (random (expt 2 48) (make-random-state t)))))
+    (unwind-protect
+         (let ((tools (merge-pathnames ".vivarium/tools/greet/" root)))
+           (ensure-directories-exist tools)
+           (with-open-file (out (merge-pathnames "tool.json" tools) :direction :output)
+             (write-string "{\"name\":\"greet\",\"description\":\"hi\",\"exec\":[\"true\"]}" out))
+           ;; Untrusted: present, refused, and NOT listed as available.
+           (let ((view (germline:inspect-directory (namestring root))))
+             (false (germline:view-trusted-p view))
+             (is = 0 (length (germline:view-tools view)))
+             (is = 1 (length (germline:view-refused view)))
+             (is string= "greet" (germline:item-name (first (germline:view-refused view)))))
+           ;; Trusted: the same tool, now reachable and nothing refused.
+           (trust:trust (env:make-local-environment :cwd (namestring root)) (namestring root))
+           (let ((view (germline:inspect-directory (namestring root))))
+             (true (germline:view-trusted-p view))
+             (is = 1 (length (germline:view-tools view)))
+             (is = 0 (length (germline:view-refused view)))))
+      (uiop:delete-directory-tree (pathname root) :validate (constantly t)
+                                                  :if-does-not-exist :ignore)
+      (uiop:delete-file-if-exists (trust:trust-file)))))
+
+(define-test "the germline reports what the agent wrote, not what it was told"
+  ;; MEMORY:CONTEXT-FILES also gathers the instruction files a PERSON wrote in
+  ;; this directory and its ancestors. Counting those as retention would credit
+  ;; the organism with everything it was handed.
+  (let ((source (repository-file "src/workspace/germline.lisp")))
+    (true (search "memory-files" source))
+    (false (search "(memory:context-files" source)
+           "notes must come from the agent's own memory files only")))

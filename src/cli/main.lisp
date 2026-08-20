@@ -15,6 +15,8 @@
               "One prompt, one answer, no session.")
         (list "mcp" #'command-mcp
               "Serve the tool registry over MCP on stdio, for any client.")
+        (list "learned" #'command-learned
+              "What this project's agent has retained: notes, skills, tools.")
         (list "install" #'command-install
               "Link vivarium into a directory on your PATH.")
         (list "trust" #'command-trust
@@ -71,6 +73,8 @@ ORDINARY WORK
       --retain                after the task, decide what should outlive it
       --session-dir DIR       record the transcript, for counting the work done
       --extension DIR         load extensions from DIR as well
+  learned [DIR]               what the agent has retained here: notes, skills
+                              and tools, and where each came from
   install [--prefix DIR]      link `vivarium` onto your PATH, so the commands
                               above are the ones you actually type
   trust [DIR]                 allow DIR's own extensions and tools to run
