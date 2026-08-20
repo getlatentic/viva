@@ -482,15 +482,39 @@ is how the suite and the soak use it."
         ((launch-daemon) (format t "~&listening on ~a~%" (daemon:socket-path)) 0)
         (t (format t "~&could not start a daemon~%") 1)))
 
+(defun live-session-here (stream cwd)
+  "A session already running in the organism for CWD, or NIL.
+
+Opening a folder that already has a live session and making a SECOND one is
+how you end up with four sessions on one directory, none of which knows what
+the others did. Rejoining is what a person means by opening their project."
+  (let ((reply (daemon:request stream "type" "session.list")))
+    (loop for each across (or (gethash "sessions" reply) #())
+          when (equal (string-right-trim "/" (or (gethash "label" each) ""))
+                      (string-right-trim "/" cwd))
+            return (gethash "id" each))))
+
+(defun report-earlier-sessions (cwd)
+  "Say what this folder has behind it, the way an editor reopening a workspace
+does. Recorded sessions are history on disk, not cells in the organism, so
+this only mentions them -- continuing one is `--resume`."
+  (a:when-let ((found (ignore-errors (session:list-sessions :cwd cwd :limit 3))))
+    (when found
+      (format t "~&~d earlier session~:p here. `vivarium sessions` lists them, ~
+`--resume` continues one.~%" (length found)))))
+
 (defun command-attach (parsed)
   "Talk to a session inside the organism, and leave it running afterwards."
   (unless (ensure-daemon)
     (format t "~&could not start a daemon~%")
     (return-from command-attach 1))
   (let ((cwd (namestring (truename (or (flag parsed "cwd") ".")))))
+    (setf *option-model* (option parsed "model"))
     (daemon:with-connection (stream)
       (read-line stream nil nil)
-      (let* ((wanted (first (args-positional parsed)))
+      (let* ((wanted (or (first (args-positional parsed))
+                         (unless (option-true-p parsed "new")
+                           (live-session-here stream cwd))))
              (reply (if wanted
                         (daemon:request stream "type" "session.attach" "session" wanted
                                         "since" (flag-integer parsed "since" 0))
@@ -504,11 +528,16 @@ is how the suite and the soak use it."
           (format t "~&~a~%" (gethash "error" reply))
           (return-from command-attach 1))
         (let ((id (gethash "id" (gethash "session" reply))))
-          (format t "~&session ~a  (closing this leaves it running)~%~%" id)
-          (format t "/help lists what this session answers.~%~%")
+          (format t "~&session ~a~:[~;  (rejoined)~]  (closing this leaves it running)~%"
+                  id (and wanted (not (first (args-positional parsed)))))
+          (report-earlier-sessions cwd)
+          (format t "~%/help lists what this session answers.~%~%")
           (loop for line = (progn (format t "› ") (finish-output) (read-line *standard-input* nil nil))
                 while line
                 for trimmed = (string-trim " " line)
+                ;; A verb may have moved this client; the loop follows it.
+                do (a:when-let ((moved *attached-to*))
+                     (setf id moved *attached-to* nil))
                 do (cond ((or (string= "/detach" trimmed) (string= "/exit" trimmed))
                           (format t "~&detached; ~a is still running~%" id)
                           (return))

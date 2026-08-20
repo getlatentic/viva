@@ -130,9 +130,17 @@ vivarium daemon status       # what is running, and what it is working on
 
 `/detach` leaves the session running; so does closing the terminal.
 
+Opening a folder that already has a live session **rejoins** it rather than
+starting a second one — `--new` forces a fresh one. Earlier sessions for that
+folder are named on the way in; `vivarium sessions` lists them.
+
+Sessions work like tabs. `/sessions` lists every one in the organism and marks
+where you are, `/switch <id>` moves, `/new [dir]` starts another and goes to
+it. The one you leave keeps working — that is the whole point of the daemon.
+
 Inside an attached session, `/help` lists what it answers: `/status`,
-`/memory`, `/skills`, `/tools`, `/learned`, `/retain`, `/sessions`, `/tasks`,
-`/cancel`, `/suspend`, `/resume`. A slash command it does not have is refused
+`/memory`, `/skills`, `/tools`, `/learned`, `/retain`, `/sessions`, `/switch`,
+`/new`, `/tasks`, `/cancel`, `/suspend`, `/resume`. A slash command it does not have is refused
 and named, never sent to the model as a prompt. `/retain` is the retention
 policy on demand — one turn in which it decides what the work taught it, and
 tells you, including when the answer is "nothing", which is usually correct.

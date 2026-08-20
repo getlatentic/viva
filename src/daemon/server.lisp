@@ -276,6 +276,12 @@ falls in the gap and none arrives twice."
          (actor:subscribe-since cell (client-key client) from
                                 (client-outbound client)))))
 
+(defun unwatch (client cell)
+  "Stop sending CELL's events to CLIENT."
+  (actor:unsubscribe cell (client-key client))
+  (setf (client-watching client)
+        (remove (actor:cell-id cell) (client-watching client) :test #'string=)))
+
 (defun unwatch-all (client)
   (dolist (id (client-watching client))
     (a:when-let ((cell (actor:find-cell id)))
@@ -350,6 +356,17 @@ falls in the gap and none arrives twice."
              (progn (watch client cell :from (or (gethash "since" command) 0))
                     (ok "session" (cell-json cell)))
              (no "No such session.")))
+
+        ;; Stop sending one session's events to this client. WATCH adds a
+        ;; subscription rather than replacing one, so a client that attached to
+        ;; a second session would receive both streams interleaved -- which is
+        ;; what switching sessions would have done. Additive rather than
+        ;; changing what attach means, so a client that never switches is
+        ;; unaffected.
+        ((string= "session.detach" type)
+         (if (null cell)
+             (no "No such session.")
+             (progn (unwatch client cell) (ok))))
 
         ((string= "session.stop" type)
          (if cell (progn (actor:shutdown cell) (ok)) (no "No such session.")))

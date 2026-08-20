@@ -371,3 +371,30 @@ DOES rather than about what it says."
           (repo (search "$root/.env" launcher)))
       (true (and machine repo (< machine repo))
             "the repository's .env must be sourced after the machine's"))))
+
+;;; Sessions as tabs
+
+(define-test "switching detaches before it attaches"
+  ;; Subscriptions ADD rather than replace, so attaching to a second session
+  ;; without detaching leaves the client receiving both streams interleaved --
+  ;; exactly what a switch would otherwise produce.
+  (let ((source (repository-file "src/cli/attached.lisp")))
+    (let ((attach (search "\"session.attach\"" source))
+          (detach (search "\"session.detach\"" source)))
+      (true (and attach detach) "switching needs both halves")
+      (true (< attach detach)
+            "attach first, so a switch to a session that does not exist leaves ~
+you where you were rather than nowhere"))))
+
+(define-test "opening a folder rejoins its live session instead of duplicating it"
+  ;; Four sessions on one directory, none knowing what the others did, is what
+  ;; `always start a new one` produces.
+  (let ((source (repository-file "src/cli/commands.lisp")))
+    (true (search "live-session-here" source))
+    (true (search "(option-true-p parsed \"new\")" source)
+          "--new must still force a fresh session")))
+
+(define-test "the daemon can stop watching one session"
+  (let ((source (repository-file "src/daemon/server.lisp")))
+    (true (search "\"session.detach\"" source))
+    (true (search "(defun unwatch (client cell)" source))))

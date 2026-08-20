@@ -52,7 +52,7 @@ and its answer went nowhere while quietly desynchronising the stream."
   (let ((items (gethash key reply)))
     (format t "~&~a~@[  (~d)~]~%" label (and (plusp (length items)) (length items)))
     (if (zerop (length items))
-        (format t "  none~%")
+        (format t "~&  none~%")
         (loop for item across items
               do (format t "  ~a ~a~24t~a~%"
                          (if (equal "machine" (gethash "scope" item)) "~" " ")
@@ -88,7 +88,7 @@ vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
     :handler (lambda (stream id argument)
                (declare (ignore stream id argument))
                (dolist (verb +attached-verbs+)
-                 (format t "  /~a~@[ ~a~]~22t~a~%" (attached-name verb)
+                 (format t "~&  /~a~@[ ~a~]~22t~a~%" (attached-name verb)
                          (when (plusp (length (attached-argument verb)))
                            (attached-argument verb))
                          (attached-blurb verb)))
@@ -130,7 +130,7 @@ vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
                        ;; -- including "nothing", which is the policy's most
                        ;; common correct answer and looks identical to a broken
                        ;; feature when it is not shown.
-                       (format t "  deciding what to keep…~%")
+                       (format t "~&  deciding what to keep…~%")
                        (stream-turn stream))))))
    (make-attached-verb
     :name "sessions" :blurb "every session in the organism"
@@ -138,9 +138,31 @@ vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
                (declare (ignore argument))
                (let ((reply (daemon:request stream "type" "session.list")))
                  (loop for each across (or (gethash "sessions" reply) #())
-                       do (format t "  ~a~10t~a~22t~a~%"
+                       do (format t "~&  ~a ~a~10t~a~22t~a~%"
+                                  ;; Which one you are IN. A list of sessions
+                                  ;; that does not say where you are standing
+                                  ;; is a list you have to guess against.
+                                  (if (equal id (gethash "id" each)) "*" " ")
                                   (gethash "id" each) (gethash "state" each)
                                   (gethash "label" each))))))
+   (make-attached-verb
+    :name "switch" :argument "ID" :blurb "move this client to another session"
+    :handler (lambda (stream id argument)
+               (if (zerop (length argument))
+                   (format t "~&  usage: /switch <id>   (/sessions lists them)~%")
+                   (switch-session stream id argument))))
+   (make-attached-verb
+    :name "new" :argument "[DIR]" :blurb "start another session and go to it"
+    :handler (lambda (stream id argument)
+               (declare (ignore id))
+               (let* ((where (if (plusp (length argument))
+                                 (namestring (truename argument))
+                                 (uiop:native-namestring (uiop:getcwd))))
+                      (reply (daemon:request stream "type" "session.start"
+                                             "cwd" where "model" (option-model))))
+                 (if (gethash "success" reply)
+                     (setf *attached-to* (gethash "id" (gethash "session" reply)))
+                     (format t "  ~a~%" (gethash "error" reply))))))
    (make-attached-verb
     :name "tasks" :blurb "the task tree under this session"
     :handler (lambda (stream id argument)
@@ -148,28 +170,28 @@ vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
                (let ((reply (daemon:request stream "type" "task.list")))
                  (let ((tasks (or (gethash "tasks" reply) #())))
                    (if (zerop (length tasks))
-                       (format t "  none~%")
+                       (format t "~&  none~%")
                        (loop for each across tasks
-                             do (format t "  ~a~14t~a~%"
+                             do (format t "~&  ~a~14t~a~%"
                                         (gethash "id" each) (gethash "state" each))))))))
    (make-attached-verb
     :name "cancel" :blurb "stop the turn now running"
     :handler (lambda (stream id argument)
                (declare (ignore argument))
                (ask-session stream id "cancel")
-               (format t "  cancelled~%")))
+               (format t "~&  cancelled~%")))
    (make-attached-verb
     :name "suspend" :blurb "pause this session where it is"
     :handler (lambda (stream id argument)
                (declare (ignore argument))
                (ask-session stream id "suspend")
-               (format t "  suspended~%")))
+               (format t "~&  suspended~%")))
    (make-attached-verb
     :name "resume" :blurb "carry on"
     :handler (lambda (stream id argument)
                (declare (ignore argument))
                (ask-session stream id "resume")
-               (format t "  resumed~%")))))
+               (format t "~&  resumed~%")))))
 
 (defun edit-distance (a b)
   "How many single-character edits separate A and B."
@@ -184,6 +206,36 @@ vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
                             current))
              (setf previous (nreverse current)))
     (car (last previous))))
+
+(defvar *attached-to* nil
+  "The session this client should be on after the current verb.
+
+A verb cannot rebind the loop's variable, and returning a value would make
+every handler's contract about switching. One place that says `go here next`
+is smaller than twelve handlers that each might.")
+
+(defvar *option-model* nil
+  "The model this client resolved, for sessions it starts later.")
+
+(defun option-model () *option-model*)
+
+(defun switch-session (stream from to)
+  "Move this client from one session to another.
+
+DETACH FIRST. Subscriptions add rather than replace, so attaching without
+detaching leaves the client receiving both sessions' events interleaved --
+which is exactly what a switch would have produced."
+  (let ((reply (daemon:request stream "type" "session.attach" "session" to "since" 0)))
+    (cond ((not (gethash "success" reply))
+           (format t "  ~a~%" (gethash "error" reply)))
+          (t
+           (when (and from (not (equal from to)))
+             (daemon:request stream "type" "session.detach" "session" from))
+           (setf *attached-to* to)
+           (let ((session (gethash "session" reply)))
+             (format t "~&  now in ~a~@[  ~a~]~@[  (~a)~]~%"
+                     (gethash "id" session) (gethash "label" session)
+                     (gethash "state" session)))))))
 
 (defun nearest-verb (name)
   "The verb NAME was probably meant to be, or nothing.
