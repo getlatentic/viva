@@ -1,0 +1,3 @@
+passed 1250
+failed 3
+failing a registry tool cannot read credentials

@@ -1,0 +1,11 @@
+The file `run.log` is the output of a test suite run. Report its result.
+
+Write answer.txt:
+
+passed <n>
+failed <n>
+failing <name>      one line per failing test, sorted by name
+                    or the single line `failing -` when none failed
+
+A test name is the text after `VIVARIUM.TESTS::` on a line reporting a
+failure. Grading runs against a pristine copy of run.log plus your answer.txt.

@@ -1,0 +1,12 @@
+(defun fail (w) (format t "FAIL: ~a~%" w) (sb-ext:exit :code 1))
+(handler-case (load "harness.lisp") (error (c) (fail (format nil "harness: ~a" c))))
+(defvar *names* (sort (copy-list (tool-names (make-agent))) #'string<))
+(unless (probe-file "answer.txt") (fail "no answer.txt"))
+(let ((lines (with-open-file (in "answer.txt")
+               (loop for l = (read-line in nil) while l
+                     for tr = (string-trim " " l)
+                     unless (string= tr "") collect tr))))
+  (if (equal lines *names*)
+      (format t "ok~%")
+      (progn (format t "FAIL: expected ~{~a ~} got ~{~a ~}~%" *names* lines)
+             (sb-ext:exit :code 1))))

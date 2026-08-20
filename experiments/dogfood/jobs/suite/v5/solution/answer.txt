@@ -1,0 +1,3 @@
+passed 1155
+failed 1
+failing reflection never overrides a cancellation

@@ -1,0 +1,9 @@
+The file `issues.json` is a board export: a JSON array of issues, each with
+a number, title, state and milestone.
+
+Count the OPEN issues per milestone. Write answer.txt: one `<milestone> <n>`
+line per milestone that appears in the file, sorted by milestone name — a
+milestone with no open issues gets a 0 — then a final `total <n>` line
+counting every open issue.
+
+Grading runs against a pristine copy of issues.json plus your answer.txt.
