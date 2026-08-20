@@ -82,7 +82,12 @@ architecture question is reopened by the organism's own rule.
 The engine is a daemon holding a live SBCL image. Interfaces are subscribers,
 never owners: clients attach — the CLI, the IPC, whatever speaks the protocol
 next — and each sees the same sessions, the same event streams, the same task
-tree.
+tree. **Vivarium builds no client of its own beyond the CLI, ratified:** the
+durable-session shell is arriving from outside (terminal multiplexers with
+native and web clients), and the organism's job is to be the payload in that
+pipe, not to re-render terminals. It reaches those surfaces through what
+crosses them — MCP tools, skills, AGENTS.md — and through its typed event
+vocabulary if a structured-pane protocol ever asks for one.
 Detach and the organism continues; reattach tomorrow and the history is
 there, journaled and replayable with exactness that is proven, not assumed.
 It is an operating system for work in the precise sense that turning it off
