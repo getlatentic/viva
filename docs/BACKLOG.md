@@ -1,10 +1,15 @@
-# Backlog
+# Backlog — governance residue
 
-The one tracker. Lanes mirror the manifesto's ratified sequencing; moving an
-item between lanes is a decision and gets a commit of its own. The stopping
-rule applies here as everywhere: a concern enters as WORK only with a
-reproduction, a counterexample, or a mission clause behind it — everything
-else is a tripwire, armed and waiting.
+**Workable items moved to GitHub issues, which are now the single source of
+truth**: https://github.com/tosinamuda/vivarium/issues — five sprint
+milestones (walking-skeleton router → external tool registry → graduation
+by reuse → MCP export → the harder-family eval) plus a triaged backlog.
+See CONTRIBUTING.md for the rules.
+
+This file keeps only what is NOT work: the ARMED tripwires (conditions that
+convert to issues when they fire), the RECORDED non-levers, and the FUTURE
+lane's revisit triggers. The completed KC6 record below is history, kept
+because the receipts in it are cited by RESULTS.md and the amendments.
 
 ## NOW — KC6, the gate
 
