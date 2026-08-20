@@ -1,0 +1,16 @@
+The directory `data/` holds JSONL transcripts of agent runs. Each line is one
+entry; an entry is a model reply when its payload.role is "assistant", and only
+those carry a payload.usage object.
+
+Total the token usage across every transcript. Write answer.txt, exactly three
+lines:
+
+hit <n>
+miss <n>
+out <n>
+
+where hit is the sum of prompt_cache_hit_tokens, miss of
+prompt_cache_miss_tokens, and out of completion_tokens. A field that is absent
+counts as zero.
+
+Grading runs against a pristine copy of data/ plus your answer.txt.

@@ -1,0 +1,4 @@
+passed 1204
+failed 6
+failing an activation is visible
+failing the door decides the arm

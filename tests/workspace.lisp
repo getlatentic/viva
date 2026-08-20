@@ -1404,3 +1404,33 @@ for i in range(200000):
               "unbounded output reached the caller: ~d bytes" (length output))
         (true (search "truncated" output)
               "the output was cut silently, which teaches the model it ended there")))))
+
+(define-test "a tool's relative path argument means the task's directory"
+  ;; Found by the dogfood, not by design review: a tool handed a relative
+  ;; "data" looked for it beside ITSELF, found nothing, and returned zeros.
+  ;; A wrong answer that looks like an answer is the worst failure a tool can
+  ;; have -- the model wrote itself a note about passing absolute paths
+  ;; rather than reporting the bug, which is how a defect becomes folklore.
+  (let* ((root (registry-fixture)))
+    (write-registry-tool
+     root "counter" (substitute-manifest-name +shout-manifest+ "counter")
+     :script "#!/usr/bin/env python3
+import json, os, sys
+args = json.load(sys.stdin)
+print(len(os.listdir(args.get('input', '.'))))
+")
+    ;; Three files in the task's directory, none beside the tool.
+    (dolist (name '("a.txt" "b.txt" "c.txt"))
+      (with-open-file (out (format nil "~a/~a" root name)
+                           :direction :output :if-exists :supersede)
+        (write-string "x" out)))
+    (let* ((agent (harness:make-workspace-agent :cwd root :root root :model "none"))
+           (tool (find "counter" (agent:tools agent) :key #'tool:tool-name :test #'string=))
+           (arguments (make-hash-table :test #'equal)))
+      (setf (gethash "input" arguments) ".")
+      (let ((result (tool:execute tool arguments nil)))
+        (false (tool:tool-result-error-p result)
+               "the tool errored: ~a" (tool:tool-result-output result))
+        (is = 4 (parse-integer (string-trim '(#\Newline #\Space)
+                                            (tool:tool-result-output result)))
+            "a relative path did not resolve against the task's directory")))))

@@ -1,0 +1,4 @@
+EvolutionClosed holds
+EvolutionSafety holds
+WitnessDoor violates
+rotted -

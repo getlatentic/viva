@@ -1,0 +1,6 @@
+{"name": "token-usage-total",
+ "description": "Sum token usage across agent-run JSONL transcripts. Reads every *.jsonl in the given directory (default data/), keeps only message entries whose payload.role is 'assistant' and that carry payload.usage, and totals prompt_cache_hit_tokens, prompt_cache_miss_tokens and completion_tokens (absent fields count as 0). Prints JSON {\"hit\": n, \"miss\": n, \"out\": n}.",
+ "exec": ["python3", "run.py"],
+ "parameters": [{"name": "dir", "type": "string",
+                  "description": "Directory containing *.jsonl transcripts (default 'data')",
+                  "required": false}]}

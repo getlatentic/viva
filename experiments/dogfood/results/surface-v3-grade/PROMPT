@@ -1,0 +1,10 @@
+The file `harness.lisp` is a small agent harness. Which tool names does
+`(sub-agent (make-agent :extras (list extra-tool)))` actually receive?
+
+Reading is unreliable here by construction — registration can be conditional,
+buried in a function nobody calls, or overridden — so RUN the constructor.
+sbcl is available: `sbcl --script yourprobe.lisp`.
+
+Write answer.txt: the tool names, one per line, sorted ascending.
+
+Grading runs against a pristine copy of harness.lisp plus your answer.txt.

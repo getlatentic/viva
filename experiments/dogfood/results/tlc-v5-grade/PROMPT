@@ -1,0 +1,15 @@
+The directory `logs/` holds one TLC run per configuration, and
+`expectations.txt` maps each configuration to the verdict it is expected to
+produce — witnesses are EXPECTED to violate, because a witness that stops
+violating has stopped being evidence.
+
+The verdict rules, exactly: a log VIOLATES iff it contains "is violated." or
+"Temporal properties were violated"; it HOLDS iff it contains "No error has
+been found."; anything else — parse errors, deadlocks, truncation — is ERROR.
+
+Classify every log, then find the rotted witness: a configuration expected to
+violate whose run actually holds. Write answer.txt: one `<name> <verdict>`
+line per configuration sorted by name, then a final line `rotted <name>` or
+`rotted -` if there is none.
+
+Grading runs against a pristine copy of these files plus your answer.txt.

@@ -160,15 +160,26 @@ Its tools would run as you. Trust it to enable them." directory project)
 
 DIRECTORY is where the work is -- the task's own cwd, so a tool sees the
 files the task sees and nothing else it was not pointed at."
+  ;; The TASK's directory is the working directory, and the script's path is
+  ;; absolutised so it still resolves. The other way round -- running from the
+  ;; tool's own directory -- was the first design, and the dogfood caught what
+  ;; it costs: a tool given a relative "data" looked for it beside itself,
+  ;; found nothing, and returned zeros. A wrong answer that looks like an
+  ;; answer is worse than an error, and the model had to write itself a note
+  ;; about passing absolute paths instead.
   (let* ((program (first (entry-exec entry)))
-         (rest (rest (entry-exec entry)))
+         (rest (mapcar (lambda (argument)
+                         (let ((beside (merge-pathnames argument (uiop:ensure-directory-pathname
+                                                   (entry-directory entry)))))
+                           (if (probe-file beside) (namestring beside) argument)))
+                       (rest (entry-exec entry))))
          (payload (com.inuoe.jzon:stringify (or arguments (make-hash-table :test #'equal))))
          (output (make-string-output-stream))
          (process (sb-ext:run-program
                    program rest
                    :input (make-string-input-stream payload)
                    :output output :error output
-                   :directory (entry-directory entry)
+                   :directory directory
                    :environment (append (clean-environment)
                                         (list (format nil "VIVARIUM_CWD=~a" directory)))
                    :wait nil :search t))
