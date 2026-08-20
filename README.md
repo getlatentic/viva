@@ -58,8 +58,11 @@ so far has answered all five correctly and kept something: usually a note
 about the file format, carried into every later task; on one run it wrote
 itself a **tool**, `usage-totals`, and called it on a later task — a
 transformation worked out once and then reached for instead of redone. Per
-kilobyte of input the late tasks have come out cheaper each time, by 3% to
-46%. Five tasks is a direction, not a measurement.
+kilobyte of input, the late tasks have come out cheaper on every run so far.
+
+Five tasks is a direction, not a measurement, and the numbers move run to run
+— which is why they are printed by the run in front of you rather than quoted
+here. The measurement is the 25-task study.
 
 That is a demo, not a study. The study is
 [experiments/dogfood/RESULTS.md](experiments/dogfood/RESULTS.md): 25 real
