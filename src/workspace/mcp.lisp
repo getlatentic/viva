@@ -122,13 +122,13 @@ initialized` is the ordinary one and arrives after every handshake."
       (t (fail id -32601 (format nil "unsupported method: ~a" method))))))
 
 (defun serve (&key (input *standard-input*) (output *standard-output*)
-                   environment directories cwd)
+                   environment directories cwd project)
   "Serve the registry over stdio until end of input.
 
 Entries are read ONCE, at startup: a served surface that changed under a
 client mid-session would be lying about what it advertised, and the protocol
 has a listChanged notification for that which this server does not claim."
-  (let* ((entries (registry:load-entries environment directories))
+  (let* ((entries (registry:load-entries environment directories :project project))
          (where (or cwd (env:env-cwd environment))))
     (loop for line = (read-line input nil nil)
           while line

@@ -128,7 +128,7 @@ client. Diagnostics go to stderr or nowhere."
          (environment (env:make-local-environment :cwd cwd)))
     (mcp:serve :environment environment
                :directories (harness:registry-directories environment)
-               :cwd cwd)
+               :cwd cwd :project cwd)
     0))
 
 (defun command-test (parsed)

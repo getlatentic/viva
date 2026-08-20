@@ -102,7 +102,10 @@ sub-agent gets its own, so its turns land on their own branch of the same file."
     (multiple-value-bind (tools warnings)
         (registry:load-tools environment (registry-directories environment)
                              ;; The task's cwd at CALL time, not load time.
-                             :cwd (lambda () (env:env-cwd (agent-environment agent))))
+                             :cwd (lambda () (env:env-cwd (agent-environment agent)))
+                             ;; Named so the trust gate can fire: a project's
+                             ;; tools are its author's code, not the user's.
+                             :project (env:env-cwd environment))
       (setf (agent-registry-warnings agent) warnings)
       tools)))
 

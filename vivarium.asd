@@ -53,6 +53,7 @@
                              (:file "shell")
                              (:file "prompt")
                              (:file "skills")
+                             (:file "trust")
                              (:file "registry")
                              (:file "mcp")
                              (:file "memory")

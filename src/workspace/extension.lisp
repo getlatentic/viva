@@ -158,25 +158,13 @@ extension must not take the run with it."
 
 ;;; Loading
 
-(defun trust-file ()
-  (env:join-path (uiop:native-namestring (user-homedir-pathname)) ".vivarium" "trusted.sexp"))
+;;; Trust moved to vivarium.trust when the tool registry turned out to need
+;;; the same answer. These stay as the names this package already exported.
 
-(defun trusted-roots (environment)
-  (let ((path (trust-file)))
-    (when (env:path-exists-p environment path)
-      (ignore-errors (with-standard-io-syntax
-                       (let ((*read-eval* nil))
-                         (read-from-string (env:read-text environment path))))))))
-
-(defun trusted-p (environment root)
-  (member (env:absolute-path environment root) (trusted-roots environment) :test #'string=))
-
-(defun trust (environment root)
-  "Record ROOT as a directory whose extensions may be loaded."
-  (let ((roots (adjoin (env:absolute-path environment root) (trusted-roots environment)
-                       :test #'string=)))
-    (env:write-text environment (trust-file) (format nil "~s~%" roots))
-    roots))
+(defun trust-file () (trust:trust-file))
+(defun trusted-roots (environment) (trust:trusted-roots environment))
+(defun trusted-p (environment root) (trust:trusted-p environment root))
+(defun trust (environment root) (trust:trust environment root))
 
 (defun extension-directories (environment)
   "Where extensions are looked for: this machine's, then this project's."

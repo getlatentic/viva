@@ -77,11 +77,20 @@
            #:load-skills #:find-skill #:prompt-block #:invocation
            #:parse-frontmatter #:skill-warning #:warning-message #:warning-path))
 
+(defpackage #:vivarium.trust
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:env #:vivarium.env))
+  (:export #:trust #:trusted-p #:trust-file #:trusted-roots #:permitted-p #:canonical #:*trust-file*
+           #:machine-directory-p #:home-directory))
+
 (defpackage #:vivarium.registry
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:env #:vivarium.env)
                     (#:tool #:vivarium.tool)
+                    (#:bound #:vivarium.bound)
+                    (#:trust #:vivarium.trust)
                     (#:schema #:vivarium.schema))
   (:export #:load-tools #:load-entries #:parse-manifest #:run-entry
            #:entry #:entry-name #:entry-description #:entry-version
@@ -118,7 +127,8 @@
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:tool #:vivarium.tool)
-                    (#:env #:vivarium.env))
+                    (#:env #:vivarium.env)
+                    (#:trust #:vivarium.trust))
   (:export #:extension #:extension-name #:extension-path #:extension-tools
            #:extension-commands #:extension-hooks
            #:*registry* #:defextension #:register-extension #:loaded-extensions

@@ -1103,15 +1103,26 @@ print(args.get('input', '').upper())
       (sb-posix:chmod path #o755))
     directory))
 
+(setf trust:*trust-file*
+      ;; The suite's own, never the user's: these tests trust throwaway
+      ;; directories by the dozen and must not write that into a real
+      ;; person's record.
+      (format nil "/tmp/vivarium-test-trust-~36r.sexp" (random (expt 2 40) (make-random-state t))))
+
 (defun substitute-manifest-name (manifest name)
   (let ((start (search "\"shout\"" manifest)))
     (concatenate 'string (subseq manifest 0 start)
                  (format nil "\"~a\"" name)
                  (subseq manifest (+ start 7)))))
 
-(defun registry-fixture ()
+(defun registry-fixture (&key (trusted t))
+  "A throwaway project root. TRUSTED by default, because most of these tests
+are about the registry rather than about the gate -- and with the gate in
+place an untrusted fixture loads nothing, which is the gate working."
   (let ((root (format nil "/tmp/vivarium-registry-~36r" (random (expt 2 48) (make-random-state t)))))
     (ensure-directories-exist (format nil "~a/" root))
+    (when trusted
+      (trust:trust (env:make-local-environment :cwd root) root))
     root))
 
 (defparameter +shout-manifest+ "{
@@ -1319,3 +1330,77 @@ import sys; sys.exit(4)
   (let ((reply (mcp-exchange "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"resources/list\"}" '())))
     (true (gethash "error" reply) "an unsupported method produced no error")
     (is = -32601 (gethash "code" (gethash "error" reply)))))
+
+;;; ---------------------------------------------------------------------------
+;;; The exec surface (#10)
+;;;
+;;; The registry runs arbitrary scripts and now serves them outward. These
+;;; pin the four things that keeps honest: whose code may run, what it can
+;;; read, what it can return, and what happens when it breaks.
+;;; ---------------------------------------------------------------------------
+
+(define-test "a project's tools do not run until the project is trusted"
+  ;; The exposure MCP export creates: clone a repository, point vivarium at
+  ;; it, and .vivarium/tools/ is somebody else's code running as you.
+  ;; Extensions already refused this; the registry had the same exposure and
+  ;; none of the answer.
+  (let* ((root (registry-fixture :trusted nil))
+         (environment (env:make-local-environment :cwd root))
+         (directories (list (format nil "~a/.vivarium/tools" root))))
+    (write-registry-tool root "helper" +shout-manifest+)
+    (multiple-value-bind (entries warnings)
+        (registry:load-entries environment directories :project root)
+      (false entries "an untrusted project's tools were loaded")
+      (true warnings "the refusal was silent -- indistinguishable from no tools")
+      (when warnings
+        (true (search "not a trusted project" (first warnings))
+              "the reason does not name trust: ~a" (first warnings))))
+    ;; Trusted, the same call loads it.
+    (trust:trust environment root)
+    (is = 1 (length (registry:load-entries environment directories :project root))
+        "a trusted project's tools were still refused")))
+
+(define-test "trust survives the paths a path can wear"
+  ;; macOS resolves /var to /private/var, and the CLI reaches TRUENAME where
+  ;; the trust record did not -- so trusting a project left it refused, which
+  ;; is how a control becomes a mystery. Canonical on both sides, always.
+  (let* ((root (registry-fixture))
+         (environment (env:make-local-environment :cwd root)))
+    (is string= (trust:canonical environment root)
+        (trust:canonical environment (format nil "~a/" root))
+        "a trailing slash makes a different project")
+    (is string= (trust:canonical environment root)
+        (trust:canonical environment (namestring (truename root)))
+        "the resolved and unresolved forms disagree")))
+
+(define-test "containment is containment, not a shared prefix"
+  ;; /foo does not contain /foobar. For a control deciding what may execute,
+  ;; that is not a rounding error.
+  (true (vivarium.trust::within-p "/a/b" "/a/b"))
+  (true (vivarium.trust::within-p "/a/b" "/a/b/c"))
+  (false (vivarium.trust::within-p "/a/b" "/a/bc"))
+  (false (vivarium.trust::within-p "/a/b" "/a")))
+
+(define-test "a tool's output is bounded before it reaches memory or the model"
+  ;; bound.lisp's own header says every tool that can return unbounded text
+  ;; goes through it. A tool the organism wrote is not adversarial by
+  ;; assumption, but it is code that can loop.
+  (let* ((root (registry-fixture)))
+    (write-registry-tool root "flood" (substitute-manifest-name +shout-manifest+ "flood")
+                         :script "#!/usr/bin/env python3
+import json, sys
+json.load(sys.stdin)
+for i in range(200000):
+    print('x' * 200)
+")
+    (let* ((agent (harness:make-workspace-agent :cwd root :root root :model "none"))
+           (tool (find "flood" (agent:tools agent) :key #'tool:tool-name :test #'string=))
+           (arguments (make-hash-table :test #'equal)))
+      (setf (gethash "input" arguments) "go")
+      (let* ((result (tool:execute tool arguments nil))
+             (output (tool:tool-result-output result)))
+        ;; 40MB of print, and what comes back is bounded and says so.
+        (true (< (length output) (* 100 1024))
+              "unbounded output reached the caller: ~d bytes" (length output))
+        (true (search "truncated" output)
+              "the output was cut silently, which teaches the model it ended there")))))

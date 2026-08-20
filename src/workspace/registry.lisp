@@ -108,27 +108,45 @@ a tool that fails to load looks exactly like a tool nobody wrote."
                                :directory directory)
                    nil)))))))
 
-(defun load-entries (environment directories)
+(defun load-entries (environment directories &key project)
   "Every tool under DIRECTORIES. Returns (values ENTRIES WARNINGS).
 
 Later directories win by name, matching how skills and templates already
-resolve: a project that ships its own `usage_totals` means its own."
+resolve: a project that ships its own `usage_totals` means its own.
+
+TRUSTED PROJECTS ONLY. A manifest names a script this process will execute,
+so `.vivarium/tools/` in a repository somebody else wrote is their code
+running as you the moment vivarium is pointed at it. Extensions already
+refused exactly this; the registry had the same exposure and none of the
+answer. The refusal is a WARNING rather than silence, because a control that
+looks identical to `there was nothing there` is not a control."
   (let ((entries '()) (warnings '()))
-    (dolist (directory directories)
-      (dolist (info (sort (or (ignore-errors (env:list-directory environment directory)) '())
-                          #'string< :key #'env:info-name))
-        (when (and (eq :directory (env:info-kind info))
-                   (not (a:starts-with #\. (env:info-name info))))
-          (let ((manifest (env:join-path (env:info-path info) "tool.json")))
-            (when (env:path-exists-p environment manifest)
-              (multiple-value-bind (entry reason)
-                  (parse-manifest (or (ignore-errors (env:read-text environment manifest)) "")
-                                  (env:info-path info))
-                (if entry
-                    (setf entries (cons entry (remove (entry-name entry) entries
-                                                      :key #'entry-name :test #'string=)))
-                    (push (format nil "~a: ~a" manifest reason) warnings))))))))
+    (flet ((refuse (directory)
+             (push (format nil "~a was not loaded: ~a is not a trusted project. ~
+Its tools would run as you. Trust it to enable them." directory project)
+                   warnings))
+           (read-one (info)
+             (let ((manifest (env:join-path (env:info-path info) "tool.json")))
+               (when (env:path-exists-p environment manifest)
+                 (multiple-value-bind (entry reason)
+                     (parse-manifest
+                      (or (ignore-errors (env:read-text environment manifest)) "")
+                      (env:info-path info))
+                   (if entry
+                       (setf entries (cons entry (remove (entry-name entry) entries
+                                                         :key #'entry-name :test #'string=)))
+                       (push (format nil "~a: ~a" manifest reason) warnings)))))))
+      (dolist (directory directories)
+        (if (and project (not (trust:permitted-p environment directory project)))
+            (refuse directory)
+            (dolist (info (sort (or (ignore-errors (env:list-directory environment directory))
+                                    '())
+                                #'string< :key #'env:info-name))
+              (when (and (eq :directory (env:info-kind info))
+                         (not (a:starts-with #\. (env:info-name info))))
+                (read-one info))))))
     (values (nreverse entries) (nreverse warnings))))
+
 
 ;;; Running one
 
@@ -162,8 +180,16 @@ files the task sees and nothing else it was not pointed at."
                (return))
              (sleep 0.02))
     (sb-ext:process-wait process)
-    (values (or (sb-ext:process-exit-code process) 1)
-            (get-output-stream-string output))))
+    ;; BOUNDED, like every other tool that can return unbounded text. A tool
+    ;; the organism wrote is not adversarial by assumption, but it is code
+    ;; that can loop -- and an unbounded print goes into this heap first and
+    ;; the model's context second. Truncation says so rather than teaching
+    ;; the model that the output ended there.
+    (let ((cut (bound:truncate-head (get-output-stream-string output))))
+      (values (or (sb-ext:process-exit-code process) 1)
+              (if (bound:truncation-cut-p cut)
+                  (format nil "~a~%[output truncated]" (bound:truncation-text cut))
+                  (bound:truncation-text cut))))))
 
 ;;; Becoming tools
 ;;;
@@ -198,9 +224,9 @@ files the task sees and nothing else it was not pointed at."
                 :output (format nil "~a could not run: ~a" (entry-name entry) condition)
                 :error-p t))))))
 
-(defun load-tools (environment directories &key cwd)
+(defun load-tools (environment directories &key cwd project)
   "The registry as agent tools. Returns (values TOOLS WARNINGS)."
-  (multiple-value-bind (entries warnings) (load-entries environment directories)
+  (multiple-value-bind (entries warnings) (load-entries environment directories :project project)
     (let ((cwd-thunk (or cwd (lambda () (env:env-cwd environment)))))
       (values (mapcar (lambda (entry) (entry-tool entry cwd-thunk)) entries)
               warnings))))

@@ -112,3 +112,52 @@ Restart the server to pick up new tools.
 
 Nothing prints to standard output but a reply — a stray format statement
 corrupts the stream for the client.
+
+## The exec surface, stated plainly
+
+A registry tool is a script this process runs. That is the point of it, and
+it is also the whole risk, so here is exactly what is and is not true.
+
+**It is not a sandbox.** A tool runs as you, with your filesystem access.
+KC6 proved the practical form of this: an agent handed a confined `:root`
+still read sibling directories through `bash`, because confinement applies
+to vivarium's own file tools and not to subprocesses. A registry tool is a
+subprocess. If it can be run, it can read what you can read.
+
+The trust boundary is therefore **who wrote the tool**, and that is the
+control:
+
+- **Only trusted projects.** `.vivarium/tools/` in a cloned repository is
+  its author's code. It does not load until that project root is trusted,
+  and the trust record lives in `~/.vivarium/trusted.sexp` — outside every
+  project, so a project cannot trust itself. The refusal is a warning rather
+  than silence, because a control that looks like "there was nothing there"
+  is not a control. The machine's own `~/.vivarium/tools/` is always
+  permitted: it is yours, and requiring you to trust yourself would only
+  teach the habit of clicking through the question that matters.
+- **Paths are canonicalised on both sides** — symlinks resolved, trailing
+  slash stripped. On macOS `/var` is a symlink to `/private/var`, so without
+  this a project trusted by one path is refused by the other, and a security
+  control that fails confusingly gets disabled by whoever is trying to work.
+- **Containment is containment.** `/foo` does not contain `/foobar`.
+
+**What a tool inherits** is a whitelist: `PATH`, `HOME`, `LANG`, `LC_ALL`,
+`TMPDIR`, and `VIVARIUM_CWD`. Not a scrub list — blacklisting credentials
+means enumerating every name a provider might use and being wrong when one
+is added. A secret a tool genuinely needs should arrive as a parameter,
+which the transcript records, not by ambient inheritance, which it does not.
+
+**What a tool can spend** is bounded: 120 seconds, then it is killed; and
+output is truncated at the same limit every other tool uses, with the cut
+announced rather than silent.
+
+**When a tool breaks**, the failure is a result the model can read — exit
+code and output — never the death of the run or of the MCP server. Over MCP
+that failure is `isError: true` inside a result, while a *missing* tool is a
+protocol error, because a client that cannot tell those apart cannot report
+either honestly.
+
+**No network assumptions.** Vivarium neither grants nor blocks a tool's
+network access; a tool has whatever the machine gives it. If that matters
+for your setting, confine the whole process — vivarium does not claim a
+boundary it does not enforce.
