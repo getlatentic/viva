@@ -413,3 +413,53 @@ you where you were rather than nowhere"))))
     (true (search "chmod 600" code))
     ;; And it never clobbers a key file that is already there.
     (true (search "leaving it alone" script))))
+
+;;; Interrupting, and coming back
+
+(define-test "a tool call shows what it was called with"
+  ;; An attached session printed the tool NAME alone, so a run showed as twelve
+  ;; identical lines saying `bash`, which tells you the agent is busy and
+  ;; nothing at all about what it is doing.
+  (flet ((call (name &rest pairs)
+           (let ((arguments (make-hash-table :test #'equal))
+                 (table (make-hash-table :test #'equal)))
+             (loop for (k v) on pairs by #'cddr do (setf (gethash k arguments) v))
+             (setf (gethash "name" table) name (gethash "arguments" table) arguments)
+             table)))
+    (is string= "bash wc -l f.txt" (cli::call-line (call "bash" "command" "wc -l f.txt")))
+    (is string= "read f.txt" (cli::call-line (call "read" "path" "f.txt")))
+    ;; A tool with no recognised key still shows something rather than nothing.
+    (is string= "odd hello" (cli::call-line (call "odd" "whatever" "hello")))
+    (is string= "bare" (cli::call-line (call "bare")))))
+
+(define-test "Ctrl-C cancels the work rather than only the client"
+  ;; It used to kill the client and print `interrupted` while the daemon
+  ;; carried on running the turn -- so the word was false, and it kept
+  ;; spending. And the handler does NO I/O: sending the cancel from a signal
+  ;; context is a blocking socket call on the socket the loop may be mid-read
+  ;; on, which SBCL warns about and which worked, the most dangerous thing an
+  ;; unsound mechanism can do.
+  (let ((source (repository-file "src/cli/commands.lisp")))
+    (true (search "(throw 'interrupted t)" source))
+    (true (search "\"cancel\" \"session\" id" source)
+          "the interrupt must actually cancel the turn")
+    (let ((handler (search "defun interrupt-attached" source)))
+      (true handler)
+      (false (search "daemon:request" source :start2 handler :end2 (+ handler 600))
+             "no I/O in the signal handler"))))
+
+(define-test "rejoining a session cannot hang, and leaves the socket clean"
+  ;; The first version asked for a replay and read until it saw the sequence
+  ;; the attach reply named -- which is the NEXT sequence to be assigned, not
+  ;; the last one used, so rejoining blocked forever. Replay is a nicety;
+  ;; hanging is not.
+  (let ((source (repository-file "src/cli/commands.lisp")))
+    (true (search "current-sequence" source))
+    (false (search "replay-into-view" source)))
+  (let ((source (repository-file "src/cli/attached.lisp")))
+    (true (search "describe-rejoin" source))
+    ;; It reads nothing: whatever a rejoin does not consume is consumed by the
+    ;; next prompt instead.
+    (let ((describe (search "defun describe-rejoin" source)))
+      (false (search "read-line" source :start2 describe
+                     :end2 (min (length source) (+ describe 900)))))))

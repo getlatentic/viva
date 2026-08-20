@@ -482,6 +482,31 @@ is how the suite and the soak use it."
         ((launch-daemon) (format t "~&listening on ~a~%" (daemon:socket-path)) 0)
         (t (format t "~&could not start a daemon~%") 1)))
 
+(defun interrupt-attached ()
+  "Ctrl-C during a session: leave the read, do not do the work here.
+
+NO I/O IN THE HANDLER. The first version sent the cancel from inside it and
+SBCL said so -- `starting a select(2) without a timeout while interrupts are
+disabled` -- because that is a blocking socket call in a signal context, on the
+same socket the main loop may be halfway through reading. It worked, which is
+the most dangerous thing an unsound mechanism can do.
+
+So the handler only unwinds. The loop catches it in ordinary context, where
+sending a request and draining the reply is just code."
+  (if *in-turn*
+      (throw 'interrupted t)
+      (progn (format *error-output* "~&interrupted~%")
+             (finish-output *error-output*)
+             (sb-ext:exit :code 130 :abort t))))
+
+(defun current-sequence (stream id)
+  "Where this session is now, so attaching replays nothing into the socket."
+  (let ((reply (daemon:request stream "type" "session.list")))
+    (loop for each across (or (gethash "sessions" reply) #())
+          when (equal id (gethash "id" each))
+            return (or (gethash "seq" each) 0)
+          finally (return 0))))
+
 (defun live-session-here (stream cwd)
   "A session already running in the organism for CWD, or NIL.
 
@@ -516,8 +541,15 @@ this only mentions them -- continuing one is `--resume`."
                          (unless (option-true-p parsed "new")
                            (live-session-here stream cwd))))
              (reply (if wanted
+                        ;; FROM NOW by default. Attaching with a `since` makes
+                        ;; the daemon replay into the socket, and whatever is
+                        ;; not read there is read by the next prompt instead --
+                        ;; which is how this file's oldest defect works. --since
+                        ;; is still there for a caller that wants the replay and
+                        ;; will consume it.
                         (daemon:request stream "type" "session.attach" "session" wanted
-                                        "since" (flag-integer parsed "since" 0))
+                                        "since" (or (flag-integer parsed "since" nil)
+                                                    (current-sequence stream wanted)))
                         ;; OPTION, not FLAG. The daemon resolves the model in
                         ;; its own process, where this project's config is not
                         ;; in scope -- so the client, which read it, has to
@@ -528,9 +560,14 @@ this only mentions them -- continuing one is `--resume`."
           (format t "~&~a~%" (gethash "error" reply))
           (return-from command-attach 1))
         (let ((id (gethash "id" (gethash "session" reply))))
+          (sb-sys:enable-interrupt sb-unix:sigint
+                                   (lambda (&rest ignored)
+                                     (declare (ignore ignored))
+                                     (interrupt-attached)))
           (format t "~&session ~a~:[~;  (rejoined)~]  (closing this leaves it running)~%"
                   id (and wanted (not (first (args-positional parsed)))))
           (report-earlier-sessions cwd)
+          (when wanted (describe-rejoin reply))
           (format t "~%/help lists what this session answers.~%~%")
           (loop for line = (progn (format t "› ") (finish-output) (read-line *standard-input* nil nil))
                 while line
@@ -551,7 +588,26 @@ this only mentions them -- continuing one is `--resume`."
                           (daemon:request stream "type" "prompt" "session" id "text" line)
                           ;; Shared with /retain: anything that starts a turn
                           ;; drains that turn, or the next reader inherits it.
-                          (stream-turn stream))))))
+                          ;;
+                          ;; And Ctrl-C lands HERE rather than in the signal
+                          ;; handler, so cancelling is ordinary code. The turn
+                          ;; is then drained to its terminal event -- an
+                          ;; abandoned turn's events would be read by the next
+                          ;; prompt, which is the defect this file has now had
+                          ;; three times in three places.
+                          (when (stream-turn stream)
+                            ;; Cancel in ordinary context, drain the turn's own
+                            ;; ending, then leave -- deterministically. Standard
+                            ;; input does not reliably survive the interrupted
+                            ;; read, so returning to the prompt here works
+                            ;; sometimes, and a prompt that sometimes answers is
+                            ;; worse than one that always says goodbye.
+                            (format t "~&interrupted; stopping the turn~%")
+                            (ignore-errors
+                             (daemon:request stream "type" "cancel" "session" id))
+                            (stream-turn stream)
+                            (format t "~&~a is still open. `vivarium` rejoins it.~%" id)
+                            (return)))))))
       0)))
 
 (defun command-sessions (parsed)

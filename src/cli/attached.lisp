@@ -26,27 +26,79 @@
 (defun ask-session (stream id type &rest plist)
   (apply #'daemon:request stream "type" type "session" id plist))
 
+(defparameter +salient-keys+
+  '("command" "path" "pattern" "note" "target" "source" "name" "text")
+  "The argument worth showing, in the order worth trying. The same idea the
+shell has had since it existed -- CONSOLE::SALIENT-ARGUMENT -- reimplemented
+against JSON because an attached client sees a wire event rather than a live
+TOOL-CALL, and has no way to reach the object.")
+
+(defun call-line (call)
+  "`bash cd /x && npm test` rather than `bash`.
+
+An attached session printed the tool NAME alone, so a run showed as twelve
+identical lines saying `bash` -- which tells you the agent is busy and nothing
+whatever about what it is doing. The shell has never had this problem."
+  (let ((name (gethash "name" call))
+        (arguments (gethash "arguments" call)))
+    (format nil "~a~@[ ~a~]" name
+            (when (hash-table-p arguments)
+              (a:when-let ((value (or (loop for key in +salient-keys+
+                                            for found = (gethash key arguments)
+                                            when (stringp found) return found)
+                                      (loop for found being the hash-values of arguments
+                                            when (stringp found) return found))))
+                (one-line value 72))))))
+
+(defun describe-rejoin (reply)
+  "Say where you have landed. Reads nothing from the socket.
+
+The first version asked the daemon to REPLAY the session's recent events and
+read until it saw the sequence the attach reply named -- and that sequence is
+the next one to be assigned, not the last one used, so the read never finished
+and rejoining a session hung forever.
+
+Replay is a nicety; hanging is not. The client attaches from NOW, so nothing
+is queued into the socket to poison the next prompt, and the history stays
+where it has always been: `vivarium sessions`, and the transcript on disk."
+  (let ((session (gethash "session" reply)))
+    (format t "~&  ~a~@[, ~a~]~@[, ~d queued~]~%"
+            (or (gethash "state" session) "idle")
+            (gethash "turn" session)
+            (let ((queued (gethash "queued" session)))
+              (and queued (plusp queued) queued)))))
+
+(defvar *in-turn* nil
+  "True only while draining a turn, so SIGINT knows whether there is work to
+stop or a prompt to leave. Without it the handler threw whenever the turn had
+already finished, and `attempt to THROW to a tag that does not exist` is what
+Ctrl-C printed.")
+
 (defun stream-turn (stream)
-  "Print a turn's events until it ends.
+  "Print a turn's events until it ends. Returns T if it was interrupted.
 
 Every request that STARTS A TURN must call this. Firing one and not draining
 its events leaves them in the socket for whatever reads next -- so the next
 prompt would print the previous turn's output and stop at the previous turn's
 completion, one behind forever. /retain did exactly that before this existed,
 and its answer went nowhere while quietly desynchronising the stream."
-  (loop for reply = (ignore-errors (jzon:parse (read-line stream nil "")))
-        while reply
-        for name = (gethash "event" reply)
-        do (cond ((equal name "model.delta")
-                  (write-string (gethash "text" (gethash "data" reply)))
-                  (force-output))
-                 ((equal name "tool.started")
-                  (format t "~&  · ~a~%"
-                          (gethash "name" (gethash "call" (gethash "data" reply)))))
-                 ((member name '("turn.completed" "turn.failed" "turn.cancelled")
-                          :test #'equal)
-                  (terpri)
-                  (return)))))
+  ;; The catch lives here, with the *IN-TURN* it guards, so every caller that
+  ;; drains a turn is interruptible without each one remembering to be.
+  (catch 'interrupted
+    (let ((*in-turn* t))
+      (loop for reply = (ignore-errors (jzon:parse (read-line stream nil "")))
+            while reply
+            for name = (gethash "event" reply)
+            do (cond ((equal name "model.delta")
+                      (write-string (gethash "text" (gethash "data" reply)))
+                      (force-output))
+                     ((equal name "tool.started")
+                      (format t "~&  · ~a~%" (call-line (gethash "call" (gethash "data" reply)))))
+                     ((member name '("turn.completed" "turn.failed" "turn.cancelled")
+                              :test #'equal)
+                      (terpri)
+                      (return))))
+      nil)))
 
 (defun show-inspection (reply key label &key detail)
   (let ((items (gethash key reply)))
