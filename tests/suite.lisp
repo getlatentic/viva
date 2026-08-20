@@ -45,6 +45,7 @@
                     (#:fault #:vivarium.fault)
                     (#:models #:vivarium.models)
                     (#:germline #:vivarium.germline)
+                    (#:config #:vivarium.config)
                     (#:daemon #:vivarium.daemon)))
 
 (in-package #:vivarium.tests)

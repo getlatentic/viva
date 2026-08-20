@@ -45,6 +45,7 @@
                 :serial t
                 :components ((:file "package")
                              (:file "env")
+                             (:file "config")
                              (:file "glob")
                              (:file "bound")
                              (:file "edit")
@@ -154,6 +155,7 @@
                              (:file "arms")
                              (:file "render")
                              (:file "screen")
+                             (:file "settings")
                              (:file "attached")
                              (:file "commands")
                              (:file "install")

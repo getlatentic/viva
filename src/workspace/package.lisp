@@ -218,6 +218,14 @@
            #:reflect #:*reflection-budget* #:*reflection-prompt*
            #:*agent* #:*default-model* #:*default-provider-name*))
 
+(defpackage #:vivarium.config
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:env #:vivarium.env))
+  (:export #:load-settings #:setting #:source #:+settings+
+           #:machine-config-path #:project-config-path #:environment-name
+           #:read-config #:credential-like-p #:+reserved-variables+))
+
 ;; Last: its nicknames name packages defined above it.
 (defpackage #:vivarium.germline
   (:use #:cl)

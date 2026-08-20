@@ -29,6 +29,7 @@
                     (#:session #:vivarium.session)
                     (#:trust #:vivarium.trust)
                     (#:germline #:vivarium.germline)
+                    (#:config #:vivarium.config)
                     (#:daemon #:vivarium.daemon)
                     (#:actor #:vivarium.actor))
   (:export #:main #:arms-named #:available-arms

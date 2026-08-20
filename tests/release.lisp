@@ -279,3 +279,60 @@ DOES rather than about what it says."
     ;; single character n -- which is not blank, and the first draft of this
     ;; test asserted that it was.
     (true (cli::blank-prompt-p (from '() (format nil "   ~%  "))))))
+
+;;; Settings
+
+(defmacro with-config ((path &rest lines) &body body)
+  "A project config of our own, removed afterwards."
+  `(let* ((root (format nil "/tmp/vivarium-config-~36r/" (random (expt 2 48) (make-random-state t))))
+          (,path (merge-pathnames ".vivarium/config" root)))
+     (unwind-protect
+          (progn (ensure-directories-exist ,path)
+                 (with-open-file (out ,path :direction :output :if-exists :supersede)
+                   (dolist (line (list ,@lines)) (write-line line out)))
+                 (let ((cwd root)) (declare (ignorable cwd)) ,@body))
+       (uiop:delete-directory-tree (pathname root) :validate (constantly t)
+                                                   :if-does-not-exist :ignore))))
+
+(define-test "no setting maps onto a variable vivarium sets for itself"
+  ;; VIVARIUM_ROOT is the REPOSITORY, set by the launcher on every run. The
+  ;; `root` setting is the workspace jail. The mechanical name mapping put them
+  ;; on one variable, so every run in every project silently took the
+  ;; repository as its jail and the agent could not touch the work it was
+  ;; pointed at. Found by reading `vivarium config` output, not by a crash.
+  (dolist (entry config:+settings+)
+    (let ((variable (config:environment-name (car entry))))
+      (false (member variable config:+reserved-variables+ :test #'string=)
+             "the ~a setting maps onto ~a, which vivarium sets itself"
+             (car entry) variable))))
+
+(define-test "a credential in a config file is refused by name"
+  ;; .env is gitignored and a config file is committed, so a key in one is a
+  ;; key published.
+  (with-config (path "model=deepseek" "DEEPSEEK_API_KEY=sk-pretend")
+    (declare (ignore path))
+    (multiple-value-bind (table complaints) (config:load-settings cwd)
+      (is string= "deepseek" (config:setting table "model"))
+      (true (find-if (lambda (said) (search "Credentials belong in .env" said)) complaints)
+            "a key in a config file must be refused, not stored"))))
+
+(define-test "a mistyped setting is named rather than ignored"
+  (with-config (path "mdoel=deepseek")
+    (declare (ignore path))
+    (multiple-value-bind (table complaints) (config:load-settings cwd)
+      (false (config:setting table "mdoel"))
+      (true (find-if (lambda (said) (search "is not a setting" said)) complaints)
+            "a config that quietly does nothing sends you looking at the wrong thing"))))
+
+(define-test "the environment beats a config file, and both beat the default"
+  (with-config (path "model=deepseek")
+    (declare (ignore path))
+    (is eq :project (config:source (config:load-settings cwd) "model"))
+    (is string= "deepseek" (config:setting (config:load-settings cwd) "model"))
+    (sb-posix:setenv "VIVARIUM_MODEL" "bedrock" 1)
+    (unwind-protect
+         (progn
+           (is eq :environment (config:source (config:load-settings cwd) "model"))
+           (is string= "bedrock" (config:setting (config:load-settings cwd) "model")))
+      (sb-posix:unsetenv "VIVARIUM_MODEL"))
+    (is eq :default (config:source (config:load-settings cwd) "colour"))))

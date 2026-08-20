@@ -1,0 +1,30 @@
+# Copy to ~/.vivarium/config for every project, or to .vivarium/config for
+# this one. The project's wins. KEY=VALUE, # starts a comment.
+#
+#     mkdir -p ~/.vivarium && cp .vivarium-config.example ~/.vivarium/config
+#
+# NO CREDENTIALS HERE. Keys live in .env, which is gitignored; this file is
+# meant to be committed, and a key in a committed file is a published key.
+# A credential-shaped name is refused by name, with the line number.
+#
+# `vivarium config` prints every setting, its value, and which of these files
+# decided it.
+
+# Which model, by catalogue name: deepseek, openai, openrouter, bedrock, local.
+# Without this, the first provider with a key configured wins.
+model=deepseek
+
+# Model requests one prompt may spend.
+# limit=60
+
+# Run the retention policy after each task, without passing --retain.
+# retain=false
+
+# Paint output. Unset follows the terminal, which is usually what you want.
+# colour=true
+
+# Refuse any path outside this directory.
+# root=/path/to/somewhere
+
+# How much context the model will accept, when the default 128000 is wrong.
+# context-limit=128000

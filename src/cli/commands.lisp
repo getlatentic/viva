@@ -313,9 +313,12 @@ noise, not a result.~%")
 ;;; either needed more than wiring, the library would not be reusable.
 
 (defun workspace-options (parsed &key (limit-default 60))
-  (list :model (flag parsed "model")
+  ;; OPTION, not FLAG: a setting may come from this project's config, the
+  ;; machine's, or the environment, and a person who set a model once should
+  ;; not type --model on every command for the rest of time.
+  (list :model (option parsed "model")
         :cwd (a:when-let ((cwd (flag parsed "cwd"))) (namestring (truename cwd)))
-        :root (a:when-let ((root (flag parsed "root"))) (namestring (truename root)))
+        :root (a:when-let ((root (option parsed "root"))) (namestring (truename root)))
         ;; Appended rather than replacing, so a condition that adds one line to
         ;; the prompt differs from the default by exactly that line.
         :extra-prompt (flag parsed "append")
@@ -323,7 +326,7 @@ noise, not a result.~%")
                                  (list (namestring (truename given))))
         :resume (a:when-let ((given (flag parsed "resume")))
                   (if (string= "true" given) t given))
-        :request-limit (flag-integer parsed "limit" limit-default)
+        :request-limit (option-integer parsed "limit" limit-default)
         ;; The arm, as two independent switches, because three configurations
         ;; come out of them and conflating them would collapse two:
         ;;
@@ -363,7 +366,7 @@ escape sequences: `vivarium shell < script > log` is a supported way to run
 this, and it wrote codes nobody could read into a file nobody could grep. The
 same test ATTEND already applied to its screen applies here, plus NO_COLOR,
 which is what a person redirecting output in a pane will already have set."
-  (a:if-let ((given (flag parsed "colour")))
+  (a:if-let ((given (option parsed "colour")))
     (not (string= "false" given))
     (and (interactive-stream-p *standard-output*)
          (not (env "NO_COLOR")))))
@@ -569,7 +572,7 @@ ask for it, and the split is documented rather than averaged away.
 
 Until this existed, HARNESS:REFLECT had no caller outside an experiment
 driver: the organism's defining behaviour shipped switched off with no switch."
-  (when (string= "true" (flag parsed "retain" "false"))
+  (when (option-true-p parsed "retain")
     (handler-case (harness:reflect agent)
       ;; Reflection is an epilogue. A task that succeeded must not be reported
       ;; as failed because the turn after it did not run.

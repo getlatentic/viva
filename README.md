@@ -36,6 +36,27 @@ line if the directory it chose is not on your PATH. Every `vivarium …` example
 below assumes you ran it; without it, they are `./bin/vivarium …` from the
 repository.
 
+## Settings
+
+```bash
+vivarium config                 # every setting, and which file decided it
+```
+
+Settings live in `~/.vivarium/config` for every project and `.vivarium/config`
+for one — `KEY=VALUE`, `#` for comments, project wins. See
+[.vivarium-config.example](.vivarium-config.example). Set `model=deepseek`
+once instead of passing `--model` forever.
+
+Precedence, weakest first: built-in default, `~/.vivarium/config`,
+`.vivarium/config`, an exported `VIVARIUM_*` variable, then a flag on the
+command. `vivarium config` names the layer each value came from, because "why
+is it using that model" cannot be answered from the value alone.
+
+**Credentials are not settings.** They stay in `.env`, which is gitignored; a
+config file is meant to be committed, and a key in a committed file is a
+published key. A credential-shaped name in a config file is refused with its
+line number.
+
 `.env` needs exactly one of `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`,
 `OPENROUTER_API_KEY` or `BEDROCK_API_KEY` — or a `VIVARIUM_LOCAL_ENDPOINT`
 with a llama.cpp server actually listening. `bin/vivarium` loads `.env`

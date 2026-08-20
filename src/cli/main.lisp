@@ -15,6 +15,8 @@
               "One prompt, one answer, no session.")
         (list "mcp" #'command-mcp
               "Serve the tool registry over MCP on stdio, for any client.")
+        (list "config" #'command-config
+              "Show every setting, its value, and which file decided it.")
         (list "learned" #'command-learned
               "What this project's agent has retained: notes, skills, tools.")
         (list "install" #'command-install
@@ -73,6 +75,9 @@ ORDINARY WORK
       --retain                after the task, decide what should outlive it
       --session-dir DIR       record the transcript, for counting the work done
       --extension DIR         load extensions from DIR as well
+  config [DIR]                every setting, its value, and where it came from
+                              (~/.vivarium/config, then .vivarium/config, then
+                              the environment, then a flag -- later wins)
   learned [DIR]               what the agent has retained here: notes, skills
                               and tools, and where each came from
   install [--prefix DIR]      link `vivarium` onto your PATH, so the commands
@@ -135,6 +140,10 @@ run depends on the caller having sourced it.
            (if name 1 0))
           (t
            (setf (args-positional parsed) (rest (args-positional parsed)))
+           ;; Before the command runs, so every command sees the same settings
+           ;; and none has to remember to load them.
+           (handler-case (load-cli-settings parsed)
+             (error (condition) (format *error-output* "~&! config: ~a~%" condition)))
            (handler-case (funcall (second entry) parsed)
              (error (condition)
                (format *error-output* "~&~a: ~a~%" name condition)
