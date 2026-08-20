@@ -258,3 +258,24 @@ DOES rather than about what it says."
           "the queue must carry the whole message, not just its text")
     (true (search "(getf options :retain)" source)
           "the worker decides prompt-or-retention from the message it was given")))
+
+;;; Giving it a prompt
+
+(define-test "a prompt can be an argument, a file, or a pipe"
+  ;; `do` had its own reader that took positionals only, so
+  ;; `echo "..." | vivarium do` printed usage with the prompt sitting unread on
+  ;; stdin -- while `run`, in the same binary, read stdin fine.
+  (flet ((from (tokens &optional (input ""))
+           (let ((*standard-input* (make-string-input-stream input)))
+             (cli::prompt-from (cli::parse-arguments tokens)))))
+    (is string= "fix the tests" (from '("fix" "the" "tests"))
+        "unquoted arguments must still join")
+    (is string= "piped in" (string-trim '(#\Newline) (from '() "piped in")))
+    (is string= "via dash" (string-trim '(#\Newline) (from '("--file" "-") "via dash")))
+    ;; An argument wins over a pipe: what you typed is what you meant.
+    (is string= "typed" (from '("typed") "ignored"))
+    (true (cli::blank-prompt-p (from '() "")))
+    ;; A real newline: Common Lisp strings have no \n escape, and "\n" is the
+    ;; single character n -- which is not blank, and the first draft of this
+    ;; test asserted that it was.
+    (true (cli::blank-prompt-p (from '() (format nil "   ~%  "))))))

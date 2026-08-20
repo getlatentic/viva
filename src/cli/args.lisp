@@ -52,3 +52,33 @@
             for comma = (position #\, raw :start start)
             collect (string-trim " " (subseq raw start comma))
             while comma))))
+
+(defun read-all-input (stream)
+  (with-output-to-string (out)
+    (loop for line = (read-line stream nil nil)
+          while line do (write-line line out))))
+
+(defun prompt-from (parsed)
+  "The prompt: an argument, a file, or standard input.
+
+One answer for every command that takes one. `do` had its own -- positional
+arguments only -- so `echo \"...\" | vivarium do` printed usage with a prompt
+sitting unread on stdin, which is the first thing anyone tries. Meanwhile
+`run` read stdin and `do` did not, from the same binary.
+
+Positionals are JOINED, so an unquoted `vivarium do the tests fail` still
+works. `--file -` means stdin, which is the convention every other tool uses
+and costs one line to honour."
+  (let ((positional (args-positional parsed))
+        (file (flag parsed "file")))
+    (cond ((equal "-" file) (read-all-input *standard-input*))
+          (file (uiop:read-file-string file))
+          (positional (format nil "~{~a~^ ~}" positional))
+          ;; A terminal with nobody typing is not an empty prompt, it is a
+          ;; person who has not typed yet -- so only a redirected stdin counts.
+          ((not (interactive-stream-p *standard-input*))
+           (read-all-input *standard-input*))
+          (t nil))))
+
+(defun blank-prompt-p (prompt)
+  (or (null prompt) (zerop (length (string-trim '(#\Space #\Newline #\Tab) prompt)))))

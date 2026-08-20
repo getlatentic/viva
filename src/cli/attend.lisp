@@ -136,23 +136,10 @@ Use `vivarium run` with a prompt of your own for anything else.~%")
     (attend-session (task-session (tasks:find-task (a:make-keyword (string-upcase name))))
                     parsed)))
 
-(defun prompt-from (parsed)
-  "The prompt, from an argument, a file, or standard input -- so it can be typed,
-kept in version control, or piped."
-  (let ((positional (first (args-positional parsed)))
-        (file (flag parsed "file")))
-    (cond (file (uiop:read-file-string file))
-          (positional positional)
-          ((not (interactive-stream-p *standard-input*))
-           (with-output-to-string (out)
-             (loop for line = (read-line *standard-input* nil nil)
-                   while line do (write-line line out))))
-          (t nil))))
-
 (defun command-run (parsed)
   "An agent against your own code, with your own prompt."
   (let ((prompt (prompt-from parsed)))
-    (unless (and prompt (plusp (length (string-trim '(#\Space #\Newline) prompt))))
+    (when (blank-prompt-p prompt)
       (format t "~&usage: vivarium run <prompt> [--package NAME] [--system S] [--load F]~%~
        vivarium run --file prompt.txt --package MYAPP~%~
        echo <prompt> | vivarium run --system my-app~%")

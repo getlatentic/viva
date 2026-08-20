@@ -580,12 +580,12 @@ driver: the organism's defining behaviour shipped switched off with no switch."
   "One prompt, one answer. What a script or a CI job wants."
   (unless (apply-door-flag parsed) (return-from command-do 2))
   (apply-journal-flag parsed)
-  (let* ((prompt (or (a:when-let ((file (flag parsed "file")))
-                       (uiop:read-file-string file))
-                     (format nil "~{~a~^ ~}" (args-positional parsed))))
+  (let* ((prompt (prompt-from parsed))
          (quiet (string= "true" (flag parsed "quiet" "false"))))
-    (when (zerop (length (string-trim '(#\Space #\Newline) prompt)))
-      (format t "~&usage: vivarium do \"<prompt>\" [--cwd DIR] [--model NAME]~%")
+    (when (blank-prompt-p prompt)
+      (format t "~&usage: vivarium do \"<prompt>\" [--cwd DIR] [--model NAME]~%~
+       vivarium do --file prompt.txt~%~
+       echo \"<prompt>\" | vivarium do~%")
       (return-from command-do 1))
     (let* ((console:*colour* nil)
            ;; A transcript only on request. It is what lets a run's cost be
