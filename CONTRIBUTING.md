@@ -14,14 +14,20 @@ Board: https://github.com/tosinamuda/vivarium/issues
 **The road to v0.1**, four sprints, each demoable:
 
 ```
-Sprint 0  the router retains, and it pays
-Sprint 1  tools that leave the building — a tool vivarium wrote,
-          called from Claude Code
+Sprint 1  tools that leave the building — a tool vivarium wrote, called
+          from Claude Code; and the prompt stops naming the parked door
 Sprint 2  does it pay, on real work — dogfood a week of vivarium's own
           development with the policy on
 Sprint 3  v0.1 — README around what survived, a clean-machine install,
           the demo, the tag
+Sprint 4  the router — the shape rule, written after real-work evidence
+          says which forms actually mattered
 ```
+
+The router is deliberately LAST. It decides what form retention takes, and
+a week of real work is better input for that decision than our guess. What
+ships at v0.1 is what the organism can already do: remember, write tools as
+files, and serve them to any MCP client.
 
 Machinery that does not gate the release lives in the backlog with a named
 revisit trigger, not a wish: registry lifecycle wiring (trigger: a revert is
