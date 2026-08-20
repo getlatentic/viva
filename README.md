@@ -103,6 +103,17 @@ vivarium daemon start --background
 vivarium attach              # /detach leaves it running
 ```
 
+Inside an attached session, `/help` lists what it answers: `/status`,
+`/memory`, `/skills`, `/tools`, `/learned`, `/retain`, `/sessions`, `/tasks`,
+`/cancel`, `/suspend`, `/resume`. A slash command it does not have is refused
+and named, never sent to the model as a prompt. `/retain` is the retention
+policy on demand — one turn in which it decides what the work taught it, and
+tells you, including when the answer is "nothing", which is usually correct.
+
+From outside a session, `vivarium learned [DIR]` shows the same thing for any
+directory: what has been retained, whose it is, and any tool that is present
+but will not run because the project is untrusted.
+
 A session outlives its terminal. Verified by killing the terminal outright and
 rejoining the session by name from a new one — along with colour, resize,
 Ctrl-C, and redirection, all inside a real tmux pane. We do not build a
