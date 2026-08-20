@@ -23,5 +23,16 @@ while [ -L "$target" ]; do
 done
 
 root=$(cd "$(dirname "$target")/.." && pwd)
-if [ -f "$root/.env" ]; then set -a; . "$root/.env"; set +a; fi
+
+# Credentials, machine first and repository second, so the repository wins for
+# a run made from inside it. `vivarium config` moved SETTINGS to ~/.vivarium
+# and left keys here, which meant half the setup still lived in a clone you
+# might never open again -- and a second checkout had none of it.
+#
+# Keys are not settings and stay out of ~/.vivarium/config: that file is meant
+# to be copied into projects and committed. This one is not.
+set -a
+[ -f "${HOME:-}/.vivarium/.env" ] && . "$HOME/.vivarium/.env"
+[ -f "$root/.env" ] && . "$root/.env"
+set +a
 exec sbcl --script "$root/bin/entry.lisp" "$@"

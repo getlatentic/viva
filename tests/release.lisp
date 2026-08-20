@@ -336,3 +336,38 @@ DOES rather than about what it says."
            (is string= "bedrock" (config:setting (config:load-settings cwd) "model")))
       (sb-posix:unsetenv "VIVARIUM_MODEL"))
     (is eq :default (config:source (config:load-settings cwd) "colour"))))
+
+;;; Sitting down to work
+
+(define-test "bare vivarium opens a session, and --help still explains itself"
+  ;; Starting work was `daemon start --background` then `attach`: two commands
+  ;; and one concept before anything happened, for the case that is almost
+  ;; always what somebody wants.
+  (false (cli::help-wanted-p (cli::parse-arguments '()) nil)
+         "no arguments means open a session")
+  (true (cli::help-wanted-p (cli::parse-arguments '("--help")) nil))
+  (true (cli::help-wanted-p (cli::parse-arguments '()) "wibble")
+        "an unknown command must still print usage, not open a session")
+  ;; And it calls ATTACH rather than reimplementing it: one path into a
+  ;; session cannot disagree with itself.
+  (true (search "(command-attach parsed)" (repository-file "src/cli/main.lisp"))))
+
+(define-test "the resolved model reaches the daemon, not the raw flag"
+  ;; The daemon resolves a model in ITS process, where the project's config is
+  ;; not in scope. Sending the flag meant `model=deepseek` in .vivarium/config
+  ;; was ignored by every attached session while `vivarium config` cheerfully
+  ;; reported it.
+  (let ((source (repository-file "src/cli/commands.lisp")))
+    (true (search "\"model\" (option parsed \"model\")" source)
+          "session.start must carry the resolved model")))
+
+(define-test "credentials load from the machine as well as the clone"
+  ;; Settings moved to ~/.vivarium/config and keys stayed in the repository, so
+  ;; half the setup still lived in a checkout you might never open again.
+  (let ((launcher (shell-code (repository-file "bin/vivarium"))))
+    (true (search ".vivarium/.env" launcher))
+    ;; The repository's is sourced second so it wins for a run made inside it.
+    (let ((machine (search ".vivarium/.env" launcher))
+          (repo (search "$root/.env" launcher)))
+      (true (and machine repo (< machine repo))
+            "the repository's .env must be sourced after the machine's"))))

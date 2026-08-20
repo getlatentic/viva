@@ -43,7 +43,9 @@
               "Diff two calibrate --out files; reports the noise floor.")))
 
 (defparameter +usage+
-  "vivarium <command> [options]
+  "vivarium                      open a session here -- starts the organism if
+                              it is not already running, and joins it
+vivarium <command> [options]
 
 THE ORGANISM
 
@@ -131,11 +133,26 @@ Credentials are read from .env at the repository root by bin/vivarium, so no
 run depends on the caller having sourced it.
 ")
 
+(defun help-wanted-p (parsed name)
+  "Did they ask for the usage text, rather than just typing the command?"
+  (or name (flag parsed "help") (flag parsed "h")))
+
 (defun main (tokens)
   (let* ((parsed (parse-arguments tokens))
          (name (first (args-positional parsed)))
          (entry (find name +commands+ :key #'first :test #'equal)))
-    (cond ((null entry)
+    (cond
+      ;; Bare `vivarium` opens the organism. Starting work was `daemon start
+      ;; --background` and then `attach` -- two commands and one concept
+      ;; before anything happened, for the case that is almost always what
+      ;; somebody wants. ATTACH is called, not reimplemented, so there is one
+      ;; path into a session rather than two that can disagree.
+      ((and (null entry) (not (help-wanted-p parsed name)))
+       (handler-case (load-cli-settings parsed)
+         (error (condition) (format *error-output* "~&! config: ~a~%" condition)))
+       (handler-case (command-attach parsed)
+         (error (condition) (format *error-output* "~&attach: ~a~%" condition) 1)))
+      ((null entry)
            (write-string +usage+)
            (if name 1 0))
           (t

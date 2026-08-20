@@ -494,8 +494,12 @@ is how the suite and the soak use it."
              (reply (if wanted
                         (daemon:request stream "type" "session.attach" "session" wanted
                                         "since" (flag-integer parsed "since" 0))
+                        ;; OPTION, not FLAG. The daemon resolves the model in
+                        ;; its own process, where this project's config is not
+                        ;; in scope -- so the client, which read it, has to
+                        ;; send the answer rather than the flag it was given.
                         (daemon:request stream "type" "session.start" "cwd" cwd
-                                        "model" (flag parsed "model")))))
+                                        "model" (option parsed "model")))))
         (unless (gethash "success" reply)
           (format t "~&~a~%" (gethash "error" reply))
           (return-from command-attach 1))

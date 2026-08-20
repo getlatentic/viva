@@ -57,10 +57,13 @@ config file is meant to be committed, and a key in a committed file is a
 published key. A credential-shaped name in a config file is refused with its
 line number.
 
-`.env` needs exactly one of `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`,
-`OPENROUTER_API_KEY` or `BEDROCK_API_KEY` — or a `VIVARIUM_LOCAL_ENDPOINT`
-with a llama.cpp server actually listening. `bin/vivarium` loads `.env`
-itself, so no run depends on you having sourced it.
+Keys go in `~/.vivarium/.env` to work everywhere, or in the repository's
+`.env` for that clone alone — both are loaded, and the repository's wins for a
+run made inside it. You need exactly one of `DEEPSEEK_API_KEY`,
+`OPENAI_API_KEY`, `OPENROUTER_API_KEY` or `BEDROCK_API_KEY`, or a
+`VIVARIUM_LOCAL_ENDPOINT` with a llama.cpp server actually listening.
+`bin/vivarium` loads both itself, so no run depends on you having sourced
+anything.
 
 Verified from a fresh clone under a fresh `HOME` — new Quicklisp, empty
 caches, no `.env`. The install path is covered by tests in
@@ -120,9 +123,12 @@ shell, `do` and the IPC server are thin wrappers over exactly that.
 **The organism.** One process, sessions inside it:
 
 ```bash
-vivarium daemon start --background
-vivarium attach              # /detach leaves it running
+vivarium                     # opens a session here, starting the organism if needed
+vivarium attach              # the same thing, said longer
+vivarium daemon status       # what is running, and what it is working on
 ```
+
+`/detach` leaves the session running; so does closing the terminal.
 
 Inside an attached session, `/help` lists what it answers: `/status`,
 `/memory`, `/skills`, `/tools`, `/learned`, `/retain`, `/sessions`, `/tasks`,
