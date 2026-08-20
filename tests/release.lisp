@@ -489,3 +489,52 @@ you where you were rather than nowhere"))))
   (true (search "The organism closed this connection"
                 (repository-file "src/cli/commands.lisp")))
   (true (search ":connection-lost" (repository-file "src/cli/attached.lisp"))))
+
+;;; Processes that are supposed to keep running
+
+(define-test "a long-running command can be started without waiting for it"
+  ;; Asked to start a dev server, an agent ran it in the foreground, waited out
+  ;; the whole 120-second timeout, got an error, RAN IT AGAIN, waited another
+  ;; 120, and then explained it could not. Four minutes, two identical
+  ;; commands, no server.
+  (let ((job (jobs:start "while true; do echo tick; sleep 1; done" :name "suite-ticker")))
+    (unwind-protect
+         (progn
+           (sleep 1)
+           (true (jobs:alive-p job))
+           (is string= "running" (jobs:status-of job))
+           (true (find "suite-ticker" (jobs:all-jobs) :key #'jobs:job-name :test #'string=))
+           (true (search "tick" (jobs:output-of job))))
+      (jobs:stop job))
+    (false (jobs:find-job "suite-ticker") "a stopped job is forgotten")))
+
+(define-test "stopping a job kills what it started, not just the shell"
+  ;; `sh -c \"npm run dev\"` is a shell whose CHILD holds the port. Killing only
+  ;; the shell leaves the server running, which looks exactly like the stop
+  ;; having failed.
+  (let ((marker (format nil "/tmp/vivarium-job-marker-~36r" (random (expt 2 40) (make-random-state t)))))
+    (let ((job (jobs:start (format nil "sh -c 'while true; do echo x >> ~a; sleep 0.2; done'" marker))))
+      (sleep 1)
+      (jobs:stop job)
+      (let ((size (and (probe-file marker)
+                       (with-open-file (in marker) (file-length in)))))
+        (sleep 1)
+        (is equal size (and (probe-file marker)
+                            (with-open-file (in marker) (file-length in)))
+            "the grandchild kept writing after the job was stopped")))
+    (uiop:delete-file-if-exists marker)))
+
+(define-test "the model is told the background option exists"
+  ;; A mechanism nobody is told about is a mechanism nobody uses -- and the
+  ;; timeout has to name it too, since a bare timeout reads as `slow`, which
+  ;; is what invites the retry.
+  (let ((description (tool:tool-description workspace::bash-tool))
+        (source (repository-file "src/workspace/shell.lisp")))
+    (true (search "background true" description))
+    ;; Not "keep running": the description wraps between those two words, and
+    ;; a test that asserts on text spanning a line break is a test about
+    ;; formatting.
+    (true (search "meant to keep" description))
+    (true (search "background true instead" source)
+          "the timeout message must name the fix -- a bare timeout reads as ~
+`slow`, which is what invites the retry")))

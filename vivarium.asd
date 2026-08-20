@@ -51,6 +51,7 @@
                              (:file "edit")
                              (:file "files")
                              (:file "search")
+                             (:file "jobs")
                              (:file "shell")
                              (:file "prompt")
                              (:file "skills")

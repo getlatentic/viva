@@ -50,12 +50,21 @@
   (:export #:apply-edits #:edit-failure #:edit-failure-detail
            #:unified-diff #:line-ending-of #:normalize-endings #:restore-endings))
 
+(defpackage #:vivarium.jobs
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:bt #:bordeaux-threads)
+                    (#:env #:vivarium.env))
+  (:export #:start #:stop #:all-jobs #:find-job #:alive-p #:status-of #:output-of
+           #:job #:job-name #:job-command #:job-log))
+
 (defpackage #:vivarium.workspace
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:jzon #:com.inuoe.jzon)
                     (#:tool #:vivarium.tool)
                     (#:env #:vivarium.env)
+                    (#:jobs #:vivarium.jobs)
                     (#:glob #:vivarium.glob)
                     (#:bound #:vivarium.bound)
                     (#:edit #:vivarium.edit))
