@@ -48,6 +48,10 @@ mode are both just listeners, which is why neither needs a hook of its own.")
 the project's. An extension under test should not have to be installed into the
 home directory to be measured.")
    (extra-tools :initarg :extra-tools :initform '() :accessor agent-extra-tools)
+   ;; Complaints from the last registry load. A tool that failed to load looks
+   ;; exactly like a tool nobody wrote, so the reason is kept where a caller
+   ;; can show it.
+   (registry-warnings :initform '() :accessor agent-registry-warnings)
    (extra-prompt :initarg :extra-prompt :initform nil :accessor agent-extra-prompt)
    (request-limit :initarg :request-limit :initform 60 :accessor agent-request-limit
                   :documentation "Requests in one ASK before it is cut off. A cap
@@ -86,7 +90,21 @@ sub-agent gets its own, so its turns land on their own branch of the same file."
   (append (workspace:tool-set)
           (list memory:remember delegate-tool)
           (extension:all-tools)
+          ;; What the organism retained, as callable tools. Loaded per call
+          ;; rather than cached: a tool written during this session must be
+          ;; callable in the next task without a restart, which is the whole
+          ;; point of retention living in files.
+          (agent-registry-tools agent)
           (agent-extra-tools agent)))
+
+(defun agent-registry-tools (agent)
+  (let ((environment (agent-resource-environment agent)))
+    (multiple-value-bind (tools warnings)
+        (registry:load-tools environment (registry-directories environment)
+                             ;; The task's cwd at CALL time, not load time.
+                             :cwd (lambda () (env:env-cwd (agent-environment agent))))
+      (setf (agent-registry-warnings agent) warnings)
+      tools)))
 
 (defmethod agent:tools ((agent workspace-agent))
   (let ((tools (available-tools agent))
@@ -321,6 +339,8 @@ could overturn would make the order of extensions load-bearing and invisible."
         (env:join-path (env:env-cwd environment) ".vivarium" leaf)))
 
 (defun skill-directories (environment) (resource-directories environment "skills"))
+
+(defun registry-directories (environment) (resource-directories environment "tools"))
 
 (defun refresh-resources (agent)
   "Reload skills and extensions from disk. Returns any complaints, so a caller

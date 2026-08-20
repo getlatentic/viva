@@ -77,6 +77,17 @@
            #:load-skills #:find-skill #:prompt-block #:invocation
            #:parse-frontmatter #:skill-warning #:warning-message #:warning-path))
 
+(defpackage #:vivarium.registry
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:env #:vivarium.env)
+                    (#:tool #:vivarium.tool)
+                    (#:schema #:vivarium.schema))
+  (:export #:load-tools #:load-entries #:parse-manifest
+           #:entry #:entry-name #:entry-description #:entry-version
+           #:entry-exec #:entry-parameters #:entry-directory
+           #:*timeout* #:*inherited-environment*))
+
 (defpackage #:vivarium.memory
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
@@ -167,6 +178,7 @@
                     (#:env #:vivarium.env)
                     (#:workspace #:vivarium.workspace)
                     (#:skill #:vivarium.skill)
+                    (#:registry #:vivarium.registry)
                     (#:memory #:vivarium.memory)
                     (#:extension #:vivarium.extension)
                     (#:session #:vivarium.session)
@@ -176,7 +188,7 @@
                     (#:models #:vivarium.models)
                     (#:template #:vivarium.template))
   (:export #:workspace-agent #:make-workspace-agent #:agent-environment
-           #:agent-skills #:agent-templates #:agent-session #:agent-extensions #:agent-listener
+           #:agent-registry-warnings #:agent-skills #:agent-templates #:agent-session #:agent-extensions #:agent-listener
            #:agent-request-limit #:agent-requests #:agent-context #:agent-aborting
            #:agent-gate #:suspend-agent #:resume-agent #:agent-suspended-p #:cancel-agent
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment

@@ -53,6 +53,7 @@
                              (:file "shell")
                              (:file "prompt")
                              (:file "skills")
+                             (:file "registry")
                              (:file "memory")
                              (:file "templates")
                              (:file "extension")

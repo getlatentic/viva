@@ -1069,3 +1069,155 @@ rather than leaving it to be rediscovered a third time."
     (true (search "nothing to retain" prompt) "declining is no longer explicit")
     (true (search "only what transfers" prompt)
           "the answer-key guard is gone")))
+
+;;; ---------------------------------------------------------------------------
+;;; The tool registry (#4)
+;;;
+;;; Retention that survives the process: a script on disk plus a manifest,
+;;; loaded as a real agent tool. Driven the way the loop drives it — through
+;;; the real constructor and the wire schema, never by calling the body — for
+;;; the reason pre-check zero exists: reading the code once said fourteen
+;;; tools where the constructor said nine.
+;;; ---------------------------------------------------------------------------
+
+(defun write-registry-tool (root name manifest &key (script "#!/usr/bin/env python3
+import json, sys
+args = json.load(sys.stdin)
+print(args.get('input', '').upper())
+"))
+  "Write one tool into ROOT/.vivarium/tools/NAME/. Returns the directory."
+  (let ((directory (format nil "~a/.vivarium/tools/~a/" root name)))
+    (ensure-directories-exist directory)
+    (with-open-file (out (format nil "~atool.json" directory)
+                         :direction :output :if-exists :supersede)
+      (write-string manifest out))
+    (let ((path (format nil "~arun.py" directory)))
+      (with-open-file (out path :direction :output :if-exists :supersede)
+        (write-string script out))
+      (sb-posix:chmod path #o755))
+    directory))
+
+(defun substitute-manifest-name (manifest name)
+  (let ((start (search "\"shout\"" manifest)))
+    (concatenate 'string (subseq manifest 0 start)
+                 (format nil "\"~a\"" name)
+                 (subseq manifest (+ start 7)))))
+
+(defun registry-fixture ()
+  (let ((root (format nil "/tmp/vivarium-registry-~36r" (random (expt 2 48) (make-random-state t)))))
+    (ensure-directories-exist (format nil "~a/" root))
+    root))
+
+(defparameter +shout-manifest+ "{
+  \"name\": \"shout\",
+  \"description\": \"Upper-case one string.\",
+  \"version\": 1,
+  \"exec\": [\"python3\", \"run.py\"],
+  \"parameters\": [
+    {\"name\": \"input\", \"type\": \"string\", \"description\": \"the text\", \"required\": true}
+  ]
+}")
+
+(define-test "a registered tool reaches the model through the real constructor"
+  (let* ((root (registry-fixture)))
+    (write-registry-tool root "shout" +shout-manifest+)
+    (let* ((agent (harness:make-workspace-agent :cwd root :root root :model "none"))
+           (names (mapcar #'tool:tool-name (agent:tools agent))))
+      (true (member "shout" names :test #'string=)
+            "the registry tool is not in the model's tool set: ~s" names)
+      (false (harness:agent-registry-warnings agent)
+             "a valid manifest produced complaints: ~s"
+             (harness:agent-registry-warnings agent)))))
+
+(define-test "a registered tool's wire schema is well formed"
+  ;; The B14 lesson as a gate: what the model receives is the JSON, not the
+  ;; Lisp object, and a tool can be perfect in-image and unusable on the wire.
+  (let* ((root (registry-fixture)))
+    (write-registry-tool root "shout" +shout-manifest+)
+    (let* ((agent (harness:make-workspace-agent :cwd root :root root :model "none"))
+           (tool (find "shout" (agent:tools agent) :key #'tool:tool-name :test #'string=))
+           (json (vivarium.client::tool-json tool))
+           (parameters (gethash "parameters" (gethash "function" json)))
+           (properties (gethash "properties" parameters)))
+      (true tool "no shout tool to inspect")
+      (when tool
+        (is string= "shout" (gethash "name" (gethash "function" json)))
+        (is string= "object" (gethash "type" parameters))
+        (is string= "string" (gethash "type" (gethash "input" properties)))
+        (is string= "input" (aref (gethash "required" parameters) 0))))))
+
+(define-test "a registered tool runs, and its arguments cross as JSON not argv"
+  ;; The calling convention exists because arguments crossing a shell is the
+  ;; bug class this project paid for twice. A value carrying quotes, spaces
+  ;; and a semicolon must arrive intact.
+  (let* ((root (registry-fixture)))
+    (write-registry-tool root "shout" +shout-manifest+)
+    (let* ((agent (harness:make-workspace-agent :cwd root :root root :model "none"))
+           (tool (find "shout" (agent:tools agent) :key #'tool:tool-name :test #'string=))
+           (arguments (make-hash-table :test #'equal)))
+      (setf (gethash "input" arguments) "a b; echo \"pwned\" && rm -rf /")
+      (let ((result (tool:execute tool arguments nil)))
+        (false (tool:tool-result-error-p result)
+               "the tool errored: ~a" (tool:tool-result-output result))
+        (is string= "A B; ECHO \"PWNED\" && RM -RF /"
+            (string-trim '(#\Newline) (tool:tool-result-output result)))))))
+
+(define-test "a registry tool cannot read the credentials of the process serving it"
+  ;; Whitelist inheritance, not a scrub list: a tool the organism wrote runs
+  ;; with PATH and HOME and nothing that was never meant for it.
+  (let* ((root (registry-fixture)))
+    (write-registry-tool
+     root "peek" (substitute-manifest-name +shout-manifest+ "peek")
+     :script "#!/usr/bin/env python3
+import json, os, sys
+json.load(sys.stdin)
+print(os.environ.get('DEEPSEEK_API_KEY', 'ABSENT'))
+")
+    (sb-posix:setenv "DEEPSEEK_API_KEY" "sk-should-never-reach-a-tool" 1)
+    (let* ((agent (harness:make-workspace-agent :cwd root :root root :model "none"))
+           (tool (find "peek" (agent:tools agent) :key #'tool:tool-name :test #'string=))
+           (arguments (make-hash-table :test #'equal)))
+      (setf (gethash "input" arguments) "ignored")
+      (let ((result (tool:execute tool arguments nil)))
+        (true tool "no peek tool")
+        (when tool
+          (is string= "ABSENT" (string-trim '(#\Newline) (tool:tool-result-output result))
+              "a registry tool inherited a credential"))))))
+
+(define-test "a malformed manifest is refused with a reason and loads nothing"
+  ;; Never half-loaded: the model must not see a name it cannot call.
+  (dolist (case '(("not json at all" . "valid JSON")
+                  ("{\"description\": \"no name\"}" . "no name")
+                  ("{\"name\": \"x\", \"description\": \"d\"}" . "exec")
+                  ("{\"name\": \"x\", \"description\": \"d\", \"exec\": [\"true\"], \"parameters\": [{\"name\": \"p\", \"type\": \"widget\"}]}" . "unsupported type")))
+    (destructuring-bind (manifest . expected) case
+      (let ((root (registry-fixture)))
+        (write-registry-tool root "broken" manifest)
+        (let* ((agent (harness:make-workspace-agent :cwd root :root root :model "none"))
+               (names (mapcar #'tool:tool-name (agent:tools agent)))
+               (warnings (harness:agent-registry-warnings agent)))
+          (false (member "broken" names :test #'string=) "a malformed tool loaded anyway")
+          (false (member "x" names :test #'string=) "a malformed tool loaded anyway")
+          (true warnings "no reason was given for refusing ~s" manifest)
+          (when warnings
+            (true (search expected (first warnings))
+                  "the reason does not mention ~s: ~a" expected (first warnings))))))))
+
+(define-test "a tool that fails reports it without killing the run"
+  (let* ((root (registry-fixture)))
+    (write-registry-tool root "boom" (substitute-manifest-name +shout-manifest+ "boom")
+                         :script "#!/usr/bin/env python3
+import sys
+sys.stderr.write('deliberate failure\\n')
+sys.exit(3)
+")
+    (let* ((agent (harness:make-workspace-agent :cwd root :root root :model "none"))
+           (tool (find "boom" (agent:tools agent) :key #'tool:tool-name :test #'string=))
+           (arguments (make-hash-table :test #'equal)))
+      (setf (gethash "input" arguments) "ignored")
+      (let ((result (tool:execute tool arguments nil)))
+        (true (tool:tool-result-error-p result) "a failing tool reported success")
+        (true (search "exited 3" (tool:tool-result-output result))
+              "the exit code is not reported: ~a" (tool:tool-result-output result))
+        (true (search "deliberate failure" (tool:tool-result-output result))
+              "the tool's own diagnosis was dropped")))))
