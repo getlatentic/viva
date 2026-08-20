@@ -534,6 +534,48 @@ is how the suite and the soak use it."
                   (session:summary-opening each))))
     0))
 
+(defun command-trust (parsed)
+  "Allow a project's own extensions and tools to be loaded and run.
+
+The shell has had /trust since extensions existed; nothing else did. That was
+survivable while trust only gated extensions -- a file a person writes -- and
+stopped being survivable when the organism started writing TOOLS into the
+project it is working in: it would retain a tool and then be refused it, with
+the only remedy in a command that a script, a CI job and `vivarium do` cannot
+reach.
+
+Saying yes is still a decision a person makes about a directory, so this
+prints exactly what it is agreeing to."
+  (let ((root (namestring (truename (or (first (args-positional parsed))
+                                        (flag parsed "cwd") ".")))))
+    (if (trust:trusted-p (env:make-local-environment :cwd root) root)
+        (format t "~&already trusted: ~a~%" root)
+        (progn
+          (trust:trust (env:make-local-environment :cwd root) root)
+          (format t "~&trusted ~a~%~
+Its .vivarium/extensions/*.lisp will be loaded, and its .vivarium/tools/ ~
+will be run, as you.~%" root)))
+    0))
+
+(defun retain-if-asked (parsed agent)
+  "Run the retention policy on the finished task, when --retain was passed.
+
+OPT-IN, and the reason is measurement rather than caution. The dogfood found
+that retention happens, that what it keeps is good, and that it does NOT yet
+pay: +8.2% tokens overall, and split -- mechanical recurring work got cheaper,
+judgement work got dearer. Defaulting a measured cost increase onto every user
+is exactly what this project refuses to do elsewhere, so the flag is how you
+ask for it, and the split is documented rather than averaged away.
+
+Until this existed, HARNESS:REFLECT had no caller outside an experiment
+driver: the organism's defining behaviour shipped switched off with no switch."
+  (when (string= "true" (flag parsed "retain" "false"))
+    (handler-case (harness:reflect agent)
+      ;; Reflection is an epilogue. A task that succeeded must not be reported
+      ;; as failed because the turn after it did not run.
+      (error (condition)
+        (format *error-output* "~&! retention turn failed: ~a~%" condition)))))
+
 (defun command-do (parsed)
   "One prompt, one answer. What a script or a CI job wants."
   (unless (apply-door-flag parsed) (return-from command-do 2))
@@ -564,6 +606,7 @@ is how the suite and the soak use it."
         (unwind-protect
              (let ((reply (harness:ask agent prompt)))
                (when quiet (format t "~&~a~%" (or reply "")))
+               (retain-if-asked parsed agent)
                0)
           (a:when-let ((s (harness:agent-session agent)))
             (session:close-session s)))))))

@@ -1,0 +1,91 @@
+#!/bin/sh
+# Does the organism learn from its work?
+#
+# Five tasks, same shape, different data each time -- the sort of chore that
+# recurs. Nothing here asks it to write a tool or take a note. After each task
+# it gets one turn to decide what should outlive the work, and this script
+# reports what it decided and whether anything it kept was used again.
+#
+# Every task is `vivarium do --retain` in one directory: the command a person
+# would type, not a test fixture. What accumulates is that directory's
+# .vivarium/ -- the same place a person's own skills and tools live -- so what
+# the organism writes is readable, editable, deletable, and usable by any other
+# agent that can read a folder.
+set -eu
+
+here=$(cd "$(dirname "$0")" && pwd)
+root=$(cd "$here/.." && pwd)
+jobs="$root/experiments/dogfood/jobs/spend"
+work="${VIVARIUM_DEMO_DIR:-$root/tmp/demo}"
+runs="$work-transcripts"
+cap="${VIVARIUM_DEMO_CAP:-0.25}"
+# NAMED, never defaulted. The catalogue offers the first provider configured,
+# so on a machine with several keys the demo would quietly run against whichever
+# came first -- and the $0.02 it quotes was measured on this one.
+model="${VIVARIUM_DEMO_MODEL:-deepseek}"
+
+cat <<'INTRO'
+vivarium: does it learn?
+
+Five times over, the same chore with different data -- a folder of JSONL
+transcripts, and a request for the token totals inside them. Tedious to do by
+hand, and tedious in exactly the same way each time.
+
+Nothing below asks for a tool or for a note. After each task the organism gets
+one turn to decide for itself what is worth keeping.
+
+INTRO
+
+# ---------------------------------------------------------------- cost, first
+printf 'Cost: about $0.02. This run stops if it reaches $%s.\n' "$cap"
+printf 'That is measured, not estimated: these five tasks cost $0.0183 the\n'
+printf 'last time they ran. The real figure for THIS run is printed at the end.\n\n'
+
+[ -f "$root/.env" ] || {
+  echo "No .env yet. Copy .env.example to .env and fill in one provider key." >&2
+  exit 1
+}
+set -a; . "$root/.env"; set +a
+
+# ---------------------------------------------------------------- the workspace
+rm -rf "$work" "$runs"
+mkdir -p "$work" "$runs"
+
+# A tool the organism writes lands in this directory's .vivarium/tools/, and
+# running a project's own code is a decision a person makes -- so the demo makes
+# it, out loud, for the scratch directory it just created and nothing else.
+"$root/bin/vivarium" trust "$work" | sed 's/^/  /'
+echo
+
+for v in v1 v2 v3 v4 v5; do
+  # The chore's data changes every time. The only thing that carries over is
+  # whatever the organism chose to keep, in .vivarium/.
+  find "$work" -mindepth 1 -maxdepth 1 ! -name '.vivarium' -exec rm -rf {} +
+  cp -R "$jobs/$v/data" "$work/data"
+
+  # The project's own meter decides, between tasks. A cap that is asserted in
+  # a sentence and checked nowhere is not a cap.
+  if ! python3 "$root/experiments/kc6/budget.py" --limit "$cap" --off-peak \
+         "$runs" >/dev/null 2>&1; then
+    echo "  stopping at the \$$cap cap, with $v not run" >&2
+    break
+  fi
+
+  printf '  %s  ' "$v"
+  start=$(date +%s)
+  "$root/bin/vivarium" do --retain --quiet --model "$model" --cwd "$work" \
+      --session-dir "$runs/$v" \
+      --file "$jobs/$v/PROMPT" >"$runs/$v.log" 2>&1 || true
+  elapsed=$(( $(date +%s) - start ))
+
+  if [ ! -f "$work/answer.txt" ]; then
+    printf 'no answer  %2ds\n' "$elapsed"
+  elif diff -q "$work/answer.txt" "$jobs/$v/solution/answer.txt" >/dev/null 2>&1; then
+    printf 'correct    %2ds\n' "$elapsed"
+  else
+    printf 'WRONG      %2ds\n' "$elapsed"
+  fi
+done
+
+echo
+exec python3 "$here/report.py" "$work" "$root" "$runs"

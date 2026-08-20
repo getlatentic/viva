@@ -109,3 +109,32 @@ which fetches what ASDF alone cannot")))
       (false (wanted '()) "a string stream is not a terminal")
       (true (wanted '("--colour" "true")) "an explicit request is honoured anyway")
       (false (wanted '("--colour" "false"))))))
+
+;;; The organism's own behaviour, reachable from a command
+
+(define-test "the retention policy has a caller outside an experiment"
+  ;; HARNESS:REFLECT existed, was exported, was measured by the dogfood -- and
+  ;; nothing in src/ called it. The organism's defining behaviour shipped
+  ;; switched off, with no switch. `do --retain` is the switch; this is the
+  ;; test that there is one at all.
+  (let ((source (repository-file "src/cli/commands.lisp")))
+    (true (search "harness:reflect" source)
+          "no command runs the retention policy")
+    (true (search "\"retain\"" source)
+          "--retain is not read anywhere")))
+
+(define-test "a project can be trusted without an interactive shell"
+  ;; Trust gates whether a project's own tools may run. The organism WRITES
+  ;; tools into the project it works in, so a retained tool it cannot be
+  ;; granted is a tool it can never call -- and until this command existed the
+  ;; only way to grant it was a verb in the interactive shell, which a script,
+  ;; a CI job and `vivarium do` cannot reach.
+  (true (find "trust" cli::+commands+ :key #'first :test #'equal)))
+
+(define-test "the demo names its model instead of taking whichever is first"
+  ;; The catalogue offers the first provider configured, so on a machine with
+  ;; several keys the demo would run against whichever came first -- while
+  ;; quoting a price measured on a different one.
+  (let ((source (repository-file "demo/retention")))
+    (true (search "--model" source) "the demo does not pin a model")
+    (true (search "budget.py" source) "the demo states a cap it never checks")))

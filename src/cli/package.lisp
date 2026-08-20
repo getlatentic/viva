@@ -27,6 +27,7 @@
                     (#:workspace #:vivarium.workspace)
                     (#:env #:vivarium.env)
                     (#:session #:vivarium.session)
+                    (#:trust #:vivarium.trust)
                     (#:daemon #:vivarium.daemon)
                     (#:actor #:vivarium.actor))
   (:export #:main #:arms-named #:available-arms

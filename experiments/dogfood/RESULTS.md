@@ -123,3 +123,39 @@ It also surfaced a real design question the attachments work will have to
 answer: retention follows **cwd**, so an organism pointed at several folders
 has several germlines and no way to retain at the machine level, where
 sharing would actually happen.
+
+## A confound found later, and what it does not change
+
+Building the demo (#20) turned up something this study did not control for:
+**the variants of a shape are not the same size.** In `spend`, the two late
+tasks carry 58% more data than the two early ones — 114KB against 72KB. Claim
+4 compares raw token totals early-versus-late, so for that shape it was
+comparing the data as much as the learning.
+
+Corrected, holding input size constant:
+
+```
+shape      early KB   late KB   claim 4, raw   per kilobyte
+spend            72       114            -9%           -42%
+tlc               1         1           -16%           -22%
+surface           1         1           +18%           +19%
+suite             0         0           -21%           -53%
+board             1         1            -2%           -15%
+```
+
+Only `spend` has input variation large enough to matter; the others are a
+kilobyte or less either way, so raw and normalised agree there and `suite`'s
+figure is a small denominator rather than a finding.
+
+**The pre-registered verdict stands as written.** Claim 4 was registered on
+raw tokens with a 20% threshold, the corpus came in at +8.2%, and it failed.
+Changing the metric after seeing the data is the thing pre-registration
+exists to prevent, so the number above is stated as what it is: post-hoc,
+and not a re-scoring.
+
+What it does change is the reading of the shape that carried the result. The
+`spend` saving is not 9% — it is 42% per kilobyte, because the late tasks
+handled substantially more data for fewer tokens. The confound ran *against*
+the retention hypothesis and the shape still showed a saving. The boundary
+this study drew — retention pays on mechanical recurring work, and costs on
+judgement — is sharper than the raw numbers made it look, not softer.

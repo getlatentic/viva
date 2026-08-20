@@ -201,6 +201,16 @@ the last one HERE."
                              (format out "  ~a~%  available: ~{~a~^, ~}~%"
                                      (agent:agent-model agent)
                                      (mapcar #'models:choice-label (models:available-models))))))
+   (make-verb :name "retain" :blurb "decide now what this session should keep"
+              :handler (lambda (agent argument out)
+                         (declare (ignore argument))
+                         ;; The retention policy, on demand. `vivarium do
+                         ;; --retain` runs it after every task; interactively
+                         ;; the right moment is a judgement, and the person at
+                         ;; the keyboard is holding it.
+                         (handler-case (harness:reflect agent)
+                           (error (condition)
+                             (format out "~a~%" (paint (format nil "! ~a" condition) :red))))))
    (make-verb :name "new" :blurb "forget this conversation, keep the workspace"
               :handler (lambda (agent argument out)
                          (declare (ignore argument))

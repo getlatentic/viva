@@ -15,6 +15,8 @@
               "One prompt, one answer, no session.")
         (list "mcp" #'command-mcp
               "Serve the tool registry over MCP on stdio, for any client.")
+        (list "trust" #'command-trust
+              "Allow a project's own extensions and tools to run.")
         (list "sessions" #'command-sessions
               "List or search recorded sessions.")
         (list "test" #'command-test
@@ -64,11 +66,22 @@ ORDINARY WORK
   do \"<prompt>\" [options]     one prompt, one answer, no session
       --file prompt.txt       read the prompt from a file
       --quiet                 print only the final answer
+      --retain                after the task, decide what should outlive it
       --session-dir DIR       record the transcript, for counting the work done
       --extension DIR         load extensions from DIR as well
+  trust [DIR]                 allow DIR's own extensions and tools to run
+                              (needed before a tool the organism wrote in a
+                              project can be called back; /trust in the shell)
   sessions [options]          list what has been recorded
       --search TEXT           only sessions whose conversation contains TEXT
       --all                   every project, not just this directory
+
+  --retain is the retention policy: one bounded turn in which the agent
+  decides what -- a note, or a tool it writes -- should outlive the task.
+  Interactively the same turn is /retain. It is opt-in because it was
+  measured: what it keeps is good, and it costs about 8% more tokens
+  overall -- less on mechanical recurring work, more on judgement.
+  See docs/retention-policy.md and experiments/dogfood/RESULTS.md.
 
   Skills go in .vivarium/skills/<name>/SKILL.md, prompt templates in
   .vivarium/prompts/*.md (invoked as /name, with $1..$9 and $ARGUMENTS),
