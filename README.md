@@ -51,10 +51,15 @@ for itself what is worth keeping, and the script reports what it kept, whether
 anything used it, and what it cost.
 
 About **$0.02**, two minutes, and it stops at a $0.25 cap checked by the
-project's own meter between tasks. Two runs so far: five correct answers each,
-a note retained on the first task and carried into every later one, and per
-kilobyte of input the last two tasks came out 3% and 46% cheaper than the
-first two.
+project's own meter between tasks.
+
+Runs vary, and the report says which happened rather than assuming. Every run
+so far has answered all five correctly and kept something: usually a note
+about the file format, carried into every later task; on one run it wrote
+itself a **tool**, `usage-totals`, and called it on a later task — a
+transformation worked out once and then reached for instead of redone. Per
+kilobyte of input the late tasks have come out cheaper each time, by 3% to
+46%. Five tasks is a direction, not a measurement.
 
 That is a demo, not a study. The study is
 [experiments/dogfood/RESULTS.md](experiments/dogfood/RESULTS.md): 25 real
