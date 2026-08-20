@@ -22,11 +22,19 @@ Needs **SBCL** and **Quicklisp**. Nothing else is installed by hand.
 git clone https://github.com/tosinamuda/vivarium && cd vivarium
 cp .env.example .env        # then fill in one provider key
 ./bin/vivarium test
+./bin/vivarium install      # puts `vivarium` on your PATH
 ```
 
 The first run downloads dependencies and compiles everything: about **4
 minutes**, then ~2 seconds warm. It ends in `Passed: 1344 / Failed: 0`. If
 Quicklisp is missing, `bin/vivarium` prints the two commands that install it.
+
+`install` links the launcher into the first writable directory on your PATH —
+`~/.local/bin`, `~/bin`, `/usr/local/bin`, or wherever you point `--prefix`. It
+refuses to replace anything it did not put there, and tells you the `export`
+line if the directory it chose is not on your PATH. Every `vivarium …` example
+below assumes you ran it; without it, they are `./bin/vivarium …` from the
+repository.
 
 `.env` needs exactly one of `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`,
 `OPENROUTER_API_KEY` or `BEDROCK_API_KEY` — or a `VIVARIUM_LOCAL_ENDPOINT`

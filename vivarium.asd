@@ -154,6 +154,7 @@
                              (:file "render")
                              (:file "screen")
                              (:file "commands")
+                             (:file "install")
                              (:file "attend")
                              (:file "main")))))
 

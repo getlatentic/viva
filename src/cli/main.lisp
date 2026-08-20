@@ -15,6 +15,8 @@
               "One prompt, one answer, no session.")
         (list "mcp" #'command-mcp
               "Serve the tool registry over MCP on stdio, for any client.")
+        (list "install" #'command-install
+              "Link vivarium into a directory on your PATH.")
         (list "trust" #'command-trust
               "Allow a project's own extensions and tools to run.")
         (list "sessions" #'command-sessions
@@ -69,6 +71,8 @@ ORDINARY WORK
       --retain                after the task, decide what should outlive it
       --session-dir DIR       record the transcript, for counting the work done
       --extension DIR         load extensions from DIR as well
+  install [--prefix DIR]      link `vivarium` onto your PATH, so the commands
+                              above are the ones you actually type
   trust [DIR]                 allow DIR's own extensions and tools to run
                               (needed before a tool the organism wrote in a
                               project can be called back; /trust in the shell)

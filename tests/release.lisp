@@ -138,3 +138,33 @@ which fetches what ASDF alone cannot")))
   (let ((source (repository-file "demo/retention")))
     (true (search "--model" source) "the demo does not pin a model")
     (true (search "budget.py" source) "the demo states a cap it never checks")))
+
+;;; Being a command, not a path
+
+(defun shell-code (text)
+  "TEXT with whole-line comments removed, for asserting about what a script
+DOES rather than about what it says."
+  (format nil "~{~a~^~%~}"
+          (remove-if (lambda (line) (alexandria:starts-with #\# (string-left-trim " " line)))
+                     (uiop:split-string text :separator '(#\Newline)))))
+
+(define-test "the launcher resolves symlinks to find its repository"
+  ;; `vivarium install` puts a link on PATH, so $0 is usually somewhere like
+  ;; ~/.local/bin -- and deriving the root from the LINK's directory looked for
+  ;; the repository beside the link. The install reported success and the
+  ;; command was broken; it only shows when you run it from elsewhere.
+  (let ((launcher (repository-file "bin/vivarium")))
+    (true (search "while [ -L \"$target\" ]" launcher)
+          "the launcher must follow symlinks, or an installed vivarium cannot find its repo")
+    (false (search "$(dirname \"$0\")/.." launcher)
+           "the root must come from the resolved target, never from $0")
+    ;; GNU-only flags do not exist on the readlink macOS ships. Comments are
+    ;; stripped first: the file explains why it does NOT use that flag, and a
+    ;; search over the whole text finds the explanation and fails on it.
+    (false (search "readlink -f" (shell-code launcher)))))
+
+(define-test "install refuses to replace something it did not put there"
+  (let ((source (repository-file "src/cli/install.lisp")))
+    (true (search "describe-existing" source))
+    (true (search "not this repository's launcher" source)
+          "overwriting a stranger's binary is not an installer's decision")))

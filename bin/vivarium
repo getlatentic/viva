@@ -3,6 +3,25 @@
 # caller having sourced it -- forgetting to was a repeated cost while building
 # the task set.
 set -eu
-root=$(cd "$(dirname "$0")/.." && pwd)
+
+# Follow symlinks to find the REPOSITORY, not the link. `vivarium install`
+# puts a link on your PATH, so $0 is usually somewhere like ~/.local/bin --
+# and resolving the root from there looked for the repository beside the link
+# and died on a missing bin/entry.lisp. Found by installing and then running
+# the command from an unrelated directory, which is the only place it shows.
+#
+# A loop rather than `readlink -f`: that flag is GNU, and this has to work on
+# the BSD readlink macOS ships. Relative link targets resolve against the
+# directory of the link that carried them.
+target=$0
+while [ -L "$target" ]; do
+  link=$(readlink "$target")
+  case $link in
+    /*) target=$link ;;
+    *)  target=$(dirname "$target")/$link ;;
+  esac
+done
+
+root=$(cd "$(dirname "$target")/.." && pwd)
 if [ -f "$root/.env" ]; then set -a; . "$root/.env"; set +a; fi
 exec sbcl --script "$root/bin/entry.lisp" "$@"
