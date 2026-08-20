@@ -107,13 +107,25 @@ happened twice, so it is checked rather than remembered."
 ;;; depends on the CLI (it tests the view models), so declaring it here would be
 ;;; a cycle.
 
+(defun load-test-system ()
+  "Load `vivarium/tests`, fetching what it needs.
+
+QUICKLOAD rather than ASDF:LOAD-SYSTEM because the test system depends on
+parachute, which nothing else does. The bootstrap quickloads the CLI, so a
+clean machine ends up with every dependency except that one -- and ASDF
+resolves dependencies but never downloads them, so `vivarium test` on a fresh
+clone died with `Component \"parachute\" not found` while `vivarium check`
+passed. The first thing a newcomer runs to see whether the install worked was
+the one command that could not."
+  (funcall (or (find-symbol "QUICKLOAD" "QL") 'asdf:load-system) "vivarium/tests"))
+
 (defun command-soak (parsed)
   "Churn sessions, clients and journals for N minutes and demand a plateau.
 
 Ten green suite runs answer `does it work`; this answers `does it stay flat`,
 which is the question a months-long process actually poses. Exits non-zero on
 growth."
-  (asdf:load-system "vivarium/tests")
+  (load-test-system)
   (load (merge-pathnames "tests/soak.lisp" (repository-root)))
   (uiop:symbol-call :vivarium.tests :soak
                     :minutes (flag-integer parsed "minutes" 10)))
@@ -133,7 +145,7 @@ client. Diagnostics go to stderr or nowhere."
 
 (defun command-test (parsed)
   (declare (ignore parsed))
-  (asdf:load-system "vivarium/tests")
+  (load-test-system)
   ;; The stall tripwire lives in tests/daemon.lisp and arms with the FIRST
   ;; daemon test, not here: a watchdog thread alive from startup broke every
   ;; fork-based trial test, because SBCL refuses to fork a multithreaded

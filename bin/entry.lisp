@@ -3,7 +3,27 @@
 
 (require :sb-posix)
 (require :sb-introspect)
-(load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
+
+;; Quicklisp is the one prerequisite this script cannot supply for itself, and
+;; not having it is the first thing a newcomer hits. LOAD on a missing file
+;; raises through a disabled debugger, which prints thirty frames of SBCL
+;; internals -- a stack trace where an instruction belongs. Check first and say
+;; the sentence instead.
+(let ((setup (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname))))
+  (unless (probe-file setup)
+    (format *error-output* "~&vivarium needs Quicklisp, and ~a does not exist.
+
+Install it once:
+
+  curl -O https://beta.quicklisp.org/quicklisp.lisp
+  sbcl --non-interactive --load quicklisp.lisp \\
+       --eval '(quicklisp-quickstart:install)'
+
+Then run this again. Nothing else needs installing by hand -- the first run
+fetches the rest, and takes a few minutes.~%" (namestring setup))
+    (finish-output *error-output*)
+    (sb-ext:exit :code 1 :abort t))
+  (load setup))
 
 (let ((root (uiop:pathname-parent-directory-pathname
              (uiop:pathname-directory-pathname *load-truename*))))

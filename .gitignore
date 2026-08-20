@@ -4,6 +4,11 @@
 .DS_Store
 .env
 .env.*
+# The one .env file that is meant to be committed: names, no values. Without
+# this line the pattern above swallows it, and the exemption has to sit here
+# rather than beside it because a later ignore cannot be undone by an earlier
+# negation.
+!.env.example
 system-index.txt
 __pycache__/
 *.pyc

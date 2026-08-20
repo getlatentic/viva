@@ -176,5 +176,6 @@
                              (:file "tasks")
                              (:file "render")
                              (:file "workspace")
+                             (:file "release")
                              (:file "daemon"))))
   :perform (test-op (op c) (symbol-call :parachute :test :vivarium.tests)))
