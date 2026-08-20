@@ -398,3 +398,18 @@ you where you were rather than nowhere"))))
   (let ((source (repository-file "src/daemon/server.lisp")))
     (true (search "\"session.detach\"" source))
     (true (search "(defun unwatch (client cell)" source))))
+
+(define-test "the installer refuses to guess, and never writes a key"
+  (let* ((script (repository-file "install.sh"))
+         (code (shell-code script)))
+    ;; Every prerequisite it cannot supply is a named refusal with the command
+    ;; that fixes it, not a stack trace or a silent skip.
+    (true (search "brew install sbcl" script))
+    (true (search "quicklisp-quickstart:install" code))
+    ;; It copies the EXAMPLE, which carries names and no values, and locks it
+    ;; down. Writing a credential file the world can read would be worse than
+    ;; writing none.
+    (true (search ".env.example" code))
+    (true (search "chmod 600" code))
+    ;; And it never clobbers a key file that is already there.
+    (true (search "leaving it alone" script))))

@@ -20,9 +20,18 @@ Needs **SBCL** and **Quicklisp**. Nothing else is installed by hand.
 
 ```bash
 git clone https://github.com/tosinamuda/vivarium && cd vivarium
-cp .env.example .env        # then fill in one provider key
+sh install.sh
+```
+
+That checks for SBCL, installs Quicklisp if it is missing, runs the suite,
+links `vivarium` onto your PATH, and leaves a `~/.vivarium/.env` for you to put
+one provider key into. It says what it is doing and stops at the first thing
+that fails. By hand instead:
+
+```bash
+cp .env.example ~/.vivarium/.env   # then fill in one provider key
 ./bin/vivarium test
-./bin/vivarium install      # puts `vivarium` on your PATH
+./bin/vivarium install             # puts `vivarium` on your PATH
 ```
 
 The first run downloads dependencies and compiles everything: about **4
