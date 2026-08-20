@@ -13,6 +13,8 @@
               "Serve one agent over stdin and stdout, as JSON lines.")
         (list "do" #'command-do
               "One prompt, one answer, no session.")
+        (list "mcp" #'command-mcp
+              "Serve the tool registry over MCP on stdio, for any client.")
         (list "sessions" #'command-sessions
               "List or search recorded sessions.")
         (list "test" #'command-test

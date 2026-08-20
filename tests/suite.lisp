@@ -35,6 +35,7 @@
                     (#:extension #:vivarium.extension)
                     (#:session #:vivarium.session)
                     (#:harness #:vivarium.harness)
+                    (#:registry #:vivarium.registry)
                     (#:compaction #:vivarium.compaction)
                     (#:template #:vivarium.template)
                     (#:operation #:vivarium.operation)

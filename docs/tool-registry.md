@@ -72,3 +72,43 @@ produces no tool: half-loading would show the model a name it cannot call
 and a failure it cannot diagnose. Reasons land in `agent-registry-warnings`
 so a caller can show them, because a tool that failed to load looks exactly
 like a tool nobody wrote.
+
+## Serving the registry over MCP
+
+```bash
+vivarium mcp --cwd /path/to/project
+```
+
+Speaks MCP over stdio — one JSON object per line — so a tool the organism
+wrote is callable from any client that speaks the protocol, not only from
+inside vivarium. This is why the manifest was JSON from the start: the
+parameter list becomes an `inputSchema` through the same builder every
+shipped tool uses, so `tools/list` is a projection of the registry rather
+than a translation of it.
+
+Client configuration is one entry:
+
+```json
+{
+  "mcpServers": {
+    "vivarium-tools": {
+      "command": "/path/to/vivarium/bin/vivarium",
+      "args": ["mcp", "--cwd", "/path/to/project"]
+    }
+  }
+}
+```
+
+**The error split is normative and load-bearing.** A tool that ran and failed
+comes back as a *result* with `isError: true`, so the model can read it and
+try something else. Failing to *find* the tool, or a malformed request, is a
+protocol *error object*. A client that cannot tell "your tool broke" from
+"there is no such tool" cannot report either honestly.
+
+**Entries are read once, at startup.** A served surface that changed under a
+client mid-session would be lying about what it advertised; the protocol has
+a `listChanged` notification for that, and this server does not claim it.
+Restart the server to pick up new tools.
+
+Nothing prints to standard output but a reply — a stray format statement
+corrupts the stream for the client.

@@ -54,6 +54,7 @@
                              (:file "prompt")
                              (:file "skills")
                              (:file "registry")
+                             (:file "mcp")
                              (:file "memory")
                              (:file "templates")
                              (:file "extension")

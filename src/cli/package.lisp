@@ -23,6 +23,7 @@
                     (#:models #:vivarium.models)
                     (#:console #:vivarium.console)
                     (#:harness #:vivarium.harness)
+                    (#:mcp #:vivarium.mcp)
                     (#:workspace #:vivarium.workspace)
                     (#:env #:vivarium.env)
                     (#:session #:vivarium.session)

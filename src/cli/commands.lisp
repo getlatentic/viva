@@ -118,6 +118,19 @@ growth."
   (uiop:symbol-call :vivarium.tests :soak
                     :minutes (flag-integer parsed "minutes" 10)))
 
+(defun command-mcp (parsed)
+  "Serve the tool registry over MCP on stdio.
+
+Nothing may print to standard output but a reply: the transport is one JSON
+object per line, and a stray format statement corrupts the stream for the
+client. Diagnostics go to stderr or nowhere."
+  (let* ((cwd (namestring (truename (or (flag parsed "cwd") "."))))
+         (environment (env:make-local-environment :cwd cwd)))
+    (mcp:serve :environment environment
+               :directories (harness:registry-directories environment)
+               :cwd cwd)
+    0))
+
 (defun command-test (parsed)
   (declare (ignore parsed))
   (asdf:load-system "vivarium/tests")

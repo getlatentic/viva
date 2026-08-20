@@ -1227,3 +1227,95 @@ sys.exit(3)
               "the exit code is not reported: ~a" (tool:tool-result-output result))
         (true (search "deliberate failure" (tool:tool-result-output result))
               "the tool's own diagnosis was dropped")))))
+
+;;; ---------------------------------------------------------------------------
+;;; MCP: the registry served to anybody (#9)
+;;;
+;;; Asserted on the SERIALIZED JSON, not on the Lisp objects. The first draft
+;;; of this server was correct in-image and wrong on the wire: jzon maps a
+;;; keyword to a string, so :FALSE became "isError":"FALSE" -- a truthy string
+;;; telling every client each successful call had failed. No in-process test
+;;; could have seen it. These parse what a client would actually receive.
+;;; ---------------------------------------------------------------------------
+
+(defun mcp-exchange (request entries &key (cwd "/tmp"))
+  "One request in, the parsed reply a client would receive out."
+  (let ((response (vivarium.mcp::handle (com.inuoe.jzon:parse request) entries cwd)))
+    (and response (com.inuoe.jzon:parse (com.inuoe.jzon:stringify response)))))
+
+(defun mcp-entries (root)
+  (registry:load-entries (env:make-local-environment :cwd root)
+                         (list (format nil "~a/.vivarium/tools" root))))
+
+(define-test "the MCP handshake answers with the shapes the specification names"
+  (let ((reply (mcp-exchange "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}" '())))
+    (let ((result (gethash "result" reply)))
+      (is string= "2.0" (gethash "jsonrpc" reply))
+      (true (stringp (gethash "protocolVersion" result)) "protocolVersion is not a string")
+      (true (hash-table-p (gethash "capabilities" result)) "capabilities is not an object")
+      (let ((info (gethash "serverInfo" result)))
+        (true (stringp (gethash "name" info)) "serverInfo.name is not a string")
+        ;; A system with no declared version yields NIL, and NIL is JSON
+        ;; false. This shipped once.
+        (true (stringp (gethash "version" info))
+              "serverInfo.version is ~s, not a string" (gethash "version" info))))))
+
+(define-test "a notification is never answered"
+  ;; No id means no reply, by the specification. Answering one corrupts the
+  ;; client's request/response pairing for everything after it.
+  (false (mcp-exchange "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}" '())
+         "a notification was answered"))
+
+(define-test "tools/list projects the registry, inputSchema and all"
+  (let* ((root (registry-fixture)))
+    (write-registry-tool root "shout" +shout-manifest+)
+    (let* ((reply (mcp-exchange "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"
+                                (mcp-entries root)))
+           (tools (gethash "tools" (gethash "result" reply)))
+           (tool (aref tools 0))
+           (schema (gethash "inputSchema" tool)))
+      (is = 1 (length tools))
+      (is string= "shout" (gethash "name" tool))
+      (is string= "object" (gethash "type" schema))
+      (true (gethash "input" (gethash "properties" schema)) "the parameter is missing")
+      (is string= "input" (aref (gethash "required" schema) 0)))))
+
+(define-test "tools/call returns a real JSON boolean for isError"
+  (let* ((root (registry-fixture)))
+    (write-registry-tool root "shout" +shout-manifest+)
+    (let* ((entries (mcp-entries root))
+           (ok (mcp-exchange "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"shout\",\"arguments\":{\"input\":\"quiet\"}}}"
+                             entries :cwd root))
+           (result (gethash "result" ok))
+           (content (aref (gethash "content" result) 0)))
+      (is string= "text" (gethash "type" content))
+      (is string= "QUIET" (string-trim '(#\Newline) (gethash "text" content)))
+      ;; The bug this file exists to prevent: a STRING here is truthy in every
+      ;; client language, so "FALSE" reads as failure.
+      (is eq nil (gethash "isError" result)
+          "isError came back as ~s, not a JSON boolean" (gethash "isError" result)))))
+
+(define-test "a tool that fails is a result; a tool that is missing is a protocol error"
+  ;; The specification's split, and it is normative: a client that cannot tell
+  ;; \"your tool broke\" from \"there is no such tool\" cannot report either
+  ;; honestly, and a model denied the first cannot recover from it.
+  (let* ((root (registry-fixture)))
+    (write-registry-tool root "boom" (substitute-manifest-name +shout-manifest+ "boom")
+                         :script "#!/usr/bin/env python3
+import sys; sys.exit(4)
+")
+    (let* ((entries (mcp-entries root))
+           (ran (mcp-exchange "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"boom\",\"arguments\":{\"input\":\"x\"}}}"
+                              entries :cwd root))
+           (missing (mcp-exchange "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"absent\",\"arguments\":{}}}"
+                                  entries :cwd root)))
+      (true (gethash "result" ran) "a failing tool was reported as a protocol error")
+      (is eq t (gethash "isError" (gethash "result" ran)) "a failing tool reported success")
+      (false (gethash "result" missing) "a missing tool was reported as a result")
+      (true (gethash "error" missing) "a missing tool produced no protocol error")
+      (is = -32602 (gethash "code" (gethash "error" missing))))))
+
+(define-test "an unsupported method is refused rather than ignored"
+  (let ((reply (mcp-exchange "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"resources/list\"}" '())))
+    (true (gethash "error" reply) "an unsupported method produced no error")
+    (is = -32601 (gethash "code" (gethash "error" reply)))))

@@ -83,10 +83,18 @@
                     (#:env #:vivarium.env)
                     (#:tool #:vivarium.tool)
                     (#:schema #:vivarium.schema))
-  (:export #:load-tools #:load-entries #:parse-manifest
+  (:export #:load-tools #:load-entries #:parse-manifest #:run-entry
            #:entry #:entry-name #:entry-description #:entry-version
            #:entry-exec #:entry-parameters #:entry-directory
            #:*timeout* #:*inherited-environment*))
+
+(defpackage #:vivarium.mcp
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:env #:vivarium.env)
+                    (#:schema #:vivarium.schema)
+                    (#:registry #:vivarium.registry))
+  (:export #:serve #:handle #:*protocol-version* #:*server-name* #:*server-version*))
 
 (defpackage #:vivarium.memory
   (:use #:cl)
@@ -188,7 +196,7 @@
                     (#:models #:vivarium.models)
                     (#:template #:vivarium.template))
   (:export #:workspace-agent #:make-workspace-agent #:agent-environment
-           #:agent-registry-warnings #:agent-skills #:agent-templates #:agent-session #:agent-extensions #:agent-listener
+           #:registry-directories #:agent-registry-warnings #:agent-skills #:agent-templates #:agent-session #:agent-extensions #:agent-listener
            #:agent-request-limit #:agent-requests #:agent-context #:agent-aborting
            #:agent-gate #:suspend-agent #:resume-agent #:agent-suspended-p #:cancel-agent
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
