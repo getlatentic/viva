@@ -8,6 +8,16 @@
 
 (in-package #:vivarium.console)
 
+(defparameter +runner-options+ '(:in :out :listener)
+  "Keywords a runner consumes itself. Everything else in its argument list
+belongs to BUILD-AGENT and is forwarded.")
+
+(defun agent-options (options)
+  "OPTIONS minus the runner's own, ready to APPLY to BUILD-AGENT."
+  (loop for (key value) on options by #'cddr
+        unless (member key +runner-options+)
+          append (list key value)))
+
 (defun build-agent (&key model cwd root listener (request-limit 60) (stream t)
                       session-directory (persist t) extra-prompt extension-directories
                       extra-tools resume)
@@ -291,15 +301,21 @@ the last one HERE."
     (format out "  resumed ~d message(s)~%" (length restored)))
   (format out "  /help for commands, Ctrl-D to leave~%~%"))
 
-(defun run-shell (&key model cwd root (in *standard-input*) (out *standard-output*)
-                    (request-limit 60) extra-prompt extension-directories resume)
-  "Read prompts from IN, run them, paint the result on OUT. Returns an exit code."
+(defun run-shell (&rest options &key (in *standard-input*) (out *standard-output*)
+                  &allow-other-keys)
+  "Read prompts from IN, run them, paint the result on OUT. Returns an exit code.
+
+Everything else is BUILD-AGENT's and is passed through untouched. Re-listing
+its keywords here is what broke `vivarium shell` outright: `extra-tools` was
+added to BUILD-AGENT, this lambda list was not updated, and the CLI -- which
+always passes it -- died at startup with `Unknown &KEY argument`. That is the
+third time a hand-copied keyword list has dropped that one argument, so the
+copy is gone rather than corrected."
   (let ((view (make-view :stream out))
         (*running* t))
     (multiple-value-bind (agent choice complaints)
-        (build-agent :model model :cwd cwd :root root :resume resume
-                     :extra-prompt extra-prompt :extension-directories extension-directories
-                     :listener (shell-listener view) :request-limit request-limit)
+        (apply #'build-agent :listener (shell-listener view)
+               (agent-options options))
       (banner agent choice complaints out)
       (unwind-protect
            (loop while *running*

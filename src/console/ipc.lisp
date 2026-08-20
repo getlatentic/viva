@@ -265,14 +265,16 @@
 
         (t (fail server id type (format nil "Unknown command type ~a." type)))))))
 
-(defun run-ipc (&key model cwd root (in *standard-input*) (out *standard-output*)
-                  (request-limit 200) extra-prompt extension-directories resume)
-  "Serve one agent over stdin/stdout until EOF or an exit command."
+(defun run-ipc (&rest options &key (in *standard-input*) (out *standard-output*)
+                &allow-other-keys)
+  "Serve one agent over stdin/stdout until EOF or an exit command.
+
+Everything else is BUILD-AGENT's, forwarded untouched -- see RUN-SHELL for what
+re-listing its keywords costs."
   (let ((server (make-server :out out)))
     (multiple-value-bind (agent choice complaints)
-        (build-agent :model model :cwd cwd :root root :resume resume
-                     :extra-prompt extra-prompt :extension-directories extension-directories
-                     :listener (ipc-listener server) :request-limit request-limit)
+        (apply #'build-agent :listener (ipc-listener server)
+               (agent-options options))
       (setf (server-agent server) agent)
       (emit-line server (object "type" "ready"
                                 "model" (models:choice-model choice)

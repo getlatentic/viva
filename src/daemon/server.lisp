@@ -81,6 +81,31 @@ to release beyond the claim itself."
 (defvar *diagnostics-lock* (bt:make-lock "vivarium.diagnostics"))
 (defvar *failures* 0 "How many there have been, which the kept ones do not say.")
 
+(defvar *hangups* 0
+  "Clients that went away mid-write. Counted, never reported as failures.")
+
+(defparameter +hangup-errnos+
+  (list sb-posix:epipe sb-posix:econnreset)
+  "A peer that closed first. Distinguishing these from a genuine write failure
+is what stops ordinary use from looking like trouble: a person hosting vivarium
+in a multiplexer closes panes, and every close hangs up a client mid-greeting.")
+
+(defun hangup-p (condition)
+  "Did the peer close first, or did the write genuinely fail?
+
+SB-BSD-SOCKETS does not export its errno reader, and the alternative -- matching
+the printed message -- is a string comparison against another library's report
+format. The internal reader is used behind FBOUNDP so that an SBCL which renames
+it degrades to calling everything a failure: noisier than it should be, which is
+the safe direction. Silently classifying a real failure as a hangup is not."
+  (and (typep condition 'sockets:socket-error)
+       (fboundp 'sockets::socket-error-errno)
+       (member (funcall 'sockets::socket-error-errno condition) +hangup-errnos+)))
+
+(defun note-hangup ()
+  (bt:with-lock-held (*diagnostics-lock*) (incf *hangups*))
+  nil)
+
 (defun note-failure (where condition)
   (bt:with-lock-held (*diagnostics-lock*)
     (incf *failures*)
@@ -95,7 +120,7 @@ to release beyond the claim itself."
 
 (defun diagnostics ()
   (bt:with-lock-held (*diagnostics-lock*)
-    (values (copy-list *diagnostics*) *failures*)))
+    (values (copy-list *diagnostics*) *failures* *hangups*)))
 
 ;;; One connection
 
@@ -179,9 +204,10 @@ read their greeting first."
                                                   item))
                               (string #\Newline))
                  :external-format :utf-8))
-    ;; A client that went away is the ordinary end of a connection, and the
-    ;; session carries on without it. It is still worth counting.
-    (error (condition) (note-failure "write" condition))))
+    (error (condition)
+      (if (hangup-p condition)
+          (note-hangup)
+          (note-failure "write" condition)))))
 
 (defun start-writer (client)
   "The outbound side has one owner: this thread. The descriptor has another.
@@ -390,8 +416,8 @@ falls in the gap and none arrives twice."
            (no "task.cancel needs a task.")))
 
         ((string= "diagnostics" type)
-         (multiple-value-bind (kept total) (diagnostics)
-           (ok "failures" total "recent" (coerce kept 'vector))))
+         (multiple-value-bind (kept total hangups) (diagnostics)
+           (ok "failures" total "hangups" hangups "recent" (coerce kept 'vector))))
 
         ((string= "shutdown" type) (ok) (stop))
 
@@ -485,7 +511,17 @@ does it before binding."
   (and (probe-file path)
        (handler-case
            (let ((socket (make-instance 'sockets:local-socket :type :stream)))
-             (unwind-protect (progn (sockets:socket-connect socket path) t)
+             (unwind-protect
+                  (progn
+                    (sockets:socket-connect socket path)
+                    ;; READ the greeting rather than hanging up on it. Answering
+                    ;; is what `answering` means, so this is the better probe --
+                    ;; and connecting without reading made the daemon write into
+                    ;; a closed descriptor, so every probe left a broken pipe
+                    ;; behind. `daemon start --background` reported two contained
+                    ;; client failures it had caused itself.
+                    (let ((stream (sockets:socket-make-stream socket :input t :output t)))
+                      (and (read-line stream nil nil) t)))
                (ignore-errors (sockets:socket-close socket))))
          (error () nil))))
 

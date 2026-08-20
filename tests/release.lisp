@@ -54,3 +54,58 @@
     (false (search "(asdf:load-system \"vivarium/tests\")" source)
            "vivarium/tests must be loaded through LOAD-TEST-SYSTEM, ~
 which fetches what ASDF alone cannot")))
+
+;;; The entry points, against the arguments the CLI actually hands them
+
+(defun accepted-keywords (function)
+  "The keywords FUNCTION's lambda list accepts, or T for &allow-other-keys."
+  (let ((lambda-list (sb-introspect:function-lambda-list function)))
+    (if (member '&allow-other-keys lambda-list)
+        t
+        (loop for entry in (rest (member '&key lambda-list))
+              until (and (symbolp entry) (alexandria:starts-with #\& (string entry)))
+              collect (alexandria:make-keyword
+                       (string (if (consp entry) (first entry) entry)))))))
+
+(define-test "every option the CLI builds reaches the agent it is built for"
+  ;; `vivarium shell` died at startup with `Unknown &KEY argument: :EXTRA-TOOLS`
+  ;; -- WORKSPACE-OPTIONS grew a key and two hand-copied lambda lists did not.
+  ;; Nothing failed until a person ran the command, because no test ever built
+  ;; the CLI's argument list and offered it to the thing that receives it.
+  ;;
+  ;; The chain is checked at both links, and the second is why: the runners now
+  ;; forward everything, so asking only THEM whether a key is acceptable is a
+  ;; question that can no longer be answered wrong. BUILD-AGENT is where a key
+  ;; is finally accepted or refused, so that is what the CLI is measured
+  ;; against.
+  (let ((keys (loop for (key nil) on (cli::workspace-options
+                                      (cli::parse-arguments '()))
+                    by #'cddr collect key))
+        (accepted (accepted-keywords #'vivarium.console::build-agent)))
+    (true keys)
+    (true (listp accepted) "BUILD-AGENT must name its keywords, not accept anything")
+    (dolist (key keys)
+      (true (member key accepted) "~a is passed by the CLI but BUILD-AGENT refuses it" key))
+    ;; And the runners in between must not re-list them, which is the mistake
+    ;; itself rather than its symptom.
+    (dolist (runner (list #'vivarium.console:run-shell #'vivarium.console:run-ipc))
+      (is eq t (accepted-keywords runner)
+          "a runner that enumerates BUILD-AGENT's keywords rots the next time one is added"))))
+
+(define-test "--limit reaches ipc, and its documented default is the real one"
+  ;; :REQUEST-LIMIT was appended after a list that already carried one, and in a
+  ;; keyword list the first value wins -- so ipc's documented 200 was 60.
+  (is = 200 (getf (cli::workspace-options (cli::parse-arguments '()) :limit-default 200)
+                  :request-limit))
+  (is = 5 (getf (cli::workspace-options (cli::parse-arguments '("--limit" "5"))
+                                        :limit-default 200)
+                :request-limit)))
+
+(define-test "colour is off when output is not a terminal, and --colour still wins"
+  ;; Escape codes in a redirected log are the pane case: nothing about a
+  ;; multiplexer changes this, but running inside one is when people redirect.
+  (flet ((wanted (tokens) (cli::colour-wanted-p (cli::parse-arguments tokens))))
+    (with-output-to-string (*standard-output*)
+      (false (wanted '()) "a string stream is not a terminal")
+      (true (wanted '("--colour" "true")) "an explicit request is honoured anyway")
+      (false (wanted '("--colour" "false"))))))

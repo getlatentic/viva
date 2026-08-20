@@ -987,6 +987,48 @@ checkpoint."))
                               :test #'string=)))
             (is = 0 leaks "~d connections leaked their descriptor" leaks)))))))
 
+;;; Ordinary use must not look like trouble
+;;;
+;;; A person hosting vivarium in a multiplexer closes panes, and vivarium's own
+;;; startup probes the socket. Both hang a client up mid-write. Reporting those
+;;; as contained failures buries the real ones under normal operation -- and the
+;;; probe was manufacturing the failures it then reported.
+
+(define-test "a liveness probe leaves no failure behind"
+  ;; RUNNING-P connected and hung up without reading, so the daemon wrote its
+  ;; greeting into a closed descriptor every time it was asked whether it was
+  ;; alive. `daemon start --background` reported two contained client failures,
+  ;; both of them its own.
+  (with-daemon (path)
+    (multiple-value-bind (kept before) (daemon:diagnostics)
+      (declare (ignore kept))
+      (dotimes (i 5) (true (daemon:running-p path)))
+      ;; The write that would fail happens on the daemon's writer thread, so
+      ;; give it time to have failed before concluding it did not.
+      (sleep 0.5)
+      (multiple-value-bind (kept after) (daemon:diagnostics)
+        (declare (ignore kept))
+        (is = before after "~d failures from ~d liveness probes" (- after before) 5)))))
+
+(define-test "a client that hangs up is counted apart from a failure"
+  ;; The pane case. Closing a terminal mid-stream is the ordinary end of a
+  ;; connection, not a defect, and the two must be distinguishable or neither
+  ;; number means anything.
+  (with-daemon (path)
+    (multiple-value-bind (kept before hangups-before) (daemon:diagnostics)
+      (declare (ignore kept))
+      (dotimes (i 5) (daemon-drop path))
+      (daemon-wait (lambda ()
+                     (multiple-value-bind (k f h) (daemon:diagnostics)
+                       (declare (ignore k f))
+                       (> h hangups-before)))
+                   :timeout 10)
+      (multiple-value-bind (kept after hangups-after) (daemon:diagnostics)
+        (declare (ignore kept))
+        (is = before after "a hangup was recorded as a failure")
+        (true (> hangups-after hangups-before)
+              "~d hangups were not counted at all" (- 5 (- hangups-after hangups-before)))))))
+
 ;;; The closure gate: four defects, frozen as a list, each attacked
 ;;;
 ;;; After these, a newly imagined race is backlog unless it has a concrete

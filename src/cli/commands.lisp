@@ -312,7 +312,7 @@ noise, not a result.~%")
 ;;; subcommands are a hundred lines between them, and that is the point: if
 ;;; either needed more than wiring, the library would not be reusable.
 
-(defun workspace-options (parsed)
+(defun workspace-options (parsed &key (limit-default 60))
   (list :model (flag parsed "model")
         :cwd (a:when-let ((cwd (flag parsed "cwd"))) (namestring (truename cwd)))
         :root (a:when-let ((root (flag parsed "root"))) (namestring (truename root)))
@@ -323,7 +323,7 @@ noise, not a result.~%")
                                  (list (namestring (truename given))))
         :resume (a:when-let ((given (flag parsed "resume")))
                   (if (string= "true" given) t given))
-        :request-limit (flag-integer parsed "limit" 60)
+        :request-limit (flag-integer parsed "limit" limit-default)
         ;; The arm, as two independent switches, because three configurations
         ;; come out of them and conflating them would collapse two:
         ;;
@@ -355,17 +355,34 @@ fact about its evidence rather than about the directory it was written to."
     (setf actor:*default-door* (if (string= door "closed") :closed :open))
     t))
 
+(defun colour-wanted-p (parsed)
+  "Should this run paint? --colour decides when given; otherwise the terminal.
+
+Defaulting to ON regardless of where output goes is how a log file fills with
+escape sequences: `vivarium shell < script > log` is a supported way to run
+this, and it wrote codes nobody could read into a file nobody could grep. The
+same test ATTEND already applied to its screen applies here, plus NO_COLOR,
+which is what a person redirecting output in a pane will already have set."
+  (a:if-let ((given (flag parsed "colour")))
+    (not (string= "false" given))
+    (and (interactive-stream-p *standard-output*)
+         (not (env "NO_COLOR")))))
+
 (defun command-shell (parsed)
   "Interactive work in a directory. Reads stdin, so it also runs a script."
   (unless (apply-door-flag parsed) (return-from command-shell 2))
   (apply-journal-flag parsed)
-  (let ((console:*colour* (not (string= "false" (flag parsed "colour" "true")))))
+  (let ((console:*colour* (colour-wanted-p parsed)))
     (apply #'console:run-shell (workspace-options parsed))))
 
 (defun command-ipc (parsed)
-  "The same agent, driven by another program over stdin and stdout."
-  (apply #'console:run-ipc (append (workspace-options parsed)
-                                   (list :request-limit (flag-integer parsed "limit" 200)))))
+  "The same agent, driven by another program over stdin and stdout.
+
+The higher default belongs here rather than appended: WORKSPACE-OPTIONS already
+carries a :REQUEST-LIMIT, and in a keyword list the FIRST value wins -- so the
+200 this appended was silently 60 the whole time, and `ipc` served a limit it
+did not document."
+  (apply #'console:run-ipc (workspace-options parsed :limit-default 200)))
 
 (defun command-daemon (parsed)
   "Start, stop or inspect the organism.
@@ -395,10 +412,19 @@ it finds nobody home."
                           ;; Contained failures, said out loud. A daemon that
                           ;; survived four hundred of them and cannot report
                           ;; them looks exactly like one that had none.
+                          ;;
+                          ;; Hangups are counted apart and shown only alongside
+                          ;; something else, because they are not trouble: every
+                          ;; closed pane and every finished client is one, so
+                          ;; listing them as failures buries the real ones under
+                          ;; ordinary use.
                           (let ((reply (daemon:request stream "type" "diagnostics")))
                             (a:when-let ((failures (gethash "failures" reply)))
                               (when (plusp failures)
-                                (format t "~&~%~d contained client failure~:p~%" failures)
+                                (format t "~&~%~d contained client failure~:p~@[, ~d hangup~:p~]~%"
+                                        failures
+                                        (let ((hangups (gethash "hangups" reply)))
+                                          (and hangups (plusp hangups) hangups)))
                                 (loop for each across (gethash "recent" reply)
                                       repeat 5
                                       do (format t "~&  ~a in ~a: ~a~%"
@@ -410,11 +436,12 @@ it finds nobody home."
          ;; parse is a defect, and calling it `not running` is how one hid.
          (daemon:daemon-error () (format t "~&not running~%") 1)))
       ((string= "start" verb)
-       (daemon:serve :background (string= "true" (flag parsed "background" "false"))
-                     :announce (lambda (path)
-                                 (format t "~&listening on ~a~%" path)
-                                 (finish-output)))
-       0)
+       (if (string= "true" (flag parsed "background" "false"))
+           (start-detached-daemon)
+           (progn (daemon:serve :announce (lambda (path)
+                                            (format t "~&listening on ~a~%" path)
+                                            (finish-output)))
+                  0)))
       ((string= "stop" verb)
        (if (daemon:running-p)
            (progn (daemon:with-connection (stream)
@@ -424,17 +451,33 @@ it finds nobody home."
            (progn (format t "~&not running~%") 1)))
       (t (format t "~&usage: vivarium daemon [status|start|stop]~%") 1))))
 
-(defun ensure-daemon ()
-  "Start the organism if it is not already there, and wait for it to answer."
+(defun launch-daemon ()
+  "Start a daemon in a process of its own and wait for it to answer.
+
+A SEPARATE PROCESS, not a thread. A background daemon has to outlive the shell
+that started it, and a thread cannot: `daemon start --background` used to call
+SERVE with :BACKGROUND T, which detaches the accept loop into a thread and
+returns -- whereupon the CLI exits, taking the thread and the socket with it.
+It printed `listening on ...` and left nothing listening. SERVE's own
+:BACKGROUND is still right for a caller that IS the long-lived process, which
+is how the suite and the soak use it."
   (unless (daemon:running-p)
-    (let ((root (repository-root)))
-      (uiop:launch-program (list (namestring (merge-pathnames "bin/vivarium" root))
-                                 "daemon" "start")
-                           :output nil :error-output nil))
+    (uiop:launch-program (list (namestring (merge-pathnames "bin/vivarium" (repository-root)))
+                               "daemon" "start")
+                         :output nil :error-output nil)
     (loop repeat 100
           until (daemon:running-p)
           do (sleep 0.1)))
   (daemon:running-p))
+
+(defun ensure-daemon ()
+  "Start the organism if it is not already there, and wait for it to answer."
+  (launch-daemon))
+
+(defun start-detached-daemon ()
+  (cond ((daemon:running-p) (format t "~&already running~%") 0)
+        ((launch-daemon) (format t "~&listening on ~a~%" (daemon:socket-path)) 0)
+        (t (format t "~&could not start a daemon~%") 1)))
 
 (defun command-attach (parsed)
   "Talk to a session inside the organism, and leave it running afterwards."
