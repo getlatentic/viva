@@ -498,24 +498,24 @@ is how the suite and the soak use it."
           (return-from command-attach 1))
         (let ((id (gethash "id" (gethash "session" reply))))
           (format t "~&session ~a  (closing this leaves it running)~%~%" id)
+          (format t "/help lists what this session answers.~%~%")
           (loop for line = (progn (format t "› ") (finish-output) (read-line *standard-input* nil nil))
                 while line
-                do (cond ((string= "/detach" (string-trim " " line))
+                for trimmed = (string-trim " " line)
+                do (cond ((or (string= "/detach" trimmed) (string= "/exit" trimmed))
                           (format t "~&detached; ~a is still running~%" id)
                           (return))
-                         ((plusp (length (string-trim " " line)))
+                         ;; Every slash line is handled here, including one
+                         ;; naming no verb at all. Falling through to the model
+                         ;; with a typo'd command is a paid request answered by
+                         ;; a guess at what you meant.
+                         ((a:starts-with #\/ trimmed)
+                          (run-attached-verb stream id trimmed))
+                         ((plusp (length trimmed))
                           (daemon:request stream "type" "prompt" "session" id "text" line)
-                          ;; Events stream in until the turn ends.
-                          (loop for reply = (ignore-errors (jzon:parse (read-line stream nil "")))
-                                while reply
-                                for name = (gethash "event" reply)
-                                do (cond ((equal name "model.delta")
-                                          (write-string (gethash "text" (gethash "data" reply)))
-                                          (force-output))
-                                         ((equal name "tool.started")
-                                          (format t "~&  · ~a~%"
-                                                  (gethash "name" (gethash "call" (gethash "data" reply)))))
-                                         ((equal name "turn.completed") (terpri) (return)))))))))
+                          ;; Shared with /retain: anything that starts a turn
+                          ;; drains that turn, or the next reader inherits it.
+                          (stream-turn stream))))))
       0)))
 
 (defun command-sessions (parsed)

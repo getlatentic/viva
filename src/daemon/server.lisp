@@ -415,6 +415,51 @@ falls in the gap and none arrives twice."
            (progn (actor:cancel-task id) (ok))
            (no "task.cancel needs a task.")))
 
+        ;; What this session has accumulated: notes, skills, tools. Answered
+        ;; FROM DISK by the germline reader, never by reading the cell's live
+        ;; agent -- that agent belongs to a worker thread, and reading its
+        ;; slots from this one is the ownership violation ACTOR:SNAPSHOT
+        ;; exists to prevent. Reading files also means the question can be
+        ;; answered while a turn is running, instead of queueing behind work
+        ;; that may take minutes.
+        ((string= "session.inspect" type)
+         (if (null cell)
+             (no "No such session.")
+             (let* ((now (actor:snapshot cell))
+                    (view (germline:inspect-directory (getf now :cwd))))
+               (flet ((items (list)
+                        (coerce (mapcar (lambda (item)
+                                          (object "name" (germline:item-name item)
+                                                  "detail" (germline:item-detail item)
+                                                  "scope" (string-downcase
+                                                           (symbol-name (germline:item-scope item)))))
+                                        list)
+                                'vector)))
+                 (ok "cwd" (getf now :cwd)
+                     "model" (getf now :model)
+                     "state" (string-downcase (symbol-name (getf now :state)))
+                     "trusted" (and (germline:view-trusted-p view) t)
+                     "notes" (items (germline:view-notes view))
+                     "skills" (items (germline:view-skills view))
+                     "tools" (items (germline:view-tools view))
+                     "refused" (items (germline:view-refused view)))))))
+
+        ;; The retention policy, in the organism. HARNESS:REFLECT had no caller
+        ;; outside `do --retain` and an experiment driver, so the long-lived
+        ;; process -- the thing the manifesto is about -- could not decide what
+        ;; its work had taught it.
+        ;;
+        ;; Posted to the cell, never run here: reflection is a TURN, it uses
+        ;; the same agent the worker owns, and running it on a client thread
+        ;; would be two threads in one agent's conversation. Refusing while
+        ;; busy is the honest answer rather than queueing, because the point is
+        ;; to reflect on work that has finished.
+        ((string= "session.retain" type)
+         (cond ((null cell) (no "No such session."))
+               ((actor:busy-p cell)
+                (no "This session is working. Retention reflects on finished work; try again when it is idle."))
+               (t (ok "turn" (actor:submit-retention cell)))))
+
         ((string= "diagnostics" type)
          (multiple-value-bind (kept total hangups) (diagnostics)
            (ok "failures" total "hangups" hangups "recent" (coerce kept 'vector))))

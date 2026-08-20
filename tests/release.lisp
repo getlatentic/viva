@@ -208,3 +208,53 @@ DOES rather than about what it says."
     (true (search "memory-files" source))
     (false (search "(memory:context-files" source)
            "notes must come from the agent's own memory files only")))
+
+;;; The organism's own interface
+
+(define-test "no slash line is ever forwarded to the model"
+  ;; `/help` in an attached session used to be sent as a literal prompt: a paid
+  ;; request, answered by a guess at what the typo meant. Every slash line is
+  ;; now handled by the client, including one naming no verb at all.
+  (let ((source (repository-file "src/cli/commands.lisp")))
+    (true (search "(a:starts-with #\\/ trimmed)" source)
+          "the attach loop must claim every slash line before the prompt branch")))
+
+(define-test "a mistyped verb is refused with the verb it resembles"
+  ;; Prefix matching cannot see a dropped letter, which is the typo a
+  ;; suggestion exists for.
+  (is = 1 (cli::edit-distance "tols" "tools"))
+  (is = 3 (cli::edit-distance "kitten" "sitting"))
+  (is string= "tools" (cli::attached-name (cli::nearest-verb "tols")))
+  (is string= "memory" (cli::attached-name (cli::nearest-verb "memry")))
+  (is string= "retain" (cli::attached-name (cli::nearest-verb "retian")))
+  (false (cli::nearest-verb "xyzzy") "a wrong suggestion is worse than none"))
+
+(define-test "every verb that starts a turn drains that turn"
+  ;; A request that starts a turn and does not consume its events leaves them
+  ;; for whatever reads next, so the following prompt prints the previous
+  ;; turn's output and stops at the previous turn's completion -- one behind,
+  ;; forever. /retain did exactly that.
+  (let ((source (repository-file "src/cli/attached.lisp")))
+    (true (search "session.retain" source))
+    (let ((retain (search "session.retain" source)))
+      (true (search "stream-turn" source :start2 retain)
+            "the retain verb must drain the turn it started"))))
+
+(define-test "the daemon protocol answers for the germline and for retention"
+  (let ((source (repository-file "src/daemon/server.lisp")))
+    (true (search "\"session.inspect\"" source))
+    (true (search "\"session.retain\"" source))
+    ;; Answered from disk, never by reading the cell's live agent from a
+    ;; client thread -- the violation ACTOR:SNAPSHOT exists to prevent.
+    (true (search "germline:inspect-directory" source))
+    (false (search "(agent:tools (actor:cell-agent" source))))
+
+(define-test "a queued turn keeps everything it arrived with"
+  ;; The queue stored (turn . text). A retention turn queued behind a running
+  ;; one would have come back as an ordinary prompt: the right words with the
+  ;; wrong budget, and nothing afterwards able to tell which it had been.
+  (let ((source (repository-file "src/daemon/actor.lisp")))
+    (true (search "(cons (first arguments) options)" source)
+          "the queue must carry the whole message, not just its text")
+    (true (search "(getf options :retain)" source)
+          "the worker decides prompt-or-retention from the message it was given")))

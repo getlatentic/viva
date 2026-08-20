@@ -1,0 +1,220 @@
+;;;; The verbs an attached session answers.
+;;;;
+;;;; `vivarium shell` had eighteen verbs and `vivarium attach` -- the organism,
+;;;; the long-lived thing this project is about -- had one. Everything else
+;;;; typed with a leading slash was forwarded to the model as a literal prompt:
+;;;; a paid request, a confused model, and no error. The flagship had the worst
+;;;; interface in the product.
+;;;;
+;;;; These verbs cannot be the shell's. A shell verb closes over a local agent
+;;;; and calls it directly; an attached client holds a socket, and the agent is
+;;;; on a worker thread in another process. So each verb here is a REQUEST, and
+;;;; what it can ask for is exactly what the protocol offers.
+;;;;
+;;;; ONE inspection request rather than one per verb. `/tools`, `/skills`,
+;;;; `/memory` and `/status` are four questions about one instant, and four
+;;;; round trips would answer them from four.
+
+(in-package #:vivarium.cli)
+
+(defstruct (attached-verb (:conc-name attached-))
+  (name "" :type string)
+  (argument "" :type string)
+  (blurb "" :type string)
+  (handler nil))
+
+(defun ask-session (stream id type &rest plist)
+  (apply #'daemon:request stream "type" type "session" id plist))
+
+(defun stream-turn (stream)
+  "Print a turn's events until it ends.
+
+Every request that STARTS A TURN must call this. Firing one and not draining
+its events leaves them in the socket for whatever reads next -- so the next
+prompt would print the previous turn's output and stop at the previous turn's
+completion, one behind forever. /retain did exactly that before this existed,
+and its answer went nowhere while quietly desynchronising the stream."
+  (loop for reply = (ignore-errors (jzon:parse (read-line stream nil "")))
+        while reply
+        for name = (gethash "event" reply)
+        do (cond ((equal name "model.delta")
+                  (write-string (gethash "text" (gethash "data" reply)))
+                  (force-output))
+                 ((equal name "tool.started")
+                  (format t "~&  · ~a~%"
+                          (gethash "name" (gethash "call" (gethash "data" reply)))))
+                 ((member name '("turn.completed" "turn.failed" "turn.cancelled")
+                          :test #'equal)
+                  (terpri)
+                  (return)))))
+
+(defun show-inspection (reply key label &key detail)
+  (let ((items (gethash key reply)))
+    (format t "~&~a~@[  (~d)~]~%" label (and (plusp (length items)) (length items)))
+    (if (zerop (length items))
+        (format t "  none~%")
+        (loop for item across items
+              do (format t "  ~a ~a~24t~a~%"
+                         (if (equal "machine" (gethash "scope" item)) "~" " ")
+                         (gethash "name" item)
+                         (if detail (one-line (gethash "detail" item) 48) ""))))))
+
+(defun inspect-session (stream id &rest sections)
+  (let ((reply (ask-session stream id "session.inspect")))
+    (if (not (gethash "success" reply))
+        (format t "~&~a~%" (gethash "error" reply))
+        (dolist (section sections)
+          (ecase section
+            (:where (format t "~&~a~%  ~a, ~a~%"
+                            (gethash "cwd" reply) (gethash "model" reply)
+                            (gethash "state" reply)))
+            (:notes (show-inspection reply "notes" "notes"))
+            (:skills (show-inspection reply "skills" "skills" :detail t))
+            (:tools
+             (show-inspection reply "tools" "tools" :detail t)
+             (let ((refused (gethash "refused" reply)))
+               (when (plusp (length refused))
+                 (format t "~&refused  (~d)~%" (length refused))
+                 (loop for item across refused
+                       do (format t "  ~a~24tpresent, but will not run~%" (gethash "name" item)))
+                 (unless (eq t (gethash "trusted" reply))
+                   (format t "  trust this project to enable them: ~
+vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
+
+(defparameter +attached-verbs+
+  (list
+   (make-attached-verb
+    :name "help" :blurb "this list"
+    :handler (lambda (stream id argument)
+               (declare (ignore stream id argument))
+               (dolist (verb +attached-verbs+)
+                 (format t "  /~a~@[ ~a~]~22t~a~%" (attached-name verb)
+                         (when (plusp (length (attached-argument verb)))
+                           (attached-argument verb))
+                         (attached-blurb verb)))
+               (format t "  anything else~22tgoes to the model as a prompt~%")))
+   (make-attached-verb
+    :name "status" :blurb "where this session is working, and on what"
+    :handler (lambda (stream id argument)
+               (declare (ignore argument))
+               (inspect-session stream id :where)))
+   (make-attached-verb
+    :name "memory" :blurb "what it has written down"
+    :handler (lambda (stream id argument)
+               (declare (ignore argument))
+               (inspect-session stream id :notes)))
+   (make-attached-verb
+    :name "skills" :blurb "skills loaded for this directory"
+    :handler (lambda (stream id argument)
+               (declare (ignore argument))
+               (inspect-session stream id :skills)))
+   (make-attached-verb
+    :name "tools" :blurb "tools it can call, and any it cannot"
+    :handler (lambda (stream id argument)
+               (declare (ignore argument))
+               (inspect-session stream id :tools)))
+   (make-attached-verb
+    :name "learned" :blurb "everything retained here: notes, skills, tools"
+    :handler (lambda (stream id argument)
+               (declare (ignore argument))
+               (inspect-session stream id :where :notes :skills :tools)))
+   (make-attached-verb
+    :name "retain" :blurb "decide now what this session's work should keep"
+    :handler (lambda (stream id argument)
+               (declare (ignore argument))
+               (let ((reply (ask-session stream id "session.retain")))
+                 (if (not (gethash "success" reply))
+                     (format t "  ~a~%" (gethash "error" reply))
+                     (progn
+                       ;; The whole value of this verb is seeing what it chose
+                       ;; -- including "nothing", which is the policy's most
+                       ;; common correct answer and looks identical to a broken
+                       ;; feature when it is not shown.
+                       (format t "  deciding what to keep…~%")
+                       (stream-turn stream))))))
+   (make-attached-verb
+    :name "sessions" :blurb "every session in the organism"
+    :handler (lambda (stream id argument)
+               (declare (ignore argument))
+               (let ((reply (daemon:request stream "type" "session.list")))
+                 (loop for each across (or (gethash "sessions" reply) #())
+                       do (format t "  ~a~10t~a~22t~a~%"
+                                  (gethash "id" each) (gethash "state" each)
+                                  (gethash "label" each))))))
+   (make-attached-verb
+    :name "tasks" :blurb "the task tree under this session"
+    :handler (lambda (stream id argument)
+               (declare (ignore argument))
+               (let ((reply (daemon:request stream "type" "task.list")))
+                 (let ((tasks (or (gethash "tasks" reply) #())))
+                   (if (zerop (length tasks))
+                       (format t "  none~%")
+                       (loop for each across tasks
+                             do (format t "  ~a~14t~a~%"
+                                        (gethash "id" each) (gethash "state" each))))))))
+   (make-attached-verb
+    :name "cancel" :blurb "stop the turn now running"
+    :handler (lambda (stream id argument)
+               (declare (ignore argument))
+               (ask-session stream id "cancel")
+               (format t "  cancelled~%")))
+   (make-attached-verb
+    :name "suspend" :blurb "pause this session where it is"
+    :handler (lambda (stream id argument)
+               (declare (ignore argument))
+               (ask-session stream id "suspend")
+               (format t "  suspended~%")))
+   (make-attached-verb
+    :name "resume" :blurb "carry on"
+    :handler (lambda (stream id argument)
+               (declare (ignore argument))
+               (ask-session stream id "resume")
+               (format t "  resumed~%")))))
+
+(defun edit-distance (a b)
+  "How many single-character edits separate A and B."
+  (let ((previous (loop for j to (length b) collect j)))
+    (loop for i from 1 to (length a)
+          for current = (list i)
+          do (loop for j from 1 to (length b)
+                   do (push (min (1+ (nth j previous))
+                                 (1+ (first current))
+                                 (+ (nth (1- j) previous)
+                                    (if (char-equal (char a (1- i)) (char b (1- j))) 0 1)))
+                            current))
+             (setf previous (nreverse current)))
+    (car (last previous))))
+
+(defun nearest-verb (name)
+  "The verb NAME was probably meant to be, or nothing.
+
+Edit distance rather than a prefix test, because the typo a suggestion exists
+for is usually a dropped or doubled letter -- `/tols` shares no useful prefix
+with `/tools` and is obviously it. Two edits is the limit: past that the guess
+is worse than no guess.
+
+A suggestion, never a correction. Running what somebody nearly typed is how a
+/suspend becomes a /shutdown."
+  (let ((ranked (sort (mapcar (lambda (verb)
+                                (cons (edit-distance name (attached-name verb)) verb))
+                              +attached-verbs+)
+                      #'< :key #'car)))
+    (when (and ranked (<= (car (first ranked)) 2))
+      (cdr (first ranked)))))
+
+(defun run-attached-verb (stream id line)
+  "Handle a /command. Returns T when LINE was one -- including when it was a
+verb that does not exist, which is refused rather than sent to the model.
+
+A slash line reaching the model is not a harmless fallthrough: it is a paid
+request whose answer is a language model's guess at what your typo meant."
+  (let* ((body (subseq line 1))
+         (space (position #\Space body))
+         (name (if space (subseq body 0 space) body))
+         (argument (if space (string-trim " " (subseq body space)) ""))
+         (verb (find name +attached-verbs+ :key #'attached-name :test #'string-equal)))
+    (cond (verb (funcall (attached-handler verb) stream id argument) t)
+          (t (format t "  no such command: /~a~@[  (did you mean /~a?)~]~%~
+  /help lists them. To send that text to the model, drop the slash.~%"
+                     name (a:when-let ((near (nearest-verb name))) (attached-name near)))
+             t))))

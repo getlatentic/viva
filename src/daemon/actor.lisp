@@ -629,13 +629,21 @@ or a turn declining to take another, and only the agent knows whether any of
 that was what someone asked for."
   (if (agent:cancelled-p agent) :cancelled :completed))
 
-(defun start-worker (cell turn text)
-  "The mechanics of a turn: one thread around HARNESS:ASK, reporting back
-through the mailbox with the identity of the turn it finished."
+(defun start-worker (cell turn options)
+  "The mechanics of a turn: one thread around the work, reporting back through
+the mailbox with the identity of the turn it finished.
+
+OPTIONS rather than a bare string, because a turn is not always a prompt. A
+RETENTION turn runs the policy instead -- on THIS thread, because reflection
+uses the same agent and the same conversation the worker owns, and running it
+from the client's thread would put two threads in one agent's turn."
   (let ((worker (bt:make-thread
                  (lambda ()
                    (multiple-value-bind (outcome detail reply)
-                       (handler-case (let ((reply (harness:ask (cell-agent cell) text)))
+                       (handler-case (let ((reply (if (getf options :retain)
+                                                      (harness:reflect (cell-agent cell))
+                                                      (harness:ask (cell-agent cell)
+                                                                   (getf options :text)))))
                                        (values (turn-outcome (cell-agent cell)) nil reply))
                          ;; A failed turn ends the turn, not the session. The
                          ;; organism has to survive its own bad requests or it
@@ -722,12 +730,16 @@ carrying what the alphabet abstracts away: prompt text, detail, reply, model."
                   (event::object "turn" turn
                                  "detail" (getf options :detail)
                                  "text" (getf options :reply)))))
-      (:start-worker (start-worker cell (first arguments) (getf options :text)))
+      (:start-worker (start-worker cell (first arguments) options))
       (:queue-prompt
+       ;; The whole message, not just its text. A queued turn that dropped
+       ;; everything but the string would run a retention turn as an ordinary
+       ;; prompt -- the right words with the wrong budget, and no way to tell
+       ;; afterwards which it had been.
        (owning (cell)
          (setf (cell-queued cell)
                (append (cell-queued cell)
-                       (list (cons (first arguments) (getf options :text)))))))
+                       (list (cons (first arguments) options))))))
       (:start-next-queued
        ;; The machine designated :NEXT-QUEUED; the actual identity lives in
        ;; the mechanics. Pop it, fix the placeholder, announce, start.
@@ -884,6 +896,19 @@ cancelled."
     (when cell
       (let ((turn (mint-turn cell)))
         (tell cell :user-message :text text :turn turn)
+        turn))))
+
+(defun submit-retention (cell)
+  "Post a RETENTION turn and return its id.
+
+The same path an ordinary prompt takes -- mint a turn, tell the cell -- so the
+lifecycle machine sees one kind of turn and the spec that mirrors it does not
+grow a case. What differs is only the mechanics: the worker runs the retention
+policy rather than a prompt, on the thread that owns the agent."
+  (let ((cell (resolve cell)))
+    (when cell
+      (let ((turn (mint-turn cell)))
+        (tell cell :user-message :text harness:*reflection-prompt* :retain t :turn turn)
         turn))))
 
 (defun terminal-for-p (event turn)

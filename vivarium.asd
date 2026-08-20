@@ -154,6 +154,7 @@
                              (:file "arms")
                              (:file "render")
                              (:file "screen")
+                             (:file "attached")
                              (:file "commands")
                              (:file "install")
                              (:file "learned")
