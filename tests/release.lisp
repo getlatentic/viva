@@ -463,3 +463,29 @@ you where you were rather than nowhere"))))
     (let ((describe (search "defun describe-rejoin" source)))
       (false (search "read-line" source :start2 describe
                      :end2 (min (length source) (+ describe 900)))))))
+
+(define-test "Ctrl-C stops the request and keeps the session"
+  ;; What every REPL has meant by Ctrl-C for forty years: stop what you are
+  ;; doing, not leave. A second one, at a prompt with nothing running, exits.
+  (let ((source (repository-file "src/cli/commands.lisp")))
+    (true (search "(setf *interrupted-recently* t)" source)
+          "cancelling must not fall through to the exit path")
+    (false (search "is still open. `vivarium` rejoins it" source)
+           "that message belonged to the version that gave up and left")))
+
+(define-test "the interrupted read is not mistaken for end of input"
+  ;; SBCL's READ-LINE returns NIL once after the signal that interrupted the
+  ;; syscall, which is indistinguishable from Ctrl-D -- so cancelling a turn
+  ;; exited the client, and `stay in the session` was the one thing the fix
+  ;; did not do.
+  (let ((source (repository-file "src/cli/attached.lisp")))
+    (true (search "(defun read-prompt" source))
+    (true (search "*interrupted-recently*" source))))
+
+(define-test "a lost connection is a sentence, not an FD-STREAM"
+  ;; `Couldn't write to #<SB-SYS:FD-STREAM for "socket, peer: ...">: Broken
+  ;; pipe` names a Lisp object and no cause. The daemon drops a client that
+  ;; falls too far behind, deliberately; the session is untouched.
+  (true (search "The organism closed this connection"
+                (repository-file "src/cli/commands.lisp")))
+  (true (search ":connection-lost" (repository-file "src/cli/attached.lisp"))))

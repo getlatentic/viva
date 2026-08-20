@@ -499,6 +499,22 @@ sending a request and draining the reply is just code."
              (finish-output *error-output*)
              (sb-ext:exit :code 130 :abort t))))
 
+(defun connection-lost-p (outcome)
+  "Was that a lost connection? If so, say so in words and stop.
+
+`Couldn't write to #<SB-SYS:FD-STREAM for \"socket, peer: ...\">: Broken pipe`
+is what a person saw, which names a Lisp object and no cause. The daemon drops
+a client that falls too far behind -- deliberately, so one slow reader cannot
+make the organism hoard events -- and the next thing that client writes gets
+EPIPE. That is a fact about this connection, not about the session, which is
+still running and can be rejoined."
+  (when (eq :connection-lost outcome)
+    (format t "~&~%The organism closed this connection -- usually because this ~
+client fell behind~%what the session was producing. The session itself is ~
+untouched and still running.~%~%  vivarium        rejoins it~%  ~
+vivarium daemon status   shows what the organism is doing~%")
+    t))
+
 (defun current-sequence (stream id)
   "Where this session is now, so attaching replays nothing into the socket."
   (let ((reply (daemon:request stream "type" "session.list")))
@@ -569,7 +585,7 @@ this only mentions them -- continuing one is `--resume`."
           (report-earlier-sessions cwd)
           (when wanted (describe-rejoin reply))
           (format t "~%/help lists what this session answers.~%~%")
-          (loop for line = (progn (format t "› ") (finish-output) (read-line *standard-input* nil nil))
+          (loop for line = (read-prompt)
                 while line
                 for trimmed = (string-trim " " line)
                 ;; A verb may have moved this client; the loop follows it.
@@ -583,7 +599,8 @@ this only mentions them -- continuing one is `--resume`."
                          ;; with a typo'd command is a paid request answered by
                          ;; a guess at what you meant.
                          ((a:starts-with #\/ trimmed)
-                          (run-attached-verb stream id trimmed))
+                          (when (connection-lost-p (run-attached-verb stream id trimmed))
+                            (return)))
                          ((plusp (length trimmed))
                           (daemon:request stream "type" "prompt" "session" id "text" line)
                           ;; Shared with /retain: anything that starts a turn
@@ -602,12 +619,16 @@ this only mentions them -- continuing one is `--resume`."
                             ;; read, so returning to the prompt here works
                             ;; sometimes, and a prompt that sometimes answers is
                             ;; worse than one that always says goodbye.
+                            ;; Cancel the request and STAY. Ctrl-C means stop
+                            ;; what you are doing, not leave -- which is what
+                            ;; every REPL has meant by it for forty years. A
+                            ;; second one, at a prompt with nothing running, is
+                            ;; how you leave.
                             (format t "~&interrupted; stopping the turn~%")
                             (ignore-errors
                              (daemon:request stream "type" "cancel" "session" id))
                             (stream-turn stream)
-                            (format t "~&~a is still open. `vivarium` rejoins it.~%" id)
-                            (return)))))))
+                            (setf *interrupted-recently* t)))))))
       0)))
 
 (defun command-sessions (parsed)

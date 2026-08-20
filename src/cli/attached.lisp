@@ -68,6 +68,25 @@ where it has always been: `vivarium sessions`, and the transcript on disk."
             (let ((queued (gethash "queued" session)))
               (and queued (plusp queued) queued)))))
 
+(defvar *interrupted-recently* nil
+  "Set when a turn was just cancelled from the keyboard.
+
+SBCL's READ-LINE returns NIL once after the signal that interrupted the
+syscall, which is indistinguishable from Ctrl-D -- so cancelling a turn exited
+the client, and `stay in the session` was the one thing that fix did not do.
+This says `that NIL was the signal, not the end of input`, exactly once.")
+
+(defun read-prompt ()
+  "The next line typed, or NIL at genuine end of input."
+  (format t "› ")
+  (finish-output)
+  (let ((line (read-line *standard-input* nil nil)))
+    (cond (line line)
+          (*interrupted-recently*
+           (setf *interrupted-recently* nil)
+           (read-prompt))
+          (t nil))))
+
 (defvar *in-turn* nil
   "True only while draining a turn, so SIGINT knows whether there is work to
 stop or a prompt to leave. Without it the handler threw whenever the turn had
@@ -317,7 +336,13 @@ request whose answer is a language model's guess at what your typo meant."
          (name (if space (subseq body 0 space) body))
          (argument (if space (string-trim " " (subseq body space)) ""))
          (verb (find name +attached-verbs+ :key #'attached-name :test #'string-equal)))
-    (cond (verb (funcall (attached-handler verb) stream id argument) t)
+    (cond (verb
+           ;; A dead socket is a fact about this connection, not a crash. The
+           ;; caller turns it into a sentence; raising a Lisp condition here
+           ;; printed an FD-STREAM object at somebody trying to type /tasks.
+           (handler-case (progn (funcall (attached-handler verb) stream id argument) t)
+             (stream-error () :connection-lost)
+             (sb-int:broken-pipe () :connection-lost)))
           (t (format t "  no such command: /~a~@[  (did you mean /~a?)~]~%~
   /help lists them. To send that text to the model, drop the slash.~%"
                      name (a:when-let ((near (nearest-verb name))) (attached-name near)))
