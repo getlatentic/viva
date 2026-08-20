@@ -17,8 +17,9 @@ task turn ends
       -> one bounded reflection turn (model-owned, same conversation)
       -> retention through the EXISTING doors only
          remember          facts and procedures     (text)
-         create/promote    reusable transformations (compiled, via the
-                           evolution owner's proven table)
+         a script + tool.json under .vivarium/tools/   transformations,
+                           written with the ordinary file tools, callable
+                           by name afterwards through the registry
 ```
 
 The organism decides *when* the question is asked; the reflection turn
@@ -30,8 +31,13 @@ nothing itself and holds no new authority.
 ## The laws
 
 1. **Through existing doors only.** Reflection retains via `remember` and
-   the capability tools — surfaces that already carry their own proofs,
-   guards, and ledgers. The policy adds no writer, no new authority, no
+   by writing files — no verb the policy invented, no authority it holds.
+   The compile channel it originally named (`create_capability` and friends)
+   was removed once KC6 killed it: that path lost 0/6 and, fatally for a
+   *retention* policy, evaporated when the process exited. Its replacement
+   needs no new tool at all — a script and a manifest, written with the file
+   tools every agent already has, loaded by the registry
+   (`docs/tool-registry.md`) and callable by name in later tasks. The policy adds no writer, no new authority, no
    bypass. A retention the evolution table would refuse is refused.
 2. **Bounded.** A reflection turn gets a fixed request budget (default 6)
    added to the agent's limit. It cannot consume the next task's budget and

@@ -1063,9 +1063,15 @@ rather than leaving it to be rediscovered a third time."
   ;; that lost one of these is a different policy shipping under this name.
   (let ((prompt harness:*reflection-prompt*))
     (true (search "remember" prompt) "the text channel is unnamed")
-    (true (search "create_capability" prompt) "the compile channel is unnamed")
-    (true (search "promote_capability only if it worked" prompt)
-          "promotion lost its evidence requirement")
+    ;; The door is PARKED, so the prompt must not name it. This assertion is
+    ;; inverted from what it was: it used to require create_capability, which
+    ;; would have pinned the killed path in place through every future edit.
+    (false (search "create_capability" prompt) "the prompt still names the parked door")
+    (false (search "promote_capability" prompt) "the prompt still names the parked door")
+    (true (search ".vivarium/tools/" prompt) "the registry is not named as the code channel")
+    (true (search "stdin" prompt) "the calling convention is unstated")
+    (true (search "prefer the note" prompt)
+          "the cost caveat is gone -- the kill punished premature registration")
     (true (search "nothing to retain" prompt) "declining is no longer explicit")
     (true (search "only what transfers" prompt)
           "the answer-key guard is gone")))
