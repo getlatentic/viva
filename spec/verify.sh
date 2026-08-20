@@ -14,8 +14,26 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 jar=${TLA_TOOLS:-$HOME/tla2tools.jar}
 
+if ! command -v java >/dev/null 2>&1; then
+  echo "TLC needs a JVM, and there is no java on PATH." >&2
+  echo "Install one (brew install openjdk, or your distribution's) and retry." >&2
+  exit 2
+fi
+
 if [ ! -f "$jar" ]; then
-  echo "tla2tools.jar not found at $jar -- set TLA_TOOLS" >&2
+  # An actionable failure. The README offers this script as a receipt a reader
+  # can run, and a clean machine has no jar -- so saying only `set TLA_TOOLS`
+  # tells someone who has never heard of TLA+ exactly nothing.
+  cat >&2 <<MSG
+tla2tools.jar not found at $jar.
+
+It is TLC, the TLA+ model checker, and it is a single file:
+
+  curl -L -o ~/tla2tools.jar \\
+    https://github.com/tlaplus/tlaplus/releases/latest/download/tla2tools.jar
+
+Then run this again, or point at it with TLA_TOOLS=/path/to/tla2tools.jar.
+MSG
   exit 2
 fi
 

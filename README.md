@@ -120,7 +120,7 @@ this agent worked out, another agent can call.
 | claim | where |
 |---|---|
 | 1,344 tests green on a clean machine | `./bin/vivarium test` |
-| the evolution lifecycle's safety properties — 13 TLC configs, 6 of them witnesses where the *violation* is the proof | `./spec/verify.sh` |
+| the evolution lifecycle's safety properties — 13 TLC configs, 6 of them witnesses where the *violation* is the proof | `./spec/verify.sh` (needs Java and `tla2tools.jar`; the script says how) |
 | the live-compile door costs 1.9× what plain text costs, with 0 of 6 families favouring it | [experiments/kc6/RESULTS.md](experiments/kc6/RESULTS.md) |
 | retention happens, is good, is reused, and does not yet pay | [experiments/dogfood/RESULTS.md](experiments/dogfood/RESULTS.md) |
 | what the mission claims, scored against itself line by line | [docs/MANIFESTO.md](docs/MANIFESTO.md) |
