@@ -18,3 +18,11 @@ __pycache__/
 # make the comparison quietly unreproducible for anyone who cloned this.
 !experiments/parity/fixtures/**/AGENTS.md
 tmp/
+
+# Reference harnesses, cloned for comparison and never vendored. Read-only
+# study material: how Pi streams bash output, what Codex does with long-running
+# commands, how opencode and DeepSeek Harness structure their tools. Cloning
+# them beats reasoning from memory about somebody else's design, and committing
+# them would mean carrying four other projects' licences and history.
+#   third-party/refresh.sh re-clones them.
+third-party/
