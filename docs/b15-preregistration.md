@@ -88,6 +88,25 @@ or three calls, which is on the wrong side of the threshold as often as not. So:
 This is registered here rather than discovered later, which is the difference
 between a caveat and an excuse.
 
+**Amended 2026-08-21 — the headroom ceiling.** Both authored families
+(`ledger`, `manifest`) solve **12 of 12, most in a single model request**. A
+task solved in one request contains very little re-derivation for retention to
+save, which is the ceiling KC6 hit from the other side when five cheap tasks
+measured install cost and nothing else.
+
+This bounds what the battery can show, and the bound is registered before the
+run rather than discovered after it:
+
+- families are authored with variants the model does **not** solve first try —
+  more decoys, more interacting rules — so there is derivation to save; and
+- **a null result is reported against this ceiling.** If the arms tie on
+  families the model solves in one request, the finding is *"no headroom at
+  this difficulty"*, not *"composition does not pay"*. Those are different
+  claims and only one of them is licensed by that data.
+
+**Measured task cost, for sizing:** `ledger` 43,464 prompt + 2,400 completion
+tokens per task; `manifest` 47,891 + 3,024. Twelve tasks cost $0.0855.
+
 ## Outcomes and thresholds
 
 **Primary:** total tokens per task, summed over requests, treatment vs control.
