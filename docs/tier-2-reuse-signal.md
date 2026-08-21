@@ -137,3 +137,41 @@ before its numbers are read.
 made it twice in five. Whether the prompt can raise that rate — or whether the
 counter should credit re-derivation of a skill's own content — is the open
 question this measurement opens, not one it settles.
+
+## Second measurement, same day — what happened after it graduated
+
+The corpus was run again against the same workspace, so the counter kept
+accumulating rather than restarting. It reached 3, **graduation fired, and the
+skill became a registered tool.**
+
+The prompt record caught the moment. Task v1 of the second pass has *two*
+prompt shapes in one transcript:
+
+```
+v1   16 tools   sum-span-elapsed not offered
+v1   17 tools   sum-span-elapsed callable by name     <- graduated mid-task
+v2..v8          17 tools, callable in every one
+```
+
+That is mid-task graduation, observed on the wire: the capability became
+callable between two requests of the *same* task, not between sessions.
+
+**Then every task called it.**
+
+| what it was | how often it was reached for |
+|---|---|
+| a tier-2 skill, run via `run_skill` | 2 calls across 5 tasks that could have |
+| a tier-3 tool, callable by name | **16 calls across 8 tasks — all 8** |
+
+**This is not a controlled comparison and must not be quoted as one.** The two
+readings come from different passes over the corpus; by the second pass the
+workspace held a `MEMORY.md` and the model had met the shape before; the tool's
+description differs from the skill's; and n = 1 with no repeats. Every one of
+those is a live confound, and any of them could produce the gap on its own.
+
+What it is: the reason #43 exists, arriving as an observation rather than an
+argument. The gap between 40% and 100% is large enough to be worth the
+pre-registered experiment, and small enough in evidence that the experiment is
+still the thing that decides it. `docs/b15-preregistration.md` fixes the
+control, the threshold and the kill criterion; this observation moves none of
+them.
