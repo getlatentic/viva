@@ -118,7 +118,7 @@
   (:export #:load-tools #:load-entries #:parse-manifest #:run-entry
            #:entry #:entry-name #:entry-description #:entry-version
            #:entry-exec #:entry-parameters #:entry-directory
-           #:entry-digest #:register #:digest-of #:stale-reason #:disagreement
+           #:entry-digest #:register #:*on-register* #:digest-of #:stale-reason #:disagreement
            #:described-parameters #:*describe-request* #:*describe-timeout*
            #:*timeout* #:*inherited-environment*))
 
@@ -223,6 +223,7 @@
                     (#:skill #:vivarium.skill)
                     (#:registry #:vivarium.registry)
                     (#:decay #:vivarium.decay)
+                    (#:client #:vivarium.client)
                     (#:memory #:vivarium.memory)
                     (#:extension #:vivarium.extension)
                     (#:session #:vivarium.session)
@@ -234,6 +235,7 @@
   (:export #:workspace-agent #:make-workspace-agent #:agent-environment
            #:registry-directories #:skill-directories #:agent-registry-warnings #:agent-skills #:agent-templates #:agent-session #:agent-extensions #:agent-listener
            #:agent-request-limit #:agent-requests #:agent-context #:agent-aborting
+           #:record-prompt-shape #:agent-last-prompt-shape
            #:agent-prompt-tokens #:agent-completion-tokens #:note-usage
            #:agent-gate #:suspend-agent #:resume-agent #:agent-suspended-p #:cancel-agent
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment

@@ -59,6 +59,9 @@ is required rather than tidy: an agent that cannot find the defect will read and
 search until something stops it, and an uncapped run against a paid endpoint is
 an unbounded bill.")
    (requests :initform 0 :accessor agent-requests)
+   (last-prompt-shape :initform nil :accessor agent-last-prompt-shape
+                      :documentation "The last recorded shape of the request's
+system prompt, so an unchanged one is not recorded again.")
    (prompt-tokens :initform 0 :accessor agent-prompt-tokens
                   :documentation "Prompt tokens billed across this agent's whole
 life, summed per request.")
@@ -343,6 +346,48 @@ able to hear this."
 (defun reported-tokens (message)
   (a:when-let ((usage (and message (msg:assistant-message-usage message))))
     (and (hash-table-p usage) (gethash "prompt_tokens" usage))))
+
+(defun system-content-of (payload)
+  "The system message's text from a request payload, or NIL."
+  (a:when-let ((messages (gethash "messages" payload)))
+    (loop for message across messages
+          when (equal "system" (gethash "role" message))
+            return (gethash "content" message))))
+
+(defun record-prompt-shape (agent payload)
+  "Record what the request ACTUALLY carried, when it changes.
+
+Read out of the payload, never off the agent. Those agree until they do not,
+and the run where they differ is the run nobody can explain -- a skills loader
+can be right in-process while the prompt the model receives is missing what it
+just wrote. #2 asks for that verified on the wire; this is the wire.
+
+Written only when the shape changes, because a record per request would be
+one long file saying the same thing, and what anyone wants to see is the
+moment a retained skill first appears in a prompt."
+  ;; The hook is global and every agent goes through it, including the plain
+  ;; ones tests drive. Only a workspace agent has a session to record into.
+  (a:when-let ((session (and (typep agent 'workspace-agent) (agent-session agent))))
+    (let* ((content (or (system-content-of payload) ""))
+           (tools (a:when-let ((declared (gethash "tools" payload)))
+                    (sort (loop for tool across declared
+                                for function = (gethash "function" tool)
+                                when function collect (gethash "name" function))
+                          #'string<)))
+           ;; Names found IN the sent text, not listed from the objects it was
+           ;; built from. Searching the artifact is the whole point.
+           (skills (sort (loop for skill in (agent-skills agent)
+                               when (search (skill:skill-name skill) content)
+                                 collect (skill:skill-name skill))
+                         #'string<))
+           (shape (format nil "~a|~{~a,~}|~{~a,~}" (length content) skills tools)))
+      (unless (equal shape (agent-last-prompt-shape agent))
+        (setf (agent-last-prompt-shape agent) shape)
+        (ignore-errors
+         (session:append-record session :prompt
+                                "characters" (length content)
+                                "skills" (coerce skills 'vector)
+                                "tools" (coerce tools 'vector)))))))
 
 (defun note-usage (agent message)
   "Add one reply's reported usage to this agent's running totals.
@@ -824,3 +869,8 @@ intermediate detail you need, because you will not see any of it."
 (defun harness-tool-set (agent)
   "The tool set as the model will see it on the next request."
   (agent:tools agent))
+
+;;; Recording what was sent is the default, not a mode. A run whose prompt
+;;; nobody can inspect afterwards is a run whose result cannot be explained,
+;;; and the cost is one short record per change of shape.
+(setf client:*on-request* #'record-prompt-shape)

@@ -58,6 +58,16 @@
      (obj "role" (string-downcase (symbol-name (msg:message-role message)))
           "content" (msg:text-of message)))))
 
+(defvar *on-request* nil
+  "Called with (AGENT PAYLOAD) just before a request goes out, or NIL.
+
+A hook, so that anything wanting to know what was ACTUALLY SENT reads the
+payload rather than re-reading the agent it was built from. Those are the same
+string until they are not, and the run where they differ is the run nobody can
+explain: a skills loader can be correct in-process while the prompt the model
+receives is missing what it wrote, and this project has already paid once for a
+tool schema that was right in the image and malformed on the wire.")
+
 (defun request-payload (agent messages)
   "The full request body. Reads the prompt and tool set from AGENT now, not
 when the run started -- that is what lets a mid-run change take effect here."
@@ -75,7 +85,11 @@ when the run started -- that is what lets a mid-run change take effect here."
     (when tools
       (setf (gethash "tools" payload) (map 'vector #'tool-json tools)
             (gethash "parallel_tool_calls" payload) (agent:agent-parallel-tools-p agent)))
-    (provider:augment-payload (provider-for agent) payload agent)))
+    (let ((final (provider:augment-payload (provider-for agent) payload agent)))
+      ;; After AUGMENT-PAYLOAD: a provider may still change what is sent, and
+      ;; observing before it would report a body that never left.
+      (when *on-request* (ignore-errors (funcall *on-request* agent final)))
+      final)))
 
 ;;; Response in
 

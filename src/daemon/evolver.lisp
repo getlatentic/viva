@@ -116,6 +116,36 @@ any owner exists; KC6's arm B sets it to :CLOSED and never moves it.")
   (evolution-ask :activate task id :cell cell))
 
 (defun promote-candidate (id &key cell) (evolution-ask :promote id :cell cell))
+
+(defun register-file-tool (name &key cell)
+  "Mint and promote a version for a FILE-BACKED tool. Returns the version id.
+
+NOT CREATE-CANDIDATE, which compiles its argument. A registry tool is a script
+on disk and there is nothing to compile -- and compiling is the in-image door
+KC6 parked, which must stay unreachable from here. The owner stores a NIL
+function against the version, which is correct: resolution for these goes
+through the file registry, never through EVOLVER-FUNCTIONS.
+
+Created and promoted together because a registry tool has no candidate phase.
+It is written, checked against its script by #41, and then it is there --
+there is no task-local trial for a file every later task can already see.
+Promotion is what makes the lineage reconstructible after a restart, which is
+the point: the registry is disk state and the ledger is the account of how it
+got that way."
+  (let ((id (evolution-ask :create-candidate name :function nil :cell cell)))
+    (when (integerp id)
+      (promote-candidate id :cell cell)
+      id)))
+
+(defun ledger-registrations ()
+  "Send registry registrations to the evolution ledger.
+
+Installed by the daemon rather than at load time: the ledger is the daemon's,
+so registering without one registers without a ledger -- which is what a plain
+`vivarium run` should do, and what keeps the registry's own tests from starting
+an owner thread each."
+  (setf registry:*on-register*
+        (lambda (name) (register-file-tool name))))
 (defun revert-component (component &key cell) (evolution-ask :revert component :cell cell))
 (defun discard-candidate (id &key cell) (evolution-ask :discard id :cell cell))
 

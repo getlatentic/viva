@@ -1943,3 +1943,88 @@ bind it is testing nothing the agent loop does."
       (dolist (verb '("create_capability" "activate_capability" "call_capability"))
         (true (member verb names :test #'string=)
               "a worker cannot ~a; its parent can" verb)))))
+
+;;; ---------------------------------------------------------------------------
+;;; Registry entries live under the proven evolution lifecycle (#5)
+;;; ---------------------------------------------------------------------------
+
+(define-test "registering a tool mints and promotes a version in the ledger"
+  ;; External tools inherit the laws proven for the door. The registry is disk
+  ;; state and the ledger is the account of how it got that way -- so the
+  ;; lineage has to survive the image, which is the only thing here that is
+  ;; mortal.
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (let ((root (format nil "/tmp/vivarium-lifecycle-~36r/"
+                        (random (expt 2 48) (make-random-state t)))))
+      (unwind-protect
+           (let ((environment (env:make-local-environment :cwd root))
+                 (registry:*on-register* nil))
+             (ensure-directories-exist root)
+             ;; The hook is INSTALLED, not on by default: the ledger is the
+             ;; daemon's, and registering without one should register without
+             ;; a ledger rather than start an owner thread.
+             (actor:ledger-registrations)
+             (multiple-value-bind (name reason)
+                 (registry:register environment
+                                    :name "summarise"
+                                    :description "a retained tool"
+                                    :exec (list "python3" "run.py")
+                                    :parameters '()
+                                    :script (format nil "print('kept')~%")
+                                    :script-name "run.py")
+               (is string= "summarise" name "registration failed: ~a" reason))
+             (true (vivarium.actor::journal-sync) "the ledger never confirmed")
+             ;; Reconstructed from the ledger alone, which is the acceptance
+             ;; criterion: rebuild registry state after a restart.
+             (let* ((lineages (actor:reconstruct-lineage))
+                    (versions (cdr (assoc "summarise" lineages :test #'equal))))
+               (true versions "the ledger has no lineage for the registered tool: ~s"
+                     lineages)
+               (is eql (first versions)
+                   (vivarium.evolution:current-promoted
+                    (actor:evolution-registry) "summarise")
+                   "the reconstruction disagrees with the live registry")))
+        (setf registry:*on-register* nil)
+        (ignore-errors (uiop:delete-directory-tree
+                        (uiop:parse-native-namestring root) :validate t))))))
+
+(define-test "a refused registration leaves no ledger entry"
+  ;; The hook fires after the manifest is written, never before. A refusal that
+  ;; still ledgered would put a promoted version in the lineage for a tool that
+  ;; does not exist -- and reconstruction after a restart would insist on it.
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (let ((root (format nil "/tmp/vivarium-lifecycle-~36r/"
+                        (random (expt 2 48) (make-random-state t)))))
+      (unwind-protect
+           (let ((environment (env:make-local-environment :cwd root)))
+             (ensure-directories-exist root)
+             (actor:ledger-registrations)
+             (multiple-value-bind (name reason)
+                 (registry:register environment
+                                    :name "liar"
+                                    :description "declares what it cannot take"
+                                    :exec (list "python3" "run.py")
+                                    :parameters (list (list "path" :string "a file"
+                                                            :required-p t))
+                                    :script (format nil "print('no describe here')~%")
+                                    :script-name "run.py")
+               (false name "a lying manifest was registered")
+               (true (search "describe" reason) "~a" reason))
+             (true (vivarium.actor::journal-sync))
+             (false (assoc "liar" (actor:reconstruct-lineage) :test #'equal)
+                    "a refused registration reached the ledger"))
+        (setf registry:*on-register* nil)
+        (ignore-errors (uiop:delete-directory-tree
+                        (uiop:parse-native-namestring root) :validate t))))))
+
+(define-test "the registry does not reach the in-image compile door"
+  ;; KC6 parked in-image compilation: 0 of 6 families, 1.9x the cost. A
+  ;; file-backed tool has nothing to compile, and REGISTER-FILE-TOOL exists so
+  ;; that registering one cannot wander into CREATE-CANDIDATE, which does.
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (let ((id (actor:register-file-tool "external")))
+      (true (integerp id) "no version was minted for a file-backed tool")
+      ;; A NIL function against the version is correct: resolution for these
+      ;; goes through the file registry, never through the image.
+      (false (gethash id (vivarium.actor::evolver-functions (actor:ensure-evolver)))
+             "a file-backed tool put a function in the image registry"))))

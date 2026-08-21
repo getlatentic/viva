@@ -31,6 +31,15 @@
 
 (in-package #:vivarium.registry)
 
+(defvar *on-register* nil
+  "Called with a tool's name after it is registered, or NIL.
+
+A HOOK rather than a call, because the evolution ledger lives in the daemon and
+the daemon loads after this file. A registry that reached upward for it would
+invert the dependency and make the workspace unusable without a daemon. Nil by
+default: the ledger is the daemon's, so registering without one is registering
+without a ledger, which is what a plain `vivarium run` should do.")
+
 (defparameter *describe-request* "{\"vivarium\":\"describe\"}"
   "What a script is sent to make it state its own interface.")
 
@@ -156,6 +165,10 @@ model will call."
                   (return-from register (values nil wrong)))))
             (env:write-text environment (env:join-path directory "tool.json")
                             (manifest-text name description exec parameters digest))
+            ;; After the manifest, never before: a registration that was
+            ;; refused must leave no ledger entry claiming it happened.
+            (when *on-register*
+              (ignore-errors (funcall *on-register* name)))
             (values name nil)))
       (error (condition)
         (values nil (format nil "could not register ~a: ~a" name condition))))))

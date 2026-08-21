@@ -96,7 +96,7 @@
                     (#:stream #:vivarium.stream)
                     (#:provider #:vivarium.provider)
                     (#:agent #:vivarium.agent))
-  (:export #:complete #:request-payload #:client-error #:client-error-detail))
+  (:export #:*on-request* #:complete #:request-payload #:client-error #:client-error-detail))
 
 (defpackage #:vivarium.loop
   (:use #:cl)

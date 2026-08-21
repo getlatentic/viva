@@ -1817,3 +1817,67 @@ body~%~@[~%```~a~%print(1)~%```~%~]" name (and (plusp (length language)) languag
         "the window is not a setting a person can change")
   (true (assoc "retire-keep-above" vivarium.config::+settings+ :test #'string=)
         "the counter is not a setting a person can change"))
+
+(define-test "what the model was actually sent is recorded"
+  ;; #2 asks for retained skills reaching the next task's prompt "verified on
+  ;; the wire, not in the constructor". Nothing recorded the prompt that was
+  ;; sent, so the criterion was not satisfiable: a transcript holds messages
+  ;; and a header, and neither carries the system prompt.
+  ;;
+  ;; Driven through CLIENT:REQUEST-PAYLOAD, which is the thing that builds the
+  ;; body. The scripted and replaying agents override CLIENT:COMPLETE and never
+  ;; build one -- so a test that went through them would assert nothing about
+  ;; the wire while looking like it did, which is the exact mistake this record
+  ;; exists to catch.
+  (with-repository (environment)
+    (write-skill environment "sum-spans" :language "python")
+    (let* ((directory (uiop:parse-native-namestring
+                       (format nil "~a/.sessions/" (env:env-cwd environment))))
+           (session (session:open-session :directory directory))
+           (agent (harness:make-workspace-agent :cwd (env:env-cwd environment)
+                                                :session session)))
+      (harness:refresh-resources agent)
+      (client:request-payload agent (list (user "go")))
+      (session:close-session session)
+      (let ((entries (session:records-of
+                      (session:entries-of
+                       (session:load-session (session:session-path session)))
+                      :prompt)))
+        (true entries "nothing recorded what the request carried")
+        ;; RECORDS-OF yields entries, and the payload is inside one.
+        (let ((skills (gethash "skills" (session:entry-payload (first entries)))))
+          (true (find "sum-spans" skills :test #'equal)
+                "a loaded skill did not appear in the prompt that was sent: ~s" skills))
+        (true (plusp (gethash "characters" (session:entry-payload (first entries))))
+              "an empty system prompt was sent")))))
+
+(define-test "an unchanged prompt is not recorded twice"
+  ;; A record per request would be one long file saying the same thing. What
+  ;; anyone wants to see is the moment a retained skill first appears.
+  (with-repository (environment)
+    (let* ((directory (uiop:parse-native-namestring
+                       (format nil "~a/.sessions/" (env:env-cwd environment))))
+           (session (session:open-session :directory directory))
+           (agent (harness:make-workspace-agent :cwd (env:env-cwd environment)
+                                                :session session)))
+      (flet ((prompt-records ()
+               (length (session:records-of
+                        (session:entries-of
+                         (session:load-session (session:session-path session)))
+                        :prompt))))
+        (harness:refresh-resources agent)
+        (client:request-payload agent (list (user "first")))
+        (client:request-payload agent (list (user "second")))
+        ;; NOT closed here: the session has more to record, and appending to a
+        ;; closed one writes nothing -- which the first draft of this test did,
+        ;; then blamed the recorder.
+        (let ((after-two (prompt-records)))
+          (is = 1 after-two "an unchanged prompt was recorded ~d times" after-two))
+        ;; But a prompt that CHANGES is recorded, which is the point: this is
+        ;; a retained skill appearing between one task and the next.
+        (write-skill environment "appeared-later" :language "python")
+        (harness:refresh-resources agent)
+        (client:request-payload agent (list (user "third")))
+        (is = 2 (prompt-records)
+            "a skill appearing mid-session did not show up in the record")
+        (session:close-session session)))))
