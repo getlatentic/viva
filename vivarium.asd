@@ -155,7 +155,8 @@
                              (:file "keys")
                              (:file "terminal")
                              (:file "screen")
-                             (:file "layout")))))
+                             (:file "layout")
+                             (:file "size")))))
 
 (defsystem "vivarium/cli"
   :description "One entry point for every run."

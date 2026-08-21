@@ -1140,3 +1140,27 @@ print(sum([2, 3, 5]))
       (tui:flush screen out)
       (is string= "" (get-output-stream-string out)
           "a row past the pane's bottom drew somewhere"))))
+
+(define-test "a terminal size is never garbage"
+  ;; The failure this guards is not "wrong size", it is a size that came from
+  ;; uninitialised memory after a failed ioctl -- 4522 rows and 0 columns,
+  ;; which looks measured. The suite has no controlling terminal, so what is
+  ;; asserted here is that the no-terminal path is sane; that the ioctl path
+  ;; reads the REAL size is checked by tools/pty-size-check.sh against a pty of
+  ;; a known size, which is the only place it can be checked.
+  (let ((size (tui:terminal-size)))
+    (true (consp size))
+    (true (plusp (car size)) "~d rows" (car size))
+    (true (plusp (cdr size)) "~d columns" (cdr size))
+    (true (< (car size) 1000) "~d rows is not a terminal" (car size))
+    (true (< (cdr size) 1000) "~d columns is not a terminal" (cdr size))))
+
+(define-test "a resize is a flag, not work in the handler"
+  ;; A signal arrives on whichever thread the kernel picks, wherever it happens
+  ;; to be. Repainting from there draws from two threads at once, so the
+  ;; handler sets a flag and the loop acts on it.
+  (let ((tui::*resized* nil))
+    (false (tui:take-resize))
+    (tui::note-resize)
+    (true (tui:take-resize))
+    (false (tui:take-resize) "a resize was reported twice")))
