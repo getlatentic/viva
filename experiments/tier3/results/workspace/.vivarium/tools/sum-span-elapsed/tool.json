@@ -1,0 +1,10 @@
+{
+  "name": "sum-span-elapsed",
+  "description": "Total the elapsed time of SPAN records in JSONL trace files under data/, converting units to whole milliseconds. (promoted from a skill after 3 runs)",
+  "exec": [
+    "python3",
+    "run.py"
+  ],
+  "digest": "56bd3fbf1fb9668c",
+  "parameters": []
+}
