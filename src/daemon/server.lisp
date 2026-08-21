@@ -320,6 +320,15 @@ falls in the gap and none arrives twice."
 (defun start-session (command)
   (let* ((cwd (or (text-of command "cwd") (uiop:native-namestring (uiop:getcwd))))
          (choice (models:resolve-model (text-of command "model")))
+         ;; BEFORE OPEN-SESSION. Opening writes this session's own file, so
+         ;; `the most recent session here` resolved to the empty one being
+         ;; created -- and resuming from it succeeded at loading nothing. The
+         ;; verb reported success, the conversation stayed blank, and the only
+         ;; way to see it was to ask the model what you had said.
+         (earlier (a:when-let ((wanted (text-of command "resume")))
+                    (if (string= "true" wanted)
+                        (session:latest-session cwd)
+                        (session:find-session wanted :cwd cwd))))
          (session (session:open-session :directory (session:session-directory cwd) :cwd cwd))
          (agent (harness:make-workspace-agent
                  :cwd cwd
@@ -336,12 +345,9 @@ falls in the gap and none arrives twice."
     ;; one -- so `what did I say before?` was answered by an empty context, and
     ;; the on-entry message advertising --resume was pointing at a flag this
     ;; command never read.
-    (a:when-let ((wanted (text-of command "resume")))
-      (a:when-let ((earlier (or (if (string= "true" wanted)
-                                    (session:latest-session cwd)
-                                    (session:find-session wanted :cwd cwd)))))
-        (handler-case (harness:resume agent (session:summary-path earlier))
-          (error (condition) (note-failure "resume" condition)))))
+    (when earlier
+      (handler-case (harness:resume agent (session:summary-path earlier))
+        (error (condition) (note-failure "resume" condition))))
     (actor:spawn :label (or (text-of command "label") cwd) :agent agent)))
 
 (defun handle (client command)
