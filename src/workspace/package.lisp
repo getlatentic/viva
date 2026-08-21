@@ -59,6 +59,17 @@
            #:job #:job-name #:job-command #:job-log #:stop-all
            #:declared #:start-declared #:services-directory))
 
+(defpackage #:vivarium.skill
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:env #:vivarium.env)
+                    (#:glob #:vivarium.glob))
+  (:export #:skill #:skill-name #:skill-description #:skill-content
+           #:skill-path #:skill-hidden-p #:skill-language
+           #:snippet-of #:uses-of #:note-use #:+interpreters+
+           #:load-skills #:find-skill #:prompt-block #:invocation
+           #:parse-frontmatter #:skill-warning #:warning-message #:warning-path))
+
 (defpackage #:vivarium.workspace
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
@@ -66,6 +77,7 @@
                     (#:tool #:vivarium.tool)
                     (#:env #:vivarium.env)
                     (#:jobs #:vivarium.jobs)
+                    (#:skill #:vivarium.skill)
                     (#:glob #:vivarium.glob)
                     (#:bound #:vivarium.bound)
                     (#:edit #:vivarium.edit))
@@ -77,15 +89,6 @@
            #:file-tools #:search-tools #:tool-set
            #:build-system-prompt #:*base-prompt* #:tool-summaries))
 
-(defpackage #:vivarium.skill
-  (:use #:cl)
-  (:local-nicknames (#:a #:alexandria)
-                    (#:env #:vivarium.env)
-                    (#:glob #:vivarium.glob))
-  (:export #:skill #:skill-name #:skill-description #:skill-content
-           #:skill-path #:skill-hidden-p
-           #:load-skills #:find-skill #:prompt-block #:invocation
-           #:parse-frontmatter #:skill-warning #:warning-message #:warning-path))
 
 (defpackage #:vivarium.trust
   (:use #:cl)

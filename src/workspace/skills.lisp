@@ -17,6 +17,10 @@
   (description "" :type string)
   (content "" :type string)
   (path "" :type string)
+  ;; What the fenced snippet is written in, when a skill carries one. Empty for
+  ;; a skill that is only read -- which most are, and which is fine: the field
+  ;; is what distinguishes a procedure you can run from prose you follow.
+  (language "" :type string)
   (hidden-p nil :type boolean))
 
 (defstruct (skill-warning (:conc-name warning-))
@@ -75,6 +79,7 @@
                       nil)
                      (t (make-skill :name name :description description
                                     :content body :path path
+                                    :language (or (field frontmatter "language") "")
                                     :hidden-p (string-equal "true" (or (field frontmatter "disable-model-invocation") "")))))))))))
 
 (defun load-skills (environment directories)
