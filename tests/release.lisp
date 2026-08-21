@@ -1016,3 +1016,50 @@ print(sum([2, 3, 5]))
   ;; Off a terminal, the body simply runs: a piped run is a real way to use
   ;; this and should not need a special case at the call site.
   (is eq :ran (tui:with-raw-terminal :ran)))
+
+(define-test "a screen writes only what changed"
+  ;; The naive loop clears and redraws every frame: simple, and it flickers.
+  ;; Over ssh or in a multiplexer a full 80x24 repaint is ~2KB for a cursor
+  ;; that moved one column. Two buffers and a comparison is the whole feature.
+  (let ((screen (tui:make-blank-screen :width 20 :height 3)))
+    ;; First frame draws what is there.
+    (tui:put screen 0 0 "hello")
+    (let* ((out (make-string-output-stream))
+           (first (tui:flush screen out)))
+      (true (plusp first))
+      (true (search "hello" (get-output-stream-string out))))
+    ;; An UNCHANGED frame costs nothing. This is a number, not an impression,
+    ;; which is why it is the assertion.
+    (tui:clear-back screen)
+    (tui:put screen 0 0 "hello")
+    (let* ((out (make-string-output-stream))
+           (idle (tui:flush screen out)))
+      (is = 0 idle "an unchanged frame wrote ~d bytes" idle)
+      (is string= "" (get-output-stream-string out)))
+    ;; A one-character change costs a cursor move and a character, not a row.
+    (tui:clear-back screen)
+    (tui:put screen 0 0 "hellp")
+    (let* ((out (make-string-output-stream))
+           (small (tui:flush screen out))
+           (text (get-output-stream-string out)))
+      (true (< small 12) "a one-character change wrote ~d bytes" small)
+      (true (search "p" text))
+      (false (search "hell" text) "it redrew the whole word for one changed letter"))))
+
+(define-test "a screen clips rather than wrapping"
+  ;; A line that wraps has silently changed the layout of everything below it.
+  ;; A truncated line is a visible bug; a shifted layout is a confusing one.
+  (let ((screen (tui:make-blank-screen :width 8 :height 2)))
+    (tui:put screen 0 4 "abcdefgh")
+    (let ((out (make-string-output-stream)))
+      (tui:flush screen out)
+      (let ((text (get-output-stream-string out)))
+        (true (search "abcd" text))
+        (false (search "efgh" text) "the overflow wrapped instead of being clipped"))))
+  ;; Off-screen rows and negative columns are ignored, not errors: a layout
+  ;; that computes a position off the edge should draw nothing, not crash.
+  (let ((screen (tui:make-blank-screen :width 8 :height 2)))
+    (tui:put screen 99 0 "nowhere")
+    (tui:put screen 0 -3 "left")
+    (is = 1 (length (tui::row-differences screen 0))
+        "a negative column should still draw the part that is on screen")))

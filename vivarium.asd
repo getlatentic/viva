@@ -153,7 +153,8 @@
                 :components ((:file "package")
                              (:file "keyboard")
                              (:file "keys")
-                             (:file "terminal")))))
+                             (:file "terminal")
+                             (:file "screen")))))
 
 (defsystem "vivarium/cli"
   :description "One entry point for every run."
