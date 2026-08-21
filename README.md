@@ -238,9 +238,14 @@ read through a generic function *at the moment a request is built*, never
 captured when the run starts. Another thread can change what the agent is
 mid-run and the next request already carries it.
 
-**A steer can abort a request in flight.** Measured against gpt-oss-20b on one
-prompt: `ABORTED after 1,927 ms / 0 deltas` against `STOP after 323,875 ms /
-1,352 deltas`. Opt-in; with it off the loop behaves like any other.
+**A steer is carried into the next request, not queued behind this one.** Any
+harness that passes an abort signal into its streaming request can stop one —
+Pi does, in `openai-completions.ts` — so stopping early is not a difference and
+was wrongly claimed here as one. What differs is what happens next: Pi's run
+ends on an abort and polls for steering at the end of an iteration, so a steer
+waits out the current request; this loop aborts the request and re-enters
+carrying the steer, which lands on the very next one. A loop-policy difference,
+copyable in an afternoon, and worth exactly this paragraph.
 
 **Tool schemas are derived, not written.** A tool's parameters come off the
 live function — lambda list for names and arity, docstring for the

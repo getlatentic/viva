@@ -738,3 +738,15 @@ twice; it is somebody's record.")))
       (jobs:stop-all)
       (uiop:delete-directory-tree (pathname root) :validate (constantly t)
                                                   :if-does-not-exist :ignore))))
+
+(define-test "the README does not sell an abort every harness has"
+  ;; It claimed `a steer can abort a request in flight` as one of three
+  ;; deliberate differences, with a 1,927ms-vs-323,875ms measurement. Any
+  ;; harness that passes an abort signal into its streaming request gets that;
+  ;; Pi does. The difference is what happens NEXT -- Pi's run ends and steering
+  ;; is polled at the end of an iteration, so a steer waits out the request --
+  ;; and that is a loop policy, not a capability nobody else has.
+  (let ((readme (repository-file "README.md")))
+    (false (search "ABORTED after 1,927 ms" readme)
+           "the front page still sells stop-early as a differentiator")
+    (true (search "carried into the next request" readme))))
