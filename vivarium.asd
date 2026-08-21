@@ -152,7 +152,8 @@
                 :serial t
                 :components ((:file "package")
                              (:file "keyboard")
-                             (:file "keys")))))
+                             (:file "keys")
+                             (:file "terminal")))))
 
 (defsystem "vivarium/cli"
   :description "One entry point for every run."

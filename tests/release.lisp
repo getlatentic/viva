@@ -990,3 +990,29 @@ print(sum([2, 3, 5]))
       (true (< elapsed 0.5)
             "an arrow key took ~,3fs against a 1s bound; it waited when it did not have to"
             elapsed))))
+
+(define-test "raw mode is restored, including when the body crashes"
+  ;; A TUI that exits without restoring leaves a shell with no echo and no line
+  ;; editing, which looks like the machine broke -- and the fix a person
+  ;; reaches for is closing the window. The UNWIND-PROTECT is the point of the
+  ;; macro, not a detail of it.
+  ;;
+  ;; The suite does not run on a terminal, so this asserts the SHAPE. The
+  ;; behaviour was verified in a real tmux pane and is in the commit:
+  ;;   before (CANON T ECHO T) / inside (CANON NIL ECHO NIL) /
+  ;;   after (CANON T ECHO T) / after a crash (CANON T ECHO T).
+  (let ((source (repository-file "src/tui/terminal.lisp")))
+    (true (search "unwind-protect" source))
+    ;; The restore must use the SAVED attributes, not freshly-read ones -- by
+    ;; then the terminal is raw, and reading it back would restore raw.
+    (true (search "sb-posix:tcsetattr 0 sb-posix:tcsanow ,saved" source)
+          "the restore must use what was saved before the change")
+    ;; And the modified object must be independent of the saved one. SB-POSIX
+    ;; has no copier, so this asks the kernel twice; mutating the saved object
+    ;; would make the restore restore the modification.
+    (false (search "copy-termios" source)
+           "sb-posix has no copier -- that function was invented")
+    (true (search "ask the kernel twice" source)))
+  ;; Off a terminal, the body simply runs: a piped run is a real way to use
+  ;; this and should not need a special case at the call site.
+  (is eq :ran (tui:with-raw-terminal :ran)))

@@ -4,4 +4,5 @@
   (:export #:supported-p #:with-kitty-keyboard
            #:*query* #:*push-flags* #:*pop-flags* #:*reply-timeout*
            #:decode #:describe-key #:read-key #:*sequence-timeout*
+           #:with-raw-terminal #:terminal-p
            #:key #:key-value #:key-control #:key-alt #:key-shift))
