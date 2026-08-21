@@ -63,3 +63,48 @@ resolves the same name correctly and disagrees.
 interface and the actual one — and compared in *both directions*: a promise the
 implementation cannot keep, and a requirement the declaration never mentions.
 Each direction fails differently and neither is visible from one side alone.
+
+## Measured, 2026-08-21 — what the families actually cost
+
+One run, both families, deepseek-v4-flash, off-peak, gate green beforehand.
+
+| family | solved | wall-clock | prompt tokens | completion tokens |
+|---|---|---|---|---|
+| `ledger` | 6/6 | 18s/task | 43,464/task | 2,400/task |
+| `manifest` | 6/6 | 20s/task | 47,891/task | 3,024/task |
+
+Whole run: **$0.0855** for 12 tasks.
+
+**#11's third acceptance criterion is NOT met, and is restated rather than
+waved through.** It asked for *"task cost ≥ several minutes of model work per
+task at solve time"*. Measured: **18 to 20 seconds.**
+
+Wall-clock was a proxy for *expensive to re-derive*, and it is a bad proxy at
+this model's speed — the same derivation that takes a slow model minutes takes
+this one seconds, and neither number says how much work was avoided. Tokens do,
+and tokens are what `docs/b15-preregistration.md` measures. Against the `spans`
+corpus (~30k prompt, ~1.4k completion per task) these families cost **1.5× to
+2× more per task**, which is the property the criterion was reaching for.
+
+So the criterion becomes: **a family qualifies at ≥ 40k prompt tokens per task
+at solve time.** Both clear it. The wall-clock form is retired as
+model-dependent.
+
+**A harder problem, recorded because it threatens #43's power.** Every task
+solved, most in a single model request. A task solved in one request contains
+very little re-derivation for retention to save — which is exactly the ceiling
+KC6 hit from the other side, where five cheap tasks measured install cost and
+nothing else.
+
+This does not invalidate the families; it bounds what they can show. If the
+composition arm's advantage is the *derivation* it skips, and derivation is one
+request, the effect available to measure is small. Before B15 runs, either:
+
+- the families gain variants the model does **not** solve first try (more
+  decoys, more interacting rules), so there is derivation to save; or
+- B15 reports its effect against this ceiling explicitly, and a null result is
+  read as *"no headroom at this difficulty"* rather than *"composition does not
+  pay"*.
+
+Written down now, while it is a design constraint. After the run it would be an
+excuse.

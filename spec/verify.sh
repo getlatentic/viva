@@ -52,6 +52,9 @@ EvolutionWitnessLeak:Evolution:violates:activation must not touch the lineage
 EvolutionWitnessDiscard:Evolution:violates:unguarded discard is resolvable
 EvolutionClosed:Evolution:holds:KC6 arm B is inert, and still lively
 EvolutionWitnessDoor:Evolution:violates:the door guard is load-bearing
+ReconcileSafety:Reconcile:holds:the ledger never claims more than the world holds
+ReconcileLiveness:Reconcile:holds:nothing is left mid-flight forever
+ReconcileWitnessAtomic:Reconcile:violates:assumed-atomic compensation reports reverted while effects remain
 '
 
 failures=0
