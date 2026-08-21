@@ -2134,3 +2134,18 @@ it reports nothing, and the suite has to be killed to find out why."
                          (length sequences))
                    (false fault "~a" fault))))
           (ignore-errors (close stream)))))))
+
+(define-test "the seam oracle detects the faults it exists to detect"
+  ;; The check that guards the replay/live handoff is itself a claim. If
+  ;; SEAM-FAULT returned NIL for everything, both seam tests would pass on any
+  ;; build and say nothing -- which is the failure mode this review round was
+  ;; convened over. So: hand it the faults and watch it find them.
+  (false (seam-fault '(1 2 3 4 5)) "a clean run was reported as faulty")
+  (false (seam-fault '(5 3 1 2 4)) "arrival order is not a fault; contiguity is")
+  (let ((gap (seam-fault '(1 2 4 5))))
+    (true gap "a dropped event was not detected")
+    (true (search "gap" gap) "~a" gap))
+  (let ((repeat (seam-fault '(1 2 2 3))))
+    (true repeat "a duplicated event was not detected")
+    (true (search "twice" repeat) "~a" repeat))
+  (true (seam-fault '()) "an empty stream was reported as healthy"))
