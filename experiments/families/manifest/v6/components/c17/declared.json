@@ -1,0 +1,13 @@
+{
+  "name": "c17",
+  "parameters": [
+    {
+      "name": "verbose",
+      "type": "boolean"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ]
+}

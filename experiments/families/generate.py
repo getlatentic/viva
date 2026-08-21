@@ -166,6 +166,181 @@ def build_ledger(base: pathlib.Path, variants: int = 6) -> None:
               executable=True)
 
 
+# ---------------------------------------------------------------------------
+# Family `manifest`: does a declaration match the thing it declares?
+# Receipt: #41, and five functions I called on 2026-08-21 that did not exist.
+# ---------------------------------------------------------------------------
+
+MANIFEST_PROMPT = """\
+The directory `components/` holds one subdirectory per component. Each has a
+`declared.json` naming the parameters that component claims to take, and a
+`run.py` implementing it.
+
+Count the components whose DECLARATION DISAGREES WITH THEIR IMPLEMENTATION and
+write that single number to answer.txt.
+
+The implementation's truth is the signature of its `run` function, and nothing
+else in the file. A component disagrees if ANY of these hold:
+
+  - it declares a parameter the signature does not accept
+  - the signature REQUIRES a parameter (no default) that the declaration does
+    not name -- this direction is the expensive one and is easy to miss
+  - the declaration's type for a parameter disagrees with the default in the
+    signature: an int default means "integer", a str default means "string",
+    a bool default means "boolean"
+
+Two things that are NOT disagreements:
+
+  - a component that declares no parameters at all. It claims nothing, so it
+    cannot claim wrongly
+  - a name that appears only in a docstring, a comment or a string. Only the
+    signature counts
+
+Grading runs against a pristine copy of components/ plus your answer.txt.
+"""
+
+MANIFEST_CHECK = '''\
+import ast, glob, json, os, pathlib, sys
+
+TYPES = {int: "integer", str: "string", bool: "boolean", float: "number"}
+
+
+def signature(path):
+    tree = ast.parse(open(path).read())
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "run":
+            names = [a.arg for a in node.args.args]
+            defaults = node.args.defaults
+            required = names[: len(names) - len(defaults)]
+            typed = {}
+            for name, default in zip(names[len(names) - len(defaults):], defaults):
+                if isinstance(default, ast.Constant):
+                    typed[name] = TYPES.get(type(default.value))
+            return names, required, typed
+    return [], [], {}
+
+
+wrong = 0
+for directory in sorted(glob.glob("components/*")):
+    declared = json.load(open(os.path.join(directory, "declared.json")))
+    parameters = declared.get("parameters") or []
+    names, required, typed = signature(os.path.join(directory, "run.py"))
+    if not parameters:
+        continue
+    declared_names = [p["name"] for p in parameters]
+    bad = any(n not in names for n in declared_names)
+    bad = bad or any(r not in declared_names for r in required)
+    for p in parameters:
+        want = typed.get(p["name"])
+        if want and p.get("type") != want:
+            bad = True
+    if bad:
+        wrong += 1
+
+answer = pathlib.Path("answer.txt")
+if not answer.exists():
+    sys.exit("no answer.txt")
+try:
+    got = int(answer.read_text().split()[0])
+except (ValueError, IndexError):
+    sys.exit("answer.txt is not a number")
+if got != wrong:
+    sys.exit(f"answer {got} != {wrong}")
+print("ok")
+'''
+
+TYPE_FOR = {"int": "integer", "str": "string", "bool": "boolean"}
+DEFAULTS = {"int": "0", "str": '""', "bool": "False"}
+
+
+FAULTS = ["undeclared-required", "declares-unknown", "wrong-type",
+          "docstring-decoy", "no-parameters", "none"]
+
+
+def manifest_component(rng, index, fault=None):
+    """One component, and whether it is a genuine disagreement."""
+    pool = ["path", "depth", "verbose", "pattern", "limit", "name"]
+    kinds = {"path": "str", "depth": "int", "verbose": "bool",
+             "pattern": "str", "limit": "int", "name": "str"}
+    taken = rng.sample(pool, rng.randint(1, 3))
+    required = taken[: rng.randint(0, len(taken))]
+    optional = [n for n in taken if n not in required]
+
+    args = ", ".join(required + [f"{n}={DEFAULTS[kinds[n]]}" for n in optional])
+    fault = fault or rng.choice(FAULTS)
+    # A fault that needs a required parameter cannot land on a component that
+    # has none, and silently becoming "none" is how a rule stops being tested.
+    if fault == "undeclared-required" and not required:
+        required, optional = taken[:1], taken[1:]
+        args = ", ".join(required + [f"{n}={DEFAULTS[kinds[n]]}" for n in optional])
+    if fault == "wrong-type" and not optional:
+        required, optional = taken[:-1], taken[-1:]
+        args = ", ".join(required + [f"{n}={DEFAULTS[kinds[n]]}" for n in optional])
+
+    declared = [{"name": n, "type": TYPE_FOR[kinds[n]]} for n in taken]
+    disagrees = False
+
+    if fault == "undeclared-required" and required:
+        declared = [d for d in declared if d["name"] != required[0]]
+        disagrees = bool(declared)          # declaring nothing claims nothing
+    elif fault == "declares-unknown":
+        spare = [n for n in pool if n not in taken]
+        if spare:
+            declared.append({"name": spare[0], "type": TYPE_FOR[kinds[spare[0]]]})
+            disagrees = True
+    elif fault == "wrong-type" and optional:
+        for d in declared:
+            if d["name"] == optional[0]:
+                d["type"] = "string" if d["type"] != "string" else "integer"
+                disagrees = True
+    elif fault == "no-parameters":
+        declared = []
+    elif fault == "docstring-decoy":
+        spare = [n for n in pool if n not in taken]
+        # DECLARED, absent from the signature, and mentioned in the docstring.
+        # The correct reading is a disagreement -- the component claims a
+        # parameter it cannot take. A solver that greps the file sees the name
+        # and concludes it is accepted, so it does NOT flag it. That gap is
+        # what makes "only the signature counts" load-bearing; the first draft
+        # put the decoy on an undeclared name, where it changed nothing and the
+        # gate said so.
+        if spare:
+            declared.append({"name": spare[0], "type": TYPE_FOR[kinds[spare[0]]]})
+            disagrees = True
+            fault = ("docstring", spare[0])
+
+    decoy = fault[1] if isinstance(fault, tuple) else None
+    doc = f'"""Runs the thing.{f" Ignores {decoy}." if decoy else ""}"""'
+    source = f"def run({args}):\n    {doc}\n    return 0\n"
+    return {"declared": {"name": f"c{index}", "parameters": declared},
+            "source": source, "disagrees": disagrees}
+
+
+def build_manifest(base: pathlib.Path, variants: int = 6) -> None:
+    for index in range(1, variants + 1):
+        rng = random.Random(2000 + index)
+        job = base / "manifest" / f"v{index}"
+        if job.exists():
+            shutil.rmtree(job)
+        # EVERY fault kind at least once, then the rest at random. A variant
+        # that happens to contain no type disagreement does not test the type
+        # rule, and six variants each missing a different rule is a family that
+        # tests nothing reliably.
+        count = 6 + index * 3
+        plan = list(FAULTS) + [rng.choice(FAULTS) for _ in range(count - len(FAULTS))]
+        rng.shuffle(plan)
+        for n, kind in enumerate(plan):
+            made = manifest_component(rng, n, fault=kind)
+            where = job / "components" / f"c{n:02d}"
+            write(where / "declared.json", json.dumps(made["declared"], indent=2) + "\n")
+            write(where / "run.py", made["source"])
+        write(job / "PROMPT", MANIFEST_PROMPT)
+        write(job / "check.py", MANIFEST_CHECK)
+        write(job / "check", "#!/bin/sh\n# Computed from the pristine data, never from a stored answer.\n"
+                             "exec python3 check.py\n", executable=True)
+
+
 if __name__ == "__main__":
     build_ledger(ROOT)
-    print("wrote", ROOT / "ledger")
+    build_manifest(ROOT)
+    print("wrote", ROOT / "ledger", "and", ROOT / "manifest")

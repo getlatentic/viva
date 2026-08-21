@@ -1,0 +1,17 @@
+{
+  "name": "c5",
+  "parameters": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "limit",
+      "type": "integer"
+    },
+    {
+      "name": "verbose",
+      "type": "string"
+    }
+  ]
+}

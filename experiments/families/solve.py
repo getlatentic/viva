@@ -77,20 +77,87 @@ CARELESS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Family `manifest`
+# ---------------------------------------------------------------------------
+
+import ast
+
+TYPES = {int: "integer", str: "string", bool: "boolean", float: "number"}
+
+
+def signature(path):
+    tree = ast.parse(open(path).read())
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "run":
+            names = [a.arg for a in node.args.args]
+            defaults = node.args.defaults
+            required = names[: len(names) - len(defaults)]
+            typed = {}
+            for name, default in zip(names[len(names) - len(defaults):], defaults):
+                if isinstance(default, ast.Constant):
+                    typed[name] = TYPES.get(type(default.value))
+            return names, required, typed
+    return [], [], {}
+
+
+def manifest_total(directory, *, one_direction=False, grep_the_file=False,
+                   flag_empty=False, ignore_types=False):
+    wrong = 0
+    for where in sorted(glob.glob(os.path.join(directory, "components", "*"))):
+        declared = json.load(open(os.path.join(where, "declared.json")))
+        parameters = declared.get("parameters") or []
+        source_path = os.path.join(where, "run.py")
+        names, required, typed = signature(source_path)
+        if grep_the_file:
+            # The mistake: any name mentioned anywhere counts as accepted, so a
+            # docstring is treated as an interface.
+            text = open(source_path).read()
+            names = list({n for n in ["path", "depth", "verbose", "pattern",
+                                      "limit", "name"] if n in text})
+        if not parameters:
+            if flag_empty:
+                wrong += 1
+            continue
+        declared_names = [p["name"] for p in parameters]
+        bad = any(n not in names for n in declared_names)
+        if not one_direction:
+            bad = bad or any(r not in declared_names for r in required)
+        if not ignore_types:
+            for p in parameters:
+                want = typed.get(p["name"])
+                if want and p.get("type") != want:
+                    bad = True
+        if bad:
+            wrong += 1
+    return wrong
+
+
+MANIFEST_CARELESS = [
+    ("checks one direction only", dict(one_direction=True)),
+    ("greps the file instead of reading the signature", dict(grep_the_file=True)),
+    ("flags components that declare nothing", dict(flag_empty=True)),
+    ("ignores type disagreement", dict(ignore_types=True)),
+]
+
+SOLVERS = {"ledger": (ledger_total, CARELESS),
+           "manifest": (manifest_total, MANIFEST_CARELESS)}
+
+
 def main():
     family, directory = sys.argv[1], sys.argv[2]
-    if "--careless-count" in sys.argv:
-        print(len(CARELESS))
-        return
-    careless = "--careless" in sys.argv
-    if family != "ledger":
+    if family not in SOLVERS:
         sys.exit(f"no solver for family {family}")
-    if not careless:
-        print(ledger_total(directory))
+    solver, careless_solvers = SOLVERS[family]
+    if "--careless-count" in sys.argv:
+        print(len(careless_solvers))
         return
-    right = ledger_total(directory)
-    for _, options in CARELESS:
-        value = ledger_total(directory, **options)
+    if "--careless" not in sys.argv:
+        print(solver(directory))
+        return
+    right = solver(directory)
+    for _, options in careless_solvers:
+        value = solver(directory, **options)
         if value != right:
             print(value)
 

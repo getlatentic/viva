@@ -1,0 +1,21 @@
+{
+  "name": "c2",
+  "parameters": [
+    {
+      "name": "depth",
+      "type": "integer"
+    },
+    {
+      "name": "limit",
+      "type": "integer"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "verbose",
+      "type": "boolean"
+    }
+  ]
+}

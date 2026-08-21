@@ -1,0 +1,13 @@
+{
+  "name": "c10",
+  "parameters": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "pattern",
+      "type": "integer"
+    }
+  ]
+}

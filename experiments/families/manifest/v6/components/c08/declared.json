@@ -1,0 +1,17 @@
+{
+  "name": "c8",
+  "parameters": [
+    {
+      "name": "verbose",
+      "type": "boolean"
+    },
+    {
+      "name": "limit",
+      "type": "integer"
+    },
+    {
+      "name": "depth",
+      "type": "integer"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "c10",
+  "parameters": [
+    {
+      "name": "limit",
+      "type": "integer"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "verbose",
+      "type": "string"
+    }
+  ]
+}

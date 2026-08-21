@@ -1,0 +1,13 @@
+{
+  "name": "c7",
+  "parameters": [
+    {
+      "name": "verbose",
+      "type": "boolean"
+    },
+    {
+      "name": "limit",
+      "type": "integer"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "c10",
+  "parameters": [
+    {
+      "name": "path",
+      "type": "integer"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "c9",
+  "parameters": [
+    {
+      "name": "depth",
+      "type": "integer"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "limit",
+      "type": "integer"
+    },
+    {
+      "name": "verbose",
+      "type": "boolean"
+    }
+  ]
+}

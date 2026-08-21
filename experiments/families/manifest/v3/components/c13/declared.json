@@ -1,0 +1,13 @@
+{
+  "name": "c13",
+  "parameters": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "verbose",
+      "type": "string"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "c0",
+  "parameters": [
+    {
+      "name": "verbose",
+      "type": "boolean"
+    },
+    {
+      "name": "pattern",
+      "type": "string"
+    }
+  ]
+}

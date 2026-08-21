@@ -1,0 +1,13 @@
+{
+  "name": "c4",
+  "parameters": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "depth",
+      "type": "integer"
+    }
+  ]
+}

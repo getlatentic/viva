@@ -1,0 +1,21 @@
+{
+  "name": "c3",
+  "parameters": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "verbose",
+      "type": "boolean"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "depth",
+      "type": "integer"
+    }
+  ]
+}

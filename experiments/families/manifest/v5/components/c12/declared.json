@@ -1,0 +1,13 @@
+{
+  "name": "c12",
+  "parameters": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ]
+}

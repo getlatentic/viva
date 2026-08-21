@@ -1,0 +1,13 @@
+{
+  "name": "c6",
+  "parameters": [
+    {
+      "name": "verbose",
+      "type": "boolean"
+    },
+    {
+      "name": "pattern",
+      "type": "integer"
+    }
+  ]
+}

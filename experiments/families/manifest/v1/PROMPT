@@ -1,0 +1,25 @@
+The directory `components/` holds one subdirectory per component. Each has a
+`declared.json` naming the parameters that component claims to take, and a
+`run.py` implementing it.
+
+Count the components whose DECLARATION DISAGREES WITH THEIR IMPLEMENTATION and
+write that single number to answer.txt.
+
+The implementation's truth is the signature of its `run` function, and nothing
+else in the file. A component disagrees if ANY of these hold:
+
+  - it declares a parameter the signature does not accept
+  - the signature REQUIRES a parameter (no default) that the declaration does
+    not name -- this direction is the expensive one and is easy to miss
+  - the declaration's type for a parameter disagrees with the default in the
+    signature: an int default means "integer", a str default means "string",
+    a bool default means "boolean"
+
+Two things that are NOT disagreements:
+
+  - a component that declares no parameters at all. It claims nothing, so it
+    cannot claim wrongly
+  - a name that appears only in a docstring, a comment or a string. Only the
+    signature counts
+
+Grading runs against a pristine copy of components/ plus your answer.txt.

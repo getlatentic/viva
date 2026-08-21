@@ -1,0 +1,13 @@
+{
+  "name": "c3",
+  "parameters": [
+    {
+      "name": "depth",
+      "type": "integer"
+    },
+    {
+      "name": "verbose",
+      "type": "string"
+    }
+  ]
+}

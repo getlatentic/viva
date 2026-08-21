@@ -1,0 +1,9 @@
+{
+  "name": "c7",
+  "parameters": [
+    {
+      "name": "verbose",
+      "type": "string"
+    }
+  ]
+}

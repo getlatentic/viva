@@ -1,0 +1,21 @@
+{
+  "name": "c11",
+  "parameters": [
+    {
+      "name": "path",
+      "type": "string"
+    },
+    {
+      "name": "pattern",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "depth",
+      "type": "integer"
+    }
+  ]
+}

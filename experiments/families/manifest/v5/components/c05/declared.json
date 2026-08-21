@@ -1,0 +1,21 @@
+{
+  "name": "c5",
+  "parameters": [
+    {
+      "name": "depth",
+      "type": "integer"
+    },
+    {
+      "name": "pattern",
+      "type": "string"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ]
+}

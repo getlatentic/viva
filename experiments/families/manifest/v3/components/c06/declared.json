@@ -1,0 +1,9 @@
+{
+  "name": "c6",
+  "parameters": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "c4",
+  "parameters": [
+    {
+      "name": "verbose",
+      "type": "boolean"
+    },
+    {
+      "name": "pattern",
+      "type": "string"
+    },
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "c23",
+  "parameters": [
+    {
+      "name": "path",
+      "type": "string"
+    }
+  ]
+}
