@@ -1,0 +1,14 @@
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 262, "unit": "s"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 98, "unit": "us"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op"}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 240, "unit": "ms"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 281, "unit": "ms"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 315, "unit": "s"}}}}
+{"kind": "log", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 294, "unit": "us"}}}}
+{"kind": "log", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 312, "unit": "us"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 202, "unit": "us"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 272, "unit": "us"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 118, "unit": "us"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 34, "unit": "ms"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 168, "unit": "ms"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 336, "unit": "us"}}}}

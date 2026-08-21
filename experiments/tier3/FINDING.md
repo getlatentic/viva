@@ -44,3 +44,35 @@ conditions. Tier 3 remains unobserved on demand and #6 stays open.
 
 $0.035 across both runs, off-peak, and the runner refuses to start inside a
 peak window.
+
+## Third run: eight variants, and tier 3 is still not reached
+
+Eight encounters of the same expensive parse. Eight solved. Retained: the same
+one skill, `sum-span-elapsed`. No tool, at any point.
+
+This is no longer a fact about the corpus. It is a fact about the rule.
+
+**Tier 2 absorbs the pressure that would produce tier 3.** The routing rule
+promotes on *evidence of reuse* — code you have already wanted again is a tool.
+But the moment a skill exists, the re-derivation cost it was measuring is gone:
+every later encounter is cheap, so the evidence that would justify a tool never
+accumulates. The cheaper tier is not a step towards the expensive one, it is a
+substitute for it.
+
+So tier 3 is probably not reachable from the reflection prompt by repetition,
+however long the corpus. Something has to count the skill's **usage** and
+promote on that — which is exactly backlog #8, "Graduation: reuse past
+threshold promotes a snippet into the registry". This run is an argument that
+#8 is not a convenience on top of the router but the only mechanism that gets
+to tier 3 at all.
+
+Worth stating against our own interest: #6 asks reflection to reach tier 3 by
+policy, and three runs at rising difficulty and length say it does not. The
+issue may be mis-specified rather than unimplemented.
+
+**What did work, twice over:** the router routes by cost. Trivial work retains
+nothing. Expensive work retains a skill, on the first corpus that made the
+parse genuinely expensive, and the skill it wrote names every rule that made it
+expensive — the span-only filter, the unit conversion, the microsecond floor.
+
+$0.075 across three runs, all off-peak, all gated.

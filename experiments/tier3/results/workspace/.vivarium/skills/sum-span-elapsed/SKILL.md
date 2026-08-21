@@ -1,20 +1,21 @@
 ---
 name: sum-span-elapsed
-description: When a task must total (or otherwise reduce) elapsed times in vivarium trace JSONL files, honoring the span-only rule and ms/us/s unit conversion with us rounding down.
+description: Total the elapsed time of SPAN records in JSONL trace files under data/, converting units to whole milliseconds.
 language: python
 ---
 
-Use this when processing the JSONL traces in data/: only kind=="span" counts,
-elapsed lives at body.span.elapsed, "us" floors to whole ms, "s" = 1000 ms,
-and a span with no elapsed counts as 0. Run the snippet from the workspace
-root; it prints the total in whole milliseconds.
+Use when a task asks for the elapsed time of spans (or any aggregation of
+body.span.elapsed) in the JSONL trace files. Only kind=="span" records count;
+logs carry elapsed too but must be excluded. Elapsed is
+{"value": n, "unit": u} with u in ms/us/s: us floors down to whole ms,
+s is 1000ms, and a span with no elapsed contributes 0.
 
 ```python
 import json, glob
 
 total = 0
-for f in sorted(glob.glob('data/*.jsonl')):
-    for line in open(f):
+for path in sorted(glob.glob('data/*.jsonl')):
+    for line in open(path):
         line = line.strip()
         if not line:
             continue
@@ -24,8 +25,7 @@ for f in sorted(glob.glob('data/*.jsonl')):
         elapsed = rec.get('body', {}).get('span', {}).get('elapsed')
         if elapsed is None:
             continue
-        value = elapsed['value']
-        unit = elapsed['unit']
+        value, unit = elapsed['value'], elapsed['unit']
         if unit == 'ms':
             total += value
         elif unit == 'us':

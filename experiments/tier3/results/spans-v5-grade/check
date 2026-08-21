@@ -1,0 +1,5 @@
+#!/bin/sh
+# Computes the answer from the pristine data rather than comparing against a
+# stored one: the grader copies the job WITHOUT solution/, so a check that
+# needs it can never pass -- which is how four correct answers scored zero.
+exec python3 check.py

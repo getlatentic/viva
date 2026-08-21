@@ -1,0 +1,12 @@
+The directory `data/` holds JSONL trace files. Total the elapsed time of
+every SPAN, in whole milliseconds, and write that single number to answer.txt.
+
+The rules, all of which matter:
+  - only records whose kind is "span" count; a "log" record is not a span
+    even though it also carries an elapsed value
+  - a span's elapsed lives at body.span.elapsed, as {"value": n, "unit": u}
+  - unit is "ms", "us" or "s". Microseconds round DOWN to whole milliseconds
+    (so anything under 1000us contributes 0); seconds are 1000ms
+  - a span with no elapsed at all counts as 0
+
+Grading runs against a pristine copy of data/ plus your answer.txt.
