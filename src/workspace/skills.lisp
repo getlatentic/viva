@@ -143,3 +143,52 @@ starting. Paths inside a skill are relative to the directory the skill lives in.
           (env:parent-path (skill-path skill))
           (skill-content skill)
           instructions))
+
+;;; Running a tier-2 skill, and counting the runs
+;;;
+;;; The reuse signal (docs/tier-2-reuse-signal.md). A skill is injected into the
+;;; prompt and read, so there is no use event to count -- and without a count,
+;;; graduation has nothing to threshold on and tier 3 is unreachable, which
+;;; three runs of experiments/tier3 demonstrated.
+;;;
+;;; So the snippet a tier-2 skill already carries gains an ENTRY POINT. Not a
+;;; new kind of artifact: our format already demands one fenced block that runs,
+;;; and Codex lays its skills out with `scripts/<tool>.* # executed, not loaded`.
+;;; The file stays a file -- readable, editable, committable. It gains a way to
+;;; be called, and calling it is the fact the router wanted.
+
+(defparameter +interpreters+
+  '(("python" . "python3") ("python3" . "python3") ("bash" . "bash")
+    ("sh" . "sh") ("node" . "node") ("ruby" . "ruby"))
+  "Languages a skill may declare, and what runs them. A language not here is
+refused by name rather than guessed at -- running somebody's code through the
+wrong interpreter is a worse answer than saying no.")
+
+(defun snippet-of (skill)
+  "The first fenced block in SKILL's body, or NIL.
+
+The FIRST, because the format asks for one. A skill carrying three blocks has
+not said which is the procedure, and picking one for it would be a guess that
+looks like a feature."
+  (let* ((lines (uiop:split-string (skill-content skill) :separator '(#\Newline)))
+         (start (position-if (lambda (line) (a:starts-with-subseq "```" (string-left-trim " " line)))
+                             lines)))
+    (when start
+      (let ((end (position-if (lambda (line) (a:starts-with-subseq "```" (string-left-trim " " line)))
+                              lines :start (1+ start))))
+        (when end
+          (format nil "~{~a~^~%~}" (subseq lines (1+ start) end)))))))
+
+(defun uses-path (skill)
+  (env:join-path (env:parent-path (skill-path skill)) "uses"))
+
+(defun uses-of (environment skill)
+  "How many times this skill has been run. The number graduation thresholds on."
+  (or (ignore-errors
+       (parse-integer (env:read-text environment (uses-path skill)) :junk-allowed t))
+      0))
+
+(defun note-use (environment skill)
+  (let ((next (1+ (uses-of environment skill))))
+    (ignore-errors (env:write-text environment (uses-path skill) (format nil "~d~%" next)))
+    next))
