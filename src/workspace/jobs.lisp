@@ -171,3 +171,45 @@ process, so it matters more rather than less."
   (let ((stopped 0))
     (dolist (job (all-jobs) stopped)
       (when (ignore-errors (stop job)) (incf stopped)))))
+
+;;; Services: a process the germline declares
+;;;
+;;; The retention router's fourth shape. Tiers 1-3 are a note, a code-carrying
+;;; skill, and a registered tool -- knowledge, a transformation, and a callable.
+;;; A service is none of those: it is something that should be RUNNING while
+;;; work happens here. The organism already notices it starts the same dev
+;;; server every session; until now the most it could do about that was write a
+;;; note saying so.
+;;;
+;;; One file per service, holding the command line. Not JSON, not KEY=VALUE:
+;;; there is exactly one field, and a format with one field is a filename and
+;;; its contents. `cat .vivarium/services/dev` tells you everything.
+
+(defun services-directory (cwd)
+  (env:join-path cwd ".vivarium" "services"))
+
+(defun declared (environment cwd)
+  "Every service this project declares, as (NAME . COMMAND)."
+  (loop for info in (or (ignore-errors
+                         (env:list-directory environment (services-directory cwd)))
+                        '())
+        when (eq :file (env:info-kind info))
+          collect (cons (env:info-name info)
+                        (string-trim '(#\Space #\Newline #\Tab)
+                                     (or (ignore-errors
+                                          (env:read-text environment (env:info-path info)))
+                                         "")))
+            into found
+        finally (return (remove-if (lambda (pair) (zerop (length (cdr pair)))) found))))
+
+(defun start-declared (environment cwd &key on-output)
+  "Start any declared service not already running. Returns what it started.
+
+NOT AUTOMATIC ON ARRIVAL, and that is deliberate: running a project's own
+commands is the same decision as running its tools, and the caller is the one
+that has to have asked. Nothing here consults trust because nothing here starts
+anything on its own."
+  (loop for (name . command) in (declared environment cwd)
+        unless (a:when-let ((existing (find-job name))) (alive-p existing))
+          collect (progn (start command :name name :directory cwd :on-output on-output)
+                         (cons name command))))

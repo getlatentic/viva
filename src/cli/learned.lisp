@@ -31,6 +31,13 @@
     (show-items "notes" (germline:view-notes view))
     (show-items "skills" (germline:view-skills view) :detail t)
     (show-items "tools" (germline:view-tools view) :detail t)
+    ;; The fourth shape. Shown with the rest because it is retained the same
+    ;; way -- a file in the germline, committable, readable by anything.
+    (a:when-let ((services (germline:view-services view)))
+      (format t "~&~%services  (~d)~%" (length services))
+      (dolist (item services)
+        (format t "  ~a ~a~24t~a~%" (scope-mark item) (germline:item-name item)
+                (one-line (germline:item-detail item) 50))))
     ;; "There is a tool here" and "the agent can call it" are different
     ;; questions, so a refused tool is shown as refused rather than folded into
     ;; `none` -- an empty germline and an unreachable one are opposite

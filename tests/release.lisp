@@ -704,3 +704,37 @@ twice; it is somebody's record.")))
            (true (search "tick-1" (jobs:output-of job))
                  "the log must still hold what the watcher saw"))
       (jobs:stop job))))
+
+;;; Services: the retention router's fourth shape
+
+(define-test "a project can declare a service, and starting it is idempotent"
+  ;; Tiers 1-3 are a note, a code-carrying skill and a registered tool --
+  ;; knowledge, a transformation, a callable. A service is none of those: it is
+  ;; something that should be RUNNING while work happens here. The organism
+  ;; already notices it starts the same dev server every session; until now the
+  ;; most it could do about that was write a note saying so.
+  (let ((root (format nil "/tmp/vivarium-svc-~36r/" (random (expt 2 48) (make-random-state t)))))
+    (unwind-protect
+         (let ((environment (env:make-local-environment :cwd root)))
+           (ensure-directories-exist (merge-pathnames ".vivarium/services/" root))
+           (with-open-file (out (merge-pathnames ".vivarium/services/ticker" root)
+                                :direction :output)
+             (write-string "while true; do echo tick; sleep 1; done" out))
+           (is equal '(("ticker" . "while true; do echo tick; sleep 1; done"))
+               (jobs:declared environment root))
+           (is equal '("ticker") (mapcar #'car (jobs:start-declared environment root)))
+           (sleep 0.5)
+           (true (jobs:alive-p (jobs:find-job "ticker")))
+           ;; Asking twice must not start a second one. A project opened in two
+           ;; terminals would otherwise hold the port against itself.
+           (false (jobs:start-declared environment root)
+                  "a running service was started a second time")
+           ;; A file with no command is not a service.
+           (with-open-file (out (merge-pathnames ".vivarium/services/empty" root)
+                                :direction :output)
+             (write-string "   " out))
+           (is = 1 (length (jobs:declared environment root))
+               "an empty declaration must not count as a service"))
+      (jobs:stop-all)
+      (uiop:delete-directory-tree (pathname root) :validate (constantly t)
+                                                  :if-does-not-exist :ignore))))

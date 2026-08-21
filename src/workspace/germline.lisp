@@ -32,6 +32,9 @@
   (tools '() :type list)
   ;; Tools that exist here and will not run: on disk, refused at load.
   (refused '() :type list)
+  ;; The fourth shape: something that should be RUNNING while work happens
+  ;; here, as opposed to knowledge, a transformation, or a callable.
+  (services '() :type list)
   (warnings '() :type list)
   (trusted-p nil))
 
@@ -117,6 +120,11 @@ germline, the other is a germline the agent cannot reach."
                                      append (manifests-on-disk environment directory)))))
       (values loaded refused warnings))))
 
+(defun services-for (environment cwd)
+  (loop for (name . command) in (jobs:declared environment cwd)
+        collect (make-item :name name :detail command :scope :project
+                           :path (env:join-path (jobs:services-directory cwd) name))))
+
 (defun inspect-directory (cwd)
   "Everything that has accumulated for CWD. No model request, no live agent."
   (let* ((environment (env:make-local-environment :cwd cwd))
@@ -128,5 +136,6 @@ germline, the other is a germline the agent cannot reach."
                    :skills skills
                    :tools tools
                    :refused refused
+                   :services (services-for environment cwd)
                    :warnings (append skill-warnings tool-warnings)
                    :trusted-p (trust:trusted-p environment project))))))

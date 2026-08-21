@@ -56,7 +56,8 @@
                     (#:bt #:bordeaux-threads)
                     (#:env #:vivarium.env))
   (:export #:start #:stop #:all-jobs #:find-job #:alive-p #:status-of #:output-of
-           #:job #:job-name #:job-command #:job-log #:stop-all))
+           #:job #:job-name #:job-command #:job-log #:stop-all
+           #:declared #:start-declared #:services-directory))
 
 (defpackage #:vivarium.workspace
   (:use #:cl)
@@ -244,8 +245,9 @@
                     (#:skill #:vivarium.skill)
                     (#:memory #:vivarium.memory)
                     (#:registry #:vivarium.registry)
+                    (#:jobs #:vivarium.jobs)
                     (#:harness #:vivarium.harness))
   (:export #:inspect-directory
            #:view #:view-cwd #:view-notes #:view-skills #:view-tools
-           #:view-warnings #:view-trusted-p #:view-refused
+           #:view-warnings #:view-trusted-p #:view-refused #:view-services
            #:item #:item-name #:item-detail #:item-scope #:item-path))
