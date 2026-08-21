@@ -55,6 +55,8 @@ EvolutionWitnessDoor:Evolution:violates:the door guard is load-bearing
 ReconcileSafety:Reconcile:holds:the ledger never claims more than the world holds
 ReconcileLiveness:Reconcile:holds:nothing is left mid-flight forever
 ReconcileWitnessAtomic:Reconcile:violates:assumed-atomic compensation reports reverted while effects remain
+TaskMessagingSafety:TaskMessaging:holds:no message vanishes without the sender being told
+TaskMessagingWitnessDrop:TaskMessaging:violates:a full inbox that drops silently is reachable
 '
 
 failures=0
