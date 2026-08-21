@@ -765,6 +765,15 @@ twice; it is somebody's record.")))
 ;;; a load failure. Verified by reintroducing the bug -- the suite did not fail,
 ;;; it failed to start.
 ;;;
-;;; The guard that would work runs BEFORE loading. `vivarium check` already has
-;;; that shape for duplicate test helpers: it reads files rather than requiring
-;;; them. That is where this belongs, and it is not written yet.
+;;; Then it was moved into `vivarium check`, on the reasoning that check reads
+;;; files rather than requiring them -- and that was WRONG in the same way, one
+;;; level up. `bin/vivarium check` quickloads vivarium/cli before COMMAND-CHECK
+;;; runs, so a broken package file kills the load before any check can read
+;;; anything. Verified the same way: reintroduce the bug, and check dies in the
+;;; loader rather than reporting.
+;;;
+;;; So the rule is sharper than it first looked. ANYTHING THAT GUARDS A LOAD
+;;; FAILURE MUST NOT ITSELF REQUIRE THE LOAD, and both obvious homes do. What
+;;; would work is a standalone script -- `sbcl --script` over the package files
+;;; alone, touching none of the system -- run by install.sh or CI. Not written,
+;;; and named precisely enough that nobody has to rediscover the two dead ends.
