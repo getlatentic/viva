@@ -1,0 +1,7 @@
+The directory `data/` holds JSONL trace files. Every line is one span:
+{"event": "span", "attrs": {"duration_ms": <n>, "name": "..."}}
+
+Sum duration_ms across every span in every file. Write answer.txt containing
+that single number and nothing else.
+
+Grading runs against a pristine copy of data/ plus your answer.txt.

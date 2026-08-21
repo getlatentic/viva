@@ -1,0 +1,7 @@
+{"event": "span", "attrs": {"duration_ms": 684, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 812, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 430, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 819, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 605, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 223, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 642, "name": "op2"}}

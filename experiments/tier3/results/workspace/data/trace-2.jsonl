@@ -1,0 +1,10 @@
+{"event": "span", "attrs": {"duration_ms": 752, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 891, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 848, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 174, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 885, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 653, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 398, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 90, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 537, "name": "op2"}}
+{"event": "span", "attrs": {"duration_ms": 261, "name": "op2"}}
