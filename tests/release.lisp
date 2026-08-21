@@ -554,3 +554,18 @@ you where you were rather than nowhere"))))
     (true (search "\"restart\" verb" source) "acting on the warning must be one command"))
   ;; And the daemon has to send what the comparison needs.
   (true (search "\"started\" *started-at*" (repository-file "src/daemon/server.lisp"))))
+
+(define-test "background jobs do not outlive the process that started them"
+  ;; A `daemon restart` -- the command a person is told to run when their code
+  ;; is stale -- would otherwise leave every dev server it ever started alive,
+  ;; holding ports, with the only record of them in a process that just died.
+  ;; Pi tracks detached child pids and kills the tree on SIGHUP/SIGTERM for the
+  ;; same reason; here the process lives longer, so it matters more.
+  (jobs:start "while true; do sleep 1; done" :name "suite-orphan-a")
+  (jobs:start "while true; do sleep 1; done" :name "suite-orphan-b")
+  (true (>= (length (jobs:all-jobs)) 2))
+  (jobs:stop-all)
+  (is = 0 (length (jobs:all-jobs)) "stop-all left a job behind")
+  ;; And the daemon actually calls it, which is the half a unit test misses.
+  (true (search "(jobs:stop-all)" (repository-file "src/daemon/server.lisp"))
+        "nothing stops the jobs when the organism shuts down"))

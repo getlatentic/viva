@@ -56,7 +56,7 @@
                     (#:bt #:bordeaux-threads)
                     (#:env #:vivarium.env))
   (:export #:start #:stop #:all-jobs #:find-job #:alive-p #:status-of #:output-of
-           #:job #:job-name #:job-command #:job-log))
+           #:job #:job-name #:job-command #:job-log #:stop-all))
 
 (defpackage #:vivarium.workspace
   (:use #:cl)

@@ -484,7 +484,18 @@ falls in the gap and none arrives twice."
          (multiple-value-bind (kept total hangups) (diagnostics)
            (ok "failures" total "hangups" hangups "recent" (coerce kept 'vector))))
 
-        ((string= "shutdown" type) (ok) (stop))
+        ;; Jobs first: they are children of THIS process, and a process that
+        ;; exits without stopping them orphans them -- still running, holding
+        ;; ports, with the only record of them in the process that just died.
+        ((string= "shutdown" type)
+         (a:when-let ((stopped (ignore-errors (jobs:stop-all))))
+           (when (plusp stopped)
+             (note-failure "shutdown"
+                           (make-condition 'simple-error
+                                           :format-control "stopped ~d background job~:p"
+                                           :format-arguments (list stopped)))))
+         (ok)
+         (stop))
 
         (t (no (format nil "Unknown command ~a." type)))))))
 

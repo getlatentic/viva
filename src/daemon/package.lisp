@@ -60,6 +60,7 @@
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:germline #:vivarium.germline)
+                    (#:jobs #:vivarium.jobs)
                     (#:bt #:bordeaux-threads)
                     (#:mailbox #:sb-concurrency)
                     (#:jzon #:com.inuoe.jzon)

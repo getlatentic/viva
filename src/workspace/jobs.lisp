@@ -97,3 +97,16 @@ port -- which looks exactly like the stop having failed."
   (sb-ext:process-wait (job-process job) t)
   (bt:with-lock-held (*lock*) (remhash (job-name job) *jobs*))
   t)
+
+(defun stop-all ()
+  "Stop every job. Called when the process that started them is going away.
+
+Without this a `daemon restart` -- the command a person is now told to run
+when their code is stale -- leaves every dev server it ever started alive,
+holding ports, with the only record of them in a process that no longer
+exists. Pi tracks detached child pids for exactly this reason and kills the
+tree on SIGHUP/SIGTERM; the same problem arrives here through a longer-lived
+process, so it matters more rather than less."
+  (let ((stopped 0))
+    (dolist (job (all-jobs) stopped)
+      (when (ignore-errors (stop job)) (incf stopped)))))
