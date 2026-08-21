@@ -72,7 +72,15 @@ background true instead, and read it with `jobs`.]" text)
   (handler-case
       (let ((job (jobs:start (gethash "command" args)
                              :name (gethash "name" args)
-                             :directory (env:env-cwd (environment)))))
+                             :directory (env:env-cwd (environment))
+                             ;; The same sink a foreground command uses, so a
+                             ;; dev server's output reaches whoever is attached
+                             ;; instead of sitting in a file until asked for.
+                             ;; Captured rather than read at call time: the job
+                             ;; outlives this turn, and the binding will not.
+                             :on-output (let ((sink *on-output*))
+                                          (lambda (chunk)
+                                            (when sink (funcall sink chunk)))))))
         ;; A moment before reporting: a command that dies instantly -- a typo, a
         ;; missing binary -- should say so now rather than be announced as
         ;; started and found dead later.

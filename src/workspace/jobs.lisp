@@ -49,16 +49,45 @@ that started them -- which is the entire point.")
               for candidate = (format nil "~a~d" (or wanted "job") index)
               unless (gethash candidate *jobs*) return candidate))))
 
-(defun start (command &key name directory)
-  "Start COMMAND and return its JOB, without waiting for it."
+(defun pump (job on-output)
+  "Read the job's output, writing it to its log and handing it onward.
+
+TWO CONSUMERS, one pipe. The log is what `jobs output` reads afterwards; the
+callback is what reaches whoever is watching now. A reader thread rather than
+:OUTPUT to a file, because a file cannot be followed without polling it, and
+polling is what made a running server invisible until somebody asked.
+
+The thread is the drain as well: an unread pipe fills and stops the process
+producing it, which is exactly the dev-server-wedged-by-its-own-logs failure
+writing to a file avoided."
+  (bt:make-thread
+   (lambda ()
+     (ignore-errors
+      (with-open-file (log (job-log job) :direction :output
+                                         :if-exists :supersede :if-does-not-exist :create)
+        (let ((from (sb-ext:process-output (job-process job))))
+          (loop for character = (read-char from nil nil)
+                while character
+                do (write-char character log)
+                   (force-output log)
+                   (when on-output
+                     (ignore-errors (funcall on-output (string character)))))))))
+   :name (format nil "vivarium-job-~a" (job-name job))))
+
+(defun start (command &key name directory on-output)
+  "Start COMMAND and return its JOB, without waiting for it.
+
+ON-OUTPUT, when given, receives the output as it arrives -- so a background
+process can be watched rather than polled."
   (let* ((name (mint-name name))
          (log (log-path name))
          (process (sb-ext:run-program
                    "/bin/sh" (list "-c" command)
-                   :output log :error :output :if-output-exists :supersede
+                   :output :stream :error :output
                    :directory directory :wait nil :search nil)))
     (let ((job (make-job :name name :command command :process process
                          :log log :directory (or directory ""))))
+      (pump job on-output)
       (bt:with-lock-held (*lock*) (setf (gethash name *jobs*) job))
       job)))
 
