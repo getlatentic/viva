@@ -445,6 +445,17 @@ it finds nobody home."
                                             (format t "~&listening on ~a~%" path)
                                             (finish-output)))
                   0)))
+      ((string= "restart" verb)
+       ;; Stop and start, named as one thing, because `why is my change not
+       ;; working` has this as its answer often enough that it should not be
+       ;; two commands and a guess.
+       (when (daemon:running-p)
+         (daemon:with-connection (stream)
+           (read-line stream nil nil)
+           (daemon:request stream "type" "shutdown"))
+         (loop repeat 50 while (daemon:running-p) do (sleep 0.1)))
+       (format t "~&sessions ended with the old process~%")
+       (start-detached-daemon))
       ((string= "stop" verb)
        (if (daemon:running-p)
            (progn (daemon:with-connection (stream)
@@ -452,7 +463,7 @@ it finds nobody home."
                     (daemon:request stream "type" "shutdown"))
                   (format t "~&stopped~%") 0)
            (progn (format t "~&not running~%") 1)))
-      (t (format t "~&usage: vivarium daemon [status|start|stop]~%") 1))))
+      (t (format t "~&usage: vivarium daemon [status|start|stop|restart]~%") 1))))
 
 (defun launch-daemon ()
   "Start a daemon in a process of its own and wait for it to answer.
@@ -515,6 +526,27 @@ untouched and still running.~%~%  vivarium        rejoins it~%  ~
 vivarium daemon status   shows what the organism is doing~%")
     t))
 
+(defun newest-source-time ()
+  "The newest write time under src/, or NIL if it cannot be read."
+  (ignore-errors
+   (loop for file in (directory (merge-pathnames "src/**/*.lisp" (repository-root)))
+         maximize (file-write-date file))))
+
+(defun warn-if-stale (greeting)
+  "Say so when the running organism predates the code on disk.
+
+A long-lived process keeps the code it was built from. Someone who edits
+vivarium, rebuilds, and reattaches is talking to the OLD one -- and the change
+they just made looks like it does not work. It cost a person five hours and a
+model that invented a shell workaround for a tool it could not see."
+  (a:when-let ((started (and greeting (gethash "started" greeting))))
+    (a:when-let ((newest (newest-source-time)))
+      (when (> newest started)
+        (format t "~&! This organism started before the current code ~
+\(~d minute~:p ago).~%  Sessions live in the process, so a restart ends them:  ~
+vivarium daemon restart~%~%"
+                (max 1 (round (- (get-universal-time) started) 60)))))))
+
 (defun current-sequence (stream id)
   "Where this session is now, so attaching replays nothing into the socket."
   (let ((reply (daemon:request stream "type" "session.list")))
@@ -552,7 +584,7 @@ this only mentions them -- continuing one is `--resume`."
   (let ((cwd (namestring (truename (or (flag parsed "cwd") ".")))))
     (setf *option-model* (option parsed "model"))
     (daemon:with-connection (stream)
-      (read-line stream nil nil)
+      (warn-if-stale (ignore-errors (jzon:parse (read-line stream nil ""))))
       (let* ((wanted (or (first (args-positional parsed))
                          (unless (option-true-p parsed "new")
                            (live-session-here stream cwd))))

@@ -81,6 +81,9 @@ to release beyond the claim itself."
 (defvar *diagnostics-lock* (bt:make-lock "vivarium.diagnostics"))
 (defvar *failures* 0 "How many there have been, which the kept ones do not say.")
 
+(defvar *started-at* (get-universal-time)
+  "When this image began serving, for the staleness check.")
+
 (defvar *hangups* 0
   "Clients that went away mid-write. Counted, never reported as failures.")
 
@@ -497,6 +500,13 @@ place, on one thread, with exactly one close."
          (progn
            (start-writer client)
            (say client (object "type" "ready" "pid" (sb-posix:getpid)
+                               ;; When this generation started. A long-lived
+                               ;; process keeps the code it was built from, so
+                               ;; a person who edits vivarium and reattaches is
+                               ;; talking to the old one -- which looks exactly
+                               ;; like the change not working. The client
+                               ;; compares this against the source on disk.
+                               "started" *started-at*
                                "sessions" (coerce (mapcar #'cell-json (actor:all-cells)) 'vector)))
            (loop for line = (next-line client)
                  while line

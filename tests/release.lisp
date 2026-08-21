@@ -538,3 +538,19 @@ you where you were rather than nowhere"))))
     (true (search "background true instead" source)
           "the timeout message must name the fix -- a bare timeout reads as ~
 `slow`, which is what invites the retry")))
+
+(define-test "a stale organism says so, and can be restarted"
+  ;; A long-lived process keeps the code it was built from. Someone who edits
+  ;; vivarium, rebuilds and reattaches is talking to the OLD one -- and the
+  ;; change they just made looks like it does not work. It cost a person five
+  ;; hours and a model that invented a shell workaround for a tool it could
+  ;; not see, because the tool did not exist in the process it was talking to.
+  (let ((source (repository-file "src/cli/commands.lisp")))
+    (true (search "warn-if-stale" source))
+    (true (search "newest-source-time" source))
+    ;; The warning has to name the cost of acting on it: sessions live in the
+    ;; process, so a restart ends them.
+    (true (search "Sessions live in the process" source))
+    (true (search "\"restart\" verb" source) "acting on the warning must be one command"))
+  ;; And the daemon has to send what the comparison needs.
+  (true (search "\"started\" *started-at*" (repository-file "src/daemon/server.lisp"))))
