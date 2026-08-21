@@ -44,6 +44,21 @@ Absent, every one of these decoded as nothing at all: the view had scrolling
 and the keys to reach it were dropped one layer below, so it looked like a
 missing feature rather than a missing branch.")
 
+(defun csi-parameters (body)
+  "The semicolon-separated numbers in a CSI sequence, as a list.
+
+One parser rather than a position-of-semicolon at each call site: the sequences
+differ only in their final byte, and hand-splitting each one is how ESC[A and
+ESC[1;5A end up handled by different code that agrees about neither."
+  (let ((numbers '()) (start 0))
+    (loop for index = (position #\; body :start start)
+          do (push (parse-integer body :start start :end (or index (length body))
+                                       :junk-allowed t)
+                   numbers)
+             (unless index (return))
+             (setf start (1+ index)))
+    (nreverse numbers)))
+
 (defun modifiers-from (encoded)
   "The kitty modifier field to (values CONTROL ALT SHIFT)."
   (let ((bits (max 0 (1- (or encoded 1)))))
@@ -87,21 +102,27 @@ into a wrong one, and a wrong key is acted on."
       ((and (> length 3) (char= #\Escape (char bytes 0)) (char= #\[ (char bytes 1))
             (char= #\u (char bytes (1- length))))
        (decode-kitty (subseq bytes 2 (1- length))))
-      ;; CSI <final> -- the legacy arrows and friends
-      ((and (= length 3) (char= #\Escape (char bytes 0)) (char= #\[ (char bytes 1)))
+      ;; SS3 -- ESC O A. What a terminal in APPLICATION CURSOR MODE sends for
+      ;; the arrows instead of CSI, which many do the moment a full-screen
+      ;; program starts. Absent, every arrow key decoded as nothing.
+      ((and (= length 3) (char= #\Escape (char bytes 0)) (char= #\O (char bytes 1)))
        (a:when-let ((named (cdr (assoc (char bytes 2) +legacy-finals+))))
          (make-key :value named)))
+      ;; CSI <params> <final> -- the legacy arrows and friends, with or without
+      ;; a modifier parameter. ESC[A is Up; ESC[1;5A is Ctrl-Up, and matching
+      ;; only on length meant the second decoded as nothing.
+      ((and (> length 2) (char= #\Escape (char bytes 0)) (char= #\[ (char bytes 1))
+            (assoc (char bytes (1- length)) +legacy-finals+))
+       (let ((named (cdr (assoc (char bytes (1- length)) +legacy-finals+)))
+             (params (csi-parameters (subseq bytes 2 (1- length)))))
+         (multiple-value-bind (control alt shift) (modifiers-from (second params))
+           (make-key :value named :control control :alt alt :shift shift))))
       ;; CSI <number> ; <modifiers> ~ -- Page Up and its neighbours.
       ((and (> length 3) (char= #\Escape (char bytes 0)) (char= #\[ (char bytes 1))
             (char= #\~ (char bytes (1- length))))
-       (let* ((body (subseq bytes 2 (1- length)))
-              (semicolon (position #\; body))
-              (number (parse-integer body :end (or semicolon (length body))
-                                          :junk-allowed t)))
-         (a:when-let ((named (cdr (assoc number +tilde-keys+))))
-           (multiple-value-bind (control alt shift)
-               (modifiers-from (and semicolon (parse-integer body :start (1+ semicolon)
-                                                                  :junk-allowed t)))
+       (let ((params (csi-parameters (subseq bytes 2 (1- length)))))
+         (a:when-let ((named (cdr (assoc (first params) +tilde-keys+))))
+           (multiple-value-bind (control alt shift) (modifiers-from (second params))
              (make-key :value named :control control :alt alt :shift shift)))))
       ;; A bare byte, in the dialect that cannot tell Ctrl-I from Tab.
       ((= length 1)
@@ -148,34 +169,49 @@ sequence in one write -- so anything that has not arrived by now is not coming.
 Too long and Escape feels broken; too short and a slow link splits a real
 sequence into a false Escape plus rubbish.")
 
+(defun sequence-complete-p (so-far)
+  "Is SO-FAR a whole escape sequence?
+
+The introducer is the exception that broke this. A CSI sequence ends at its
+final byte -- alphabetic or `~` -- but `ESC O A` is what a terminal in
+APPLICATION CURSOR MODE sends for Up, and `O` is alphabetic. Returning at the
+first alphabetic byte returned `ESC O`, decoded it as nothing, and left the `A`
+to be read as a typed capital A."
+  (let ((length (length so-far)))
+    (cond ((< length 2) nil)
+          ;; ESC [ and ESC O are introducers, not endings.
+          ((and (= length 2) (member (char so-far 1) '(#\[ #\O))) nil)
+          ((= length 2) t)                      ; ESC x -- Alt-x
+          (t (let ((last (char so-far (1- length))))
+               (or (char= #\~ last)
+                   (and (alpha-char-p last) (char/= #\[ last))))))))
+
 (defun read-key (stream &key (timeout *sequence-timeout*))
-  "One key from STREAM, or NIL at end of input.
+  "One key or mouse report from STREAM, or NIL at end of input.
 
 Blocks for the FIRST byte -- there is nothing to do until a person types -- and
 only then bounds the wait, because by then the question is `is there more of
-this sequence`, which has an answer that arrives immediately or not at all."
+this sequence`, which has an answer that arrives immediately or not at all.
+
+A plain string accumulator rather than a stream: GET-OUTPUT-STREAM-STRING
+drains what it returns, so asking the stream what it holds so far destroys it."
   (let ((first (read-char stream nil nil)))
     (when first
       (if (char/= #\Escape first)
           (decode (string first))
           (let ((deadline (+ (get-internal-real-time)
                              (round (* timeout internal-time-units-per-second))))
-                (collected (make-string-output-stream)))
-            (write-char first collected)
+                (so-far (string first)))
             (loop
               (let ((next (read-char-no-hang stream nil nil)))
                 (cond
                   ((null next)
                    (when (> (get-internal-real-time) deadline)
                      ;; Nothing more came: Escape on its own.
-                     (return (decode (get-output-stream-string collected))))
+                     (return (decode so-far)))
                    (sleep 0.002))
                   (t
-                   (write-char next collected)
-                   ;; A CSI sequence ends at its final byte -- an alphabetic
-                   ;; character or `~`. Stopping there rather than on the
-                   ;; timeout is what makes a fast keypress feel instant.
-                   (when (and (alpha-char-p next) (char/= #\[ next))
-                     (return (decode (get-output-stream-string collected))))
-                   (when (char= #\~ next)
-                     (return (decode (get-output-stream-string collected)))))))))))))
+                   (setf so-far (concatenate 'string so-far (string next)))
+                   (when (sequence-complete-p so-far)
+                     (return (decode so-far))))))))))))
+

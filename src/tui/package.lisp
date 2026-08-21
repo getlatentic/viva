@@ -10,7 +10,7 @@
            #:with-raw-terminal #:terminal-p
            #:style #:make-style #:style-foreground #:style-background
            #:style-bold #:style-dim #:sgr
-           #:make-blank-screen #:screen-rows #:style-at #:put #:flush #:clear-back
+           #:make-blank-screen #:screen-rows #:style-at #:invalidate #:screen-invalid #:put #:flush #:clear-back
            #:screen #:screen-width #:screen-height
            #:pane #:make-pane #:fresh-pane #:pane-kind #:pane-target #:pane-id #:pane-p
            #:branch #:make-branch #:branch-p #:branch-direction #:branch-children

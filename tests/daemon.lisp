@@ -2028,3 +2028,109 @@ bind it is testing nothing the agent loop does."
       ;; goes through the file registry, never through the image.
       (false (gethash id (vivarium.actor::evolver-functions (actor:ensure-evolver)))
              "a file-backed tool put a function in the image registry"))))
+
+;;; ---------------------------------------------------------------------------
+;;; Replay and live delivery are one stream with a seam, not two streams
+;;;
+;;; The full-screen client attaches with `since 0` so a session opens showing
+;;; the conversation it already had. That makes the handoff load-bearing:
+;;;
+;;;     historical -------------------- cursor N
+;;;                                       |
+;;;                                       +---- live
+;;;
+;;; Every event up to N must come from the replay, every event after N from the
+;;; live subscription, and none may be lost or delivered twice. "The old
+;;; messages appeared" does not test that -- it passes while the seam drops an
+;;; event or repeats one, which is the failure that actually happens.
+;;; ---------------------------------------------------------------------------
+
+(defun collected-sequences (stream events &key (deadline 20))
+  "Sequence numbers from EVENTS then from STREAM, until the turn ends.
+
+READ-CHAR-NO-HANG rather than READ-LINE. LISTEN says a character is available,
+not that a whole line is -- so `(and (listen stream) (read-line stream))` blocks
+forever on a partial line, and a test that hangs is worse than one that fails:
+it reports nothing, and the suite has to be killed to find out why."
+  (let ((seen (mapcar (lambda (event) (gethash "seq" event)) events))
+        (buffer (make-string-output-stream))
+        (stop (+ (get-internal-real-time)
+                 (* deadline internal-time-units-per-second)))
+        (done nil))
+    (loop until (or done (> (get-internal-real-time) stop))
+          for character = (read-char-no-hang stream nil :eof)
+          do (cond ((eq :eof character) (setf done t))
+                   ((null character) (sleep 0.01))
+                   ((char= #\Newline character)
+                    (let ((line (get-output-stream-string buffer)))
+                      (alexandria:when-let ((parsed (ignore-errors
+                                                     (com.inuoe.jzon:parse line))))
+                        (alexandria:when-let ((sequence (gethash "seq" parsed)))
+                          (push sequence seen))
+                        (when (member (gethash "event" parsed)
+                                      '("turn.completed" "turn.failed" "turn.cancelled")
+                                      :test #'equal)
+                          (setf done t)))))
+                   (t (write-char character buffer))))
+    (nreverse seen)))
+
+(defun seam-fault (sequences)
+  "NIL if SEQUENCES is a contiguous run with no repeats, else what is wrong."
+  (let ((sorted (sort (copy-list sequences) #'<)))
+    (cond ((null sorted) "no events at all")
+          ((/= (length sorted) (length (remove-duplicates sorted)))
+           (format nil "~d of ~d events were delivered twice"
+                   (- (length sorted) (length (remove-duplicates sorted)))
+                   (length sorted)))
+          (t (loop for (a b) on sorted
+                   when (and b (/= b (1+ a)))
+                     return (format nil "a gap between ~d and ~d" a b))))))
+
+(define-test "attaching to a finished conversation replays it exactly once"
+  (with-daemon (path)
+    (with-paced-cell (cell agent :pause 0.01 :limit 6)
+      (actor:submit cell "go")
+      (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 30))
+      (let ((before (length (actor:since cell 0))))
+        (true (plusp before) "the session produced no events to replay")
+        (let ((stream (daemon:connect path)))
+          (unwind-protect
+               (progn
+                 (read-line stream nil nil)
+                 (multiple-value-bind (reply events)
+                     (daemon:request stream "type" "session.attach"
+                                            "session" (actor:cell-id cell) "since" 0)
+                   (true (gethash "success" reply))
+                   (let ((sequences (mapcar (lambda (event) (gethash "seq" event)) events)))
+                     (is = before (length sequences)
+                         "the replay delivered ~d of ~d events" (length sequences) before)
+                     (false (seam-fault sequences)))))
+            (ignore-errors (close stream))))))))
+
+(define-test "attaching while a turn is running has no gap and no duplicate"
+  ;; The seam under load: the replay is assembled while the session is still
+  ;; publishing, so anything published between "what you missed" and "you are
+  ;; subscribed" falls in the gap -- or, if the barrier is drawn twice, arrives
+  ;; on both sides of it.
+  (with-daemon (path)
+    (with-paced-cell (cell agent :pause 0.02 :limit 60)
+      (actor:submit cell "go")
+      ;; Attach only once the session is genuinely mid-flight, so the barrier
+      ;; is exercised rather than stepped around.
+      (true (daemon-wait (lambda () (> (length (actor:since cell 0)) 3))))
+      (true (vivarium.actor::busy-p cell) "the turn finished before the attach")
+      (let ((stream (daemon:connect path)))
+        (unwind-protect
+             (progn
+               (read-line stream nil nil)
+               (multiple-value-bind (reply events)
+                   (daemon:request stream "type" "session.attach"
+                                          "session" (actor:cell-id cell) "since" 0)
+                 (true (gethash "success" reply))
+                 (let* ((sequences (collected-sequences stream events))
+                        (fault (seam-fault sequences)))
+                   (true (> (length sequences) 4)
+                         "only ~d events crossed the seam; too few to say anything"
+                         (length sequences))
+                   (false fault "~a" fault))))
+          (ignore-errors (close stream)))))))

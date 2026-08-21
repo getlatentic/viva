@@ -53,7 +53,18 @@ avoid -- so style is part of what defines a run, not something layered over it."
   (front nil)          ; what the terminal is showing
   (back nil)           ; what it should be showing
   (front-styles nil)   ; and the attributes of each, in step with them
-  (back-styles nil))
+  (back-styles nil)
+  ;; INVARIANT: if the front buffer was discarded, the physical terminal must
+  ;; be invalidated too. A fresh front buffer claims the terminal is blank; if
+  ;; it is not, every stale cell survives forever, because the diff sees no
+  ;; difference between "blank here" and "blank here". That is two frames on
+  ;; screen at once, and it is what a resize looked like.
+  ;;
+  ;; The flag lives on the SCREEN rather than at the call site that resized.
+  ;; Making resize remember to clear works exactly until something else
+  ;; recreates a buffer -- a theme change, a reconnect, a detach and reattach --
+  ;; and then the same bug returns wearing a different hat.
+  (invalid t :type boolean))
 
 (defun blank-grid (width height)
   (let ((grid (make-array (list height width) :element-type 'character)))
@@ -140,12 +151,25 @@ one per cell, which is the cost this exists to avoid."
       (close-run))
     (nreverse runs)))
 
+(defparameter +erase-all+ (format nil "~c[2J" #\Escape))
+
+(defun invalidate (screen)
+  "Declare that the terminal no longer shows what the front buffer claims."
+  (setf (screen-invalid screen) t)
+  screen)
+
 (defun flush (screen stream)
   "Emit what changed, and remember it as shown. Returns the bytes written.
 
 The count is returned because it is the thing worth asserting: a frame in which
 nothing changed must cost nothing, and that is a number, not an impression."
   (let ((written 0))
+    ;; The invalidation is discharged HERE, where the terminal is actually
+    ;; written to, so no caller can hold a fresh buffer and forget to clear.
+    (when (screen-invalid screen)
+      (write-string +erase-all+ stream)
+      (incf written (length +erase-all+))
+      (setf (screen-invalid screen) nil))
     (dotimes (row (screen-height screen))
       (dolist (run (row-differences screen row))
         (destructuring-bind (start style . body) run

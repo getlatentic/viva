@@ -58,12 +58,22 @@ the edge."
   "The rows to show, honouring scroll, oldest first.
 
 Scrolling counts from the bottom because following is the normal case: a view
-that is not scrolled shows the newest output without anybody asking."
+that is not scrolled shows the newest output without anybody asking.
+
+THE SCROLL IS CLAMPED HERE, and written back. Page Up had no upper bound, so
+holding it walked the offset past the start of the conversation and the pane
+went blank -- the output was still there, and the window onto it had been moved
+off the end. Clamping only the display would leave the offset to run away, so
+the next Page Down would appear to do nothing for as many presses as the
+overshoot. This is the one place that knows how many rows exist, which is why
+the correction belongs here rather than at the keypress."
   (let* ((rows (display-rows view width))
          (total (length rows))
-         (end (max 0 (- total (view-scroll view))))
-         (start (max 0 (- end height))))
-    (subseq rows start end)))
+         (furthest (max 0 (- total height))))
+    (setf (view-scroll view) (max 0 (min (view-scroll view) furthest)))
+    (let* ((end (max 0 (- total (view-scroll view))))
+           (start (max 0 (- end height))))
+      (subseq rows start end))))
 
 (defun paint-output (view screen region)
   "Draw the conversation from the TOP of the pane.

@@ -1135,6 +1135,9 @@ print(sum([2, 3, 5]))
   (let* ((screen (tui:make-blank-screen :width 8 :height 4))
          (regions (tui:divide '(:stack (:fixed 2 :top) (:weight 1 :bottom))
                               :width 8 :height 4)))
+    ;; Discharge the screen's invalidation first: a NEW screen owes the
+    ;; terminal a clear, and that clear is not this assertion's subject.
+    (tui:flush screen (make-string-output-stream))
     (tui:draw-in screen (tui:region-of regions :top) 5 "escaped")
     (let ((out (make-string-output-stream)))
       (tui:flush screen out)
@@ -1649,3 +1652,58 @@ print(sum([2, 3, 5]))
         (is string= "s2" (tui:session-id second-session)))
       ;; Below the last session is nothing, not the last one.
       (false (tui:session-row-at view sessions (+ 40 (tui::region-row sessions)))))))
+
+(define-test "paging stops at both ends of the conversation"
+  ;; Page Up had no upper bound, so holding it walked the offset past the start
+  ;; and the pane went blank: the output was still there and the window onto it
+  ;; had been moved off the end. Clamping only the DISPLAY would leave the
+  ;; offset to run away, so the next Page Down would do nothing visible for as
+  ;; many presses as the overshoot.
+  (let ((view (tui:make-view)))
+    (dotimes (index 30)
+      (tui:absorb view "model.delta" (list (cons "text" (format nil "line~d~%" index)))))
+    ;; Fifty pages up over thirty lines.
+    (dotimes (n 50) (tui:type-key view (tui::make-key :value :page-up))
+      (tui:visible-rows view 20 5))
+    (let ((rows (tui:visible-rows view 20 5)))
+      (is = 5 (length rows) "the pane went blank at the top of the conversation")
+      (is string= "line0" (first rows) "paging up did not stop at the first line"))
+    (is = 25 (tui::view-scroll view) "the offset ran past what exists")
+    ;; And one page down moves immediately, rather than burning the overshoot.
+    (tui:type-key view (tui::make-key :value :page-down))
+    (is = 15 (tui::view-scroll view))
+    (let ((rows (tui:visible-rows view 20 5)))
+      (is string= "line10" (first rows)))
+    ;; Down at the bottom stays at the bottom, following.
+    (dotimes (n 20) (tui:type-key view (tui::make-key :value :page-down)))
+    (is = 0 (tui::view-scroll view))
+    (is string= "line29" (car (last (tui:visible-rows view 20 5))))))
+
+(define-test "render, erase, render leaves only the second frame"
+  ;; The invariant behind the resize fix, at the buffer rather than the pty:
+  ;; if the front buffer is discarded the physical terminal must be
+  ;; invalidated, or the diff will believe stale cells are already blank.
+  (let ((screen (tui:make-blank-screen :width 20 :height 3)))
+    (tui:put screen 0 0 "FIRST FRAME")
+    (tui:flush screen (make-string-output-stream))
+    (is string= "FIRST FRAME" (string-right-trim " " (first (tui:screen-rows screen :front))))
+    ;; A caller that throws away what it knew must say so.
+    (tui:invalidate screen)
+    (tui:clear-back screen)
+    (tui:put screen 0 0 "SECOND")
+    (let* ((out (make-string-output-stream))
+           (written (tui:flush screen out))
+           (text (get-output-stream-string out)))
+      (declare (ignore written))
+      (true (search (format nil "~c[2J" #\Escape) text)
+            "an invalidated screen did not clear the terminal")
+      (true (search "SECOND" text))
+      (is string= "SECOND" (string-right-trim " " (first (tui:screen-rows screen :front)))
+          "the first frame survived into the front buffer")))
+  ;; A screen arrives invalid, so nothing has to remember to invalidate it.
+  (let ((screen (tui:make-blank-screen :width 10 :height 2))
+        (out (make-string-output-stream)))
+    (true (tui:screen-invalid screen) "a fresh screen believed the terminal was blank")
+    (tui:flush screen out)
+    (true (search (format nil "~c[2J" #\Escape) (get-output-stream-string out)))
+    (false (tui:screen-invalid screen) "the invalidation was not discharged")))

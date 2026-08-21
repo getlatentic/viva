@@ -54,32 +54,24 @@ it drawing until the daemon replied."
                   (setf (tui:view-status view)
                         (or (gethash "error" reply) "request failed"))))))))
 
-(defparameter +clear-screen+ (format nil "~c[2J" #\Escape))
-
 (defun fit-screen (screen stream)
   "A screen the size of the terminal, remade only when the size changed.
 
 Remade rather than resized: the front buffer describes a terminal that no
 longer exists.
 
-AND THE REAL TERMINAL IS CLEARED when it is remade, which is the half that was
-missing. A fresh screen's front buffer is blank, so the diff writes only the
-cells that are not blank -- and every stale cell the terminal still holds from
-the old layout is left exactly where it was, because our model says that space
-is already empty. The result is the old frame and the new frame on screen at
-once: borders crossing text, panes drawn twice, a display that looks corrupted
-because the program is confidently drawing the difference between a screen it
-imagines and one that does not exist.
-
-Clearing costs four bytes and makes the model true again."
+A NEW SCREEN ARRIVES INVALID, so the terminal is cleared by the next flush
+without this function arranging it. That belongs to the screen's lifecycle
+rather than to whoever resized: making the caller remember works until
+something else recreates a buffer -- a reconnect, a detach and reattach -- and
+then the stale-cell bug returns wearing a different hat."
+  (declare (ignore stream))
   (let ((size (tui:terminal-size)))
     (if (and screen
              (= (tui::screen-height screen) (car size))
              (= (tui::screen-width screen) (cdr size)))
         screen
-        (progn (write-string +clear-screen+ stream)
-               (force-output stream)
-               (tui:make-blank-screen :width (cdr size) :height (car size))))))
+        (tui:make-blank-screen :width (cdr size) :height (car size)))))
 
 (defun next-session-after (id sessions)
   "The session after ID, wrapping at the end. NIL if there is nowhere to go.
