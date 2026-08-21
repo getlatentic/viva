@@ -17,6 +17,7 @@
                     (#:image #:vivarium.image)
                     (#:ledger #:vivarium.ledger)
                     (#:image-tools #:vivarium.image-tools)
+                    (#:tui #:vivarium.tui)
                     (#:usocket #:usocket)
                     (#:croatoan #:croatoan)
                     (#:provider #:vivarium.provider)

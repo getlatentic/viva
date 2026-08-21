@@ -163,7 +163,7 @@
 (defsystem "vivarium/cli"
   :description "One entry point for every run."
   :depends-on ("vivarium/tasks" "vivarium/search" "vivarium/console" "vivarium/daemon"
-               "uiop" "usocket" "croatoan")
+               "vivarium/tui" "uiop" "usocket" "croatoan")
   :serial t
   :components ((:module "src/cli"
                 :serial t
@@ -178,6 +178,7 @@
                              (:file "install")
                              (:file "learned")
                              (:file "attend")
+                             (:file "live")
                              (:file "main")))))
 
 (defsystem "vivarium/tests"

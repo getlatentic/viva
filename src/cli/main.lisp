@@ -7,6 +7,8 @@
               "Start, stop or inspect the long-lived organism.")
         (list "attach" #'command-attach
               "Open a session inside the organism; closing leaves it running.")
+        (list "live" #'command-live
+              "Full screen: sessions, the running turn and tasks at once.")
         (list "shell" #'command-shell
               "Work in a directory, interactively.")
         (list "ipc" #'command-ipc
@@ -56,8 +58,15 @@ THE ORGANISM
       --cwd DIR               where a new session works
       --since N               replay events after sequence N
 
+  live [SESSION] [options]    full screen: sessions, the turn and tasks at once
+      --new                   always start a fresh one, never rejoin
+      --cwd DIR               where a new session works
+
   A session outlives the terminal that started it. Closing a client removes a
   subscriber, not the work.
+
+  `attach` is line-oriented and pipes, scripts and diffs. `live` is the same
+  organism with everything on one screen. Neither replaces the other.
 
 ORDINARY WORK
 
