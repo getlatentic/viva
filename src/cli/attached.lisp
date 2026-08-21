@@ -258,7 +258,7 @@ vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
                (ask-session stream id "suspend")
                (format t "~&  suspended~%")))
    (make-attached-verb
-    :name "resume" :blurb "carry on a turn that was suspended"
+    :name "unpause" :blurb "carry on a turn that was suspended"
     :handler (lambda (stream id argument)
                (declare (ignore argument))
                ;; NOT `continue an earlier conversation`, which is what the
@@ -267,8 +267,29 @@ vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
                ;; paused -- so it reported success at something you had not
                ;; asked for, and the conversation you wanted stayed empty.
                (ask-session stream id "resume")
-               (format t "~&  asked ~a to carry on -- this un-pauses a suspended turn.~%~
-  It does not load an earlier conversation; /sessions lists those.~%" id)))))
+               (format t "~&  asked ~a to carry on a suspended turn.~%" id)))
+   (make-attached-verb
+    :name "continue" :argument "[ID]" :blurb "carry an earlier conversation into a new session"
+    :handler (lambda (stream id argument)
+               (declare (ignore id))
+               ;; A NEW session that starts holding the old conversation, rather
+               ;; than reanimating the old cell -- the recorded session is a
+               ;; file, and the thing that reads it is an agent being built.
+               ;; HARNESS:RESUME has always been able to do this; nothing in
+               ;; the daemon path called it.
+               (let ((reply (daemon:request stream "type" "session.start"
+                                            "cwd" (uiop:native-namestring (uiop:getcwd))
+                                            "model" (option-model)
+                                            "resume" (if (plusp (length argument))
+                                                         argument
+                                                         "true"))))
+                 (if (gethash "success" reply)
+                     (let ((session (gethash "session" reply)))
+                       (setf *attached-to* (gethash "id" session))
+                       (format t "~&  ~a now carries~:[ the most recent~; that~] ~
+earlier conversation.~%  Ask it what you said before.~%"
+                               (gethash "id" session) (plusp (length argument))))
+                     (format t "~&  ~a~%" (gethash "error" reply))))))))
 
 (defun edit-distance (a b)
   "How many single-character edits separate A and B."

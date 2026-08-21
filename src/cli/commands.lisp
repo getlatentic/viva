@@ -578,8 +578,8 @@ this only mentions them -- continuing one is `--resume`."
     ;; use, and COMMAND-ATTACH builds its own session.start request that never
     ;; looks at it. Advertising a flag the command ignores is worse than
     ;; advertising nothing.
-    (format t "~&~d earlier session~:p recorded here -- `vivarium sessions` ~
-lists them.~%  Continuing one in the organism is not built yet (#38).~%"
+    (format t "~&~d earlier session~:p recorded here. `/continue` carries the ~
+most recent~%  one into this session; `vivarium sessions` lists them all.~%"
             (length found)))))
 
 (defun command-attach (parsed)
@@ -609,7 +609,8 @@ lists them.~%  Continuing one in the organism is not built yet (#38).~%"
                         ;; in scope -- so the client, which read it, has to
                         ;; send the answer rather than the flag it was given.
                         (daemon:request stream "type" "session.start" "cwd" cwd
-                                        "model" (option parsed "model")))))
+                                        "model" (option parsed "model")
+                                        "resume" (or (flag parsed "resume") :omit)))))
         (unless (gethash "success" reply)
           (format t "~&~a~%" (gethash "error" reply))
           (return-from command-attach 1))
@@ -629,7 +630,7 @@ lists them.~%  Continuing one in the organism is not built yet (#38).~%"
                 ;; A verb may have moved this client; the loop follows it.
                 do (a:when-let ((moved *attached-to*))
                      (setf id moved *attached-to* nil))
-                do (cond ((or (string= "/detach" trimmed) (string= "/exit" trimmed))
+                do (cond ((member trimmed '("/detach" "/exit" "/quit" "/q") :test #'string=)
                           (format t "~&detached; ~a is still running~%" id)
                           (return))
                          ;; Every slash line is handled here, including one

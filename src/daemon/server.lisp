@@ -331,6 +331,17 @@ falls in the gap and none arrives twice."
     (setf (agent:agent-stream-p agent) t
           (vivarium.compaction:settings-context-limit (harness:agent-compaction agent))
           (models:choice-context-limit choice))
+    ;; Carry an earlier conversation in, when asked. Until this existed the
+    ;; organism could list the sessions it had recorded and could not continue
+    ;; one -- so `what did I say before?` was answered by an empty context, and
+    ;; the on-entry message advertising --resume was pointing at a flag this
+    ;; command never read.
+    (a:when-let ((wanted (text-of command "resume")))
+      (a:when-let ((earlier (or (if (string= "true" wanted)
+                                    (session:latest-session cwd)
+                                    (session:find-session wanted :cwd cwd)))))
+        (handler-case (harness:resume agent (session:summary-path earlier))
+          (error (condition) (note-failure "resume" condition)))))
     (actor:spawn :label (or (text-of command "label") cwd) :agent agent)))
 
 (defun handle (client command)
