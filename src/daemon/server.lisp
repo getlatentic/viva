@@ -345,9 +345,23 @@ falls in the gap and none arrives twice."
     ;; one -- so `what did I say before?` was answered by an empty context, and
     ;; the on-entry message advertising --resume was pointing at a flag this
     ;; command never read.
-    (when earlier
-      (handler-case (harness:resume agent (session:summary-path earlier))
-        (error (condition) (note-failure "resume" condition))))
+    (a:when-let ((wanted (text-of command "resume")))
+      ;; Say what happened either way. A resume that silently finds nothing is
+      ;; indistinguishable from one that worked, which is how this shipped
+      ;; twice looking fine.
+      (if (null earlier)
+          (note-failure "resume"
+                        (make-condition 'simple-error
+                                        :format-control "asked for ~s in ~a, found no session there"
+                                        :format-arguments (list wanted cwd)))
+          (handler-case
+              (progn (harness:resume agent (session:summary-path earlier))
+                     (note-failure "resume"
+                                   (make-condition 'simple-error
+                                                   :format-control "loaded ~a (~d message~:p)"
+                                                   :format-arguments (list (session:summary-id earlier)
+                                                                           (session:summary-messages earlier)))))
+            (error (condition) (note-failure "resume" condition)))))
     (actor:spawn :label (or (text-of command "label") cwd) :agent agent)))
 
 (defun handle (client command)
