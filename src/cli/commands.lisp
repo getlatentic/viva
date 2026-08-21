@@ -573,8 +573,14 @@ does. Recorded sessions are history on disk, not cells in the organism, so
 this only mentions them -- continuing one is `--resume`."
   (a:when-let ((found (ignore-errors (session:list-sessions :cwd cwd :limit 3))))
     (when found
-      (format t "~&~d earlier session~:p here. `vivarium sessions` lists them, ~
-`--resume` continues one.~%" (length found)))))
+      ;; NOT `--resume continues one`, which is what this said and which is
+    ;; false: --resume is read by WORKSPACE-OPTIONS, which shell, do and ipc
+    ;; use, and COMMAND-ATTACH builds its own session.start request that never
+    ;; looks at it. Advertising a flag the command ignores is worse than
+    ;; advertising nothing.
+    (format t "~&~d earlier session~:p recorded here -- `vivarium sessions` ~
+lists them.~%  Continuing one in the organism is not built yet (#38).~%"
+            (length found)))))
 
 (defun command-attach (parsed)
   "Talk to a session inside the organism, and leave it running afterwards."

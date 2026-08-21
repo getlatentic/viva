@@ -258,11 +258,17 @@ vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
                (ask-session stream id "suspend")
                (format t "~&  suspended~%")))
    (make-attached-verb
-    :name "resume" :blurb "carry on"
+    :name "resume" :blurb "carry on a turn that was suspended"
     :handler (lambda (stream id argument)
                (declare (ignore argument))
+               ;; NOT `continue an earlier conversation`, which is what the
+               ;; name reads as next to the CLI's --resume. This un-suspends a
+               ;; paused turn, and said `resumed` whether or not anything was
+               ;; paused -- so it reported success at something you had not
+               ;; asked for, and the conversation you wanted stayed empty.
                (ask-session stream id "resume")
-               (format t "~&  resumed~%")))))
+               (format t "~&  asked ~a to carry on -- this un-pauses a suspended turn.~%~
+  It does not load an earlier conversation; /sessions lists those.~%" id)))))
 
 (defun edit-distance (a b)
   "How many single-character edits separate A and B."
