@@ -93,17 +93,25 @@ frames."
   (or (cdr (assoc name regions))
       (error "no region named ~s" name)))
 
-(defun draw-in (screen region row text)
-  "Draw TEXT on ROW of REGION, clipped to the region rather than the screen.
+(defun draw-in (screen region row text &key style (column 0))
+  "Draw TEXT at ROW, COLUMN of REGION, clipped to the region not the screen.
 
-Clipping to the region is what stops one pane's long line from bleeding into
-its neighbour, which is the only reason panes look like panes."
+Clipping to the region is what stops one pane's long line bleeding into its
+neighbour, which is the only reason panes look like panes.
+
+COLUMN exists because the alternative is padding the text with spaces to move
+it right, and those spaces are opaque: they overwrite whatever was already
+drawn to their left. A session row drawn as `>`, then a state mark, then
+"    name" from column zero silently erased the first two -- so the sidebar
+showed neither which session was current nor what any of them were doing, and
+looked exactly like a row that had simply not been written."
   (when (< -1 row (region-height region))
-    (put screen (+ (region-row region) row) (region-column region)
-         (let ((line (or text "")))
-           (if (> (length line) (region-width region))
-               (subseq line 0 (region-width region))
-               line)))))
+    (let* ((line (or text ""))
+           (room (- (region-width region) column)))
+      (when (plusp room)
+        (put screen (+ (region-row region) row) (+ (region-column region) column)
+             (if (> (length line) room) (subseq line 0 room) line)
+             :style style)))))
 
 (defun within-p (region row column)
   (and (<= (region-row region) row)

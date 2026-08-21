@@ -162,6 +162,7 @@
                              (:file "size")
                              (:file "panes")
                              (:file "view")
+                             (:file "chrome")
                              (:file "paint")))))
 
 (defsystem "vivarium/cli"

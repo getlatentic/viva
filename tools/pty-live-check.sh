@@ -41,40 +41,45 @@ def pump(seconds):
             return
         out += chunk
 
-CUP = __import__("re").compile(rb"\x1b\[(\d*);(\d*)H")
+CUP = __import__("re").compile(r"\x1b\[(\d*);(\d*)H")
 
 def replay(data, rows=ROWS, cols=COLS):
-    """The two sequences this client emits, applied to a grid.
+    """The sequences this client emits, applied to a grid.
+
+    Decoded ONCE, as UTF-8, before walking. The first version decoded byte by
+    byte, so every multi-byte character became three replacement marks and the
+    whole frame looked corrupt -- a harness bug that reads exactly like a
+    rendering bug, which is the worst kind to have in a check.
 
     Not a terminal emulator -- #17 ratified against building one, and this is
     not in the product. It is the only way to assert on what a person SEES,
     because a screen that writes just the changed run never puts "> hello" on
-    the wire as those seven bytes. That is the feature, and it defeats any
-    assertion made against raw output."""
+    the wire as those seven bytes."""
+    text = data.decode("utf-8", "replace")
     grid = [[" "] * cols for _ in range(rows)]
     row = col = 0
     i = 0
-    while i < len(data):
-        if data[i:i+2] == b"\x1b[":
-            m = CUP.match(data, i)
+    while i < len(text):
+        if text.startswith("\x1b[", i):
+            m = CUP.match(text, i)
             if m:
                 row = max(0, int(m.group(1) or 1) - 1)
                 col = max(0, int(m.group(2) or 1) - 1)
                 i = m.end()
                 continue
             end = i + 2
-            while end < len(data) and data[end:end+1] not in b"HJKmhlu":
+            while end < len(text) and text[end] not in "HJKmhlu":
                 end += 1
             i = end + 1
             continue
-        byte = data[i:i+1]
-        if byte in (b"\n", b"\r"):
+        ch = text[i]
+        if ch in "\n\r":
             i += 1
-            continue
-        if 0 <= row < rows and 0 <= col < cols:
-            grid[row][col] = byte.decode("utf-8", "replace")
-            col += 1
-        i += 1
+        else:
+            if 0 <= row < rows and 0 <= col < cols:
+                grid[row][col] = ch
+                col += 1
+            i += 1
     return ["".join(r).rstrip() for r in grid]
 
 def screen_has(text):
@@ -87,8 +92,11 @@ def input_line():
     into the output pane, so `> hello` is on screen precisely BECAUSE Enter
     worked. The first draft of this check read that echo as the input line and
     reported a failure that was the feature."""
+    # The input sits INSIDE a three-row box, with the status line below it:
+    # ... / box top / input / box bottom / status. Reading rows[-2] found the
+    # box's bottom border and reported that nothing had been typed.
     rows = replay(out)
-    return rows[-2] if len(rows) >= 2 else ""
+    return rows[-3] if len(rows) >= 3 else ""
 
 def wait_for_screen(text, seconds, label):
     deadline = time.time() + seconds
@@ -152,9 +160,20 @@ print("line feed is Enter too")
 # TAB CYCLES, more than once. Pressing it once passed the bug that made it
 # stop after one move, so this presses it repeatedly and reads the marker.
 def marked():
-    for line in replay(out):
-        if line.strip().startswith(">") and "/" in line:
-            return line.strip()
+    # The row carrying the current-session marker. Matching on a "/" in the
+    # label was the first version and broke the moment the sidebar started
+    # showing project names instead of paths -- the check failed while the
+    # feature worked.
+    # Body rows only. The input line also begins with ">", so a whole-screen
+    # search found the prompt and reported the same answer every time --
+    # a check that could not fail, which is worse than one that does.
+    for line in replay(out)[:-4]:
+        # Strip the pane border too, not only whitespace: the marker row now
+        # reads "|>   vivarium", and a matcher that only stripped spaces saw a
+        # border character and reported the feature broken.
+        stripped = line.strip().lstrip("\u2502\u2500|").strip()
+        if stripped.startswith(">") and len(stripped) > 1:
+            return stripped
     return None
 
 seen = []
@@ -164,7 +183,7 @@ for _ in range(4):
     seen.append(marked())
 distinct = [s for i, s in enumerate(seen) if s and (i == 0 or s != seen[i-1])]
 if len(set(x for x in seen if x)) < 2:
-    print("\n".join(replay(out)))
+    print("\n".join(replay(out)[:12]))
     sys.exit(f"Tab never moved past one session: {seen}")
 print(f"Tab cycles: {len(set(x for x in seen if x))} distinct sessions across 4 presses")
 
@@ -195,5 +214,10 @@ try:
     os.waitpid(pid, os.WNOHANG)
 except ChildProcessError:
     pass
+print()
+print("=" * 78)
+for line in replay(out)[:20]:
+    print(line)
+print("=" * 78)
 print("ok")
 PY

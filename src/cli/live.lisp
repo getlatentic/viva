@@ -30,11 +30,12 @@ it drawing until the daemon replied."
 (defun session-entries (reply)
   "The session list as (id . label) pairs, as the view wants them."
   (loop for cell across (or (gethash "sessions" reply) #())
-        collect (cons (gethash "id" cell)
-                      (format nil "~a~@[  ~a~]"
-                              (subseq (gethash "id" cell) 0
-                                      (min 8 (length (gethash "id" cell))))
-                              (gethash "label" cell)))))
+        ;; (id label state) -- the state was in the reply all along and the
+        ;; first client threw it away, then drew a session list that could not
+        ;; say which session wanted something.
+        collect (list (gethash "id" cell)
+                      (or (gethash "label" cell) (gethash "id" cell))
+                      (gethash "state" cell))))
 
 (defun absorb-reply (view reply)
   "Fold one line from the daemon into VIEW, whether event or response."
@@ -42,7 +43,13 @@ it drawing until the daemon replied."
     (cond (event (tui:absorb view event (gethash "data" reply)))
           ((equal "response" (gethash "type" reply))
            (cond ((gethash "sessions" reply)
-                  (setf (tui:view-sessions view) (session-entries reply)))
+                  (setf (tui:view-sessions view) (session-entries reply)
+                        ;; One tab per workspace, in the order they appear.
+                        (tui:view-tabs view)
+                        (remove-duplicates
+                         (mapcar (lambda (entry) (tui:short-label (second entry)))
+                                 (session-entries reply))
+                         :test #'equal :from-end t)))
                  ((not (gethash "success" reply))
                   (setf (tui:view-status view)
                         (or (gethash "error" reply) "request failed"))))))))

@@ -1196,25 +1196,40 @@ print(sum([2, 3, 5]))
   ;; the operator held the layout in their head.
   (let ((view (tui:make-view)))
     (setf (tui::view-current view) "alpha")
+    ;; The wire form: (id label state), as SESSION-ENTRIES builds it.
     (tui:absorb view "session.list"
-                (list (cons "sessions" '(("alpha" . "alpha  vivarium")
-                                         ("beta" . "beta   notes")))))
+                (list (cons "sessions" '(("alpha" "/w/alpha" "working")
+                                         ("beta" "/w/beta" "idle")))))
     (tui:absorb view "turn.started" nil)
     (tui:absorb view "model.delta" (list (cons "text" (format nil "the answer is 42~%"))))
     (tui:absorb view "tool.started" (list (cons "call" "bash npm test")))
     (tui:absorb view "task.started" (list (cons "id" "t1") (cons "text" "indexing")))
     (tui:absorb view "task.completed" (list (cons "id" "t2") (cons "text" "linted")))
     (let ((frame (frame-of view)))
-      (true (frame-has frame "alpha  vivarium") "no session list")
-      (true (frame-has frame "beta   notes") "the other session is missing")
+      (true (frame-has frame "alpha") "no session list")
+      (true (frame-has frame "beta") "the other session is missing")
       (true (frame-has frame "the answer is 42") "no output")
       (true (frame-has frame "bash npm test") "no tool call")
       (true (frame-has frame "~ indexing") "no running task")
       (true (frame-has frame "+ linted") "no finished task")
       (true (frame-has frame "working") "the turn does not look busy")
-      ;; The current session is marked, not merely listed.
-      (true (some (lambda (row) (search "> alpha" row)) frame)
-            "the current session is not marked"))))
+      ;; The current session is marked by a CHARACTER, not only by a colour:
+      ;; colour is invisible on a monochrome terminal and to anyone who cannot
+      ;; tell the two shades apart.
+      ;;
+      ;; On the SESSION's row, not anywhere on screen. Searching the whole
+      ;; frame for ">" found the input prompt and passed while the marker was
+      ;; being overwritten by the label drawn on top of it -- a test that could
+      ;; not fail, guarding the exact bug it was written for.
+      ;; The row INSIDE the sessions pane. The output pane's title also
+      ;; carries the current session's name, and it comes first -- so the
+      ;; obvious FIND-IF picked the border and asserted about the wrong row.
+      (let ((row (find-if (lambda (line)
+                            (and (search "alpha" line) (not (search "╭" line))))
+                          frame)))
+        (true row "the current session is not listed at all")
+        (true (search ">" row) "the current session's row carries no marker")
+        (true (search "*" row) "the working session shows no state mark")))))
 
 (define-test "a narrow pane keeps the output and drops the rest"
   ;; Where this actually lives is a tmux split, not an 80-column window. Side
@@ -1256,7 +1271,8 @@ print(sum([2, 3, 5]))
     ;; The cursor sits after what was typed, not wherever the last write ended.
     (let* ((screen (tui:make-blank-screen :width 100 :height 12))
            (place (progn (tui:paint view screen) (tui:cursor-for view screen))))
-      (is = 4 (cdr place) "the cursor is not after the typed text"))
+      ;; Inside the input box now: one column for the border, then `> `.
+      (is = 6 (cdr place) "the cursor is not after the typed text"))
     (is eq :send (tui:type-key view (tui::make-key :value :enter)))
     (is string= "hi" (tui:take-input view))
     (is string= "" (tui::view-input view))
@@ -1479,3 +1495,96 @@ print(sum([2, 3, 5]))
     ;; Outside is nothing, not the nearest pane.
     (false (tui:region-at regions 99 0))
     (false (tui:region-at regions 0 999))))
+
+(define-test "a frame in one colour still costs nothing when nothing changed"
+  ;; Style is part of what defines a run, so a coloured frame must keep the
+  ;; property the plain one had. Styles were added after that property was
+  ;; asserted, which is exactly when a property quietly stops holding.
+  (let ((screen (tui:make-blank-screen :width 30 :height 3))
+        (amber (tui:make-style :foreground 220 :bold t)))
+    (tui:put screen 0 0 "working" :style amber)
+    (let ((out (make-string-output-stream)))
+      (true (plusp (tui:flush screen out)))
+      (true (search "38;5;220" (get-output-stream-string out)) "the colour was not emitted"))
+    (tui:clear-back screen)
+    (tui:put screen 0 0 "working" :style amber)
+    (let* ((out (make-string-output-stream))
+           (idle (tui:flush screen out)))
+      (is = 0 idle "an unchanged coloured frame wrote ~d bytes" idle)))
+  ;; A cell whose TEXT is the same but whose COLOUR changed must be redrawn.
+  ;; Comparing only characters is the obvious implementation and it leaves the
+  ;; screen showing the old colour forever.
+  (let ((screen (tui:make-blank-screen :width 30 :height 3)))
+    (tui:put screen 0 0 "idle" :style (tui:make-style :foreground 240))
+    (tui:flush screen (make-string-output-stream))
+    (tui:clear-back screen)
+    (tui:put screen 0 0 "idle" :style (tui:make-style :foreground 203))
+    (let* ((out (make-string-output-stream))
+           (written (tui:flush screen out)))
+      (true (plusp written) "a colour change alone was not repainted")
+      (true (search "38;5;203" (get-output-stream-string out))))))
+
+(define-test "a box encloses a region and reports what is left"
+  ;; DRAW-BOX returns the INNER region rather than drawing into the outer one,
+  ;; so a caller cannot forget the border and write over it.
+  (let* ((screen (tui:make-blank-screen :width 20 :height 5))
+         (outer (tui:region-of (tui:divide :body :width 20 :height 5) :body))
+         (inner (tui:draw-box screen outer :title "claude")))
+    (is = 18 (tui::region-width inner))
+    (is = 3 (tui::region-height inner))
+    (is = 1 (tui::region-row inner))
+    (let ((frame (tui:screen-rows screen)))
+      (true (search "claude" (first frame)) "the title is not in the top border")
+      ;; A title costs no row: it sits IN the border.
+      (true (search "─" (first frame)))
+      (true (search "│" (second frame)) "no side border"))
+    ;; Writing at the inner region's last row stays inside the box.
+    (tui:draw-in screen inner 2 "bottom")
+    (let ((frame (tui:screen-rows screen)))
+      (true (search "bottom" (nth 3 frame)))
+      (true (search "╰" (nth 4 frame)) "the content overwrote the bottom border")))
+  ;; A region too small for a border yields an empty inner region rather than
+  ;; a negative one, which would be a crash three functions away.
+  (let* ((screen (tui:make-blank-screen :width 20 :height 5))
+         (tiny (tui::make-region :name :t :row 0 :column 0 :width 1 :height 1)))
+    (is = 0 (tui::region-width (tui:draw-box screen tiny)))))
+
+(define-test "a session says what it is doing, in a mark and a colour"
+  ;; herdr regex-matches a braille spinner against a scraped screen to guess
+  ;; that an agent is working, then debounces the guess because scraping is
+  ;; noisy. These states come from a machine with a proof.
+  (is string= "*" (car (tui:state-mark :working)))
+  (is string= "!" (car (tui:state-mark :stuck)))
+  (is string= "-" (car (tui:state-mark :idle)))
+  ;; The wire sends a string, not a keyword.
+  (is string= "*" (car (tui:state-mark "working")))
+  (is = 220 (tui:style-foreground (cdr (tui:state-mark "working"))))
+  (is = 203 (tui:style-foreground (cdr (tui:state-mark :stuck))))
+  ;; An unknown state is idle rather than an error: a client one version behind
+  ;; its daemon should lose a distinction, not fall over.
+  (is string= "-" (car (tui:state-mark "invented-later")))
+  ;; And it reaches the frame, with the colour it claims.
+  (let ((view (tui:make-view)))
+    (setf (tui:view-current view) "s1")
+    (tui:absorb view "session.list"
+                (list (cons "sessions" '(("s1" "/Users/dev/vivarium" "working")
+                                         ("s2" "/Users/dev/notes" "stuck")))))
+    (let ((frame (frame-of view :width 100 :height 16)))
+      (true (frame-has frame "working") "the state is not shown")
+      (true (frame-has frame "stuck")))))
+
+(define-test "a session list shows the project, not the path it was truncated to"
+  ;; Four sessions in four sibling directories all rendered as `/Users/dev/works`
+  ;; in a twenty-column sidebar, and the list said nothing at all.
+  (is string= "vivarium" (tui:short-label "/Users/dev/workspace/vivarium"))
+  (is string= "vivarium" (tui:short-label "/Users/dev/workspace/vivarium/"))
+  (is string= "notes" (tui:short-label "notes"))
+  (is string= "" (tui:short-label nil))
+  (let ((view (tui:make-view)))
+    (tui:absorb view "session.list"
+                (list (cons "sessions" '(("s1" "/Users/dev/workspace/vivarium" "idle")
+                                         ("s2" "/Users/dev/workspace/notes" "idle")))))
+    (let ((frame (frame-of view :width 100 :height 16)))
+      (true (frame-has frame "vivarium"))
+      (true (frame-has frame "notes"))
+      (false (frame-has frame "/Users/dev") "the sidebar still shows a path"))))
