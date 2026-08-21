@@ -67,6 +67,27 @@ A family that cannot meet all three is not authored into the battery. Authoring
 one and then discovering it cannot test the claim is the failure this paragraph
 exists to prevent.
 
+**Amended 2026-08-21, before any B15 data — six may not be enough.** A clean
+run of `experiments/tier3` (8 variants, one shape, policy on) wrote its skill
+at task 3 and then called it **twice in the five tasks that could have**. The
+counter reached 2, the threshold is 3, and **nothing graduated** — in a corpus
+built specifically to reach tier 3. Measurement and caveats:
+`docs/tier-2-reuse-signal.md`.
+
+At a call rate near 40%, six tasks needing the transformation yields about two
+or three calls, which is on the wrong side of the threshold as often as not. So:
+
+- families are sized for the *call rate*, not the *need rate* — enough tasks
+  that three calls are likely, not merely three needs
+- **the treatment arm is checked for graduation before its numbers are read.**
+  An arm that never graduated is a second control, and comparing two controls
+  would produce a clean null that means nothing. If an arm did not graduate,
+  that family is reported as not having tested the claim rather than as
+  evidence against it.
+
+This is registered here rather than discovered later, which is the difference
+between a caveat and an excuse.
+
 ## Outcomes and thresholds
 
 **Primary:** total tokens per task, summed over requests, treatment vs control.
