@@ -27,7 +27,13 @@ limit, and the lines above the fold cannot be seen anyway.")
   (scroll 0)              ; lines back from the bottom, 0 = following
   (tabs '())              ; workspace names, in the order they are shown
   (tab 0)                 ; which one is active
-  (tab-ranges '()))       ; (name start end) per tab, from the last paint
+  (tab-ranges '())        ; (name start end) per tab, from the last paint
+  ;; WHERE THE KEYBOARD GOES. Without this the sidebar could only be reached
+  ;; by Tab, because arrow keys had nowhere to be interpreted: every key was
+  ;; the prompt's, so a list on screen was a list you could not walk.
+  (cwd "" :type string)          ; where a new session started from here works
+  (focus :input :type keyword)   ; :input or :sessions
+  (selection 0 :type fixnum))    ; which session the sidebar has highlighted
 
 (defun field (data key)
   "Read KEY from an event's data, whether it arrived as a hash table from the
@@ -78,6 +84,13 @@ its daemon should lose a feature, not fall over."
   (let ((text (field data "text")))
     (cond
       ((equal name "model.delta") (absorb-text view text))
+      ;; What the person said, from the daemon rather than from a local echo.
+      ;; Echoing locally shows it once and loses it on the next attach; this
+      ;; way the transcript reads the same however you arrived at it.
+      ((equal name "user.message")
+       (end-line view)
+       (add-line view "")
+       (add-line view (format nil "> ~a" (or text ""))))
       ((equal name "tool.started")
        (end-line view)
        (add-line view (format nil "  · ~a" (or (field data "call") text ""))))
@@ -100,16 +113,46 @@ its daemon should lose a feature, not fall over."
 
 ;;; Typing.
 
+(defun move-selection (view step)
+  "Move the sidebar highlight, staying inside the list."
+  (let ((count (length (view-sessions view))))
+    (when (plusp count)
+      (setf (view-selection view)
+            (mod (+ (view-selection view) step) count)))
+    nil))
+
+(defun selected-session (view)
+  (nth (view-selection view) (view-sessions view)))
+
 (defun type-key (view key)
   "Apply one keypress to the input line. Returns an action or NIL.
 
 The actions are what the LOOP must do and the view cannot: :send, :quit,
-:cancel, :next-session. Keeping them as returned values rather than callbacks
-is what lets a test press a key and assert on the outcome."
+:cancel, :next-session, :open-selected. Keeping them as returned values rather
+than callbacks is what lets a test press a key and assert on the outcome.
+
+FOCUS DECIDES WHAT A KEY MEANS. With the sidebar focused, Up and Down walk the
+session list and Enter opens one; with the input focused they are the prompt's.
+Escape always returns to the prompt, because a person who is lost should be
+able to get back to typing without knowing where they were."
   (let ((value (key-value key)))
     (cond
       ((and (key-control key) (eql value #\c))
        (if (view-busy view) :cancel :quit))
+      ((eql value :escape) (setf (view-focus view) :input) nil)
+      ;; The sidebar's keys, live only while it has the keyboard.
+      ((eq :sessions (view-focus view))
+       (case value
+         (:up (move-selection view -1))
+         (:down (move-selection view 1))
+         ((:enter #\Return #\Newline) :open-selected)
+         (:tab :next-session)
+         (t (setf (view-focus view) :input)
+            ;; A printable key with the sidebar focused means the person has
+            ;; started typing, so the prompt takes it rather than dropping it.
+            (when (and (characterp value) (graphic-char-p value))
+              (setf (view-input view) (format nil "~a~a" (view-input view) value)))
+            nil)))
       ((and (key-control key) (eql value #\d))
        (if (plusp (length (view-input view))) nil :quit))
       ((eql value :tab) :next-session)

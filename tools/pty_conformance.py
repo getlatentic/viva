@@ -211,8 +211,12 @@ def marked_session(session):
             # the shape of check this whole file exists to stop shipping.
             parts = stripped.strip("│").lstrip(">").split()
             for part in parts:
-                if part not in ("*", "-", "!", "~", ".", "│", ">"):
-                    return part
+                # Marks and the selection bracket are furniture, not names.
+                # This filter has now been wrong twice -- first returning the
+                # right-hand border, then the bracket -- and each time the
+                # check compared furniture with itself and could not fail.
+                if part not in ("*", "-", "!", "~", ".", "│", ">", "[", "[-", "[*", "[!"):
+                    return part.lstrip("[")
     return None
 
 
@@ -272,6 +276,30 @@ def main():
             fail("paging damaged the frame")
         else:
             ok("paging to both extremes leaves one intact frame")
+
+        # 5 -- what the person said must survive a detach and reattach. The
+        # local echo showed it once and lost it; only an event can persist.
+        marker = "conformance probe %d" % os.getpid()
+        session.send(marker.encode() + b"\r")
+        session.wait_for("> " + marker, 60, "the prompt to echo into the transcript")
+        ok("a sent prompt appears in the transcript")
+
+        session.send(b"\x03")            # detach
+        session.pump(3.0)
+        again = Session()
+        try:
+            again.wait_for("vivarium", 300, "the reattached frame")
+            again.pump(4.0)
+            if "> " + marker not in again.term.text():
+                print(again.term.text())
+                fail("the prompt did not survive a reattach")
+            elif again.term.text().count("> " + marker) != 1:
+                fail("the prompt was replayed more than once")
+            else:
+                ok("the prompt survives a reattach, exactly once")
+            check_unknown_sequences(again)
+        finally:
+            again.close()
 
         check_unknown_sequences(session)
     finally:

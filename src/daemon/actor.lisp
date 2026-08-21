@@ -810,6 +810,31 @@ else arrives meanwhile."
        (publish cell "session.error"
                 (event::object "detail" (format nil "journal write failed: ~a; continuing non-durable"
                                                 (getf options :detail)))))
+      ;; THE PROMPT IS A FACT ABOUT THE CONVERSATION, published beside the
+      ;; lifecycle rather than inside it. `turn.started` carries a turn id and
+      ;; nothing else, because the kernel that emits it is the proven machine
+      ;; and knows only about turns -- so the text a person typed was never on
+      ;; the wire at all. A client could echo its own input locally, and every
+      ;; one did, which meant the conversation vanished the moment anybody
+      ;; reattached: the transcript held the answers and none of the questions.
+      ;;
+      ;; Retention turns take the same path and are NOT a person speaking, so
+      ;; they are not announced as one.
+      (:user-message
+       (unless (getf options :retain)
+         (publish cell "user.message"
+                  (event::object "text" (getf options :text)
+                                 "turn" (getf options :turn))))
+       (a:when-let ((translated (kernel-message cell verb options)))
+         (handler-bind ((kernel:unmatched-transition
+                          (lambda (condition)
+                            (declare (ignore condition))
+                            (invoke-restart 'kernel:ignore-message))))
+           (multiple-value-bind (next effects)
+               (kernel:cell-transition (cell-machine cell) translated)
+             (owning (cell) (setf (cell-machine cell) next))
+             (dolist (effect effects) (run-effect cell effect options))
+             (sync-mechanics cell)))))
       (t
        (a:when-let ((translated (kernel-message cell verb options)))
          (handler-bind ((kernel:unmatched-transition

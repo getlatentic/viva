@@ -108,20 +108,36 @@ four and come back, not walk to the end and go quiet."
       (:wheel-down (setf (tui:view-scroll view) (max 0 (- (tui:view-scroll view) 3))) nil)
       (:press
        (case where
-         (:tabs (a:when-let ((index (tui:tab-at view (tui:mouse-column mouse))))
-                  (setf (tui:view-tab view) index)
-                  ;; A tab is a workspace; selecting one shows its first session.
-                  (a:when-let ((name (nth index (tui:view-tabs view))))
-                    (a:when-let ((entry (find name (tui:view-sessions view)
-                                              :key (lambda (e)
-                                                     (tui:short-label (tui:session-label e)))
-                                              :test #'equal)))
-                      (switch-to stream view (tui:session-id entry)))))
-                nil)
-         (:sessions (a:when-let ((entry (tui:session-row-at
-                                         view (cdr hit) (tui:mouse-row mouse))))
-                      (switch-to stream view (tui:session-id entry)))
-                    nil)
+         (:tabs
+          (let ((target (tui:tab-at view (tui:mouse-column mouse))))
+            (cond
+              ;; `+` starts another session where the current one works. It is
+              ;; the only thing `+` can honestly mean here: a tab is a
+              ;; workspace, and this client cannot ask for a directory.
+              ((eq :new target)
+               (send-line stream "type" "session.start" "cwd" (tui:view-cwd view))
+               (send-line stream "type" "session.list"))
+              ((integerp target)
+               (setf (tui:view-tab view) target)
+               (a:when-let ((name (nth target (tui:view-tabs view))))
+                 (a:when-let ((entry (find name (tui:view-sessions view)
+                                           :key (lambda (e)
+                                                  (tui:short-label (tui:session-label e)))
+                                           :test #'equal)))
+                   (switch-to stream view (tui:session-id entry)))))))
+          nil)
+         (:sessions
+          ;; A click gives the sidebar the keyboard as well as selecting, so
+          ;; the arrows work from where the eye already is. Selecting without
+          ;; focusing is what made the sidebar reachable only by Tab.
+          (setf (tui:view-focus view) :sessions)
+          (a:when-let ((entry (tui:session-row-at view (cdr hit) (tui:mouse-row mouse))))
+            (setf (tui:view-selection view)
+                  (or (position entry (tui:view-sessions view)) 0))
+            (switch-to stream view (tui:session-id entry)))
+          nil)
+         (:output (setf (tui:view-focus view) :input) nil)
+         (:input (setf (tui:view-focus view) :input) nil)
          (t nil)))
       (t nil))))
 
@@ -138,11 +154,13 @@ is the bug; deleting one of them is the fix."
     (case action
       (:quit :quit)
       (:cancel (send-line stream "type" "cancel" "session" id) nil)
-      (:send (let ((text (tui:take-input view)))
-               (tui:absorb view "model.delta"
-                           (list (cons "text" (format nil "~%> ~a~%" text))))
-               (send-line stream "type" "prompt" "session" id "text" text)
-               nil))
+      ;; No local echo: the daemon publishes user.message and it comes back
+      ;; through the same path as everything else. Echoing here as well showed
+      ;; the prompt twice, and echoing here INSTEAD showed it once and lost it
+      ;; on the next attach.
+      (:send (send-line stream "type" "prompt" "session" id
+                               "text" (tui:take-input view))
+             nil)
       (:next-session
        ;; Switching is a request, not a local change: the daemon decides what
        ;; this client is subscribed to, and pretending otherwise shows one
@@ -235,7 +253,9 @@ terminal it was invited into.")
         (let ((id (gethash "id" (gethash "session" reply)))
               (view (tui:make-view)))
           (setf (tui:view-current view) id
-                (tui:view-status view) "ready -- Tab switches, Ctrl-C stops a turn")
+                (tui:view-cwd view) cwd
+                (tui:view-status view)
+                "ready -- Tab or click switches, arrows walk the list, Ctrl-C stops a turn")
           ;; The replay arrived while REQUEST was waiting for its response.
           ;; Dropping it is how the first version showed an empty conversation
           ;; for a session with a hundred turns in it.

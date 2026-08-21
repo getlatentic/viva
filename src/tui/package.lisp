@@ -19,7 +19,7 @@
            #:draw-box #:draw-tabs #:state-mark #:short-label
            #:*border-style* #:*focus-style* #:*title-style* #:*dim-style* #:*box-characters* #:+box+ #:+rounded+
            #:paint #:layout-for #:regions-for #:tab-at #:session-row-at
-           #:view-tab-ranges #:session-id #:session-label #:wrap #:cursor-for #:visible-rows
+           #:view-tab-ranges #:view-cwd #:view-focus #:view-selection #:selected-session #:move-selection #:session-id #:session-label #:wrap #:cursor-for #:visible-rows
            #:view #:make-view #:absorb #:type-key #:take-input
            #:view-lines #:view-partial #:view-input #:view-status #:view-busy
            #:view-sessions #:view-current #:view-tabs #:view-tab #:view-tasks #:view-scroll

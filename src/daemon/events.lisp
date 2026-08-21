@@ -14,6 +14,12 @@
   '(;; a session's life. SESSION.COMPLETED asserts that nothing this session
     ;; owns can still change the world; SESSION.ERROR does not end anything.
     "session.started" "session.completed" "session.error"
+    ;; What the person said. Separate from TURN.STARTED because that carries a
+    ;; turn id and nothing else -- the kernel that emits it is the proven
+    ;; lifecycle machine and knows only about turns. Without this the prompt
+    ;; was never on the wire, so a transcript rebuilt from events held every
+    ;; answer and not one of the questions.
+    "user.message"
     ;; One exchange within it. Exactly ONE of the three terminal names follows
     ;; each TURN.STARTED -- a turn that reported both cancelled and completed
     ;; leaves a client no way to say what became of the work.

@@ -107,6 +107,7 @@ Two rows rather than one because the name and the state are different
 questions -- `which project` and `does it need me` -- and cramming both onto a
 twenty-column line truncates the answer to the first."
   (loop for entry in (view-sessions view)
+        for position from 0
         for index from 0 by 2
         while (< (1+ index) (region-height region))
         do (let* ((current (equal (session-id entry) (view-current view)))
@@ -118,6 +119,11 @@ twenty-column line truncates the answer to the first."
              ;; the one that must not depend on it.
              (when current
                (draw-in screen region index ">" :column 0 :style *title-style*))
+             ;; The highlight is only meaningful while the sidebar has the
+             ;; keyboard; showing it otherwise claims arrows will move it.
+             (when (and (eq :sessions (view-focus view))
+                        (= position (view-selection view)))
+               (draw-in screen region index "[" :column 1 :style *focus-style*))
              (draw-in screen region index (car mark) :column 2 :style (cdr mark))
              (draw-in screen region index (short-label (session-label entry))
                       :column 4 :style (when current *title-style*))
@@ -148,7 +154,9 @@ twenty-column line truncates the answer to the first."
               (draw-tabs screen tabs (or (view-tabs view) (list "vivarium"))
                          (view-tab view))))
       (a:when-let ((sessions (region :sessions)))
-        (paint-sessions view screen (draw-box screen sessions :title "sessions")))
+        (paint-sessions view screen
+                        (draw-box screen sessions :title "sessions"
+                                  :focused (eq :sessions (view-focus view)))))
       (a:when-let ((tasks (region :tasks)))
         (paint-tasks view screen (draw-box screen tasks :title "tasks")))
       (a:when-let ((output (region :output)))
@@ -156,7 +164,7 @@ twenty-column line truncates the answer to the first."
                       (draw-box screen output
                                 :title (short-label (or (current-session-label view)
                                                         (view-current view) "output"))
-                                :focused t)))
+                                :focused (eq :input (view-focus view)))))
       (a:when-let ((input (region :input)))
         (let ((inner (draw-box screen input)))
           (draw-in screen inner 0 (format nil " > ~a" (view-input view)))))
@@ -177,10 +185,15 @@ same call is what keeps a click landing where the eye says it should."
           :width (screen-width screen) :height (screen-height screen)))
 
 (defun tab-at (view column)
-  "Which tab index COLUMN falls in, or NIL."
-  (loop for (nil start end) in (view-tab-ranges view)
+  "What COLUMN falls in: a tab index, the keyword :NEW, or NIL.
+
+The keyword rather than another index, because `+` is not the third tab -- it
+is a different verb that happens to live on the same row, and a caller handed
+an index would switch to a workspace that does not exist."
+  (loop for (name start end) in (view-tab-ranges view)
         for index from 0
-        when (and (<= start column) (< column end)) return index))
+        when (and (<= start column) (< column end))
+          return (if (keywordp name) name index)))
 
 (defun session-row-at (view region row)
   "Which session a click at ROW of the sessions REGION selects, or NIL.

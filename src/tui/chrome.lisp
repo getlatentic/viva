@@ -125,7 +125,10 @@ until somebody renames a tab."
                (put screen (region-row region) (+ (region-column region) column) "|"
                     :style *border-style*)
                (incf column 1)))
+    ;; `+` is a target like any other tab, and reported the same way. It was
+    ;; drawn and not reported, so clicking it did nothing and looked broken.
     (when (< (+ column 3) (region-width region))
-      (put screen (region-row region) (+ (region-column region) column 1) "+"
-           :style *dim-style*))
+      (put screen (region-row region) (+ (region-column region) column 1) " + "
+           :style *dim-style*)
+      (push (list :new (1+ column) (+ column 4)) ranges))
     (nreverse ranges)))

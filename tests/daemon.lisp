@@ -2149,3 +2149,72 @@ it reports nothing, and the suite has to be killed to find out why."
     (true repeat "a duplicated event was not detected")
     (true (search "twice" repeat) "~a" repeat))
   (true (seam-fault '()) "an empty stream was reported as healthy"))
+
+(define-test "every event name the daemon publishes is one it may publish"
+  ;; PUBLISH checks a closed vocabulary and SILENTLY DOES NOTHING for a name
+  ;; that is not in it. That is the right shape -- the event set is deliberately
+  ;; closed -- but the failure it produces is a publish that vanishes, which
+  ;; from every other vantage point is indistinguishable from code that was
+  ;; never reached. It cost an hour: `user.message` was published, dropped, and
+  ;; the client looked broken.
+  ;;
+  ;; So the guard is static: every literal name handed to PUBLISH in the source
+  ;; must be in +NAMES+. A new event that forgets to register itself fails here
+  ;; rather than in a transcript somebody notices is missing a week later.
+  (let ((unregistered '()))
+    (dolist (file (list "src/daemon/actor.lisp" "src/daemon/server.lisp"
+                        "src/daemon/supervisor.lisp" "src/daemon/evolver.lisp"))
+      (let ((path (merge-pathnames file (asdf:system-source-directory :vivarium))))
+        (when (probe-file path)
+          (with-open-file (in path)
+            (loop for line = (read-line in nil nil)
+                  while line
+                  do (alexandria:when-let ((at (search "(publish " line)))
+                       (let* ((rest (subseq line at))
+                              (open-quote (position #\" rest)))
+                         (alexandria:when-let
+                             ((name (and open-quote
+                                         (let ((close (position #\" rest
+                                                                :start (1+ open-quote))))
+                                           (and close (subseq rest (1+ open-quote) close))))))
+                           (unless (event:name-valid-p name)
+                             (pushnew (format nil "~a: ~a" file name) unregistered
+                                      :test #'equal)))))))))) 
+    (false unregistered "these are published but not in +NAMES+, so they vanish: ~a"
+           unregistered)))
+
+(define-test "a client sees what the person typed, not only what the model said"
+  (with-daemon (path)
+    (with-paced-cell (cell agent :pause 0.01 :limit 3)
+      (actor:submit cell "the question")
+      (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 30))
+      (let ((stream (daemon:connect path)))
+        (unwind-protect
+             (progn
+               (read-line stream nil nil)
+               (multiple-value-bind (reply events)
+                   (daemon:request stream "type" "session.attach"
+                                          "session" (actor:cell-id cell) "since" 0)
+                 (true (gethash "success" reply))
+                 (let ((prompts (remove-if-not
+                                 (lambda (event)
+                                   (equal "user.message" (gethash "event" event)))
+                                 events)))
+                   (is = 1 (length prompts)
+                       "the replay carried ~d prompts, not one" (length prompts))
+                   (is string= "the question"
+                       (gethash "text" (gethash "data" (first prompts)))))))
+          (ignore-errors (close stream)))))))
+
+(define-test "a retention turn is not a person speaking"
+  ;; Reflection takes the same mailbox path as a prompt. Announcing it as one
+  ;; would put the harness's own instructions into the transcript as though the
+  ;; operator had typed them.
+  (with-paced-cell (cell agent :pause 0.01 :limit 3)
+    (actor:submit-retention cell)
+    (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 30))
+    (let ((spoken (remove-if-not (lambda (event)
+                                   (equal "user.message" (event:event-name event)))
+                                 (actor:since cell 0))))
+      (is = 0 (length spoken)
+          "the reflection prompt was announced as something a person said"))))

@@ -1707,3 +1707,71 @@ print(sum([2, 3, 5]))
     (tui:flush screen out)
     (true (search (format nil "~c[2J" #\Escape) (get-output-stream-string out)))
     (false (tui:screen-invalid screen) "the invalidation was not discharged")))
+
+(define-test "what the person said is in the transcript, not only the answers"
+  ;; turn.started carries a turn id and nothing else, because the kernel that
+  ;; emits it is the proven lifecycle machine and knows only about turns. So
+  ;; the text a person typed was never on the wire: a client could echo its own
+  ;; input, and every one did, which meant the conversation vanished the moment
+  ;; anybody reattached -- the transcript held the answers and none of the
+  ;; questions.
+  (let ((view (tui:make-view)))
+    (tui:absorb view "user.message" (list (cons "text" "run the tests")))
+    (tui:absorb view "model.delta" (list (cons "text" (format nil "all green~%"))))
+    (tui:absorb view "user.message" (list (cons "text" "now fix the lint")))
+    (let ((frame (frame-of view)))
+      (true (frame-has frame "> run the tests") "the first prompt is missing")
+      (true (frame-has frame "all green"))
+      (true (frame-has frame "> now fix the lint") "the second prompt is missing"))
+    ;; In order, and each exactly once -- a replay that doubles the questions
+    ;; is as wrong as one that drops them.
+    (let ((prompts (remove-if-not (lambda (line) (search "> run the tests" line))
+                                  (tui::view-lines view))))
+      (is = 1 (length prompts) "the prompt appears ~d times" (length prompts)))))
+
+(define-test "focus decides what a key means"
+  ;; Without a focus model the sidebar could only be reached by Tab: every key
+  ;; belonged to the prompt, so a list on screen was a list you could not walk.
+  (let ((view (tui:make-view)))
+    (tui:absorb view "session.list"
+                (list (cons "sessions" '(("s1" "/w/a" "idle") ("s2" "/w/b" "idle")
+                                         ("s3" "/w/c" "idle")))))
+    ;; With the input focused, arrows are the prompt's and change no selection.
+    (is eq :input (tui:view-focus view))
+    (tui:type-key view (tui::make-key :value :down))
+    (is = 0 (tui:view-selection view))
+    ;; With the sidebar focused they walk the list, and wrap.
+    (setf (tui:view-focus view) :sessions)
+    (tui:type-key view (tui::make-key :value :down))
+    (is = 1 (tui:view-selection view))
+    (is string= "s2" (tui:session-id (tui:selected-session view)))
+    (tui:type-key view (tui::make-key :value :up))
+    (tui:type-key view (tui::make-key :value :up))
+    (is = 2 (tui:view-selection view) "moving up from the first did not wrap")
+    ;; Enter opens what is highlighted.
+    (is eq :open-selected (tui:type-key view (tui::make-key :value :enter)))
+    ;; A printable key means the person started typing: focus follows, and the
+    ;; character is kept rather than swallowed by the pane that had focus.
+    (setf (tui:view-focus view) :sessions)
+    (tui:type-key view (tui::make-key :value #\h))
+    (is eq :input (tui:view-focus view))
+    (is string= "h" (tui::view-input view) "the first character typed was dropped")
+    ;; Escape always gets back to the prompt.
+    (setf (tui:view-focus view) :sessions)
+    (tui:type-key view (tui::make-key :value :escape))
+    (is eq :input (tui:view-focus view))))
+
+(define-test "the plus in the tab bar is a target, not a decoration"
+  ;; It was drawn and not reported, so clicking it did nothing and looked broken.
+  (let ((view (tui:make-view))
+        (screen (tui:make-blank-screen :width 100 :height 16)))
+    (setf (tui:view-tabs view) '("alpha" "beta"))
+    (tui:paint view screen)
+    (let ((new (find :new (tui:view-tab-ranges view) :key #'first)))
+      (true new "the + reports no range and so can never be hit")
+      (destructuring-bind (name start end) new
+        (is eq :new name)
+        (is eq :new (tui:tab-at view start))
+        (is eq :new (tui:tab-at view (1- end)))))
+    ;; And it is past the named tabs, not on top of one.
+    (is = 0 (tui:tab-at view (second (first (tui:view-tab-ranges view)))))))
