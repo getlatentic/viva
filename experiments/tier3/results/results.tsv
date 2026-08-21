@@ -1,9 +1,3 @@
 position	shape	variant	solved	seconds	requests	prompt	completion
-1	spans	v1	1	19	1	40198	2234
-2	spans	v2	1	12	2	35544	2331
-3	spans	v3	1	14	3	50782	3292
-4	spans	v4	1	9	1	25060	935
-5	spans	v5	1	12	2	45098	1935
-6	spans	v6	1	12	2	45613	1488
-7	spans	v7	1	11	2	40110	1807
-8	spans	v8	1	10	1	25838	1183
+1	spans	v1	1	10	1	25340	1172
+2	spans	v2	1	17	2	51203	2745

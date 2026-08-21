@@ -1,0 +1,10 @@
+{
+  "name": "sum-span-elapsed",
+  "description": "Total elapsed time of span records across vivarium JSONL trace files (data/*.jsonl) (promoted from a skill after 3 runs)",
+  "exec": [
+    "python3",
+    "run.py"
+  ],
+  "digest": "93ddc2cd416c682e",
+  "parameters": []
+}

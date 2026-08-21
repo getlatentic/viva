@@ -54,7 +54,26 @@ it gains is an entry point.
 
 ## What that unblocks
 
-- `#8` gets its threshold: promote a skill to a registered tool at N runs.
+- `#8` gets its threshold: promote a skill to a registered tool at **N = 3**
+  runs (`*graduation-threshold*`).
+
+  **Why three.** One is the run that wrote it — a skill exists *because* the
+  work was just done, so promoting at one promotes everything. Two is a
+  coincidence: the same shape twice inside one corpus is what a corpus of one
+  shape produces by construction. Three is the first count that means *reached
+  for again, after it was already there* — the routing rule's own words, "code
+  you have already wanted again", turned into a number.
+
+  **How it is counted:** `run_skill` increments a `uses` file beside the skill.
+  Nothing infers it, nothing judges it; the count is the number of times the
+  snippet was actually executed.
+
+  **How it loses:** if skills are never called, the counter never moves and no
+  amount of corpus length reaches three. That is not a threshold that is too
+  high — it is the signal being worthless, and candidates (1) and (3) come back
+  with the advantage that we would then know. Measured below: two calls in five
+  opportunities, which is the failure mode arriving in a mild form rather than
+  a fatal one.
 - Tier 3 becomes reachable, which three experiments say it currently is not.
 - The count is a fact, so `#2` — *the next task provably benefits* — has
   something to measure that is not a judgement.
