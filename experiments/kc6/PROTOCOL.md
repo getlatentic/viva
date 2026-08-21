@@ -623,3 +623,30 @@ original draft against the machinery before judging it.
    own `grep` or `edit` — is the stronger claim and the named follow-on;
    adding it later does not invalidate a result obtained here. Pre-check zero
    passes, and the gate is green end to end.
+
+---
+
+## Amendment, 2026-08-21 — the baseline this protocol assumed no longer exists
+
+This protocol measured against our own null: no arm spontaneously retained
+anything, so retention was compared to zero. That comparison is no longer
+informative — `codex-rs/memories/` ships harness-triggered retention in
+production, with usage ranking, pruning and skill promotion. Six of the
+behaviours this project treated as its own are table stakes.
+
+**The control from now on is this system with graduation disabled**, not our
+null and not a replication of Codex's pipeline. Reasoning, thresholds, sampling,
+kill criteria and the measured budget are in `docs/retention-control.md`, which
+also records that #42 (retention decays) is a prerequisite: until the control
+prunes what goes unused, it is weaker than the published behaviour it stands in
+for.
+
+The 30% threshold and the sign test are carried over unchanged, deliberately.
+The noise floor has not moved, and the rule here has always been that the
+threshold never moves; N does.
+
+**One instrument note, because it invalidates readings rather than merely
+annoying:** `results.tsv` had prompt and completion columns that were written
+as a literal `0` on every row. Token-per-task figures taken from that file
+before 2026-08-21 are void. The column is now populated from the usage each
+reply reports, summed over requests.
