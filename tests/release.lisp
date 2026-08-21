@@ -569,3 +569,37 @@ you where you were rather than nowhere"))))
   ;; And the daemon actually calls it, which is the half a unit test misses.
   (true (search "(jobs:stop-all)" (repository-file "src/daemon/server.lisp"))
         "nothing stops the jobs when the organism shuts down"))
+
+;;; Sessions that were never used
+
+(define-test "an unused session leaves no transcript, and a used one always does"
+  ;; A session with nothing in it is an accident of attaching: somebody opened
+  ;; the organism in a directory, looked, and left. Keeping those makes
+  ;; `vivarium sessions` a list of mostly nothing.
+  ;;
+  ;; The second assertion is the important one. Two earlier versions of this
+  ;; predicate asked the session object whether it had messages -- once with a
+  ;; string kind against an EQ test on keywords, once with the keyword -- and
+  ;; BOTH answered `empty` for a session that had one, which would have deleted
+  ;; a person's transcript. Deleting user data on a predicate that has been
+  ;; wrong twice is not something to leave to review.
+  (let ((root (format nil "/tmp/vivarium-emptysess-~36r/" (random (expt 2 48) (make-random-state t)))))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist root)
+           (let ((unused (session:open-session :directory root :cwd "/tmp")))
+             (session:close-session unused)
+             (false (probe-file (session:session-path unused))
+                    "an unused session left a transcript behind"))
+           (let ((used (session:open-session :directory root :cwd "/tmp")))
+             (session:append-entry used :message
+                                   (let ((payload (make-hash-table :test #'equal)))
+                                     (setf (gethash "role" payload) "user"
+                                           (gethash "content" payload) "hello")
+                                     payload))
+             (session:close-session used)
+             (true (probe-file (session:session-path used))
+                   "A SESSION WITH A MESSAGE WAS DELETED. This has been wrong ~
+twice; it is somebody's record.")))
+      (uiop:delete-directory-tree (pathname root) :validate (constantly t)
+                                                  :if-does-not-exist :ignore))))

@@ -184,10 +184,42 @@ leaving a reader to infer it from the shape of line two."
       session)))
 
 (defun close-session (session)
+  "Close the transcript, and remove it if nothing was ever said.
+
+A session with no messages is not a session, it is an accident of attaching:
+somebody opened the organism in a directory, looked at it, and left. Keeping
+those files makes `vivarium sessions` a list of mostly nothing, and any future
+`continue the last conversation` would keep landing on an empty one.
+
+CONSERVATIVE ON PURPOSE. Only a transcript with NO message entries at all is
+removed -- header and nothing else. One message, even an unanswered one, is
+somebody's work and stays. Deleting a person's record is not a place to be
+clever about thresholds."
   (when (session-stream session)
     (close (session-stream session))
     (setf (session-stream session) nil))
+  (when (transcript-is-only-a-header-p (session-path session))
+    (ignore-errors (delete-file (session-path session))))
   session)
+
+(defun transcript-is-only-a-header-p (path)
+  "Does this file contain a header line and nothing else?
+
+THE FILE, not the in-memory entry list. Two attempts at this asked the session
+object -- first with a string kind against an EQ test on keywords, then with
+the keyword -- and both answered `empty` for a session that plainly had a
+message in it, which would have deleted somebody's transcript. Counting lines
+in the file cannot be misread: one line is the header a session is born with,
+and anything more is content."
+  (and (plusp (length path))
+       (probe-file path)
+       (handler-case
+           (with-open-file (in path :if-does-not-exist nil)
+             (and in
+                  (let ((first (read-line in nil nil))
+                        (second (read-line in nil nil)))
+                    (and first (null second)))))
+         (error () nil))))
 
 (defun remember-entry (session entry)
   (push entry (session-entries session))
