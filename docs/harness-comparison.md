@@ -223,3 +223,96 @@ harness makes machine-checked lifecycle claims, and none of them needs to in
 order to compete. It is a development-cost advantage for a small team, not a
 product difference, and positioning that leans on it is leaning on the wrong
 thing.
+
+## herdr: what it costs not to own the agent
+
+`herdrdev/herdr`, read 2026-08-21. Rust, Apache-2.0, "the runtime your coding
+agents live on" — a background server that owns the terminals of *other
+people's* agents: claude code, codex, cursor, opencode, grok. tmux-style
+prefix keys, panes marked working/blocked/idle, sessions that survive a closed
+lid and a dropped network, reattach over ssh, and a socket API through which
+agents spawn panes, prompt each other, and wait until another is genuinely
+blocked.
+
+That last list is uncomfortably close to this project's daemon, cells, and the
+peer messaging #15 specifies. The overlap is real and should be said plainly.
+The difference is not features. It is what the two systems can *know*.
+
+### herdr vendors an emulator, and #45 said not to
+
+| | |
+|---|---|
+| `vendor/libghostty-vt` | 698 Zig files, vendored with local patches |
+| `src/raw_input.rs` | 3,118 lines of key decoding and re-encoding |
+| `src/detect/manifests/` | 20 per-agent TOML rulebooks, 112 detection rules |
+| `src/detect/manifest_update.rs` | 778 lines to keep those rulebooks current |
+
+#45 ruled against embedding libghostty and herdr embeds it. That looks like a
+refutation and is the opposite of one, because the reason is visible in the
+code: **herdr must emulate a terminal because it hosts programs it did not
+write.** All it has of a foreign agent is the bytes that agent paints. To know
+whether Claude Code is working, herdr parses the pane into cells and matches
+rules against them:
+
+```toml
+[[rules]]
+id = "osc_title_working"
+state = "working"
+region = "osc_title"
+regex = ['^[\x{2800}-\x{28FF}] ']
+```
+
+That is a braille range. **herdr detects that an agent is working by
+regex-matching its spinner.** Then it debounces the answer — three
+confirmations, 100 ms apart, capped at 700 ms, with a three-second startup
+grace — because screen-scraping is noisy. And it ships a versioned manifest per
+vendor with an auto-updater, because every agent's interface changes whenever
+its vendor feels like it.
+
+None of this is bad engineering. It is *excellent* engineering, and it is the
+irreducible cost of the position herdr chose.
+
+### The finding
+
+**herdr infers agent state from pixels. Vivarium reads it off the protocol.**
+
+`turn.started`, `turn.completed`, `tool.started` are events on a socket, and
+`busy` is a field. There is no emulator, no braille regex, no debounce, no
+per-vendor rulebook, and nothing to auto-update when somebody changes their
+spinner — because the agent is ours and it says what it is doing.
+
+So #17 is stronger than it was written. It says *ride the multiplexer, do not
+build one*. The sharper statement is: **the emulator is downstream of not
+owning the agent.** herdr had to vendor libghostty because it multiplexes
+foreign processes. Anything that owns its agent does not need one, and
+anything that vendors one is telling you it does not own its agent.
+
+### What that costs us, said honestly
+
+herdr works with every agent, including ones that do not exist yet. Its
+20 manifests are the price of a generality vivarium does not have and is not
+buying: `vivarium live` drives vivarium and nothing else. That is a narrower
+product, and the narrowness is what buys the exact state.
+
+A person who wants Claude Code, Codex and vivarium in one grid wants herdr, and
+should have it — with a vivarium pane in it. That is #17 working as ratified,
+and it is why vivarium must not grow a pane manager.
+
+### TUI strategies, three ways
+
+| | rendering | input |
+|---|---|---|
+| herdr | ratatui + crossterm, over a vendored libghostty-vt | 3,118 lines; tracks the kitty flags *inner* programs push, and re-encodes for them |
+| opencode | `@opentui` + Solid.js — a reactive component tree with the terminal as render target | opentui's keymap layer |
+| vivarium | own double-buffered screen, changed runs only, 0 bytes on an unchanged frame | 145 lines; pushes kitty flags to the *outer* terminal as a client |
+
+herdr's ratatui buffer does what `src/tui/screen.lisp` does — two buffers,
+diffed, emit the difference. Arriving at the same structure independently is
+mild evidence it is the right one; it is certainly not novel, and the roadmap
+should not claim it is.
+
+The input asymmetry is the interesting half. herdr *observes* kitty keyboard
+flags because it sits between a terminal and a program and must speak both
+sides. Vivarium *pushes* them because it is a client of somebody else's
+terminal. Same protocol, opposite ends, and the size difference — 3,118 lines
+against 145 — is that asymmetry, not craft.
