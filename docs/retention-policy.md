@@ -70,8 +70,20 @@ but a policy's whole job is to direct retention.
 
 ## Evaluation
 
-- **Baseline**: the KC6 spontaneity null (RESULTS.md) — zero investment in
-  90+ uninstructed runs on the same families.
+- **Baseline, superseded 2026-08-21**: the KC6 spontaneity null (RESULTS.md) —
+  zero investment in 90+ uninstructed runs on the same families. That number is
+  still true and no longer *informative*. It is an internal null with no
+  external control beside it, and beating it says only that instructing
+  retention produces retention.
+
+- **The external control**: `codex-rs/memories/`, harness-triggered retention in
+  production — usage-ranked, pruned outside a max-unused window, git-baselined,
+  writing `MEMORY.md` and `skills/` with executable scripts. Everything this
+  policy does that is merely *retention* is already shipped there. What is
+  measured from now on is the increment that is ours — composition and mid-task
+  graduation — against **this system with graduation disabled**, which is the
+  control that isolates it. Reasoning, thresholds and kill criterion:
+  `docs/retention-control.md` and `docs/b15-preregistration.md`.
 - **Smoke**: one KC6 cell with reflection enabled must show nonzero,
   sensible investment for the cost of one extra bounded turn per task.
 - **The real evaluation**: harder families, already filed in the backlog as

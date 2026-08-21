@@ -317,10 +317,31 @@ thresholds raised to build-decision size: a 30 percent token reduction or a
 earned itself. Tens of dollars, authored in days, decided once.
 
 **The retention policy, Level 3.** Promote is a mechanism; nothing decides
-when a capability deserves it. That decision is the whole distance between a
-mechanism and an organism, and it is the next artifact after the gate,
-whichever way the gate goes: if capabilities win, the policy governs
+when a capability deserves it. That decision is the next artifact after the
+gate, whichever way the gate goes: if capabilities win, the policy governs
 capabilities; if they lose, it governs skills.
+
+> **Corrected 2026-08-21.** This section used to call that decision "the whole
+> distance between a mechanism and an organism", which read as a claim that the
+> ground was unoccupied. It is not. `codex-rs/memories/` is harness-triggered
+> retention in production — usage-ranked, pruned outside a max-unused window,
+> git-baselined, writing `MEMORY.md` and `skills/` with executable scripts, and
+> its consolidation prompt carries our own graduation rule in as many words.
+>
+> **What is occupied:** deciding what is worth keeping, routing it by shape,
+> counting use, and retiring what stops paying. Six behaviours, all shipped by
+> someone else.
+>
+> **What is left:** composition — a retained capability calling another — and
+> mid-task graduation, where something becomes callable while the run that
+> needed it is still going. Codex has retention with no live execution;
+> deepseek-harness has live execution and refuses to promote what it mints.
+> Holding both is the only ground still unclaimed, and #43 exists to find out
+> whether it is worth anything. Evidence: `docs/harness-comparison.md`;
+> control and thresholds: `docs/retention-control.md`.
+>
+> The reflection turn was never wrong. Its *novelty* was, and a document that
+> leans on the novelty is leaning on nothing.
 
 **RECONCILE.** The one substrate item permitted through the door meanwhile,
 because it is a mission clause: a co-effect ledger and compensation

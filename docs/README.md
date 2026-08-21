@@ -131,6 +131,18 @@ kernel because that is the nearest thing Python has to one, then adds append-onl
 JSONL so harness edits survive a turn boundary — which is what `ledger.lisp` is.
 The concept is not unclaimed. The substrate is.
 
+> **Narrowed 2026-08-21.** "The substrate is unclaimed" is too broad as written.
+> deepseek-harness ships a live self-modification door — `cordis_define` /
+> `cordis_run` / `cordis_stop` against the running process, `node:vm` sandboxed —
+> so *live execution* is claimed. What remains unclaimed is holding it together
+> with retention: they refuse to promote what they mint, in as many words
+> ("they create no Plugin file, install no package … cannot be promoted
+> automatically"), and Codex retains without any live door at all.
+>
+> The narrowing costs this project little, because KC6 already parked the
+> live-image door on its own evidence: 0 of 6 families won, at 1.9× the cost.
+> Evidence: `docs/harness-comparison.md`.
+
 ## E1 result, which reshapes everything downstream
 
 **SBCL 2.6.7 refuses to fork with more than one thread running.** Measured, not
