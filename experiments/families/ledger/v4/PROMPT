@@ -1,0 +1,18 @@
+The directory `runs/` holds append-only log files that more than one writer
+appended to. Total the `cost` of every VALID, CURRENT entry and write that
+single number to answer.txt, rounded DOWN to a whole number.
+
+The rules, all of which matter and all of which are silent when broken:
+
+  - each line is one JSON object; a line that does not parse is TORN and must
+    be ignored, never repaired and never counted
+  - only entries whose kind is "run" count. A "note" entry also carries a
+    `cost` field and is not a run
+  - a run is identified by its `id`. The SAME id may appear more than once,
+    because a writer retried. Keep only the entry with the highest `seq` for
+    that id and ignore the rest
+  - a run whose `status` is "aborted" contributes 0, whatever its cost says
+  - cost arrives as {"amount": n, "scale": s} where s is "unit", "milli" or
+    "kilo". milli is n/1000, kilo is n*1000
+
+Grading runs against a pristine copy of runs/ plus your answer.txt.

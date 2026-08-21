@@ -1,0 +1,12 @@
+{"kind": "run", "id": "r5-022", "seq": 1, "status": "done", "cost": {"amount": 733, "scale": "unit"}}
+{"kind": "run", "id": "r5-027", "seq": 1, "status": "done", "cost": {"amount": 229, "scale": "milli"}}
+{"kind": "run", "id": "r5-004", "seq": 2, "status": "done", "cost": {"amount": 303, "scale": "kilo"}}
+{"kind": "note", "id": "r5-026", "seq": 1, "text": "retried", "cost": {"amount": 339, "scale": "kilo"}}
+{"kind": "run", "id": "r5-003", "seq": 1, "status": "done", "cost": {"amount": 677, "scale": "unit"}}
+{"kind": "run", "id": "r5-007", "seq": 1, "status": "done", "cost": {"amount": 869, "scale": "milli"}}
+{"kind": "note", "id": "r5-019", "seq": 1, "text": "retried", "cost": {"amount": 457, "scale": "kilo"}}
+{"kind": "run", "id": "r5-013", "seq": 1, "status": "done", "cost": {"amount": 385, "scale": "kilo"}}
+{"kind": "run", "id": "r5-004", 
+{"kind": "run", "id": "r5-000", "seq": 1, "status": "done", "cost": {"amount": 809, "scale": "milli"}}
+{"kind": "run", "id": "r5-025", "seq": 1, "status": "done", "cost": {"amount": 827, "scale": "unit"}}
+{"kind": "run", "id": "r5-021", "seq": 99, "status": "done", "cost": {"amount": 575, "scale": "kilo"}

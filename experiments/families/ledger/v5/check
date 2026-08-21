@@ -1,0 +1,4 @@
+#!/bin/sh
+# Computed from the pristine data, never from a stored answer:
+# the grader copies the job WITHOUT solution/.
+exec python3 check.py

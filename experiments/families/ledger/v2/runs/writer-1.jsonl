@@ -1,0 +1,8 @@
+{"kind": "run", "id": "r2-005", "seq": 1, "status": "done", "cost": {"amount": 708, "scale": "kilo"}}
+{"kind": "run", "id": "r2-009", "seq": 2, "status": "done", "cost": {"amount": 27, "scale": "unit"}}
+{"kind": "note", "id": "r2-008", "seq": 1, "text": "retried", "cost": {"amount": 438, "scale": "kilo"}}
+{"kind": "run", "id": "r2-013", "seq": 2, "status": "done", "cost": {"amount": 282, "scale": "kilo"}}
+{"kind": "run", "id": "r2-000", "seq": 2, "status": "done", "cost": {"amount": 134, "scale": "milli"}}
+{"kind": "run", "id": "r2-011", "seq": 2, "status": "done", "cost": {"amount": 335, "scale": "kilo"}}
+{"kind": "run", "id": "r2-010", "seq": 1, "status": "done", "cost": {"amount": 840, "scale": "unit"}}
+{"kind": "run", "id": "r2-010", "seq": 99, "status": "done", "cost": {"amount": 674, "scale": "kilo"}
