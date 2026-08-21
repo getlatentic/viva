@@ -86,6 +86,50 @@ sub-agent gets its own, so its turns land on their own branch of the same file."
 
 (defvar delegate-tool)  ; defined with the other tools below; referenced here
 
+(defparameter *graduation-threshold* 3
+  "Runs after which a skill's snippet is written into the registry as a tool.
+
+Three, because two is a coincidence and the router's own rule is that code you
+have ALREADY wanted again is a tool. The number is the first thing to argue
+with once there is data; it is a parameter rather than a constant for exactly
+that reason.")
+
+(defun graduate (environment skill runs)
+  "Write SKILL's snippet into the registry as a tool. Returns its name or NIL.
+
+Tier 3 by evidence rather than by judgement. Three experiments showed
+reflection cannot get here on its own -- once a skill exists the re-derivation
+cost it would promote on is gone, so the case for a tool never accumulates.
+Counting the runs is what accumulates instead.
+
+The promoted tool TAKES NO PARAMETERS. A snippet is a procedure somebody ran,
+not a function with a signature, and inventing arguments for it would be a
+guess dressed as an interface. It runs, and it prints what it printed before."
+  (let* ((name (skill:skill-name skill))
+         (directory (env:join-path (env:env-cwd environment) ".vivarium" "tools" name))
+         (language (string-downcase (skill:skill-language skill)))
+         (interpreter (cdr (assoc language skill:+interpreters+ :test #'string=)))
+         (extension (if (search "python" language) "py" language)))
+    ;; The threshold is checked HERE, not by the caller. A promotion function
+    ;; that promotes whatever it is handed is one careless caller away from
+    ;; promoting on the first run, and the rule -- code you have ALREADY wanted
+    ;; again -- belongs with the thing that acts on it.
+    (when (and (>= runs *graduation-threshold*)
+               interpreter (skill:snippet-of skill)
+               (not (env:path-exists-p environment (env:join-path directory "tool.json"))))
+      (ignore-errors
+       (env:ensure-directory environment directory)
+       (env:write-text environment (env:join-path directory (format nil "run.~a" extension))
+                       (skill:snippet-of skill))
+       (env:write-text
+        environment (env:join-path directory "tool.json")
+        (format nil "{~%  \"name\": ~s,~%  \"description\": ~s,~%  \"exec\": [~s, ~s],~%  \"parameters\": []~%}~%"
+                name
+                (format nil "~a (promoted from a skill after ~d runs)"
+                        (skill:skill-description skill) runs)
+                interpreter (format nil "run.~a" extension)))
+       name))))
+
 (defun run-skill-tool (agent)
   "Run the code a tier-2 skill carries, by name, and count the run.
 
@@ -140,7 +184,11 @@ Reach for this instead of retyping the same transformation."
                    ;; Counted BEFORE the run: a snippet that fails was still
                    ;; reached for, and reaching for it is the signal. Counting
                    ;; successes would measure the code, not the reuse.
-                   (skill:note-use environment found)
+                   (let ((runs (skill:note-use environment found)))
+                     (when (>= runs *graduation-threshold*)
+                       (a:when-let ((promoted (graduate (agent-environment agent) found runs)))
+                         (extension:fire :custom-message
+                                         (list :type "graduated" :text promoted)))))
                    (workspace:with-environment ((agent-environment agent))
                      (multiple-value-bind (text status)
                          (workspace:run-bash (format nil "~a ~a" interpreter script))

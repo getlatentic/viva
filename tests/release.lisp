@@ -849,3 +849,49 @@ print(sum([2, 3, 5]))
                  "the count is what graduation thresholds on")))
       (uiop:delete-directory-tree (pathname root) :validate (constantly t)
                                                   :if-does-not-exist :ignore))))
+
+(define-test "a skill run enough times becomes a tool the registry can call"
+  ;; Tier 3, reached by EVIDENCE rather than judgement. Three tier3 runs showed
+  ;; reflection cannot get here on its own: once a skill exists, the
+  ;; re-derivation cost it would promote on is gone, so the case for a tool
+  ;; never accumulates. Counting runs is what accumulates instead.
+  (let ((root (format nil "/tmp/vivarium-grad-~36r/" (random (expt 2 48) (make-random-state t))))
+        (trust:*trust-file* (format nil "/tmp/vivarium-gradtrust-~36r.sexp"
+                                    (random (expt 2 48) (make-random-state t)))))
+    (unwind-protect
+         (let ((directory (merge-pathnames ".vivarium/skills/total/" root)))
+           (ensure-directories-exist directory)
+           (with-open-file (out (merge-pathnames "SKILL.md" directory) :direction :output)
+             (write-string "---
+name: total
+description: Total three numbers.
+language: python
+---
+
+```python
+print(sum([2, 3, 5]))
+```
+" out))
+           (let* ((environment (env:make-local-environment :cwd (namestring root)))
+                  (skill (skill:find-skill
+                          (skill:load-skills environment
+                                             (harness:skill-directories environment))
+                          "total")))
+             (trust:trust environment (namestring root))
+             ;; Below the threshold, nothing is promoted: two is a coincidence.
+             (skill:note-use environment skill)
+             (false (harness::graduate environment skill 1)
+                    "a snippet promoted on its first run has not earned anything")
+             ;; The registry must accept what graduation writes -- a promoted
+             ;; tool the loader refuses is worse than no promotion, because it
+             ;; looks like the ladder worked.
+             (true (harness::graduate environment skill 3))
+             (let ((tools (registry:load-tools environment
+                                               (harness:registry-directories environment)
+                                               :project (trust:canonical environment
+                                                                         (namestring root)))))
+               (true (find "total" tools :key #'tool:tool-name :test #'string=)
+                     "graduation wrote a manifest the registry will not load"))))
+      (uiop:delete-file-if-exists (trust:trust-file))
+      (uiop:delete-directory-tree (pathname root) :validate (constantly t)
+                                                  :if-does-not-exist :ignore))))
