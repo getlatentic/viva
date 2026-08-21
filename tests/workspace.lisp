@@ -184,6 +184,36 @@ rather than leaving it to be rediscovered a third time."
       (true (mentions "The build is" block*))
       (true (mentions "The parser lives" block*)))))
 
+(define-test "AGENTS.md is an instruction source, and its absence costs nothing"
+  ;; The cross-tool convention: a repository that already has an AGENTS.md
+  ;; meant it for exactly this, and another harness reading what this one wrote
+  ;; is the point of keeping the organism's identity in files. The behaviour
+  ;; was there and untested, which is the same as being one refactor from gone.
+  (let ((root (format nil "/tmp/vivarium-agents-~36r/" (random (expt 2 48) (make-random-state t)))))
+    (unwind-protect
+         (let ((environment (env:make-local-environment
+                             :cwd (namestring (ensure-directories-exist root)))))
+           (false (mentions "PINEAPPLE-SENTINEL"
+                            (memory:context-block (memory:context-files environment)))
+                  "a directory with no AGENTS.md must contribute nothing")
+           (env:write-text environment (env:join-path root "AGENTS.md")
+                           "Always mention PINEAPPLE-SENTINEL.")
+           (true (mentions "PINEAPPLE-SENTINEL"
+                           (memory:context-block (memory:context-files environment)))
+                 "AGENTS.md must reach the prompt through the ordinary context path")
+           ;; ONE file per directory, by precedence, which is what the name list
+           ;; means and is worth pinning: a repository carrying both a
+           ;; VIVARIUM.md and an AGENTS.md gets the first, and discovering that
+           ;; by wondering why half your instructions vanished is expensive.
+           (env:write-text environment (env:join-path root "VIVARIUM.md")
+                           "Prefer the local rule.")
+           (let ((block* (memory:context-block (memory:context-files environment))))
+             (true (mentions "Prefer the local rule" block*))
+             (false (mentions "PINEAPPLE-SENTINEL" block*)
+                    "VIVARIUM.md comes first in the list, so it is the one read")))
+      (uiop:delete-directory-tree (pathname root) :validate (constantly t)
+                                                  :if-does-not-exist :ignore))))
+
 (define-test "reloading extensions does not duplicate their tools"
   ;; Appending rather than replacing put two tools of the same name in the
   ;; request, which the provider rejects as malformed -- surfacing as a 400 on

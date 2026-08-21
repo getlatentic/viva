@@ -136,3 +136,21 @@ still-untested claim narrows to mid-task graduation and composition
 (capabilities calling capabilities), and any future probe of it should be
 designed for that regime: high use-counts, expensive re-derivation, not
 five cheap tasks.
+
+## Instruction sources, and what other harnesses can read
+
+The germline is files so that a person can read it and another agent can use
+it. The same applies in reverse to what the organism is *told*: instructions
+come from `VIVARIUM.md`, `AGENTS.md` or `CLAUDE.md`, checked in that order in
+every directory from the repository root down.
+
+**One file per directory, by precedence, not a merge.** A directory carrying
+both a `VIVARIUM.md` and an `AGENTS.md` contributes only the first. That is
+deliberate — two instruction files in one directory usually means two
+half-maintained sets of rules, and silently concatenating them makes the
+contradiction the model's problem. It is also the surprising half, so the
+suite pins it.
+
+`AGENTS.md` is honoured because it is becoming the cross-tool convention: a
+repository that already has one meant it for exactly this, and an organism
+whose identity lives in files should read the files everybody else writes.
