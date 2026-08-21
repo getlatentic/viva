@@ -7,4 +7,6 @@
            #:with-raw-terminal #:terminal-p
            #:make-blank-screen #:put #:flush #:clear-back
            #:screen #:screen-width #:screen-height
+           #:divide #:region-of #:draw-in #:region
+           #:region-row #:region-column #:region-width #:region-height
            #:key #:key-value #:key-control #:key-alt #:key-shift))

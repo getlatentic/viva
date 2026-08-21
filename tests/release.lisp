@@ -1063,3 +1063,80 @@ print(sum([2, 3, 5]))
     (tui:put screen 0 -3 "left")
     (is = 1 (length (tui::row-differences screen 0))
         "a negative column should still draw the part that is on screen")))
+
+(defun tiling-fault (form width height)
+  "NIL if FORM's regions tile WIDTH x HEIGHT exactly, else a description."
+  (let ((covered (make-array (list height width) :initial-element 0)))
+    (loop for (nil . region) in (tui:divide form :width width :height height)
+          do (loop for row from (tui::region-row region)
+                     below (+ (tui::region-row region) (tui::region-height region))
+                   do (loop for column from (tui::region-column region)
+                              below (+ (tui::region-column region)
+                                       (tui::region-width region))
+                            do (if (and (< -1 row height) (< -1 column width))
+                                   (incf (aref covered row column))
+                                   (return-from tiling-fault
+                                     (format nil "region ~a spills to ~d,~d"
+                                             (tui::region-name region) row column))))))
+    (dotimes (row height)
+      (dotimes (column width)
+        (case (aref covered row column)
+          (1)
+          (0 (return-from tiling-fault (format nil "gap at ~d,~d" row column)))
+          (t (return-from tiling-fault (format nil "overlap at ~d,~d" row column))))))
+    nil))
+
+(define-test "a layout tiles its area exactly, at every size"
+  ;; The whole difficulty of a layout is the remainder. Three panes sharing 80
+  ;; columns get 26 each and lose two, and those two are the blank stripe down
+  ;; the right edge of every hand-rolled TUI. So the assertion is exactness --
+  ;; no gap, no overlap -- checked at every width rather than at one.
+  (let ((form '(:stack (:fixed 1 :title)
+                       (:weight 1 (:beside (:fixed 24 :sessions)
+                                           (:weight 2 :output)
+                                           (:weight 1 :tasks)))
+                       (:fixed 1 :status))))
+    (loop for width from 1 to 200
+          for fault = (tiling-fault form width 24)
+          when fault do (fail (format nil "width ~d: ~a" width fault)))
+    (loop for height from 1 to 60
+          for fault = (tiling-fault form 80 height)
+          when fault do (fail (format nil "height ~d: ~a" height fault)))
+    (false (tiling-fault form 80 24))))
+
+(define-test "a layout starves rather than overflowing"
+  ;; A pane asking for 24 columns inside 10 must not be handed 24, and the
+  ;; pane after it must not be handed -14. Both are the same bug and both
+  ;; corrupt every row they touch.
+  (let ((regions (tui:divide '(:beside (:fixed 24 :sessions) (:fixed 24 :output))
+                             :width 10 :height 3)))
+    (is = 10 (tui::region-width (tui:region-of regions :sessions)))
+    (is = 0 (tui::region-width (tui:region-of regions :output))))
+  (false (tiling-fault '(:beside (:fixed 24 :a) (:fixed 24 :b)) 10 3))
+  ;; A zero-height screen is a resize in flight, not an error.
+  (false (tiling-fault '(:stack (:fixed 1 :a) (:weight 1 :b)) 0 0)))
+
+(define-test "a pane clips to itself, not to the screen"
+  ;; One pane's long line bleeding into its neighbour is the only thing that
+  ;; stops panes looking like panes.
+  (let* ((screen (tui:make-blank-screen :width 20 :height 3))
+         (regions (tui:divide '(:beside (:fixed 10 :left) (:weight 1 :right))
+                              :width 20 :height 3)))
+    (tui:draw-in screen (tui:region-of regions :left) 0
+                 "0123456789OVERFLOW")
+    (tui:draw-in screen (tui:region-of regions :right) 0 "right")
+    (let ((out (make-string-output-stream)))
+      (tui:flush screen out)
+      (let ((text (get-output-stream-string out)))
+        (true (search "0123456789" text))
+        (false (search "OVERFLOW" text) "the left pane bled into the right")
+        (true (search "right" text)))))
+  ;; A row past the bottom of a pane draws nothing rather than in the pane below.
+  (let* ((screen (tui:make-blank-screen :width 8 :height 4))
+         (regions (tui:divide '(:stack (:fixed 2 :top) (:weight 1 :bottom))
+                              :width 8 :height 4)))
+    (tui:draw-in screen (tui:region-of regions :top) 5 "escaped")
+    (let ((out (make-string-output-stream)))
+      (tui:flush screen out)
+      (is string= "" (get-output-stream-string out)
+          "a row past the pane's bottom drew somewhere"))))
