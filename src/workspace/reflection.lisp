@@ -24,39 +24,64 @@
   "The task above is finished. Before this working context closes, decide
 what -- if anything -- should outlive it.
 
-Retain only what genuinely makes similar future work cheaper:
-- a fact or procedure you had to work out (a build quirk, a format rule,
-  where something lives): use remember, one line each.
-- a transformation you would otherwise write again (a parser, a reshaper,
-  a converter): write it as a tool, with the ordinary file tools. A tool is
-  a directory .vivarium/tools/<name>/ holding tool.json --
+Route by the SHAPE of the thing, not by how pleased you are with it.
+
+1. A FACT OR PROCEDURE you had to work out -- a format rule, a build quirk,
+   where something lives. Use remember, one line each. No code.
+
+2. CODE YOU WOULD OTHERWISE WRITE AGAIN -- a parse, a reshape, a conversion.
+   Write it as a skill: a file .vivarium/skills/<name>/SKILL.md holding
+
+       ---
+       name: <name>
+       description: <when a future task should reach for this>
+       language: python | bash | ...
+       ---
+
+   then a sentence of when to use it and ONE fenced code block that runs. A
+   later task reads it and runs the snippet. This is the right home for
+   working code you are not yet sure will be wanted often.
+
+3. A TOOL, when the transformation is plainly one you will call by name again
+   and again: a directory .vivarium/tools/<name>/ holding tool.json --
 
       {\"name\": \"...\", \"description\": \"...\",
        \"exec\": [\"python3\", \"run.py\"],
        \"parameters\": [{\"name\": \"...\", \"type\": \"string\",
                         \"description\": \"...\", \"required\": true}]}
 
-  -- and the script it names. The script reads one JSON object of arguments
-  on stdin and prints its result. Later tasks call it by name.
+   -- and the script it names, which reads one JSON object of arguments on
+   stdin and prints its result. THIS IS THE EXPENSIVE TIER: it costs a
+   manifest, a script and a calling convention to get wrong. Prefer a skill
+   unless the reuse is already evident -- you have reached for this same
+   transformation more than once, in this task or a previous one.
 
-  A tool costs more to write than a note and only pays if you would reach
-  for it again, so prefer the note unless the transformation is plainly
-  one you would rewrite.
+The dividing line between 2 and 3 is not quality, it is EVIDENCE OF REUSE.
+Code you might want again is a skill. Code you have already wanted again is
+a tool.
 
 Parsimony is the policy: most tasks leave nothing worth keeping, and
-\"nothing to retain\" is the correct answer then. Never retain
-task-specific answers -- only what transfers."
-  "The policy text. Names both channels and their division of labour -- this
-is the organism directing its own retention, not an experiment measuring a
-default, so mechanism-naming is the job rather than a confound.
+\"nothing to retain\" is the correct answer then. Never retain task-specific
+answers -- only what transfers."
+  "The policy text. Names all three tiers and the rule that routes between
+them -- this is the organism directing its own retention, not an experiment
+measuring a default, so mechanism-naming is the job rather than a confound.
 
-The compile channel is GONE from it, and that is the point. v1 said
+THE MIDDLE TIER IS THE POINT of this version. v1 offered a note or a tool and
+nothing between, and the dogfood showed what that costs: the organism wrote an
+excellent note about a file format, which removed enough friction that a tool
+was never worth writing -- so the code it had worked out was thrown away every
+time and re-derived from the note. A skill carries the code at a fraction of a
+tool's price.
+
+The routing rule is EVIDENCE OF REUSE rather than judgement of quality,
+because `is this good enough to be a tool` is a question with no stable
+answer, while `have I reached for this before` is a fact.
+
+The compile channel is absent, and that is deliberate. v1 said
 create_capability / call_capability / promote_capability: the in-image path
 that lost 0/6 in KC6 and, worse for a retention policy, evaporates when the
-process exits. What replaced it needs no verb at all -- a script and a
-manifest, written with the file tools every agent already has, callable by
-name afterwards through the registry. The cost caveat is deliberate: the
-kill punished paying a heavy install price for something used four times.")
+process exits.")
 
 (defun reflect (agent)
   "Run the retention policy's reflection turn on AGENT's just-finished task.

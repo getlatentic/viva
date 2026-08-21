@@ -1100,11 +1100,69 @@ rather than leaving it to be rediscovered a third time."
     (false (search "promote_capability" prompt) "the prompt still names the parked door")
     (true (search ".vivarium/tools/" prompt) "the registry is not named as the code channel")
     (true (search "stdin" prompt) "the calling convention is unstated")
-    (true (search "prefer the note" prompt)
+    (true (search "EXPENSIVE TIER" prompt)
           "the cost caveat is gone -- the kill punished premature registration")
     (true (search "nothing to retain" prompt) "declining is no longer explicit")
     (true (search "only what transfers" prompt)
           "the answer-key guard is gone")))
+
+(define-test "the reflection prompt routes by shape, with a middle tier"
+  ;; v1 offered a note or a tool and nothing between, and the dogfood showed
+  ;; what that costs: the organism wrote an excellent note about a file format,
+  ;; which removed enough friction that a tool was never worth writing -- so
+  ;; the code it had worked out was thrown away and re-derived from the note
+  ;; every time. A skill carries the code at a fraction of a tool's price.
+  (let ((prompt harness:*reflection-prompt*))
+    ;; Tier 1: knowledge, no code.
+    (true (search "FACT OR PROCEDURE" prompt))
+    (true (search "No code" prompt) "tier 1 must be told it is not for code")
+    ;; Tier 2: code that runs, as a skill, with the shape a loader can read.
+    (true (search "CODE YOU WOULD OTHERWISE WRITE AGAIN" prompt))
+    (true (search ".vivarium/skills/" prompt) "tier 2 has no home")
+    (true (search "language:" prompt) "a code-skill must declare its language")
+    (true (search "fenced code block" prompt) "tier 2 must carry runnable code")
+    ;; Tier 3 stays, and stays expensive.
+    (true (search ".vivarium/tools/" prompt))
+    ;; And the rule that decides between 2 and 3 -- a fact, not a judgement.
+    (true (search "EVIDENCE OF REUSE" prompt)
+          "the routing rule is the whole point of the middle tier")
+    (true (search "already wanted again" prompt))))
+
+(define-test "a code-skill the policy describes is one the loader can read"
+  ;; The prompt tells the model to write frontmatter with name and description.
+  ;; If the loader wanted something else, every skill the organism wrote would
+  ;; be silently dropped -- and a retention policy whose output does not load
+  ;; is worse than none, because it looks like it is working.
+  (let ((root (format nil "/tmp/vivarium-codeskill-~36r/" (random (expt 2 48) (make-random-state t)))))
+    (unwind-protect
+         (let* ((directory (merge-pathnames ".vivarium/skills/total-usage/" root))
+                (environment (env:make-local-environment :cwd (namestring root))))
+           (ensure-directories-exist directory)
+           (with-open-file (out (merge-pathnames "SKILL.md" directory) :direction :output)
+             (write-string "---
+name: total-usage
+description: Sum token usage across JSONL transcripts.
+language: python
+---
+
+Run this over a directory of .jsonl files.
+
+```python
+import json, glob
+print(sum(1 for _ in glob.glob('*.jsonl')))
+```
+" out))
+           (multiple-value-bind (skills warnings)
+               (skill:load-skills environment (harness:skill-directories environment))
+             (is = 0 (length warnings) "the loader complained about the policy's own format")
+             (let ((found (find "total-usage" skills :key #'skill:skill-name :test #'string=)))
+               (true found "a skill written exactly as the prompt describes did not load")
+               (when found
+                 (true (search "Sum token usage" (skill:skill-description found)))
+                 (true (search "```python" (skill:skill-content found))
+                       "the runnable snippet must survive into the content")))))
+      (uiop:delete-directory-tree (pathname root) :validate (constantly t)
+                                                  :if-does-not-exist :ignore))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; The tool registry (#4)
