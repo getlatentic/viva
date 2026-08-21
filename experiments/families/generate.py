@@ -163,6 +163,9 @@ def build_ledger(base: pathlib.Path, variants: int = 6) -> None:
         for n, chunk in enumerate(made["files"]):
             write(job / "runs" / f"writer-{n}.jsonl", "\n".join(chunk) + "\n")
         write(job / "PROMPT", LEDGER_PROMPT)
+        # What the driver carries from the sandbox into grading. Without it the
+        # run dies before the first model call.
+        write(job / "graded", "answer.txt\n")
         write(job / "check.py", LEDGER_CHECK)
         write(job / "check", "#!/bin/sh\n# Computed from the pristine data, never from a stored answer:\n"
                              "# the grader copies the job WITHOUT solution/.\nexec python3 check.py\n",
@@ -338,6 +341,7 @@ def build_manifest(base: pathlib.Path, variants: int = 6) -> None:
             write(where / "declared.json", json.dumps(made["declared"], indent=2) + "\n")
             write(where / "run.py", made["source"])
         write(job / "PROMPT", MANIFEST_PROMPT)
+        write(job / "graded", "answer.txt\n")
         write(job / "check.py", MANIFEST_CHECK)
         write(job / "check", "#!/bin/sh\n# Computed from the pristine data, never from a stored answer.\n"
                              "exec python3 check.py\n", executable=True)
