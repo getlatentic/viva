@@ -139,7 +139,8 @@ work, which is the quiet way a corpus starts measuring itself."
                      (format tsv "~d~a~a~a~a~a~d~a~d~a~d~a~d~a~d~%"
                              position #\Tab shape #\Tab variant #\Tab (if solved 1 0)
                              #\Tab seconds #\Tab (harness:agent-requests agent)
-                             #\Tab 0 #\Tab 0)
+                             #\Tab (harness:agent-prompt-tokens agent)
+                             #\Tab (harness:agent-completion-tokens agent))
                      (finish-output tsv)
                      (format t "~&~3d ~14a ~:[  --  ~;solved~] ~3ds~%"
                              position label solved seconds))))))

@@ -59,6 +59,17 @@ is required rather than tidy: an agent that cannot find the defect will read and
 search until something stops it, and an uncapped run against a paid endpoint is
 an unbounded bill.")
    (requests :initform 0 :accessor agent-requests)
+   (prompt-tokens :initform 0 :accessor agent-prompt-tokens
+                  :documentation "Prompt tokens billed across this agent's whole
+life, summed per request.")
+   (completion-tokens :initform 0 :accessor agent-completion-tokens
+                      :documentation "Completion tokens, likewise.
+
+These exist because the experiment driver had a tokens column and wrote a
+literal zero into it -- eight rows of results, every token count 0, and the
+retention measurements #2 asks for read against a number nobody was recording.
+A cost measure that is always zero is worse than an absent one: it looks
+answered.")
    (aborting :initform nil :accessor agent-aborting
              :documentation "Set from another thread to stop the run. Checked
 between streamed events as well as between turns, so an abort lands in the
@@ -333,6 +344,18 @@ able to hear this."
   (a:when-let ((usage (and message (msg:assistant-message-usage message))))
     (and (hash-table-p usage) (gethash "prompt_tokens" usage))))
 
+(defun note-usage (agent message)
+  "Add one reply's reported usage to this agent's running totals.
+
+Summed per request rather than read off the last one. The prompt is re-sent
+whole every turn, so what a run COST is the sum over requests -- the final
+request's prompt count is the context size, which is a different question and
+was the one being answered."
+  (a:when-let ((usage (and message (msg:assistant-message-usage message))))
+    (when (hash-table-p usage)
+      (incf (agent-prompt-tokens agent) (or (gethash "prompt_tokens" usage) 0))
+      (incf (agent-completion-tokens agent) (or (gethash "completion_tokens" usage) 0)))))
+
 (defun summary-message (summary)
   (msg:make-user-message
    :content (list (msg:make-text
@@ -381,6 +404,7 @@ because that is the only moment the context can be replaced safely. And the
 :CONTEXT hook, which is how a memory extension injects what it retrieved without
 the harness knowing anything about retrieval."
   (declare (ignore results))
+  (note-usage agent message)
   (a:when-let ((tokens (reported-tokens message)))
     (setf (agent-last-tokens agent) tokens))
   (let* ((compacted (when (compaction:due-p (agent-compaction agent) (agent-last-tokens agent))

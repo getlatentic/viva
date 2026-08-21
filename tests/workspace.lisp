@@ -1660,3 +1660,45 @@ print(json.load(sys.stdin)['path'])
     (multiple-value-bind (entries warnings)
         (registry:load-entries environment (list (format nil "~a.vivarium/tools" root)))
       (is = 1 (length entries) "a pre-digest tool was refused: ~a" warnings))))
+
+(define-test "a run counts the tokens it actually spent"
+  ;; The experiment driver had a tokens column and wrote a literal 0 into it.
+  ;; Eight rows of results, every count zero, and the retention measurements
+  ;; #2 asks for were to be read against a number nobody was recording. A cost
+  ;; measure that is always zero is worse than an absent one: it looks answered.
+  ;;
+  ;; Through a real turn rather than by calling the accumulator, because what
+  ;; broke was the WIRING, and a unit test of the adder would have passed
+  ;; throughout.
+  (with-repository (environment)
+    (flet ((reply (text prompt completion &optional (stop :stop))
+             (let ((usage (make-hash-table :test #'equal)))
+               (setf (gethash "prompt_tokens" usage) prompt
+                     (gethash "completion_tokens" usage) completion)
+               (msg:make-assistant-message :content (list (msg:make-text text))
+                                           :stop-reason stop :usage usage))))
+      (let ((agent (make-instance 'replaying-agent
+                                  :environment environment
+                                  :resource-environment environment
+                                  :script (list (reply "first" 100 10)))))
+        (is = 0 (harness:agent-prompt-tokens agent) "a fresh agent has spent something")
+        (harness:ask agent "one")
+        (is = 100 (harness:agent-prompt-tokens agent)
+            "the first turn's prompt tokens were not counted")
+        (is = 10 (harness:agent-completion-tokens agent)
+            "the first turn's completion tokens were not counted")
+        ;; SUMMED over requests, not read off the last one. The prompt is
+        ;; re-sent whole every turn, so what a run COST is the sum; the last
+        ;; request's prompt count is the context size, a different question.
+        (setf (script agent) (list (reply "second" 250 30)))
+        (harness:ask agent "two")
+        (is = 350 (harness:agent-prompt-tokens agent)
+            "the second turn replaced the total instead of adding to it")
+        (is = 40 (harness:agent-completion-tokens agent))
+        ;; A reply with no usage is not an error and not a zeroing.
+        (setf (script agent) (list (msg:make-assistant-message
+                                    :content (list (msg:make-text "third"))
+                                    :stop-reason :stop)))
+        (harness:ask agent "three")
+        (is = 350 (harness:agent-prompt-tokens agent)
+            "a reply carrying no usage disturbed the total")))))
