@@ -640,10 +640,11 @@ from the client's thread would put two threads in one agent's turn."
   (let ((worker (bt:make-thread
                  (lambda ()
                    (multiple-value-bind (outcome detail reply)
-                       (handler-case (let ((reply (if (getf options :retain)
+                       (handler-case (let ((reply (progn
+                                                    (if (getf options :retain)
                                                       (harness:reflect (cell-agent cell))
                                                       (harness:ask (cell-agent cell)
-                                                                   (getf options :text)))))
+                                                                   (getf options :text))))))
                                        (values (turn-outcome (cell-agent cell)) nil reply))
                          ;; A failed turn ends the turn, not the session. The
                          ;; organism has to survive its own bad requests or it

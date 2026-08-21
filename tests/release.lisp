@@ -603,3 +603,20 @@ you where you were rather than nowhere"))))
 twice; it is somebody's record.")))
       (uiop:delete-directory-tree (pathname root) :validate (constantly t)
                                                   :if-does-not-exist :ignore))))
+
+(define-test "an earlier session is found before this one is created"
+  ;; OPEN-SESSION writes the new session's own file, so a resume lookup running
+  ;; after it resolved `the most recent session here` to the empty one being
+  ;; created -- and faithfully loaded nothing. The verb reported success and
+  ;; the conversation stayed blank, which is indistinguishable from a resume
+  ;; that was never wired at all.
+  (let ((source (repository-file "src/daemon/server.lisp")))
+    (let ((lookup (search "(earlier (a:when-let ((wanted (text-of command \"resume\")))" source))
+          (open (search "(session (session:open-session" source)))
+      (true (and lookup open) "the resume lookup and the session open must both be there")
+      (true (< lookup open)
+            "the earlier session must be resolved BEFORE this session's file exists"))
+    ;; And the daemon says which it loaded, so a resume that finds nothing can
+    ;; be told apart from one that worked.
+    (true (search "found no session there" source))
+    (true (search "loaded ~a (~d message~:p)" source))))
