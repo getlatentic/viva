@@ -204,24 +204,21 @@ vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
                        (format t "~&  deciding what to keep…~%")
                        (stream-turn stream))))))
    (make-attached-verb
-    :name "sessions" :blurb "every session in the organism"
+    :name "sessions" :blurb "every session here: live and recorded"
     :handler (lambda (stream id argument)
                (declare (ignore argument))
-               (let ((reply (daemon:request stream "type" "session.list")))
-                 (loop for each across (or (gethash "sessions" reply) #())
-                       do (format t "~&  ~a ~a~10t~a~22t~a~%"
-                                  ;; Which one you are IN. A list of sessions
-                                  ;; that does not say where you are standing
-                                  ;; is a list you have to guess against.
-                                  (if (equal id (gethash "id" each)) "*" " ")
-                                  (gethash "id" each) (gethash "state" each)
-                                  (gethash "label" each))))))
+               (show-sessions stream id)))
    (make-attached-verb
-    :name "switch" :argument "ID" :blurb "move this client to another session"
+    :name "switch" :argument "ID|N" :blurb "move this client to another session"
     :handler (lambda (stream id argument)
-               (if (zerop (length argument))
-                   (format t "~&  usage: /switch <id>   (/sessions lists them)~%")
-                   (switch-session stream id argument))))
+               (a:if-let ((chosen (listed-choice argument)))
+                 (if (eq :live (first chosen))
+                     (switch-session stream id (second chosen))
+                     (format t "~&  ~a is a saved conversation, not a live session.~%~
+  /continue ~a carries it into a new one.~%" (second chosen) argument))
+                 (if (zerop (length argument))
+                     (format t "~&  usage: /switch <id or number>   (/sessions lists them)~%")
+                     (switch-session stream id argument)))))
    (make-attached-verb
     :name "new" :argument "[DIR]" :blurb "start another session and go to it"
     :handler (lambda (stream id argument)
@@ -269,7 +266,7 @@ vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
                (ask-session stream id "resume")
                (format t "~&  asked ~a to carry on a suspended turn.~%" id)))
    (make-attached-verb
-    :name "continue" :argument "[ID]" :blurb "carry an earlier conversation into a new session"
+    :name "continue" :argument "[ID|N]" :blurb "carry a saved conversation into a new session"
     :handler (lambda (stream id argument)
                (declare (ignore id))
                ;; A NEW session that starts holding the old conversation, rather
@@ -280,9 +277,11 @@ vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
                (let ((reply (daemon:request stream "type" "session.start"
                                             "cwd" (uiop:native-namestring (uiop:getcwd))
                                             "model" (option-model)
-                                            "resume" (if (plusp (length argument))
-                                                         argument
-                                                         "true"))))
+                                            "resume" (a:if-let ((chosen (listed-choice argument)))
+                                                       (second chosen)
+                                                       (if (plusp (length argument))
+                                                           argument
+                                                           "true")))))
                  (if (gethash "success" reply)
                      (let ((session (gethash "session" reply)))
                        (setf *attached-to* (gethash "id" session))
@@ -316,6 +315,60 @@ is smaller than twelve handlers that each might.")
   "The model this client resolved, for sessions it starts later.")
 
 (defun option-model () *option-model*)
+
+(defvar *listed* '()
+  "The last list SHOW-SESSIONS printed, so a number means something.
+
+Numbered because nobody should have to type a timestamp to continue their own
+conversation. The id still works -- a position is a convenience, never the only
+handle, since a list printed ten minutes ago is not a promise.")
+
+(defun listed-choice (argument)
+  "ARGUMENT as a position into the last listing, or NIL if it is an id."
+  (a:when-let ((n (and (every #'digit-char-p argument)
+                       (plusp (length argument))
+                       (parse-integer argument :junk-allowed t))))
+    (nth (1- n) *listed*)))
+
+(defun show-sessions (stream current)
+  "Live sessions and recorded ones, in one numbered list.
+
+Two lists in two places was the actual problem: /sessions showed the live cells
+and the on-entry line counted recorded transcripts, they were different sets
+shown differently, and neither could be chosen from -- while both /switch and
+/continue wanted an id you had never been shown beside the thing it named."
+  (let* ((live (coerce (or (gethash "sessions"
+                                    (daemon:request stream "type" "session.list"))
+                           #())
+                       'list))
+         ;; Only conversations. A live session's own transcript is in this
+         ;; list too, holding nothing yet, and showing it as a separate
+         ;; `saved` row makes one session look like two unrelated things.
+         (here (remove-if (lambda (summary) (zerop (session:summary-messages summary)))
+                          (or (ignore-errors
+                               (session:list-sessions
+                                :cwd (uiop:native-namestring (uiop:getcwd)) :limit 10))
+                              '())))
+         (rows '()))
+    (format t "~&")
+    (loop for each in live
+          for n from 1
+          do (push (list :live (gethash "id" each)) rows)
+             (format t "  ~2d ~a live ~8t~a~16t~a~26t~a~%"
+                     n (if (equal current (gethash "id" each)) "*" " ")
+                     (gethash "id" each) (gethash "state" each)
+                     (one-line (or (gethash "label" each) "") 40)))
+    (loop for summary in (or here '())
+          for n from (1+ (length live))
+          do (push (list :recorded (session:summary-id summary)) rows)
+             (format t "  ~2d   saved~8t~a~16t~3d msg~26t~a~%"
+                     n (session:summary-id summary)
+                     (session:summary-messages summary)
+                     (one-line (or (session:summary-opening summary) "") 40)))
+    (setf *listed* (nreverse rows))
+    (if (null *listed*)
+        (format t "  no sessions here yet~%")
+        (format t "~%  /switch N moves to a live one; /continue N carries a saved one in.~%"))))
 
 (defun switch-session (stream from to)
   "Move this client from one session to another.

@@ -620,3 +620,19 @@ twice; it is somebody's record.")))
     ;; be told apart from one that worked.
     (true (search "found no session there" source))
     (true (search "loaded ~a (~d message~:p)" source))))
+
+(define-test "one session list, numbered, live and saved together"
+  ;; Two lists in two places was the real problem: /sessions showed live cells,
+  ;; the on-entry line counted recorded transcripts, they were different sets,
+  ;; and neither could be chosen from -- while /switch and /continue both
+  ;; wanted an id nobody had been shown beside the thing it named.
+  (let ((source (repository-file "src/cli/attached.lisp")))
+    (true (search "(defun show-sessions" source))
+    (true (search "session:list-sessions" source) "recorded sessions must be listed too")
+    (true (search "(defun listed-choice" source) "a number must mean something")
+    ;; A live session's own transcript is in the recorded list holding nothing
+    ;; yet; showing it as a separate `saved` row makes one session look like two.
+    (true (search "zerop (session:summary-messages summary)" source)
+          "an empty transcript belonging to a live session must not be listed")
+    ;; The id keeps working. A list printed ten minutes ago is not a promise.
+    (true (search "never the only" source))))
