@@ -927,3 +927,36 @@ print(sum([2, 3, 5]))
   ;; And the flags are the TERMINAL's state: a crash that leaves them pushed
   ;; leaves somebody's shell reporting keys it cannot read.
   (true (search "unwind-protect" (repository-file "src/tui/keyboard.lisp"))))
+
+(define-test "a key decodes the same whichever dialect the terminal speaks"
+  ;; The point of the protocol, in one assertion: Ctrl-I and Tab are the same
+  ;; byte (9) in the legacy dialect and cannot be told apart. Under kitty they
+  ;; are different keys. Everything above this should be written once against a
+  ;; KEY, not twice against two dialects.
+  (flet ((k (s) (tui:decode s))
+         (csi (body) (format nil "~c[~au" #\Escape body)))
+    ;; Legacy: indistinguishable, and honest about it.
+    (is eq :tab (tui:key-value (k (string (code-char 9)))))
+    ;; Kitty: 9 with the control bit set is Ctrl-I, not Tab.
+    (let ((ctrl-i (k (csi "105;5"))))
+      (is eql #\i (tui:key-value ctrl-i))
+      (true (tui:key-control ctrl-i))
+      (is string= "C-i" (tui:describe-key ctrl-i)))
+    (is eq :tab (tui:key-value (k (csi "9;1"))))
+    ;; The modifier field is the mask PLUS ONE. A decoder that forgets the
+    ;; subtraction reports shift on every unmodified key.
+    (let ((plain (k (csi "97;1"))))
+      (is eql #\a (tui:key-value plain))
+      (false (tui:key-shift plain))
+      (false (tui:key-control plain))
+      (false (tui:key-alt plain)))
+    ;; Legacy arrows still work -- most terminals will never speak kitty.
+    (is eq :up (tui:key-value (k (format nil "~c[A" #\Escape))))
+    (is eq :left (tui:key-value (k (format nil "~c[D" #\Escape))))
+    ;; C0: Ctrl-A is byte 1, and that much is recoverable.
+    (let ((ctrl-a (k (string (code-char 1)))))
+      (is eql #\a (tui:key-value ctrl-a))
+      (true (tui:key-control ctrl-a)))
+    ;; An unknown sequence is NIL, never a guess. A wrong key gets acted on.
+    (false (k (format nil "~c[999~~" #\Escape)))
+    (false (k ""))))

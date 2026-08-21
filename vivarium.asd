@@ -151,7 +151,8 @@
   :components ((:module "src/tui"
                 :serial t
                 :components ((:file "package")
-                             (:file "keyboard")))))
+                             (:file "keyboard")
+                             (:file "keys")))))
 
 (defsystem "vivarium/cli"
   :description "One entry point for every run."
