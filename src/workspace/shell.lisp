@@ -10,8 +10,16 @@
 
 (defvar *bash-timeout* 120)
 
+(defvar *on-output* nil
+  "Called with each piece of a running command's output, or NIL.
+
+Bound by the agent that is watching, so RUN-BASH does not have to know who is
+looking. Collecting everything and returning at the end is why a slow command
+read as a hang -- two minutes of nothing, then all of it at once.")
+
 (defun run-bash (command &key (timeout *bash-timeout*))
-  (multiple-value-bind (status output) (env:exec (environment) command :timeout timeout)
+  (multiple-value-bind (status output)
+      (env:exec (environment) command :timeout timeout :on-output *on-output*)
     (let* ((cut (bound:truncate-head output))
            (text (cond ((zerop (length (string-trim '(#\Space #\Newline #\Tab) output)))
                         "(no output)")

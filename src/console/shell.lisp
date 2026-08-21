@@ -99,6 +99,13 @@ the last one HERE."
         (:tool-start
          (format out "~a~%" (paint (format nil "  · ~a" (call-summary (getf event :call))) :cyan))
          (force-output out))
+        ;; A running command, as it runs. Dim and unbuffered: the point is
+        ;; seeing it happen, and output that only arrives once the command has
+        ;; finished is the hang this exists to remove.
+        (:tool-output
+         (a:when-let ((text (getf event :text)))
+           (write-string (paint text :dim) out)
+           (force-output out)))
         (:tool-end
          (format out "~a~%" (result-summary (getf event :result)))
          (force-output out))))))

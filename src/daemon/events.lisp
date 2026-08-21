@@ -21,7 +21,7 @@
     ;; the model
     "model.started" "model.delta" "model.completed"
     ;; tools
-    "tool.started" "tool.updated" "tool.completed" "tool.failed"
+    "tool.started" "tool.output" "tool.updated" "tool.completed" "tool.failed"
     ;; harness-level suspension, which is native rather than provider-supplied
     "task.suspended" "task.resumed"
     ;; The task tree: TASK.DRAINING is the parked outcome -- own work decided,
@@ -100,6 +100,11 @@ one that is not worth publishing."
                                                                (msg:tool-calls-in message))
                                                        'vector))))))
     (:tool-start (values "tool.started" (object "call" (call-json (getf loop-event :call)))))
+    ;; Streamed output from a command still running. Goes out on the same
+    ;; stream as everything else, so an attached session, a pane, and any
+    ;; future full-screen client all receive it without one of them needing to
+    ;; know a process exists.
+    (:tool-output (values "tool.output" (object "text" (getf loop-event :text))))
     (:tool-end (let ((result (getf loop-event :result)))
                  (values (if (tool:tool-result-error-p result) "tool.failed" "tool.completed")
                          (object "call" (call-json (getf loop-event :call))

@@ -70,7 +70,7 @@
                     (#:edit #:vivarium.edit))
   (:export #:*environment* #:environment #:with-environment #:display-path
            #:read-file #:write-file #:edit-file #:list-files #:find-files
-           #:search-files #:run-bash #:*bash-timeout* #:walk #:*excluded-paths*
+           #:search-files #:run-bash #:*bash-timeout* #:*on-output* #:walk #:*excluded-paths*
            #:read-tool #:write-tool #:edit-tool
            #:ls-tool #:find-tool #:grep-tool #:bash-tool
            #:file-tools #:search-tools #:tool-set

@@ -443,7 +443,15 @@ cancel. A cancel must not be erasable by the thing it cancels."
   (let* ((produced (agent:call-in-tool-context
                     agent
                     (lambda ()
-                      (let ((message (extension:fire :before-request (user-message text))))
+                      ;; A running command's output goes out as it arrives,
+                      ;; through the same event stream every other thing the
+                      ;; agent does uses -- so an attached session, a pane and
+                      ;; a future full-screen client all get it without any of
+                      ;; them knowing about processes.
+                      (let ((workspace:*on-output*
+                              (lambda (chunk)
+                                (agent:emit agent (list :type :tool-output :text chunk))))
+                            (message (extension:fire :before-request (user-message text))))
                         (loop*:run agent (list message) :context (agent-context agent)))))))
     (extension:fire :agent-end (list :agent agent :messages produced))
     (values (last-assistant-text produced) produced)))

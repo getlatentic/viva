@@ -152,9 +152,12 @@ Symlinks are reported as :SYMLINK and are not followed."))
 
 (defgeneric delete-path (environment path &key recursive))
 
-(defgeneric exec (environment command &key directory timeout)
+(defgeneric exec (environment command &key directory timeout on-output)
   (:documentation "Run COMMAND through a shell. Returns (values status output),
-output being stdout and stderr interleaved as the terminal would show them."))
+output being stdout and stderr interleaved as the terminal would show them.
+
+ON-OUTPUT, when given, is called with each piece as it arrives, so a caller can
+show a slow command working instead of showing nothing until it ends."))
 
 (defun path-exists-p (environment path)
   (and (file-info environment path) t))
@@ -245,27 +248,58 @@ output being stdout and stderr interleaved as the terminal would show them."))
 ;;; running the command sees. A test runner that writes progress to stderr and
 ;;; failures to stdout is unreadable any other way.
 
-(defmethod exec ((environment local-environment) command &key directory (timeout 120))
+(defun drain-available (stream sink on-output)
+  "Move whatever STREAM has ready into SINK, and hand the same text onward.
+
+READ-CHAR-NO-HANG rather than READ-LINE: a build that prints a progress bar
+with no newline for thirty seconds would otherwise show nothing, which is the
+hang this exists to remove."
+  (let ((chunk (with-output-to-string (piece)
+                 (loop for character = (read-char-no-hang stream nil nil)
+                       while character
+                       do (write-char character piece)
+                          (write-char character sink)))))
+    (when (and on-output (plusp (length chunk)))
+      (ignore-errors (funcall on-output chunk)))
+    chunk))
+
+(defmethod exec ((environment local-environment) command
+                 &key directory (timeout 120) on-output)
+  "Run COMMAND, returning (values STATUS OUTPUT).
+
+ON-OUTPUT, when given, is called with each piece as it arrives. Collecting
+everything and returning at the end is why a slow command read as a hang: two
+minutes of nothing, then everything at once. Pi has streamed since it existed
+and needs no background option for the `slow command` case because of it."
   (let ((resolved (absolute-path environment (or directory (env-cwd environment)))))
-    (let* ((output (make-string-output-stream))
+    (let* ((sink (make-string-output-stream))
            (process (sb-ext:run-program "/bin/sh" (list "-c" command)
-                                        :output output :error output
+                                        ;; :STREAM, so this can be read while it
+                                        ;; runs. The pipe is drained on every
+                                        ;; poll -- an undrained pipe fills and
+                                        ;; stops the process producing it.
+                                        :output :stream :error :output
                                         :directory (uiop:parse-native-namestring
                                                     (concatenate 'string resolved "/"))
                                         :environment (sb-ext:posix-environ)
                                         :wait nil :search nil))
+           (from (sb-ext:process-output process))
            (deadline (+ (get-internal-real-time)
                         (* timeout internal-time-units-per-second)))
            (timed-out nil))
       (loop while (eq :running (sb-ext:process-status process))
-            do (when (> (get-internal-real-time) deadline)
+            do (drain-available from sink on-output)
+               (when (> (get-internal-real-time) deadline)
                  (setf timed-out t)
                  (sb-ext:process-kill process sb-posix:sigkill :process-group)
                  (return))
                (sleep 0.02))
       (sb-ext:process-wait process)
+      ;; Whatever landed between the last poll and the exit.
+      (drain-available from sink on-output)
+      (ignore-errors (close from))
       (values (if timed-out :timeout (or (sb-ext:process-exit-code process) 1))
-              (let ((text (get-output-stream-string output)))
+              (let ((text (get-output-stream-string sink)))
                 (if timed-out
                     (format nil "~a~%[killed after ~ds]" text timeout)
                     text))))))

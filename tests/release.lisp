@@ -636,3 +636,34 @@ twice; it is somebody's record.")))
           "an empty transcript belonging to a live session must not be listed")
     ;; The id keeps working. A list printed ten minutes ago is not a promise.
     (true (search "never the only" source))))
+
+;;; A slow command that looks like work rather than a hang
+
+(define-test "a command's output arrives while it runs, not all at the end"
+  ;; EXEC collected everything into a string and returned at the end, so a
+  ;; two-minute install showed nothing and then everything. That is why a slow
+  ;; command read as a freeze -- and part of why background jobs got reached
+  ;; for to work around output nobody could see. Pi has streamed since it
+  ;; existed, which is why it needs no background option for this case.
+  (let ((pieces '())
+        (environment (env:make-local-environment :cwd "/tmp")))
+    (multiple-value-bind (status output)
+        (env:exec environment "for i in 1 2 3; do echo piece-$i; sleep 1; done"
+                  :on-output (lambda (chunk) (push chunk pieces)))
+      (is eql 0 status)
+      ;; Every line still reaches the caller as the return value: streaming
+      ;; must not cost the collected output the model reads.
+      (dolist (n '("piece-1" "piece-2" "piece-3"))
+        (true (search n output) "~a missing from the returned output" n))
+      (true (> (length pieces) 1)
+            "output arrived in one lump; nothing was streamed")
+      (true (search "piece-1" (format nil "~{~a~}" (reverse pieces)))
+            "the streamed pieces must carry the same text"))))
+
+(define-test "streamed output reaches the event stream, not just the caller"
+  ;; One stream for everything the agent does, so an attached session, a pane
+  ;; and any future full-screen client all receive it without one of them
+  ;; needing to know a process exists.
+  (true (search "workspace:*on-output*" (repository-file "src/workspace/harness.lisp")))
+  (true (search ":tool-output" (repository-file "src/console/shell.lisp")))
+  (true (search "\"tool.output\"" (repository-file "src/daemon/events.lisp"))))
