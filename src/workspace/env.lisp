@@ -152,6 +152,11 @@ Symlinks are reported as :SYMLINK and are not followed."))
 
 (defgeneric delete-path (environment path &key recursive))
 
+(defgeneric rename-path (environment from to)
+  (:documentation "Move FROM to TO. BOTH ends are resolved through the
+environment, so a move cannot be the way something leaves the root that
+ABSOLUTE-PATH is there to confine it to."))
+
 (defgeneric exec (environment command &key directory timeout on-output)
   (:documentation "Run COMMAND through a shell. Returns (values status output),
 output being stdout and stderr interleaved as the terminal would show them.
@@ -228,6 +233,16 @@ show a slow command working instead of showing nothing until it ends."))
   (let ((resolved (absolute-path environment path)))
     (ensure-directories-exist (uiop:parse-native-namestring (concatenate 'string resolved "/")))
     resolved))
+
+(defmethod rename-path ((environment local-environment) from to)
+  (let ((source (absolute-path environment from))
+        (target (absolute-path environment to)))
+    (ensure-directories-exist
+     (uiop:parse-native-namestring (concatenate 'string (parent-path target) "/")))
+    ;; RENAME rather than copy-then-delete: a move interrupted halfway leaves
+    ;; the thing in one place or the other, never in neither and never in both.
+    (sb-posix:rename source target)
+    target))
 
 (defmethod delete-path ((environment local-environment) path &key recursive)
   (let* ((resolved (absolute-path environment path))

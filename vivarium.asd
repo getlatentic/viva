@@ -56,6 +56,7 @@
                              (:file "prompt")
                              (:file "skills")
                              (:file "trust")
+                             (:file "decay")
                              (:file "registry")
                              (:file "registration")
                              (:file "mcp")

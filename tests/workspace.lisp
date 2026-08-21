@@ -1702,3 +1702,118 @@ print(json.load(sys.stdin)['path'])
         (harness:ask agent "three")
         (is = 350 (harness:agent-prompt-tokens agent)
             "a reply carrying no usage disturbed the total")))))
+
+;;; ---------------------------------------------------------------------------
+;;; Retention decays (#42)
+;;;
+;;; The reflection turn writes and nothing removes, so the cost of a wrong
+;;; retention is paid on every later task, in loaded context, forever. #40 made
+;;; this a prerequisite rather than a nicety: the control it named must prune
+;;; what goes unused, or it is weaker than the published behaviour it stands in
+;;; for and any advantage the treatment shows is partly an advantage over a
+;;; control we handicapped.
+;;; ---------------------------------------------------------------------------
+
+(defun write-skill (environment name &key (language "") (uses nil) (idle-days nil))
+  "A skill on disk, optionally with a use history."
+  ;; Into the directory the LOADER looks in, asked for by name. The first
+  ;; draft built the path by concatenation, assumed ENV-CWD ends in a
+  ;; separator, wrote the fixture into a SIBLING directory -- and still
+  ;; passed, because the test read it back the same wrong way. Consistently
+  ;; wrong is invisible until something else resolves the path correctly and
+  ;; disagrees, which is exactly what retiring did.
+  ;; Asked for by NAME. Indexing into SKILL-DIRECTORIES by position is how the
+  ;; first draft of this fixture wrote its skills into the home of whoever ran
+  ;; the suite: `first` reads like the obvious one and means ~/.vivarium.
+  (let ((directory (env:join-path (harness:project-resource-directory environment "skills")
+                                  name)))
+    (env:ensure-directory environment directory)
+    (env:write-text environment (env:join-path directory "SKILL.md")
+                    (format nil "---~%name: ~a~%description: a skill under test~%---~%~%~
+body~%~@[~%```~a~%print(1)~%```~%~]" name (and (plusp (length language)) language)))
+    (when uses
+      (env:write-text environment (env:join-path directory "uses")
+                      (format nil "~d ~d~%" uses
+                              (- (get-universal-time) (* (or idle-days 0) 86400)))))
+    directory))
+
+(define-test "a skill unused past the window is retired and stops loading"
+  (with-repository (environment)
+    (write-skill environment "still-used" :uses 1 :idle-days 2)
+    (write-skill environment "long-quiet" :uses 1 :idle-days 90)
+    (let* ((directories (harness:skill-directories environment))
+           (before (skill:load-skills environment directories)))
+      ;; By NAME, not by count. The throwaway repository ships a `tidy` skill
+      ;; of its own, so a total is a number about the fixture rather than
+      ;; about retirement.
+      (true (find "long-quiet" before :key #'skill:skill-name :test #'string=)
+            "the fixture did not load")
+      (let ((retired (decay:sweep-skills environment before :window 30)))
+        (is = 1 (length retired) "the quiet skill was not retired")
+        (is string= "long-quiet" (decay:retirement-name (first retired)))
+        ;; RETIRED, NOT DELETED: a threshold is sometimes wrong, and the undo
+        ;; has to be `mv`.
+        (true (env:path-exists-p
+               environment (env:join-path (decay::retired-directory environment :skill)
+                                          "long-quiet" "SKILL.md"))
+              "the retired skill was destroyed rather than moved")
+        (true (search "not deleted" (decay:describe-retirement (first retired)))
+              "the message does not say where it went: ~a"
+              (decay:describe-retirement (first retired))))
+      ;; And it stops loading, which is the whole point.
+      (let ((after (skill:load-skills environment directories)))
+        (false (find "long-quiet" after :key #'skill:skill-name :test #'string=)
+               "a retired skill is still being loaded")
+        (true (find "still-used" after :key #'skill:skill-name :test #'string=)
+              "retiring one skill took another with it")))))
+
+(define-test "what is used often is kept however long it lies quiet"
+  ;; Something used twenty times and quiet for a month is seasonal, not dead.
+  ;; Retiring it is how a person learns not to trust the mechanism.
+  (with-repository (environment)
+    (write-skill environment "seasonal" :uses 20 :idle-days 200)
+    (let* ((directories (harness:skill-directories environment))
+           (skills (skill:load-skills environment directories)))
+      (is = 0 (length (decay:sweep-skills environment skills :window 30 :keep 5))
+          "a heavily used skill was retired for lying quiet")
+      (true (find "seasonal" (skill:load-skills environment directories)
+                  :key #'skill:skill-name :test #'string=)))))
+
+(define-test "a retention with no history is never retired"
+  ;; Every skill written before the timestamp existed has no stamp. Retiring on
+  ;; missing evidence would delete the history of everyone who upgraded rather
+  ;; than the retentions that stopped paying.
+  (with-repository (environment)
+    (write-skill environment "from-before")
+    (let* ((directories (harness:skill-directories environment))
+           (skills (skill:load-skills environment directories)))
+      (is = 0 (length (decay:sweep-skills environment skills :window 1))
+          "a skill with no use history was retired")))
+  (false (decay:retire-p 0 nil (get-universal-time))))
+
+(define-test "the use counter records when, as well as how often"
+  ;; One counter, two directions: reuse graduates (#8), disuse retires (#42).
+  (with-repository (environment)
+    (write-skill environment "counted" :language "python")
+    (let* ((directories (harness:skill-directories environment))
+           (skill (first (skill:load-skills environment directories))))
+      (is = 0 (skill:uses-of environment skill))
+      (false (skill:last-used-of environment skill))
+      (skill:note-use environment skill)
+      (is = 1 (skill:uses-of environment skill))
+      (true (skill:last-used-of environment skill) "no moment was recorded")
+      (is = 0 (decay:idle-days (skill:last-used-of environment skill) (get-universal-time))
+          "a skill used just now looks idle")
+      ;; A `uses` file from before the stamp existed still reads correctly --
+      ;; nothing has to be migrated.
+      (env:write-text environment (skill:uses-path skill) (format nil "7~%"))
+      (is = 7 (skill:uses-of environment skill) "the old one-number format stopped parsing")
+      (false (skill:last-used-of environment skill)))))
+
+(define-test "the decay window and counter are settings, not constants"
+  ;; In the settings table rather than as bare defparameters, so `vivarium
+  ;; config` shows them and cannot drift out of step with what is read.
+  (true (assoc "retire-after-days" vivarium.config::+settings+ :test #'string=)
+        "the window is not a setting a person can change")
+  (true (assoc "retire-keep-above" vivarium.config::+settings+ :test #'string=)
+        "the counter is not a setting a person can change"))

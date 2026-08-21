@@ -474,11 +474,24 @@ could overturn would make the order of extensions load-bearing and invisible."
 
 ;;; Construction
 
+(defun machine-resource-directory (leaf)
+  "Where resources shared across every project live: ~/.vivarium/<leaf>."
+  (env:join-path (uiop:native-namestring (user-homedir-pathname)) ".vivarium" leaf))
+
+(defun project-resource-directory (environment leaf)
+  "Where THIS project's resources live: <cwd>/.vivarium/<leaf>."
+  (env:join-path (env:env-cwd environment) ".vivarium" leaf))
+
 (defun resource-directories (environment leaf)
   "The machine's, then the project's. Later wins, because a project that ships a
-`review` template means its own."
-  (list (env:join-path (uiop:native-namestring (user-homedir-pathname)) ".vivarium" leaf)
-        (env:join-path (env:env-cwd environment) ".vivarium" leaf)))
+`review` template means its own.
+
+Named accessors beside it because the order is load order, and `(first ...)`
+reads like `the obvious one` while meaning `the user's home directory`. A test
+fixture that indexed by position wrote its skills into the home of whoever ran
+the suite -- and passed, because it read them back from the same place."
+  (list (machine-resource-directory leaf)
+        (project-resource-directory environment leaf)))
 
 (defun skill-directories (environment) (resource-directories environment "skills"))
 

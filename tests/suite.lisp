@@ -31,6 +31,7 @@
                     (#:edit #:vivarium.edit)
                     (#:workspace #:vivarium.workspace)
                     (#:skill #:vivarium.skill)
+                    (#:decay #:vivarium.decay)
                     (#:memory #:vivarium.memory)
                     (#:extension #:vivarium.extension)
                     (#:session #:vivarium.session)

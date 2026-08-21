@@ -193,7 +193,25 @@ looks like a feature."
        (parse-integer (env:read-text environment (uses-path skill)) :junk-allowed t))
       0))
 
-(defun note-use (environment skill)
+(defun last-used-of (environment skill)
+  "When this skill was last run, as a universal time, or NIL if never.
+
+Written on the same line as the count and read past it. A `uses` file from
+before this existed holds only a number, and PARSE-INTEGER with :junk-allowed
+stops at the newline either way -- so the older format still reads correctly
+and nothing has to be migrated."
+  (a:when-let ((text (ignore-errors (env:read-text environment (uses-path skill)))))
+    (let ((space (position #\Space text)))
+      (when space
+        (parse-integer text :start (1+ space) :junk-allowed t)))))
+
+(defun note-use (environment skill &optional (when (get-universal-time)))
+  "Record one run: the count that promotes, and the moment that retires.
+
+One counter, two directions. Reuse graduates a skill to a tool (#8); disuse
+retires it (#42). A second counter for the second question would be a second
+thing to keep in step."
   (let ((next (1+ (uses-of environment skill))))
-    (ignore-errors (env:write-text environment (uses-path skill) (format nil "~d~%" next)))
+    (ignore-errors (env:write-text environment (uses-path skill)
+                                   (format nil "~d ~d~%" next when)))
     next))

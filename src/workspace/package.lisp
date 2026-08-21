@@ -27,7 +27,7 @@
            #:canonical-directory
            #:read-text #:read-bytes #:write-text #:file-info
            #:info-name #:info-path #:info-kind #:info-size
-           #:list-directory #:ensure-directory #:delete-path #:path-exists-p
+           #:list-directory #:ensure-directory #:delete-path #:rename-path #:path-exists-p
            #:exec #:exec-status #:exec-output
            #:env-error #:env-error-code #:env-error-path #:complain))
 
@@ -66,7 +66,7 @@
                     (#:glob #:vivarium.glob))
   (:export #:skill #:skill-name #:skill-description #:skill-content
            #:skill-path #:skill-hidden-p #:skill-language
-           #:snippet-of #:uses-of #:note-use #:+interpreters+
+           #:snippet-of #:uses-of #:note-use #:last-used-of #:uses-path #:+interpreters+
            #:load-skills #:find-skill #:prompt-block #:invocation
            #:parse-frontmatter #:skill-warning #:warning-message #:warning-path))
 
@@ -96,6 +96,16 @@
                     (#:env #:vivarium.env))
   (:export #:trust #:trusted-p #:trust-file #:trusted-roots #:permitted-p #:canonical #:within-p #:*trust-file*
            #:machine-directory-p #:home-directory))
+
+(defpackage #:vivarium.decay
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:env #:vivarium.env)
+                    (#:skill #:vivarium.skill))
+  (:export #:retire-p #:retire #:sweep-skills #:retirement #:describe-retirement
+           #:retirement-name #:retirement-kind #:retirement-uses
+           #:retirement-idle-days #:retirement-to #:idle-days
+           #:*window-days* #:*keep-above-uses*))
 
 (defpackage #:vivarium.registry
   (:use #:cl)
@@ -212,6 +222,7 @@
                     (#:workspace #:vivarium.workspace)
                     (#:skill #:vivarium.skill)
                     (#:registry #:vivarium.registry)
+                    (#:decay #:vivarium.decay)
                     (#:memory #:vivarium.memory)
                     (#:extension #:vivarium.extension)
                     (#:session #:vivarium.session)
@@ -230,7 +241,8 @@
            #:compact-now #:set-model #:set-active-tools #:apply-settings
            #:send-message #:append-custom #:navigate #:tree-lines #:close-agent
            #:delegate #:delegate-tool #:sub-agent #:agent-lane #:delegate-async
-           #:ask #:converse #:resume #:refresh-resources #:harness-tool-set #:record
+           #:machine-resource-directory #:project-resource-directory
+           #:retire-unused #:ask #:converse #:resume #:refresh-resources #:harness-tool-set #:record
            #:reflect #:*reflection-budget* #:*reflection-prompt*
            #:*agent* #:*default-model* #:*default-provider-name*))
 

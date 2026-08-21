@@ -27,7 +27,9 @@
     ("retain" . "Run the retention policy after each task: true or false.")
     ("colour" . "Paint output: true, false, or unset to follow the terminal.")
     ("root" . "Refuse any path outside this directory.")
-    ("context-limit" . "How much context the model will accept."))
+    ("context-limit" . "How much context the model will accept.")
+    ("retire-after-days" . "Days a retained skill may go unused before it is retired.")
+    ("retire-keep-above" . "Uses above which a retention is kept however long it lies quiet."))
   "Every setting, and what it is for. A table rather than scattered lookups so
 `vivarium config` cannot drift out of step with what is actually read.")
 

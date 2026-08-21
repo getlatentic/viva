@@ -83,6 +83,21 @@ create_capability / call_capability / promote_capability: the in-image path
 that lost 0/6 in KC6 and, worse for a retention policy, evaporates when the
 process exits.")
 
+(defun retire-unused (agent &key (now (get-universal-time)))
+  "Retire the skills that have stopped earning their place. Returns what was
+retired, for the caller to show.
+
+Here rather than inside the reflection turn, and after it rather than before.
+Reflection is a model request that decides what to KEEP; retiring is a
+threshold on evidence already recorded, and mixing the two would let a model
+argue its way out of a rule -- or spend tokens re-deciding something the
+counters already answer.
+
+After, because a skill written by this very reflection has a fresh timestamp
+and cannot be retired by it, while sweeping first would race the write."
+  (a:when-let ((environment (agent-environment agent)))
+    (decay:sweep-skills environment (agent-skills agent) :now now)))
+
 (defun reflect (agent)
   "Run the retention policy's reflection turn on AGENT's just-finished task.
 
@@ -93,4 +108,8 @@ left it, so the turn has room of its own without inheriting starvation."
   (unless (agent-aborting agent)
     (setf (agent-request-limit agent)
           (+ (agent-requests agent) *reflection-budget*))
-    (ask agent *reflection-prompt* :reset nil)))
+    (prog1 (ask agent *reflection-prompt* :reset nil)
+      ;; A retirement nobody is told about is indistinguishable from a bug, so
+      ;; it goes to the same place every other retention decision goes.
+      (dolist (retirement (ignore-errors (retire-unused agent)))
+        (format *error-output* "~&~a~%" (decay:describe-retirement retirement))))))
