@@ -1,38 +1,25 @@
 ---
 name: sum-span-elapsed
-description: Total the elapsed time of SPAN records in JSONL trace files under data/, converting units to whole milliseconds.
+description: Total elapsed time of span records across vivarium JSONL trace files (data/*.jsonl)
 language: python
 ---
 
-Use when a task asks for the elapsed time of spans (or any aggregation of
-body.span.elapsed) in the JSONL trace files. Only kind=="span" records count;
-logs carry elapsed too but must be excluded. Elapsed is
-{"value": n, "unit": u} with u in ms/us/s: us floors down to whole ms,
-s is 1000ms, and a span with no elapsed contributes 0.
+Use when a task asks to aggregate elapsed times from the JSONL trace files in this workspace. Only kind=="span" records count; a "log" record is not a span. Elapsed lives at body.span.elapsed as {"value": n, "unit": u} with unit "ms", "us" or "s"; microseconds floor-divide to whole ms (under 1000us contributes 0), seconds are 1000ms, and a span with no elapsed counts as 0.
 
 ```python
 import json, glob
 
 total = 0
 for path in sorted(glob.glob('data/*.jsonl')):
-    for line in open(path):
-        line = line.strip()
-        if not line:
-            continue
-        rec = json.loads(line)
-        if rec.get('kind') != 'span':
-            continue
-        elapsed = rec.get('body', {}).get('span', {}).get('elapsed')
-        if elapsed is None:
-            continue
-        value, unit = elapsed['value'], elapsed['unit']
-        if unit == 'ms':
-            total += value
-        elif unit == 'us':
-            total += value // 1000
-        elif unit == 's':
-            total += value * 1000
-        else:
-            raise ValueError(unit)
+    with open(path) as f:
+        for line in f:
+            rec = json.loads(line)
+            if rec.get('kind') != 'span':
+                continue
+            el = rec.get('body', {}).get('span', {}).get('elapsed')
+            if el is None:
+                continue
+            v, u = el['value'], el['unit']
+            total += v if u == 'ms' else (v // 1000 if u == 'us' else v * 1000)
 print(total)
 ```

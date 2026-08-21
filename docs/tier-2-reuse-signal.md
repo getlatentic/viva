@@ -65,3 +65,56 @@ A skill that must be *called* may be ignored in favour of writing the code
 again, exactly as a tool can be. That is measurable the same way this finding
 was: run the corpus and count. If calls do not happen, the signal is worthless
 and (1) or (3) come back — with the advantage that we would then know.
+
+## Measured, 2026-08-21 — the risk this document named actually happens
+
+The risk written here was: *a skill that must be called may be ignored in
+favour of writing the code again.* One clean run of `experiments/tier3` (8
+variants, one shape, policy on, deepseek-v4-flash, off-peak) measured it.
+
+**The skill was written during task 3's reflection.** From task 4 onward it
+appears in the system prompt that was *actually sent* — read out of the request
+payload, not off the agent:
+
+```
+task  skills carried in the prompt that was SENT
+v1    []
+v2    []
+v3    []
+v4    ['sum-span-elapsed']
+v5    ['sum-span-elapsed']
+v6    ['sum-span-elapsed']
+v7    ['sum-span-elapsed']
+v8    ['sum-span-elapsed']
+```
+
+**Five tasks could have called it. Two did.** The `uses` counter reads `2`, and
+the transcripts agree: an extra `run_skill` in v4 and v8, none in v5, v6 or v7.
+The model re-derived the transformation three times out of five with the skill
+sitting in its prompt.
+
+**So nothing graduated.** The threshold is three runs; the counter reached two.
+The registry stayed empty in a corpus built specifically to reach tier 3.
+
+**What this is and is not.** It is one run: five opportunities, n = 1, no
+repeats, no control. It is not a powered result and no threshold should move
+because of it. What it does establish is that the failure mode is real rather
+than hypothetical — the skill was present, was findable, and was skipped more
+often than it was used.
+
+**Two consequences.**
+
+*For #43.* The treatment arm needs graduation to actually happen, and a corpus
+of eight tasks did not get there. A family whose transformation is reached for
+only 40% of the time will not accumulate three uses inside a run of that
+length. Families must be sized so the skill is reached often enough to
+graduate, or the treatment arm measures nothing and the comparison is between
+two controls. `docs/b15-preregistration.md` requires six tasks needing the same
+transformation for exactly this reason; this run says six may still not be
+enough at a 40% call rate, and that the arm should be checked for graduation
+before its numbers are read.
+
+*For the ladder.* Calling a skill is a choice the model makes each time, and it
+made it twice in five. Whether the prompt can raise that rate — or whether the
+counter should credit re-derivation of a skill's own content — is the open
+question this measurement opens, not one it settles.

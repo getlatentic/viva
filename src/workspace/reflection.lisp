@@ -51,10 +51,24 @@ Route by the SHAPE of the thing, not by how pleased you are with it.
                         \"description\": \"...\", \"required\": true}]}
 
    -- and the script it names, which reads one JSON object of arguments on
-   stdin and prints its result. THIS IS THE EXPENSIVE TIER: it costs a
-   manifest, a script and a calling convention to get wrong. Prefer a skill
-   unless the reuse is already evident -- you have reached for this same
-   transformation more than once, in this task or a previous one.
+   stdin and prints its result.
+
+   IF YOU DECLARE ANY PARAMETERS, the script must also answer a describe
+   request, or the tool is refused and nothing is registered. When the JSON on
+   stdin is exactly {\"vivarium\": \"describe\"}, print your own parameter list
+   and exit, doing nothing else:
+
+       {\"parameters\": [{\"name\": \"path\", \"type\": \"string\",
+                        \"required\": true}]}
+
+   That is what stops a manifest promising something the script cannot take,
+   which fails later, in another task, to whoever calls it. A tool that
+   declares NO parameters needs none of this.
+
+   THIS IS THE EXPENSIVE TIER: it costs a manifest, a script and a calling
+   convention to get wrong. Prefer a skill unless the reuse is already
+   evident -- you have reached for this same transformation more than once, in
+   this task or a previous one.
 
 The dividing line between 2 and 3 is not quality, it is EVIDENCE OF REUSE.
 Code you might want again is a skill. Code you have already wanted again is

@@ -1881,3 +1881,22 @@ body~%~@[~%```~a~%print(1)~%```~%~]" name (and (plusp (length language)) languag
         (is = 2 (prompt-records)
             "a skill appearing mid-session did not show up in the record")
         (session:close-session session)))))
+
+(define-test "the reflection prompt teaches the convention registration enforces"
+  ;; #41 made registration refuse a tool whose script cannot receive its
+  ;; declared parameters. The prompt that tells a model how to write one did
+  ;; not mention the describe request, so reflection would have written tools
+  ;; that were then refused -- a check whose only effect was to stop retention
+  ;; working. A rule the writer is not told is a trap, not a contract.
+  (let ((prompt vivarium.harness::*reflection-prompt*))
+    (true (search "describe" prompt) "the prompt never mentions describe")
+    (true (search "vivarium" (subseq prompt (or (search "describe" prompt) 0)))
+          "the prompt does not say what to send")
+    (true (search "NO parameters" prompt)
+          "the prompt does not say when the convention is unnecessary"))
+  ;; And the string it teaches is the string registration actually sends.
+  (let ((taught vivarium.harness::*reflection-prompt*))
+    (true (search "\"vivarium\"" taught) "the key is not quoted as it is on the wire")
+    (true (search "\"describe\"" taught))
+    (true (search "vivarium" registry:*describe-request*))
+    (true (search "describe" registry:*describe-request*))))
