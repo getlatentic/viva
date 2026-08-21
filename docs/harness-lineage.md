@@ -74,7 +74,7 @@ stays recoverable.
 
 | Pi | here | why |
 |---|---|---|
-| streams for its terminal UI | streams, and can **abort in flight** | see below — the abort is a capability Pi and Codex do not have, not a UI feature |
+| polls steering at the end of an iteration | ends the request a steer interrupts, and re-enters carrying it | see below — the difference is the policy, not the abort |
 | prompt and tools resolved before the loop | read through a generic function per request | the entire point of [E3](e3-subturn-steering.md) — a mid-run change must land on the next request |
 | callbacks in an `AgentLoopConfig` object | generic functions on the agent | so [E4](e4-self-editing-object.md)'s agent can override its own hooks with `defmethod` |
 | `complete` is a fixed provider call | generic on the agent | lets a scored trial swap in a scripted responder, and lets an agent change its own provider |
@@ -84,7 +84,7 @@ request, so a mid-run change lands"* and *"a tool added mid-run is available on 
 next request"*. That is E3's capability-injection claim demonstrated at loop level —
 the real experiment is whether it changes outcomes.
 
-## Streaming, and the tier above Pi and Codex
+## Streaming, and what it actually bought
 
 Originally built blocking, on the reasoning that the loop's control flow depends
 only on the stop reason and the tool calls. That was true and beside the point:
@@ -101,11 +101,18 @@ abort in flight:  ABORTED after   1,927 ms and    0 deltas
 same, unaborted:  STOP    after 323,875 ms and 1,352 deltas
 ```
 
-**168× faster to stop.** With `abort-on-steer`, a steer queued from another thread
-ends the request it interrupts. Pi delivers a steer no earlier than the next request
-(`agent-loop.ts:259`); Codex can preempt a *waiting* tool but not an in-flight
-completion. Neither can do this. The policy is opt-in — default off reproduces Pi's
-behaviour exactly, which keeps the control arm honest.
+**168× faster to stop** than letting the same request run to completion. The
+mechanism is not exotic and is not ours: Pi hands its `AbortSignal` to the streaming
+fetch (`packages/ai/src/api/openai-completions.ts:323`) and ends a completion
+mid-generation too. Any harness whose HTTP client takes a signal can.
+
+What differs is one line of policy. Pi polls steering at the *end* of an iteration
+(`agent-loop.ts:259`), so a steer arriving mid-generation waits out the current
+request, and an abort ends the run (`agent-loop.ts:196`). With `abort-on-steer` a
+steer queued from another thread ends the request it interrupts and the loop
+re-enters carrying it — abort-and-resume against abort-and-stop. The policy is
+opt-in; default off reproduces Pi's behaviour exactly, which keeps the control arm
+honest.
 
 Two smaller returns, both of which would have saved time earlier: time-to-first-token
 is now measurable (1,657 ms on a cold cache against 7,142 ms total), and a run that is

@@ -101,9 +101,14 @@ control flow only needs stop-reason + tool-calls — true but beside the point:
 **without streaming you cannot abort a request in flight.** `should-abort-p` is
 checked before every line read; with `:abort-on-steer t` a steer from another thread
 kills the request it interrupts. Measured: **ABORTED at 1,927 ms / 0 deltas vs STOP at
-323,875 ms / 1,352 deltas — 168× faster to stop.** Pi delivers a steer no earlier than
-the next request; Codex preempts a *waiting* tool but not an in-flight completion.
-Neither can do this. Opt-in, default off = Pi's behaviour, keeping the control honest.
+323,875 ms / 1,352 deltas — 168× faster to stop.** Opt-in, default off = Pi's
+behaviour, keeping the control honest.
+**Corrected 2026-08-21** — this entry claimed abort-in-flight was a capability Pi and
+Codex lack. It is not: Pi passes its `AbortSignal` into the streaming fetch
+(`packages/ai/src/api/openai-completions.ts:323`). What Pi lacks is the *policy* —
+steering is polled at the end of an iteration (`agent-loop.ts:259`) and an abort ends
+the run, so abort-and-resume is the only difference. Written from our own docs instead
+of the source; see `docs/harness-comparison.md`.
 Gotcha: llama.cpp's final usage chunk has `choices: null` and jzon spells null as a
 symbol — every field read goes through a `present` guard.
 

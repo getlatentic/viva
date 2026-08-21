@@ -13,17 +13,131 @@ findings survive a fresh clone, four other projects' history does not.
 | `codex/` | [openai/codex](https://github.com/openai/codex) | Rust |
 | `pi/` | [badlogic/pi-mono](https://github.com/badlogic/pi-mono) | TypeScript — vivarium's lineage |
 | `opencode/` | [sst/opencode](https://github.com/sst/opencode) | TypeScript |
-| `deepseek-harness/` | [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) | TypeScript |
+| `deepseek-harness/` | [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) | TypeScript, everything-is-a-plugin over [Cordis](https://github.com/cordiverse/cordis) |
+
+Claude Code appears in the tables below and is **not** cloned: it is closed
+source, and every claim about it here comes from its own instruction surface
+as a running harness, which is weaker evidence than the source of the other
+four. Where its internals are unknown, the cell says so.
 
 Two unrelated projects are called opencode: `sst/opencode` (TypeScript) is the
 one here; `opencode-ai/opencode` (Go) is a different thing with the same name.
 The DeepSeek docs live at `deepseek-harness.github.io` but the code is under
 the `deepseek-ai` org, which is why searching the obvious name finds nothing.
 
-## What the comparison has already settled
+## Rules
 
-**Long-running commands**, which is what prompted the clones. Three designs,
-and they are not variations on one idea:
+Nothing here is edited, imported, or copied. It is read. Anything worth taking
+is reimplemented and attributed in a commit message, and anything not taken is
+worth saying why — `docs/harness-lineage.md` is where Pi's divergences already
+live.
+
+A claim in this file names the file and line it was read from. Three claims
+that used to sit here were written from our own documentation instead, and the
+clones falsified all three; the sections below record what the source says.
+
+## Retention: who decides that something is worth keeping
+
+The axis this project calls Level 3, and the one where reading the clones cost
+the most: **the harness-owns-WHEN design is not unique to vivarium. Codex
+ships it.**
+
+| | decides WHEN | artifact | graduation rule | survives restart |
+|---|---|---|---|---|
+| Codex | **the harness** — background pipeline at root-session start | `MEMORY.md`, `memory_summary.md`, `skills/` with executable `scripts/` | "procedure repeats (more than once)" → skill | yes, git-baselined |
+| Claude Code | **the model**, plus an explicit user command | memory files + an index; skills may carry scripts | none mechanised (observed) | yes, files |
+| vivarium | **the harness** — one bounded turn at task end | memory line, `.vivarium/skills/`, `.vivarium/tools/` | evidence of prior reuse, tier 2 → tier 3 | yes, files |
+| deepseek-harness | nobody — a repo rule the model is told to obey | Agent Notes, CI-gated | n/a | yes, files |
+| opencode | n/a — consumes skills, authors none | — | — | — |
+| pi | none | — | — | — |
+
+### What Codex actually does
+
+`codex-rs/memories/README.md`. Triggered when a root session starts — not
+ephemeral, not a sub-agent, feature enabled, state DB available — and runs
+asynchronously in the background, in two phases.
+
+- **Phase 1, per-thread extraction.** Claims a bounded set of recent, idle
+  rollouts from a state DB under a lease, filters each to memory-relevant
+  items, sends it to a model, and stores a structured `raw_memory` plus a
+  `rollout_summary`. Secrets redacted. Failures get retry backoff rather than
+  a hot loop.
+- **Phase 2, global consolidation.** One global lock. Ranks stage-1 outputs by
+  **`usage_count`, then `last_usage`**, drops anything outside
+  `max_unused_days`, syncs artifacts under `~/.codex/memories/` — a git
+  baseline directory — prunes stale summaries, writes a `git`-style workspace
+  diff, and spawns a consolidation sub-agent (no approvals, no network, local
+  write only) pointed at that diff to update `MEMORY.md`, `memory_summary.md`
+  and `skills/`.
+
+Their consolidation prompt carries the graduation rule this project derived
+from KC6, in the same words:
+
+> "Create a skill when the procedure repeats (more than once) and clearly
+> saves time or reduces errors for future agents."
+> — `codex-rs/memories/write/templates/memories/consolidation.md:705`
+
+and their skill layout carries the executable tier:
+`scripts/<tool>.*  # optional; executed, not loaded (prefer stdlib-only)`.
+
+So harness-owns-WHEN, model-owns-WHAT, route by shape, graduate on reuse,
+count usage, prune what does not pay — all six, in production, backed by a
+database and a git baseline. What Codex does **not** do is promote a skill
+into a registered, named, versioned tool that runs with the model out of the
+loop; its terminal artifact is a text package a model reads.
+
+The consequence for this repository is not that the reflection turn was
+wrong. It is that its novelty claim was, and the baseline moved: the honest
+control for a retention experiment is now Codex's pipeline, not the KC6
+zero-investment null.
+
+## The live door: deepseek-harness built it, in TypeScript, and refused to promote it
+
+`packages/extensions/tool-cordis/README.md` and the design note at
+`.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md`.
+Five model-facing tools over the live runtime the agent is running inside:
+`cordis_inspect`, `cordis_define`, `cordis_run`, `cordis_stop`,
+`cordis_undefine`. That is this project's door, in another language.
+
+Three parts worth taking seriously:
+
+- **A generated API catalog.** Their stated problem: model-written code has to
+  call service APIs whose source it has never seen, and "guessed method
+  signatures and, worse, guessed return-value shapes cost many steps of blind
+  probing." So `cordis_inspect` serves a generated, freshness-gated projection
+  of every service signature and event, intersected with the live service
+  store — what is RUNNING from the store, what it CAN DO from the catalog.
+  A JSDoc edit that does not regenerate the catalog fails a gate.
+- **Composition is the point, not registration.** They explicitly rejected a
+  structured `register_tool` verb in favour of one mount primitive, because a
+  registration payload cannot express one capability depending on another.
+  Mounts relate through ordinary `provide`/`inject`: unmounting A returns B to
+  pending with its registrations unwound.
+- **No promotion, by decision.** "They create no Plugin file, install no
+  package, change no `cordis.yml` … do not survive restart, and cannot be
+  promoted automatically. To keep an experiment, ask the Agent to implement a
+  normal Plugin through the regular development workflow."
+
+That last line is KC6's verdict reached independently — and they shipped the
+ephemeral half anyway, because mid-session composition is where it pays. It is
+the same residual claim `docs/retention-policy.md` narrowed to.
+
+### Python drives; TypeScript extends
+
+`python/sdk/README.md`. The Python SDK does not extend the harness in Python.
+It launches a bundled single-file `dsh-jsonrpc-agent` executable and drives it
+over JSON-RPC stdio; the plugin composition it runs is a Cordis YAML of
+TypeScript plugins. Python is a **client language**, TypeScript is the
+**extension language**, and the two never meet in the same artifact.
+
+Read against KC6's 32% fluency tax — every point of which traced to coupling
+"registered tool" to "compiled into the SBCL image" — this is the same split
+`docs/retention-policy.md` ratified: drive from whatever the caller writes,
+extend in whatever the model writes best.
+
+## Long-running commands
+
+Three designs, and they are not variations on one idea:
 
 - **Pi** — `bash` takes `command` and an optional `timeout` with *no default*.
   It streams stdout and stderr as they arrive and kills the process tree on an
@@ -62,39 +176,50 @@ hang — and part of why background jobs got reached for at all. Issue #35.
 `killProcessTree`, vivarium kills the process group, and both arrived there
 the same way.
 
-## Rules
+## Abort in flight is not a differentiator
 
-Nothing here is edited, imported, or copied. It is read. Anything worth taking
-is reimplemented and attributed in a commit message, and anything not taken is
-worth saying why — `docs/harness-lineage.md` is where Pi's divergences already
-live.
+Pi passes its `AbortSignal` into the streaming fetch —
+`pi/packages/ai/src/api/openai-completions.ts:323`, `:332`, with
+`options?.signal?.aborted` deciding the stop reason at `:665`. Pi can end a
+completion mid-generation. Any harness that hands a signal to an HTTP client
+can; nothing about it belongs to a language, and vivarium's 168× measurement
+is a measurement of stopping early rather than of being fast.
 
-## What vivarium decided, and why not simply to copy
+One line of policy does differ, and it should be described as policy. Pi polls
+steering at the **end** of an iteration (`agent-loop.ts:259`), so a steer that
+arrives mid-generation waits out the current request, and its abort ends the
+run (`agent-loop.ts:196`: `stopReason === "aborted"` returns). vivarium's
+`abort-on-steer` ends the request the steer interrupted and **re-enters the
+loop carrying it**. Abort-and-resume against abort-and-stop — real, small, and
+reimplementable in an afternoon by anyone who wants it.
 
-Take Codex's **mechanism** — a running command is a handle, output is polled —
-and neither its model-facing shape nor its lifetime.
+## What survives the comparison
 
-**Not its shape.** Codex's `Exec`/`Read`/`Write`/`Signal` is the wire between
-its client and its exec-server; the model sees one shell tool, and the *client*
-runs the poll loop. Exposing those four as tools would make `ls` cost a poll
-loop. The model here keeps seeing one `bash`.
+Stated narrowly, because the wide version was wrong:
 
-**Not its lifetime.** `ExecParams` says the handle is *"scoped to this
-connection/session"*. Codex's processes die with the session, so it never had
-the problem `jobs` solves. This daemon runs for hours.
+> Codex has retention with no live execution. deepseek-harness has live
+> execution with no retention, by explicit decision. vivarium holds both
+> halves, which makes it the one place the composition claim can be tested:
+> does a capability that graduates *mid-task*, and can be called by another
+> capability, beat a text skill re-derived each time?
 
-**And one thing beyond it.** Sessions here are actors with mailboxes,
-journalled events, and fan-out to every subscriber. A running process given the
-same machinery gets replay-from-sequence (which is Codex's `after_seq`, already
-built as the journal) and output visible to *every* attached client — which
-Codex structurally cannot do, its handles being per-connection.
+Four things this changes about the KC6 re-pose, each from a source above:
 
-The care needed: a cell is bound to an agent and its turns, and its states are
-about a turn. That is what `spec/CellLifecycle.tla` proves. A process has
-neither. Reusing the actor machinery is right; calling a process a cell would
-borrow a proof that was never about it.
+1. **Tier 3 in a language the model writes fluently** — script plus manifest,
+   never an in-image Lisp compile. Both reference harnesses concluded this
+   independently; KC6 priced the violation at 32%.
+2. **The regime has to be one where the door can win**: high use counts,
+   expensive re-derivation, composition depth of at least two. Five cheap
+   tasks measured the install cost and nothing else.
+3. **The control is Codex's pipeline**, not our own null. Usage-ranked,
+   pruned, git-baselined text retention is a far harder bar than zero.
+4. **Take the API catalog before the door.** Their problem #2 — a model
+   blind-probing signatures it cannot read — arrives here the moment tools
+   start calling tools, and their fix is a generated artifact behind a
+   freshness gate, not a hand-written table.
 
-Staged as Sprint 5, so each step is decided with evidence from the one before:
-streaming (#35), then an inbox (#36), then services declared in the germline
-(#37) — the retention router's fourth shape, and the one place the organism's
-own architecture buys something a better-engineered exec server does not.
+TLA+ does not appear in this comparison, and that is the finding: no other
+harness makes machine-checked lifecycle claims, and none of them needs to in
+order to compete. It is a development-cost advantage for a small team, not a
+product difference, and positioning that leans on it is leaning on the wrong
+thing.
