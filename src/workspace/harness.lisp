@@ -86,9 +86,75 @@ sub-agent gets its own, so its turns land on their own branch of the same file."
 
 (defvar delegate-tool)  ; defined with the other tools below; referenced here
 
+(defun run-skill-tool (agent)
+  "Run the code a tier-2 skill carries, by name, and count the run.
+
+HERE rather than in WORKSPACE:TOOL-SET, and that placement is the whole reason
+this took three attempts: it needs SKILL-DIRECTORIES, which lives in this file,
+and shell.lisp loads before it. Duplicating RESOURCE-DIRECTORIES there would
+have worked today and drifted tomorrow.
+
+The count is the reuse signal (docs/tier-2-reuse-signal.md). A skill is
+injected into the prompt and read, so there is no use event -- and without one,
+graduation has nothing to threshold on and tier 3 is unreachable, which three
+runs of experiments/tier3 demonstrated. Calling a skill makes use a fact."
+  (make-instance
+   'tool:function-tool
+   :name "run_skill"
+   :description "Run the code a skill carries, by name. Your instructions list
+the skills loaded here; one that declares a language holds a runnable snippet.
+Reach for this instead of retyping the same transformation."
+   :parameters (list (list "name" :string "Which skill to run" :required-p t))
+   :body
+   (lambda (arguments context)
+     (declare (ignore context))
+     (let* ((environment (agent-resource-environment agent))
+            (found (skill:find-skill
+                    (skill:load-skills environment (skill-directories environment))
+                    (gethash "name" arguments)))
+            (snippet (and found (skill:snippet-of found)))
+            (interpreter (and found (cdr (assoc (string-downcase (skill:skill-language found))
+                                                skill:+interpreters+ :test #'string=)))))
+       (cond
+         ((null found)
+          (tool:make-tool-result :output (format nil "No skill called ~a."
+                                                 (gethash "name" arguments))
+                                 :error-p t))
+         ((null snippet)
+          (tool:make-tool-result
+           :output (format nil "~a carries no runnable snippet -- it is a skill you read."
+                           (gethash "name" arguments))
+           :error-p t))
+         ((null interpreter)
+          (tool:make-tool-result
+           :output (format nil "~a declares language ~s, which cannot be run here."
+                           (gethash "name" arguments) (skill:skill-language found))
+           :error-p t))
+         (t
+          (let ((script (format nil "/tmp/vivarium-skill-~36r"
+                                (random (expt 2 48) (make-random-state t)))))
+            (unwind-protect
+                 (progn
+                   (with-open-file (out script :direction :output :if-exists :supersede)
+                     (write-string snippet out))
+                   ;; Counted BEFORE the run: a snippet that fails was still
+                   ;; reached for, and reaching for it is the signal. Counting
+                   ;; successes would measure the code, not the reuse.
+                   (skill:note-use environment found)
+                   (workspace:with-environment ((agent-environment agent))
+                     (multiple-value-bind (text status)
+                         (workspace:run-bash (format nil "~a ~a" interpreter script))
+                       (if (eql 0 status)
+                           text
+                           (tool:make-tool-result
+                            :output (format nil "~a exited ~a~%~a"
+                                            (gethash "name" arguments) status text)
+                            :error-p t)))))
+              (ignore-errors (delete-file script))))))))))
+
 (defun available-tools (agent)
   (append (workspace:tool-set)
-          (list memory:remember delegate-tool)
+          (list memory:remember delegate-tool (run-skill-tool agent))
           (extension:all-tools)
           ;; What the organism retained, as callable tools. Loaded per call
           ;; rather than cached: a tool written during this session must be

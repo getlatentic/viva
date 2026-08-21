@@ -805,3 +805,47 @@ twice; it is somebody's record.")))
           "the rule it enforces should be stated in it"))
   (true (search "check-package-order.lisp" (repository-file "install.sh"))
         "a guard nothing runs is a guard that does not exist"))
+
+;;; The tier-2 reuse signal, working
+
+(define-test "a skill's snippet can be run by name, and the run is counted"
+  ;; docs/tier-2-reuse-signal.md. A skill is injected into the prompt and read,
+  ;; so there is no use event -- and without one, graduation (#8) has nothing to
+  ;; threshold on and tier 3 is unreachable, which three runs of
+  ;; experiments/tier3 demonstrated. Calling a skill makes use a fact.
+  ;;
+  ;; The tool lives in HARNESS, not WORKSPACE:TOOL-SET, and that placement took
+  ;; three attempts: it needs SKILL-DIRECTORIES, which is in harness, and
+  ;; shell.lisp loads first. Duplicating RESOURCE-DIRECTORIES there would have
+  ;; worked today and drifted tomorrow.
+  (let ((root (format nil "/tmp/vivarium-runskill-~36r/" (random (expt 2 48) (make-random-state t)))))
+    (unwind-protect
+         (let ((directory (merge-pathnames ".vivarium/skills/total/" root)))
+           (ensure-directories-exist directory)
+           (with-open-file (out (merge-pathnames "SKILL.md" directory) :direction :output)
+             (write-string "---
+name: total
+description: Print a total.
+language: python
+---
+
+```python
+print(sum([2, 3, 5]))
+```
+" out))
+           (let* ((environment (env:make-local-environment :cwd (namestring root)))
+                  (skills (skill:load-skills environment
+                                             (harness:skill-directories environment)))
+                  (found (skill:find-skill skills "total")))
+             (true found)
+             (is string= "python" (skill:skill-language found)
+                 "the language must survive into the struct, or nothing can run it")
+             (true (search "sum([2, 3, 5])" (skill:snippet-of found))
+                   "the fenced block must be extractable")
+             (is = 0 (skill:uses-of environment found))
+             (skill:note-use environment found)
+             (skill:note-use environment found)
+             (is = 2 (skill:uses-of environment found)
+                 "the count is what graduation thresholds on")))
+      (uiop:delete-directory-tree (pathname root) :validate (constantly t)
+                                                  :if-does-not-exist :ignore))))
