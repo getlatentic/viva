@@ -750,3 +750,21 @@ twice; it is somebody's record.")))
     (false (search "ABORTED after 1,927 ms" readme)
            "the front page still sells stop-early as a differentiator")
     (true (search "carried into the next request" readme))))
+
+;;; The package file is a dependency graph maintained by hand
+;;;
+;;; A local nickname resolves when its DEFPACKAGE is read, so pointing at a
+;;; package defined further down the SAME file fails at load. That bit three
+;;; times in one session -- germline, jobs, skill -- each costing a
+;;; compile-fail-diagnose cycle, and each failing with a message about a
+;;; package graph lock that names neither the nickname nor the ordering.
+;;;
+;;; A test was written here to catch it and then REMOVED, because it cannot.
+;;; Moving a package breaks the build, so the suite never loads and the test
+;;; never runs: a check that only executes after a successful load cannot guard
+;;; a load failure. Verified by reintroducing the bug -- the suite did not fail,
+;;; it failed to start.
+;;;
+;;; The guard that would work runs BEFORE loading. `vivarium check` already has
+;;; that shape for duplicate test helpers: it reads files rather than requiring
+;;; them. That is where this belongs, and it is not written yet.
