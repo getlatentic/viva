@@ -895,3 +895,35 @@ print(sum([2, 3, 5]))
       (uiop:delete-file-if-exists (trust:trust-file))
       (uiop:delete-directory-tree (pathname root) :validate (constantly t)
                                                   :if-does-not-exist :ignore))))
+
+;;; Speaking a terminal's protocol without becoming one
+
+(define-test "kitty keyboard detection answers, and never hangs"
+  ;; The protocol is a PROTOCOL: a terminal that supports it reports keys
+  ;; unambiguously, and one that does not IGNORES the query -- so the read must
+  ;; be bounded. A detector that hangs on an old terminal is worse than one
+  ;; that assumes the old terminal.
+  ;;
+  ;; Verified in a real tmux pane too: TERM=tmux-256color answers NIL in 0.15s
+  ;; rather than blocking, which is the degradation path that actually matters
+  ;; since a pane is where this will live.
+  (false (tui:supported-p :input (make-string-input-stream "")
+                          :output (make-broadcast-stream))
+         "a pipe cannot answer, and asking puts an escape sequence in a log")
+  ;; A terminal that never replies: give up on time.
+  (let ((start (get-internal-real-time)))
+    (false (tui::read-reply (make-concatenated-stream)
+                            (+ (get-internal-real-time)
+                               (round (* tui:*reply-timeout*
+                                         internal-time-units-per-second)))))
+    (let ((elapsed (/ (- (get-internal-real-time) start)
+                      internal-time-units-per-second)))
+      (true (< elapsed (* 4 tui:*reply-timeout*))
+            "detection took ~,2fs; a silent terminal must not block it" elapsed)))
+  ;; One that does reply.
+  (true (search "[?" (tui::read-reply
+                      (make-string-input-stream (format nil "~c[?1u" #\Escape))
+                      (+ (get-internal-real-time) internal-time-units-per-second))))
+  ;; And the flags are the TERMINAL's state: a crash that leaves them pushed
+  ;; leaves somebody's shell reporting keys it cannot read.
+  (true (search "unwind-protect" (repository-file "src/tui/keyboard.lisp"))))

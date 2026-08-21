@@ -144,6 +144,15 @@
                              (:file "trial")
                              (:file "arena")))))
 
+(defsystem "vivarium/tui"
+  :description "Speaking a terminal's protocols properly, without becoming one."
+  :depends-on ("alexandria")
+  :serial t
+  :components ((:module "src/tui"
+                :serial t
+                :components ((:file "package")
+                             (:file "keyboard")))))
+
 (defsystem "vivarium/cli"
   :description "One entry point for every run."
   :depends-on ("vivarium/tasks" "vivarium/search" "vivarium/console" "vivarium/daemon"
@@ -166,7 +175,7 @@
 
 (defsystem "vivarium/tests"
   :depends-on ("vivarium" "vivarium/image" "vivarium/search" "vivarium/tasks"
-               "vivarium/cli" "vivarium/daemon" "parachute")
+               "vivarium/cli" "vivarium/daemon" "vivarium/tui" "parachute")
   :serial t
   :components ((:module "tests"
                 :serial t

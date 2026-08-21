@@ -47,6 +47,7 @@
                     (#:germline #:vivarium.germline)
                     (#:config #:vivarium.config)
                     (#:jobs #:vivarium.jobs)
+                    (#:tui #:vivarium.tui)
                     (#:daemon #:vivarium.daemon)))
 
 (in-package #:vivarium.tests)
