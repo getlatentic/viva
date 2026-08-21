@@ -26,7 +26,8 @@ limit, and the lines above the fold cannot be seen anyway.")
   (busy nil)              ; is a turn running
   (scroll 0)              ; lines back from the bottom, 0 = following
   (tabs '())              ; workspace names, in the order they are shown
-  (tab 0))                ; which one is active
+  (tab 0)                 ; which one is active
+  (tab-ranges '()))       ; (name start end) per tab, from the last paint
 
 (defun field (data key)
   "Read KEY from an event's data, whether it arrived as a hash table from the

@@ -104,11 +104,13 @@ this shape exists to make impossible."
 ;;; The tab bar
 
 (defun draw-tabs (screen region tabs active)
-  "One row of tab names, the active one lit.
+  "One row of tab names, the active one lit. Returns (NAME START END) per tab.
 
-Tabs are drawn rather than listed because the question they answer -- which
-workspace am I in -- is asked continuously and answered by a glance."
-  (let ((column 1))
+The ranges are RETURNED rather than recomputed by whoever handles a click.
+Two functions deriving the same layout independently is how a tab bar ends up
+selecting the tab next to the one that was clicked, and the drift is invisible
+until somebody renames a tab."
+  (let ((column 1) (ranges '()))
     (loop for name in tabs
           for index from 0
           for text = (format nil " ~a " name)
@@ -117,6 +119,7 @@ workspace am I in -- is asked continuously and answered by a glance."
                   :style (if (eql index active)
                              (make-style :foreground 232 :background 13 :bold t)
                              *dim-style*))
+             (push (list name column (+ column (length text))) ranges)
              (incf column (length text))
              (when (< (+ column 3) (region-width region))
                (put screen (region-row region) (+ (region-column region) column) "|"
@@ -124,4 +127,5 @@ workspace am I in -- is asked continuously and answered by a glance."
                (incf column 1)))
     (when (< (+ column 3) (region-width region))
       (put screen (region-row region) (+ (region-column region) column 1) "+"
-           :style *dim-style*))))
+           :style *dim-style*))
+    (nreverse ranges)))

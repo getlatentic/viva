@@ -1588,3 +1588,64 @@ print(sum([2, 3, 5]))
       (true (frame-has frame "vivarium"))
       (true (frame-has frame "notes"))
       (false (frame-has frame "/Users/dev") "the sidebar still shows a path"))))
+
+(define-test "the keys that scroll actually decode"
+  ;; The view had scrolling and the keys to reach it were dropped one layer
+  ;; below: ESC[5~ is a tilde sequence and DECODE only handled the three-byte
+  ;; CSI form, so Page Up produced nothing at all. It looked like a missing
+  ;; feature and was a missing branch.
+  (flet ((tilde (body) (tui:decode (format nil "~c[~a~~" #\Escape body))))
+    (is eq :page-up (tui:key-value (tilde "5")))
+    (is eq :page-down (tui:key-value (tilde "6")))
+    (is eq :home (tui:key-value (tilde "1")))
+    (is eq :end (tui:key-value (tilde "4")))
+    (is eq :delete (tui:key-value (tilde "3")))
+    ;; Modifiers ride after a semicolon in the same sequence.
+    (true (tui:key-control (tilde "5;5")))
+    ;; An unknown number is NIL rather than a guess: a decoder that invents a
+    ;; key turns an unrecognised press into a wrong action.
+    (false (tilde "99")))
+  ;; And they reach the scroll, rather than the input line.
+  (let ((view (tui:make-view)))
+    (dotimes (index 40)
+      (tui:absorb view "model.delta" (list (cons "text" (format nil "line~d~%" index)))))
+    (tui:type-key view (tui:decode (format nil "~c[5~~" #\Escape)))
+    (is = 10 (tui::view-scroll view) "Page Up did not scroll")
+    (is string= "" (tui::view-input view) "Page Up typed into the prompt")))
+
+(define-test "a click selects the tab and the session under it"
+  ;; The tab ranges come from the draw, not from a second calculation of the
+  ;; same layout -- two functions deriving it independently is how a tab bar
+  ;; selects the tab next to the one that was clicked.
+  (let ((view (tui:make-view))
+        (screen (tui:make-blank-screen :width 100 :height 16)))
+    (setf (tui:view-current view) "s1")
+    (tui:absorb view "session.list"
+                (list (cons "sessions" '(("s1" "/w/alpha" "working")
+                                         ("s2" "/w/beta" "idle")))))
+    (setf (tui:view-tabs view) '("alpha" "beta"))
+    (tui:paint view screen)
+    ;; Every column of a tab selects that tab, and the gaps select nothing.
+    (destructuring-bind (name start end) (first (tui:view-tab-ranges view))
+      (is string= "alpha" name)
+      (is = 0 (tui:tab-at view start))
+      (is = 0 (tui:tab-at view (1- end))))
+    ;; SECOND rather than a destructuring pattern with NIL in it: NIL there is
+    ;; an empty-sublist pattern, not a wildcard, and it fails on any value.
+    (is = 1 (tui:tab-at view (second (second (tui:view-tab-ranges view)))))
+    (false (tui:tab-at view 90) "a click past the last tab selected one")
+    ;; A click in the sessions pane picks the session on that row -- and on
+    ;; either of its two rows, because clicking the state line under a name is
+    ;; still clicking that session.
+    (let* ((regions (tui:regions-for screen))
+           (sessions (cdr (assoc :sessions regions))))
+      (let ((top (tui:session-row-at view sessions (+ 1 (tui::region-row sessions))))
+            (state-line (tui:session-row-at view sessions (+ 2 (tui::region-row sessions))))
+            (second-session (tui:session-row-at view sessions
+                                                (+ 3 (tui::region-row sessions)))))
+        (is string= "s1" (tui:session-id top))
+        (is string= "s1" (tui:session-id state-line)
+            "clicking a session's state line missed the session")
+        (is string= "s2" (tui:session-id second-session)))
+      ;; Below the last session is nothing, not the last one.
+      (false (tui:session-row-at view sessions (+ 40 (tui::region-row sessions)))))))

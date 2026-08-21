@@ -134,7 +134,9 @@ twenty-column line truncates the answer to the first."
          (regions (divide (layout-for width height) :width width :height height)))
     (flet ((region (name) (cdr (assoc name regions))))
       (a:when-let ((tabs (region :tabs)))
-        (draw-tabs screen tabs (or (view-tabs view) (list "vivarium")) (view-tab view)))
+        (setf (view-tab-ranges view)
+              (draw-tabs screen tabs (or (view-tabs view) (list "vivarium"))
+                         (view-tab view))))
       (a:when-let ((sessions (region :sessions)))
         (paint-sessions view screen (draw-box screen sessions :title "sessions")))
       (a:when-let ((tasks (region :tasks)))
@@ -155,6 +157,30 @@ twenty-column line truncates the answer to the first."
                          (and (plusp (view-scroll view)) (view-scroll view)))
                  :style *dim-style*)))
     screen))
+
+(defun regions-for (screen)
+  "The regions the next PAINT will use.
+
+Hit-testing needs them and paint computes them; deriving them here with the
+same call is what keeps a click landing where the eye says it should."
+  (divide (layout-for (screen-width screen) (screen-height screen))
+          :width (screen-width screen) :height (screen-height screen)))
+
+(defun tab-at (view column)
+  "Which tab index COLUMN falls in, or NIL."
+  (loop for (nil start end) in (view-tab-ranges view)
+        for index from 0
+        when (and (<= start column) (< column end)) return index))
+
+(defun session-row-at (view region row)
+  "Which session a click at ROW of the sessions REGION selects, or NIL.
+
+Two rows per session, so the arithmetic is halved -- and clicking either the
+name or the state line selects that session, which is what a person means by
+clicking a session."
+  (let ((index (floor (- row (region-row region) 1) 2)))
+    (when (and (>= index 0) (< index (length (view-sessions view))))
+      (nth index (view-sessions view)))))
 
 (defun current-session-label (view)
   (a:when-let ((entry (find (view-current view) (view-sessions view)

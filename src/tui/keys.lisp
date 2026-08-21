@@ -35,6 +35,15 @@ on every unmodified key.")
     (#\H . :home) (#\F . :end))
   "CSI sequences a terminal sends when it has nothing better.")
 
+(defparameter +tilde-keys+
+  '((1 . :home) (2 . :insert) (3 . :delete) (4 . :end)
+    (5 . :page-up) (6 . :page-down) (7 . :home) (8 . :end))
+  "CSI <number> ~ -- the other legacy dialect, and the one Page Up lives in.
+
+Absent, every one of these decoded as nothing at all: the view had scrolling
+and the keys to reach it were dropped one layer below, so it looked like a
+missing feature rather than a missing branch.")
+
 (defun modifiers-from (encoded)
   "The kitty modifier field to (values CONTROL ALT SHIFT)."
   (let ((bits (max 0 (1- (or encoded 1)))))
@@ -82,6 +91,18 @@ into a wrong one, and a wrong key is acted on."
       ((and (= length 3) (char= #\Escape (char bytes 0)) (char= #\[ (char bytes 1)))
        (a:when-let ((named (cdr (assoc (char bytes 2) +legacy-finals+))))
          (make-key :value named)))
+      ;; CSI <number> ; <modifiers> ~ -- Page Up and its neighbours.
+      ((and (> length 3) (char= #\Escape (char bytes 0)) (char= #\[ (char bytes 1))
+            (char= #\~ (char bytes (1- length))))
+       (let* ((body (subseq bytes 2 (1- length)))
+              (semicolon (position #\; body))
+              (number (parse-integer body :end (or semicolon (length body))
+                                          :junk-allowed t)))
+         (a:when-let ((named (cdr (assoc number +tilde-keys+))))
+           (multiple-value-bind (control alt shift)
+               (modifiers-from (and semicolon (parse-integer body :start (1+ semicolon)
+                                                                  :junk-allowed t)))
+             (make-key :value named :control control :alt alt :shift shift)))))
       ;; A bare byte, in the dialect that cannot tell Ctrl-I from Tab.
       ((= length 1)
        (let ((code (char-code (char bytes 0))))

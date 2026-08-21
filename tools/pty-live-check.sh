@@ -70,6 +70,14 @@ def replay(data, rows=ROWS, cols=COLS):
             end = i + 2
             while end < len(text) and text[end] not in "HJKmhlu":
                 end += 1
+            # ERASE actually erases. Without this the replay accumulates every
+            # frame ever drawn -- including ones from before a resize, at a
+            # different width -- and interleaves them, so the harness shows
+            # corruption the terminal never had. A check that is dirtier than
+            # reality cannot tell you reality is clean.
+            if end < len(text) and text[end] == "J":
+                grid = [[" "] * cols for _ in range(rows)]
+                row = col = 0
             i = end + 1
             continue
         ch = text[i]
@@ -186,6 +194,24 @@ if len(set(x for x in seen if x)) < 2:
     print("\n".join(replay(out)[:12]))
     sys.exit(f"Tab never moved past one session: {seen}")
 print(f"Tab cycles: {len(set(x for x in seen if x))} distinct sessions across 4 presses")
+
+# RESIZE, which is where a diffing screen corrupts itself. A fresh buffer
+# believes the terminal is blank, so it writes only non-blank cells and leaves
+# every stale cell from the old layout exactly where it was -- two frames on
+# screen at once, borders crossing text, panes drawn twice.
+for rows, cols in ((20, 70), (34, 120), (30, 100)):
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+    os.kill(pid, __import__("signal").SIGWINCH)
+    pump(2.5)
+    frame = replay(out, rows=rows, cols=cols)
+    panes = sum(1 for line in frame if "sessions" in line)
+    if panes != 1:
+        print("\n".join(frame))
+        sys.exit(f"after resize to {rows}x{cols} the frame holds {panes} session panes")
+    wide = [line for line in frame if len(line) > cols]
+    if wide:
+        sys.exit(f"a row outran the {cols}-column terminal after resize")
+print("resizing three times left exactly one clean frame each time")
 
 before = len(out)
 pump(2.0)
