@@ -29,6 +29,14 @@ to ask the kernel twice."
     (setf (sb-posix:termios-lflag raw)
           (logandc2 (sb-posix:termios-lflag raw)
                     (logior sb-posix:icanon sb-posix:echo sb-posix:isig)))
+    ;; ICRNL translates carriage return into line feed on the way in, so Enter
+    ;; arrives as 10 rather than 13 and a decoder expecting 13 sees a control
+    ;; character instead of a key. Clearing it is what raw mode means; the
+    ;; decoder also accepts 10, because this program is a guest and cannot
+    ;; assume it set every flag it depends on.
+    (setf (sb-posix:termios-iflag raw)
+          (logandc2 (sb-posix:termios-iflag raw)
+                    (logior sb-posix:icrnl sb-posix:inlcr)))
     ;; Read returns as soon as one byte is there, and never blocks forever:
     ;; VMIN 1 VTIME 0 is `give me a byte when there is one`, which is what the
     ;; key reader above already assumes.

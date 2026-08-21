@@ -1286,3 +1286,42 @@ print(sum([2, 3, 5]))
     (tui:absorb view "something.invented.later" (list (cons "text" "?")))
     (is equal '() (tui::view-lines view))
     (true (frame-of view))))
+
+(define-test "Enter is Enter whichever byte the terminal sends"
+  ;; Raw mode here does not clear ICRNL, so a terminal delivers 10 for Enter
+  ;; rather than 13. Ten fell through to the Ctrl-letter branch and decoded as
+  ;; Ctrl-J -- value #\j -- so pressing Enter typed a `j` and sent nothing.
+  ;; Reported from a real session: `hello where are we?j`.
+  (is eq :enter (tui:key-value (tui:decode (string (code-char 13)))))
+  (is eq :enter (tui:key-value (tui:decode (string (code-char 10))))
+      "line feed did not decode as Enter")
+  (false (tui:key-control (tui:decode (string (code-char 10))))
+         "Enter arrived carrying a Ctrl modifier")
+  ;; And it reaches the action, not the input line.
+  (let ((view (tui:make-view)))
+    (dolist (character (coerce "hi" 'list))
+      (tui:type-key view (tui::make-key :value character)))
+    (is eq :send (tui:type-key view (tui:decode (string (code-char 10)))))
+    (is string= "hi" (tui::view-input view) "Enter typed into the line instead of sending")))
+
+(define-test "Tab keeps going round the sessions"
+  ;; It moved once and then stopped: the loop held its own copy of the current
+  ;; session, so every later Tab computed `the one after` from the same stale
+  ;; answer. Pressing Tab ONCE passed that bug; this presses it four times.
+  (let ((sessions '(("s1" . "s1  /a") ("s2" . "s2  /b")
+                    ("s3" . "s3  /c") ("s4" . "s4  /d"))))
+    (is string= "s3" (cli::next-session-after "s2" sessions))
+    (is string= "s4" (cli::next-session-after "s3" sessions))
+    ;; Wrapping, because Tab in a list of four should reach all four.
+    (is string= "s1" (cli::next-session-after "s4" sessions))
+    ;; A full cycle returns to where it started, and visits every session once.
+    (let ((visited '()) (at "s1"))
+      (dotimes (n 4)
+        (push at visited)
+        (setf at (cli::next-session-after at sessions)))
+      (is equal '("s1" "s2" "s3" "s4") (reverse visited)
+          "Tab did not visit every session")
+      (is string= "s1" at "a full cycle did not come back round")))
+  ;; One session is nowhere to go, not a loop onto itself.
+  (false (cli::next-session-after "s1" '(("s1" . "only"))))
+  (false (cli::next-session-after "s1" '())))

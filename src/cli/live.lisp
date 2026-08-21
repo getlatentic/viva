@@ -60,30 +60,48 @@ terminal has already discarded -- which draws nothing and looks like a hang."
         screen
         (tui:make-blank-screen :width (cdr size) :height (car size)))))
 
-(defun live-act (action stream view id)
-  "Do what a keypress asked for. Returns :quit to leave, NIL to carry on."
-  (case action
-    (:quit :quit)
-    (:cancel (send-line stream "type" "cancel" "session" id) nil)
-    (:send (let ((text (tui:take-input view)))
-             (tui:absorb view "model.delta" (list (cons "text" (format nil "~%> ~a~%" text))))
-             (send-line stream "type" "prompt" "session" id "text" text)
-             nil))
-    (:next-session
-     ;; Switching is a request, not a local change: the daemon decides what
-     ;; this client is subscribed to, and pretending otherwise shows one
-     ;; session's name over another's output.
-     (let* ((ids (mapcar #'car (tui:view-sessions view)))
-            (next (or (second (member id ids :test #'equal)) (first ids))))
-       (when (and next (not (equal next id)))
-         (send-line stream "type" "session.attach" "session" next "since" 0)
-         (setf (tui:view-current view) next
-               (tui:view-lines view) '()
-               (tui:view-partial view) ""))
-       nil))
-    (t nil)))
+(defun next-session-after (id sessions)
+  "The session after ID, wrapping at the end. NIL if there is nowhere to go.
 
-(defun live-loop (stream view id)
+Wrapping rather than stopping, because Tab in a list of four should reach all
+four and come back, not walk to the end and go quiet."
+  (let ((ids (mapcar (lambda (entry) (if (consp entry) (car entry) entry)) sessions)))
+    (cond ((null ids) nil)
+          ((null (rest ids)) nil)
+          (t (or (second (member id ids :test #'equal)) (first ids))))))
+
+(defun live-act (action stream view)
+  "Do what a keypress asked for. Returns :quit to leave, NIL to carry on.
+
+The session is read from the VIEW rather than passed in. It used to be a
+parameter, and the loop kept its own copy: switching set the view's current
+session and left the loop's variable pointing at the old one, so the second Tab
+computed the next session from a stale answer and landed on the same session
+forever -- Tab appeared to work once and then stop. Two places holding one fact
+is the bug; deleting one of them is the fix."
+  (let ((id (tui:view-current view)))
+    (case action
+      (:quit :quit)
+      (:cancel (send-line stream "type" "cancel" "session" id) nil)
+      (:send (let ((text (tui:take-input view)))
+               (tui:absorb view "model.delta"
+                           (list (cons "text" (format nil "~%> ~a~%" text))))
+               (send-line stream "type" "prompt" "session" id "text" text)
+               nil))
+      (:next-session
+       ;; Switching is a request, not a local change: the daemon decides what
+       ;; this client is subscribed to, and pretending otherwise shows one
+       ;; session's name over another's output.
+       (let ((next (next-session-after id (tui:view-sessions view))))
+         (when (and next (not (equal next id)))
+           (send-line stream "type" "session.attach" "session" next "since" 0)
+           (setf (tui:view-current view) next
+                 (tui:view-lines view) '()
+                 (tui:view-partial view) ""))
+         nil))
+      (t nil))))
+
+(defun live-loop (stream view)
   "Poll the socket and the keyboard until asked to leave."
   (let ((screen nil) (dirty t))
     (loop
@@ -101,7 +119,7 @@ terminal has already discarded -- which draws nothing and looks like a hang."
         (a:when-let ((key (tui:read-key *standard-input*)))
           (let ((action (tui:type-key view key)))
             (setf dirty t)
-            (when (eq :quit (live-act action stream view id))
+            (when (eq :quit (live-act action stream view))
               (return)))))
       (when dirty
         (tui:paint view screen)
@@ -164,6 +182,6 @@ terminal it was invited into.")
             (tui:with-raw-terminal
               (tui:with-kitty-keyboard ()
                 (with-full-screen
-                  (live-loop stream view id)))))
+                  (live-loop stream view)))))
           (format t "~&detached; ~a is still running~%" id)
           0)))))

@@ -78,7 +78,15 @@ into a wrong one, and a wrong key is acted on."
       ;; A bare byte, in the dialect that cannot tell Ctrl-I from Tab.
       ((= length 1)
        (let ((code (char-code (char bytes 0))))
-         (cond ((= code 13) (make-key :value :enter))
+         (cond (;; BOTH carriage return and line feed. A terminal with ICRNL
+                ;; set -- which is the default, and which raw mode here does
+                ;; not clear -- delivers 10 when Enter is pressed, not 13.
+                ;; Without this, 10 falls through to the Ctrl-letter branch
+                ;; below and decodes as Ctrl-J, whose value is the character
+                ;; `j`: Enter did nothing and typed a j instead. Accepting
+                ;; both is right regardless of how the terminal is configured,
+                ;; which is why it is here as well as in the termios flags.
+                (or (= code 13) (= code 10)) (make-key :value :enter))
                ((= code 9) (make-key :value :tab))
                ((= code 127) (make-key :value :backspace))
                ((= code 27) (make-key :value :escape))

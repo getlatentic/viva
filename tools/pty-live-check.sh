@@ -80,6 +80,16 @@ def replay(data, rows=ROWS, cols=COLS):
 def screen_has(text):
     return any(text in line for line in replay(out))
 
+def input_line():
+    """The input row only.
+
+    A whole-screen search is wrong for this question: a sent prompt is ECHOED
+    into the output pane, so `> hello` is on screen precisely BECAUSE Enter
+    worked. The first draft of this check read that echo as the input line and
+    reported a failure that was the feature."""
+    rows = replay(out)
+    return rows[-2] if len(rows) >= 2 else ""
+
 def wait_for_screen(text, seconds, label):
     deadline = time.time() + seconds
     while time.time() < deadline:
@@ -113,6 +123,50 @@ for wanted, label in (("sessions", "the session pane"), ("tasks", "the task pane
         print("\n".join(frame))
         sys.exit(f"{label} is missing -- #45 wants them visible together")
 print("sessions, output and tasks are on one screen")
+
+# ENTER SENDS, and does not type a character. Reported from a real session:
+# raw mode leaves ICRNL set, so Enter arrives as 10, which decoded as Ctrl-J
+# and typed a `j`. Both bytes are exercised because which one arrives depends
+# on flags this program does not own.
+os.write(fd, b"\r")
+pump(2.0)
+if "hello" in input_line():
+    print("\n".join(replay(out)))
+    sys.exit("Enter did not send: the input line still holds the text")
+if "j" in input_line():
+    sys.exit(f"Enter typed a character instead of sending: {input_line()!r}")
+if not screen_has("> hello"):
+    sys.exit("the sent prompt was not echoed into the output")
+print("Enter sends, clears the input line, and echoes into the output")
+
+os.write(fd, b"second")
+pump(2.0)
+if "second" not in input_line():
+    sys.exit("typing did not reach the input line")
+os.write(fd, b"\n")
+pump(2.0)
+if "second" in input_line():
+    sys.exit("line feed was not treated as Enter")
+print("line feed is Enter too")
+
+# TAB CYCLES, more than once. Pressing it once passed the bug that made it
+# stop after one move, so this presses it repeatedly and reads the marker.
+def marked():
+    for line in replay(out):
+        if line.strip().startswith(">") and "/" in line:
+            return line.strip()
+    return None
+
+seen = []
+for _ in range(4):
+    os.write(fd, b"\t")
+    pump(1.5)
+    seen.append(marked())
+distinct = [s for i, s in enumerate(seen) if s and (i == 0 or s != seen[i-1])]
+if len(set(x for x in seen if x)) < 2:
+    print("\n".join(replay(out)))
+    sys.exit(f"Tab never moved past one session: {seen}")
+print(f"Tab cycles: {len(set(x for x in seen if x))} distinct sessions across 4 presses")
 
 before = len(out)
 pump(2.0)
