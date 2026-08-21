@@ -16,7 +16,7 @@ family=${1:-ledger}
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 
-for job in "$here/$family"/v*; do
+for job in "$here/jobs/$family"/v*; do
   name=$(basename "$job")
   work=$(mktemp -d)
   trap 'rm -rf "$work"' EXIT

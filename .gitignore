@@ -26,3 +26,8 @@ tmp/
 # them would mean carrying four other projects' licences and history.
 #   third-party/refresh.sh re-clones them.
 third-party/
+
+# Generated family data and results: the generator and the receipts are the
+# source, and a regenerated family is byte-identical from its seed.
+experiments/families/results/
+experiments/families/__pycache__/

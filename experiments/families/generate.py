@@ -11,7 +11,10 @@ Deterministic: every variant seeds its own Random. No wall-clock, no os.urandom.
 """
 import json, os, pathlib, random, shutil, stat, sys
 
-ROOT = pathlib.Path(__file__).resolve().parent
+# Into jobs/, because the driver takes a directory of SHAPES and would
+# otherwise read this script, the receipts and the results as shapes of their
+# own.
+ROOT = pathlib.Path(__file__).resolve().parent / "jobs"
 
 
 def write(path: pathlib.Path, text: str, executable: bool = False) -> None:
