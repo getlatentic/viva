@@ -777,3 +777,31 @@ twice; it is somebody's record.")))
 ;;; would work is a standalone script -- `sbcl --script` over the package files
 ;;; alone, touching none of the system -- run by install.sh or CI. Not written,
 ;;; and named precisely enough that nobody has to rediscover the two dead ends.
+
+(define-test "the package-order guard exists, standalone, and is wired in"
+  ;; Third home, and the first that can work. The suite cannot guard this --
+  ;; a broken package file stops the suite loading. `vivarium check` cannot
+  ;; either -- bin/vivarium quickloads before any command runs. Both were
+  ;; tried and both verified dead by reintroducing the bug and looking.
+  ;;
+  ;; This test does NOT prove the guard works; by construction it cannot, since
+  ;; it only runs when the tree already loads. It proves the guard exists, is
+  ;; standalone, and is run by something. The proof that it catches the bug is
+  ;; in the commit: on a tree with the fault, the script reports the file, the
+  ;; line and the fix while `vivarium check` exits 1 having said nothing.
+  (let* ((raw (repository-file "tools/check-package-order.lisp"))
+         ;; Comments stripped first. The file EXPLAINS that it must not
+         ;; quickload, so searching the whole text finds the explanation and
+         ;; fails on it -- the same mistake the launcher test made with
+         ;; `readlink -f`, made again three hours later.
+         (script (format nil "~{~a~^~%~}"
+                         (remove-if (lambda (line)
+                                      (alexandria:starts-with #\; (string-left-trim " " line)))
+                                    (uiop:split-string raw :separator '(#\Newline))))))
+    (false (search "quickload" script) "the guard must not require the system it guards")
+    (false (search "asdf:" script))
+    (setf raw (or raw ""))
+    (true (search "lateness is the whole rule" raw)
+          "the rule it enforces should be stated in it"))
+  (true (search "check-package-order.lisp" (repository-file "install.sh"))
+        "a guard nothing runs is a guard that does not exist"))

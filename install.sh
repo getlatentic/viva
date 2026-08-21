@@ -63,6 +63,13 @@ else
   git clone --quiet "$REPO" "$root" || die "could not clone $REPO"
 fi
 
+step "package ordering"
+# Before anything is loaded, because this is the one class of fault that stops
+# the load: a local nickname pointing at a package defined below it. Both
+# obvious homes for this check are dead -- the suite never runs, and
+# `vivarium check` dies in the loader -- so it is a script that reads text.
+sbcl --script "$root/tools/check-package-order.lisp" || exit 1
+
 step "compiling, and running the tests"
 say "  the first run fetches dependencies and takes a few minutes"
 "$root/bin/vivarium" test >/tmp/vivarium-install-test.log 2>&1 || {
