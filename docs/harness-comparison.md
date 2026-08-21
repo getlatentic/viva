@@ -68,3 +68,33 @@ Nothing here is edited, imported, or copied. It is read. Anything worth taking
 is reimplemented and attributed in a commit message, and anything not taken is
 worth saying why — `docs/harness-lineage.md` is where Pi's divergences already
 live.
+
+## What vivarium decided, and why not simply to copy
+
+Take Codex's **mechanism** — a running command is a handle, output is polled —
+and neither its model-facing shape nor its lifetime.
+
+**Not its shape.** Codex's `Exec`/`Read`/`Write`/`Signal` is the wire between
+its client and its exec-server; the model sees one shell tool, and the *client*
+runs the poll loop. Exposing those four as tools would make `ls` cost a poll
+loop. The model here keeps seeing one `bash`.
+
+**Not its lifetime.** `ExecParams` says the handle is *"scoped to this
+connection/session"*. Codex's processes die with the session, so it never had
+the problem `jobs` solves. This daemon runs for hours.
+
+**And one thing beyond it.** Sessions here are actors with mailboxes,
+journalled events, and fan-out to every subscriber. A running process given the
+same machinery gets replay-from-sequence (which is Codex's `after_seq`, already
+built as the journal) and output visible to *every* attached client — which
+Codex structurally cannot do, its handles being per-connection.
+
+The care needed: a cell is bound to an agent and its turns, and its states are
+about a turn. That is what `spec/CellLifecycle.tla` proves. A process has
+neither. Reusing the actor machinery is right; calling a process a cell would
+borrow a proof that was never about it.
+
+Staged as Sprint 5, so each step is decided with evidence from the one before:
+streaming (#35), then an inbox (#36), then services declared in the germline
+(#37) — the retention router's fourth shape, and the one place the organism's
+own architecture buys something a better-engineered exec server does not.
