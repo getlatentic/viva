@@ -1325,3 +1325,102 @@ print(sum([2, 3, 5]))
   ;; One session is nowhere to go, not a loop onto itself.
   (false (cli::next-session-after "s1" '(("s1" . "only"))))
   (false (cli::next-session-after "s1" '())))
+
+(defun pane-ids (node) (mapcar #'tui:pane-id (tui:pane-tree-panes node)))
+
+(define-test "splitting a pane in the same direction stays flat"
+  ;; Three panes side by side should be one branch of three, not a branch
+  ;; holding a branch. Nesting is also correct and it makes the resize
+  ;; behaviour impossible to predict from looking at the screen.
+  (let* ((a (tui:fresh-pane :session "s1"))
+         (tree a))
+    (setf tree (tui:split-pane tree (tui:pane-id a) :beside (tui:fresh-pane :session "s2")))
+    (true (tui:branch-p tree))
+    (is = 2 (length (tui:branch-children tree)))
+    ;; A third, split from the first pane again.
+    (setf tree (tui:split-pane tree (tui:pane-id a) :beside (tui:fresh-pane :tasks "s1")))
+    (is = 3 (length (tui:branch-children tree)) "the third split nested instead of extending")
+    (true (every #'tui:pane-p (tui:branch-children tree)) "a branch appeared inside a branch")
+    ;; Splitting the OTHER way does nest, because it must.
+    (let ((deep (tui:split-pane tree (tui:pane-id a) :stack (tui:fresh-pane :jobs "s1"))))
+      (is = 3 (length (tui:branch-children deep)))
+      (true (some #'tui:branch-p (tui:branch-children deep))
+            "a perpendicular split did not nest"))))
+
+(define-test "closing a pane collapses the branch it emptied"
+  ;; Without the collapse a layout accumulates one-child branches for every
+  ;; pane ever closed, and their weights go on dividing space nothing is in.
+  (let* ((a (tui:fresh-pane :session "s1"))
+         (b (tui:fresh-pane :session "s2"))
+         (tree (tui:split-pane a (tui:pane-id a) :beside b)))
+    (let ((left (tui:close-pane tree (tui:pane-id b))))
+      (true (tui:pane-p left) "closing one of two left a branch behind")
+      (is = (tui:pane-id a) (tui:pane-id left)))
+    ;; Closing the last pane is NIL, not an empty branch: the caller has to
+    ;; decide whether that closes the tab, and cannot if it is handed a husk.
+    (false (tui:close-pane a (tui:pane-id a)))
+    ;; Closing something that is not there changes nothing.
+    (is equal (pane-ids tree) (pane-ids (tui:close-pane tree 9999)))))
+
+(define-test "an operation returns a new tree and leaves the old one alone"
+  ;; Undo is then a matter of keeping a value, rather than writing an inverse
+  ;; for every operation.
+  (let* ((a (tui:fresh-pane :session "s1"))
+         (before (tui:split-pane a (tui:pane-id a) :beside (tui:fresh-pane :session "s2")))
+         (ids (pane-ids before)))
+    (tui:split-pane before (tui:pane-id a) :stack (tui:fresh-pane :tasks "s1"))
+    (tui:close-pane before (tui:pane-id a))
+    (tui:resize-pane before (tui:pane-id a) 5)
+    (is equal ids (pane-ids before) "an operation mutated the tree it was given")))
+
+(define-test "moving between panes wraps and visits every one"
+  (let* ((a (tui:fresh-pane :session "s1"))
+         (tree (tui:split-pane a (tui:pane-id a) :beside (tui:fresh-pane :session "s2"))))
+    (setf tree (tui:split-pane tree (tui:pane-id a) :stack (tui:fresh-pane :tasks "s1")))
+    (let* ((all (pane-ids tree))
+           (visited '())
+           (at (first all)))
+      (dotimes (n (length all))
+        (push at visited)
+        (setf at (tui:pane-id (tui:neighbour-pane tree at 1))))
+      (is = (length all) (length (remove-duplicates visited))
+          "moving forward did not visit every pane")
+      (is = (first all) at "a full cycle did not come back round"))
+    ;; And backwards.
+    (let ((first-pane (first (pane-ids tree))))
+      (is = first-pane
+          (tui:pane-id (tui:neighbour-pane tree
+                                           (tui:pane-id (tui:neighbour-pane tree first-pane 1))
+                                           -1))))
+    ;; One pane has no neighbour -- it is not its own.
+    (false (tui:neighbour-pane a (tui:pane-id a) 1))))
+
+(define-test "any pane tree still tiles the screen exactly"
+  ;; The layout engine's exactness is what panes are built on, so the property
+  ;; is re-checked through the tree rather than assumed to survive it. This is
+  ;; where a hand-rolled pane splitter loses a column: on the third pane.
+  (let* ((a (tui:fresh-pane :session "s1"))
+         (tree a))
+    (setf tree (tui:split-pane tree (tui:pane-id a) :beside (tui:fresh-pane :session "s2")))
+    (setf tree (tui:split-pane tree (tui:pane-id a) :stack (tui:fresh-pane :tasks "s1")))
+    (setf tree (tui:split-pane tree (tui:pane-id a) :beside (tui:fresh-pane :jobs "s1")))
+    (let ((form (tui:layout-form tree)))
+      (loop for width from 1 to 120
+            for fault = (tiling-fault form width 30)
+            when fault do (fail (format nil "width ~d: ~a" width fault)))
+      (loop for height from 1 to 40
+            for fault = (tiling-fault form 100 height)
+            when fault do (fail (format nil "height ~d: ~a" height fault)))
+      (false (tiling-fault form 100 30)))))
+
+(define-test "resizing changes one share and never starves a pane to nothing"
+  (let* ((a (tui:fresh-pane :session "s1"))
+         (b (tui:fresh-pane :session "s2"))
+         (tree (tui:split-pane a (tui:pane-id a) :beside b)))
+    (let ((wider (tui:resize-pane tree (tui:pane-id a) 3)))
+      (is equal '(4 1) (tui:branch-weights wider)))
+    ;; A pane cannot be shrunk out of existence: a weight of zero is a pane
+    ;; that is still focusable and no longer visible, which is a trap.
+    (let ((squashed (tui:resize-pane tree (tui:pane-id a) -50)))
+      (is equal '(1 1) (tui:branch-weights squashed))
+      (false (tiling-fault (tui:layout-form squashed) 80 24)))))

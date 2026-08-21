@@ -159,6 +159,7 @@
                              (:file "screen")
                              (:file "layout")
                              (:file "size")
+                             (:file "panes")
                              (:file "view")
                              (:file "paint")))))
 

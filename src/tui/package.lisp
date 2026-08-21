@@ -7,6 +7,10 @@
            #:with-raw-terminal #:terminal-p
            #:make-blank-screen #:screen-rows #:put #:flush #:clear-back
            #:screen #:screen-width #:screen-height
+           #:pane #:make-pane #:fresh-pane #:pane-kind #:pane-target #:pane-id #:pane-p
+           #:branch #:make-branch #:branch-p #:branch-direction #:branch-children
+           #:branch-weights #:pane-tree-panes #:find-pane #:split-pane #:close-pane
+           #:neighbour-pane #:layout-form #:resize-pane #:replace-pane
            #:paint #:layout-for #:wrap #:cursor-for #:visible-rows
            #:view #:make-view #:absorb #:type-key #:take-input
            #:view-lines #:view-partial #:view-input #:view-status #:view-busy
