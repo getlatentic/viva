@@ -1,10 +1,12 @@
-{"event": "span", "attrs": {"duration_ms": 752, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 891, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 848, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 174, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 885, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 653, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 398, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 90, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 537, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 261, "name": "op2"}}
+{"kind": "log", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 190, "unit": "s"}}}}
+{"kind": "log", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 397, "unit": "us"}}}}
+{"kind": "log", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 162, "unit": "s"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 192, "unit": "ms"}}}}
+{"kind": "log", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 248, "unit": "s"}}}}
+{"kind": "log", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 26, "unit": "ms"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 35, "unit": "ms"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 326, "unit": "ms"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 41, "unit": "us"}}}}
+{"kind": "log", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 144, "unit": "s"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 337, "unit": "ms"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 154, "unit": "us"}}}}

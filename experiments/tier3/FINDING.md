@@ -1,38 +1,46 @@
-# The corpus was too easy, and that is the finding
+# Two corpora, two negative results, and a working router
 
-Built to answer #6: does reflection reach tier 3 — a registered tool — and does
-a later task call it? Four variants of one shape, the same parse each time,
-data growing so doing it by hand stays annoying.
+Built to answer #6: does reflection reach **tier 3** — a registered tool — and
+does a later task call it?
 
-**Result: four solved, nothing retained.** No note, no skill, no tool. The only
-tools called were `bash`, `ls` and `write`.
+## First corpus: too easy
 
-That is the policy working. The task is a one-line sum over JSONL, solved in
-five to eight seconds. The prompt says *"most tasks leave nothing worth keeping,
-and `nothing to retain` is the correct answer then"*, and the routing rule
-prefers the cheap tier until reuse is **already** evident. A one-liner is not
-code you would rewrite; it is code you would retype. Declining was right.
+Four variants, one shape, a one-line sum over JSONL. **Four solved, nothing
+retained.** That is the policy working: the prompt says most tasks leave
+nothing worth keeping, and a one-liner is not code you would rewrite, it is
+code you would retype. The instrument was wrong for the question.
 
-So the corpus does not test what it was built to test, and this is the same
-mistake in a new place: the instrument was wrong for the question, not the
-thing being measured.
+## Second corpus: expensive to re-derive
 
-## What a corpus that reaches tier 3 needs
+Same shape, rebuilt so the parse actually costs something — nested at
+`body.span.elapsed`, three units where microseconds round down to zero, absent
+fields counting as zero, and **decoy `log` records carrying an elapsed value at
+the same path**, so a parse that skips the kind check silently over-counts.
 
-Not more repetitions of something cheap. A transformation **expensive to
-re-derive**:
+The gate discriminates all three ways: the correct answer passes, counting logs
+fails, ignoring units fails. (The first version's decoy put its value at a
+different path, so the kind check was never load-bearing — a gate that could
+not fail.)
 
-- nested or irregular structure, so the parse is not one expression
-- edge cases that must be handled the same way every time — absent fields,
-  mixed units, entries that look like data and are not
-- an answer that is wrong in a quiet way if any of them is missed
+**Four solved, and it retained: a skill, `sum-span-elapsed`, plus one note.**
 
-The dogfood's `spend` shape had exactly this and did produce a tool: three
-token fields, an `assistant`-only filter, absent fields counting as zero. Ours
-has one field and no filter.
+## So: tier 2, not tier 3, and that is the rule working
 
-## Cost
+The routing rule is *evidence of reuse*: code you might want again is a skill,
+code you have **already** wanted again is a tool. Four encounters of one shape
+produce a skill. They do not produce a tool, because by the time the skill
+exists the re-derivation cost is gone — which is exactly what the skill is for.
 
-$0.015 for the run, and it bought a negative result about the corpus rather
-than an answer about the policy. Worth recording at that price; not worth
-re-running until the tasks are harder.
+Reaching tier 3 needs the skill to be **written early and then reached for**,
+so reuse is evident *while the corpus is still running*: more encounters after
+the skill exists, or a second shape that needs the same transformation. Six to
+eight variants, not four.
+
+## What this bought
+
+The router demonstrably routes by cost: trivial work retains nothing, expensive
+work retains a skill. That is two of three tiers observed under controlled
+conditions. Tier 3 remains unobserved on demand and #6 stays open.
+
+$0.035 across both runs, off-peak, and the runner refuses to start inside a
+peak window.

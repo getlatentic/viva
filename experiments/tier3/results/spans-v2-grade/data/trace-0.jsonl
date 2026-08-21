@@ -1,8 +1,10 @@
-{"event": "span", "attrs": {"duration_ms": 553, "name": "op0"}}
-{"event": "span", "attrs": {"duration_ms": 629, "name": "op0"}}
-{"event": "span", "attrs": {"duration_ms": 451, "name": "op0"}}
-{"event": "span", "attrs": {"duration_ms": 246, "name": "op0"}}
-{"event": "span", "attrs": {"duration_ms": 167, "name": "op0"}}
-{"event": "span", "attrs": {"duration_ms": 153, "name": "op0"}}
-{"event": "span", "attrs": {"duration_ms": 304, "name": "op0"}}
-{"event": "span", "attrs": {"duration_ms": 515, "name": "op0"}}
+{"kind": "span", "meta": {"svc": "svc0"}, "body": {"span": {"name": "op", "elapsed": {"value": 2, "unit": "us"}}}}
+{"kind": "span", "meta": {"svc": "svc0"}, "body": {"span": {"name": "op", "elapsed": {"value": 298, "unit": "s"}}}}
+{"kind": "log", "meta": {"svc": "svc0"}, "body": {"span": {"name": "op", "elapsed": {"value": 26, "unit": "s"}}}}
+{"kind": "span", "meta": {"svc": "svc0"}, "body": {"span": {"name": "op"}}}
+{"kind": "span", "meta": {"svc": "svc0"}, "body": {"span": {"name": "op", "elapsed": {"value": 221, "unit": "us"}}}}
+{"kind": "span", "meta": {"svc": "svc0"}, "body": {"span": {"name": "op", "elapsed": {"value": 225, "unit": "us"}}}}
+{"kind": "span", "meta": {"svc": "svc0"}, "body": {"span": {"name": "op", "elapsed": {"value": 55, "unit": "ms"}}}}
+{"kind": "log", "meta": {"svc": "svc0"}, "body": {"span": {"name": "op", "elapsed": {"value": 221, "unit": "us"}}}}
+{"kind": "span", "meta": {"svc": "svc0"}, "body": {"span": {"name": "op", "elapsed": {"value": 331, "unit": "s"}}}}
+{"kind": "span", "meta": {"svc": "svc0"}, "body": {"span": {"name": "op"}}}

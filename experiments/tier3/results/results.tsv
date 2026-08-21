@@ -1,5 +1,5 @@
 position	shape	variant	solved	seconds	requests	prompt	completion
-1	spans	v1	1	8	1	0	0
+1	spans	v1	1	14	3	0	0
 2	spans	v2	1	7	1	0	0
-3	spans	v3	1	5	1	0	0
-4	spans	v4	1	8	1	0	0
+3	spans	v3	1	10	1	0	0
+4	spans	v4	1	13	1	0	0

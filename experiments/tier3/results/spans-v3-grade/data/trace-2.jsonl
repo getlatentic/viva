@@ -1,9 +1,11 @@
-{"event": "span", "attrs": {"duration_ms": 109, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 322, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 366, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 615, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 538, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 754, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 706, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 730, "name": "op2"}}
-{"event": "span", "attrs": {"duration_ms": 53, "name": "op2"}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 260, "unit": "ms"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 226, "unit": "us"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 196, "unit": "s"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 37, "unit": "s"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 367, "unit": "s"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op"}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 136, "unit": "ms"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op"}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 126, "unit": "us"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 258, "unit": "us"}}}}
+{"kind": "span", "meta": {"svc": "svc2"}, "body": {"span": {"name": "op", "elapsed": {"value": 77, "unit": "us"}}}}
