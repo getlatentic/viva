@@ -1522,3 +1522,141 @@ print(len(os.listdir(args.get('input', '.'))))
         (is = 4 (parse-integer (string-trim '(#\Newline #\Space)
                                             (tool:tool-result-output result)))
             "a relative path did not resolve against the task's directory")))))
+
+;;; ---------------------------------------------------------------------------
+;;; A registered tool's manifest cannot lie about what it takes (#41)
+;;;
+;;; The failure is not that a tool errors. It is that the manifest omits a
+;;; parameter the script requires, so the model cannot send what it was never
+;;; told about, and finds out inside somebody else's traceback -- in a later
+;;; task, on a different agent than the one that wrote it.
+;;; ---------------------------------------------------------------------------
+
+(defun registering (&key parameters script (name "probe"))
+  "Register a tool in a throwaway project. Returns (values NAME REASON)."
+  (let* ((root (namestring (uiop:ensure-directory-pathname
+                            (format nil "/tmp/vivarium-register-~d-~d"
+                                    (get-universal-time) (random 100000)))))
+         (environment (env:make-local-environment :cwd root)))
+    (ensure-directories-exist root)
+    (registry:register environment
+                       :name name
+                       :description "a tool under test"
+                       :exec (list "python3" "run.py")
+                       :parameters parameters
+                       :script script
+                       :script-name "run.py")))
+
+(defparameter +honest-script+
+  "import sys, json
+request = json.load(sys.stdin)
+if request.get('vivarium') == 'describe':
+    print(json.dumps({'parameters': [
+        {'name': 'path', 'type': 'string', 'required': True},
+        {'name': 'depth', 'type': 'integer', 'required': False}]}))
+    sys.exit(0)
+print(request['path'])
+")
+
+(define-test "a manifest that omits a required parameter is refused"
+  ;; The expensive direction: the script needs `path`, the manifest never says
+  ;; so, and the model cannot send what it was not told about.
+  (multiple-value-bind (name reason)
+      (registering :parameters (list (list "depth" :integer "how deep"))
+                   :script +honest-script+)
+    (false name "a lying manifest was registered")
+    (true (search "path" reason) "the offending field is not named: ~a" reason)
+    (true (search "requires" reason) "the reason does not say what is wrong: ~a" reason)))
+
+(define-test "a manifest that promises a parameter the script ignores is refused"
+  (multiple-value-bind (name reason)
+      (registering :parameters (list (list "path" :string "the file" :required-p t)
+                                     (list "invented" :string "nothing reads this"))
+                   :script +honest-script+)
+    (false name "a manifest promising an unread parameter was registered")
+    (true (search "invented" reason) "the offending field is not named: ~a" reason)))
+
+(define-test "a manifest that disagrees about a type is refused"
+  (multiple-value-bind (name reason)
+      (registering :parameters (list (list "path" :integer "the file" :required-p t))
+                   :script +honest-script+)
+    (false name)
+    (true (and (search "path" reason) (search "integer" reason))
+          "the type disagreement is not explained: ~a" reason)))
+
+(define-test "a truthful manifest registers, and records what it checked"
+  (multiple-value-bind (name reason)
+      (registering :parameters (list (list "path" :string "the file" :required-p t)
+                                     (list "depth" :integer "how deep"))
+                   :script +honest-script+)
+    (is string= "probe" name "a truthful manifest was refused: ~a" reason)
+    (false reason)))
+
+(define-test "a script that will not describe itself cannot take parameters"
+  ;; Refused at REGISTRATION, where the model that wrote both files is still
+  ;; there to fix them -- not at first call, in somebody else's task.
+  (multiple-value-bind (name reason)
+      (registering :parameters (list (list "path" :string "the file" :required-p t))
+                   :script "import sys, json
+print(json.load(sys.stdin)['path'])
+")
+    (false name "a script that answers no describe request was registered")
+    (true (search "describe" reason) "the convention is not explained: ~a" reason)))
+
+(define-test "a tool that takes nothing is not probed"
+  ;; Nothing to lie about, and every tool graduation writes is of this shape --
+  ;; so the cost of the check falls exactly on the tools that carry the risk.
+  (multiple-value-bind (name reason)
+      (registering :parameters '() :script "print('the same thing it printed before')
+")
+    (is string= "probe" name "a parameterless tool was refused: ~a" reason)
+    (false reason)))
+
+(define-test "a script edited after registration is reported, not called"
+  (let* ((root (namestring (uiop:ensure-directory-pathname
+                            (format nil "/tmp/vivarium-stale-~d-~d"
+                                    (get-universal-time) (random 100000)))))
+         (environment (env:make-local-environment :cwd root))
+         (directories (list (format nil "~a.vivarium/tools" root))))
+    (ensure-directories-exist root)
+    (multiple-value-bind (name reason)
+        (registry:register environment :name "counter"
+                                       :description "counts"
+                                       :exec (list "python3" "run.py")
+                                       :parameters '()
+                                       :script "print(1)
+"
+                                       :script-name "run.py")
+      (is string= "counter" name "registration failed: ~a" reason))
+    ;; It loads while the two agree.
+    (multiple-value-bind (entries warnings) (registry:load-entries environment directories)
+      (is = 1 (length entries) "a freshly registered tool did not load")
+      (is = 0 (length warnings) "~a" warnings))
+    ;; Somebody edits the script and not the manifest.
+    (env:write-text environment (format nil "~a.vivarium/tools/counter/run.py" root)
+                    "print(2)
+")
+    (multiple-value-bind (entries warnings) (registry:load-entries environment directories)
+      (is = 0 (length entries) "a stale tool was still offered to the model")
+      (is = 1 (length warnings) "the staleness was not reported")
+      (true (search "stale" (first warnings)) "~a" (first warnings))
+      (true (search "run.py" (first warnings)) "the changed file is not named: ~a"
+            (first warnings)))))
+
+(define-test "a manifest with no digest makes no claim"
+  ;; Every tool written before #41 existed is of this kind, and refusing them
+  ;; would be a check that broke what it was meant to protect.
+  (let* ((root (namestring (uiop:ensure-directory-pathname
+                            (format nil "/tmp/vivarium-nodigest-~d-~d"
+                                    (get-universal-time) (random 100000)))))
+         (environment (env:make-local-environment :cwd root))
+         (directory (format nil "~a.vivarium/tools/old" root)))
+    (ensure-directories-exist (format nil "~a/" directory))
+    (env:write-text environment (format nil "~a/run.py" directory) "print(1)
+")
+    (env:write-text environment (format nil "~a/tool.json" directory)
+                    "{\"name\":\"old\",\"description\":\"from before\",
+                      \"exec\":[\"python3\",\"run.py\"],\"parameters\":[]}")
+    (multiple-value-bind (entries warnings)
+        (registry:load-entries environment (list (format nil "~a.vivarium/tools" root)))
+      (is = 1 (length entries) "a pre-digest tool was refused: ~a" warnings))))

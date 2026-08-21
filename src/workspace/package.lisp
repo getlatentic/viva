@@ -108,6 +108,8 @@
   (:export #:load-tools #:load-entries #:parse-manifest #:run-entry
            #:entry #:entry-name #:entry-description #:entry-version
            #:entry-exec #:entry-parameters #:entry-directory
+           #:entry-digest #:register #:digest-of #:stale-reason #:disagreement
+           #:described-parameters #:*describe-request* #:*describe-timeout*
            #:*timeout* #:*inherited-environment*))
 
 (defpackage #:vivarium.mcp

@@ -57,6 +57,7 @@
                              (:file "skills")
                              (:file "trust")
                              (:file "registry")
+                             (:file "registration")
                              (:file "mcp")
                              (:file "memory")
                              (:file "templates")

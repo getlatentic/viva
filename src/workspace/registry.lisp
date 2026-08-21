@@ -45,7 +45,8 @@ than by ambient inheritance, which is not.")
   (version 1)
   (exec '() :type list)
   (parameters '() :type list)
-  (directory "" :type string))
+  (directory "" :type string)
+  (digest nil))
 
 ;;; Reading manifests
 
@@ -102,6 +103,8 @@ a tool that fails to load looks exactly like a tool nobody wrote."
                       (push parsed specs)))
            (values (make-entry :name name
                                :description description
+                               :digest (let ((recorded (field table "digest")))
+                                         (and (stringp recorded) recorded))
                                :version (or (field table "version") 1)
                                :exec (coerce exec 'list)
                                :parameters (nreverse specs)
@@ -132,10 +135,17 @@ Its tools would run as you. Trust it to enable them." directory project)
                      (parse-manifest
                       (or (ignore-errors (env:read-text environment manifest)) "")
                       (env:info-path info))
-                   (if entry
-                       (setf entries (cons entry (remove (entry-name entry) entries
-                                                         :key #'entry-name :test #'string=)))
-                       (push (format nil "~a: ~a" manifest reason) warnings)))))))
+                   (cond
+                     ((null entry) (push (format nil "~a: ~a" manifest reason) warnings))
+                     ;; A manifest that recorded a digest claims the script
+                     ;; beside it has not moved. If it has, the tool is
+                     ;; REPORTED rather than offered: a signature that changed
+                     ;; under the model is the failure this is here to stop.
+                     ((a:when-let ((stale (stale-reason environment entry (entry-digest entry))))
+                        (push stale warnings)
+                        t))
+                     (t (setf entries (cons entry (remove (entry-name entry) entries
+                                                          :key #'entry-name :test #'string=))))))))))
       (dolist (directory directories)
         (if (and project (not (trust:permitted-p environment directory project)))
             (refuse directory)

@@ -161,3 +161,61 @@ either honestly.
 network access; a tool has whatever the machine gives it. If that matters
 for your setting, confine the whole process — vivarium does not claim a
 boundary it does not enforce.
+
+## What a manifest promises, and how that is checked (#41)
+
+A `tool.json` is written by a model and describes a script the same model
+wrote. Until this existed, nothing checked that the two agreed — and the way
+they disagree is expensive. The manifest omits a parameter the script
+requires, the model cannot send what it was never told about, and the failure
+surfaces inside somebody else's traceback, in a later task, to a different
+agent than the one that wrote it. In-image tools never had this problem:
+`derive.lisp` reads the schema off the live function, so it cannot go stale.
+File-backed tools gave that property up.
+
+**The seam is a declared calling convention, not a probe with real
+arguments.** A script that takes parameters must answer a describe request:
+
+```
+stdin   {"vivarium":"describe"}
+stdout  {"parameters":[{"name":"path","type":"string","required":true}]}
+exit    0, and nothing else happens
+```
+
+The script is then the authority on its own interface and the manifest is a
+cache of it, so there is no second copy free to drift. The alternative —
+calling the tool with invented arguments to see whether it complains — runs
+the tool *for effect* at registration, which is a side effect nobody asked
+for.
+
+**A tool that declares no parameters is not probed.** There is nothing for it
+to lie about, and every tool graduation writes is of that shape, so the cost
+of the check falls exactly on the tools that carry the risk.
+
+**Refusals name the field.** Both directions are checked and they fail
+differently:
+
+| what is wrong | what registration says |
+|---|---|
+| the manifest declares `x`, the script does not accept it | `the manifest declares "x" but the script does not accept it` |
+| the manifest calls `x` a string, the script an integer | `the manifest calls "x" a string; the script calls it an integer` |
+| the script *requires* `x`, the manifest omits it | `the script requires "x", which the manifest does not declare` |
+
+The third is the expensive one and the reason this exists.
+
+**At registration, not at load and not at first call.** Registration is when
+the model that wrote both files is still there to fix them. The script is
+written first and the manifest last, so a refusal leaves a directory the
+loader ignores rather than a manifest naming an unchecked script.
+
+**Staleness is the load-time half.** A manifest records a digest of the
+script beside it. If the script has changed since, the tool is *reported* —
+`counter is stale: run.py has changed since its manifest was written` — and
+not offered to the model. A manifest with no digest makes no claim and is
+left alone, because every tool written before this existed is of that kind
+and a check that broke them would be a check that defeated itself.
+
+The digest is FNV-1a: it notices that a script changed, and does not pretend
+to defend against somebody who wants it to appear unchanged. The registry
+already refuses to load an untrusted project at all; that is where the
+security boundary is.

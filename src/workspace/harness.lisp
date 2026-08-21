@@ -117,18 +117,19 @@ guess dressed as an interface. It runs, and it prints what it printed before."
     (when (and (>= runs *graduation-threshold*)
                interpreter (skill:snippet-of skill)
                (not (env:path-exists-p environment (env:join-path directory "tool.json"))))
-      (ignore-errors
-       (env:ensure-directory environment directory)
-       (env:write-text environment (env:join-path directory (format nil "run.~a" extension))
-                       (skill:snippet-of skill))
-       (env:write-text
-        environment (env:join-path directory "tool.json")
-        (format nil "{~%  \"name\": ~s,~%  \"description\": ~s,~%  \"exec\": [~s, ~s],~%  \"parameters\": []~%}~%"
-                name
-                (format nil "~a (promoted from a skill after ~d runs)"
-                        (skill:skill-description skill) runs)
-                interpreter (format nil "run.~a" extension)))
-       name))))
+      ;; Through REGISTRY:REGISTER rather than writing the two files here.
+      ;; One registration path means the manifest records a digest -- so a
+      ;; snippet edited afterwards is reported stale instead of called -- and
+      ;; means the checks #41 added apply to everything that reaches the
+      ;; registry, not to whichever caller remembered them.
+      (values (registry:register environment
+                                 :name name
+                                 :description (format nil "~a (promoted from a skill after ~d runs)"
+                                                      (skill:skill-description skill) runs)
+                                 :exec (list interpreter (format nil "run.~a" extension))
+                                 :parameters '()
+                                 :script (skill:snippet-of skill)
+                                 :script-name (format nil "run.~a" extension))))))
 
 (defun run-skill-tool (agent)
   "Run the code a tier-2 skill carries, by name, and count the run.
