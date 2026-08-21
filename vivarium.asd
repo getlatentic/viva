@@ -156,7 +156,9 @@
                              (:file "terminal")
                              (:file "screen")
                              (:file "layout")
-                             (:file "size")))))
+                             (:file "size")
+                             (:file "view")
+                             (:file "paint")))))
 
 (defsystem "vivarium/cli"
   :description "One entry point for every run."

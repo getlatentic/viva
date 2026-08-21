@@ -1164,3 +1164,125 @@ print(sum([2, 3, 5]))
     (tui::note-resize)
     (true (tui:take-resize))
     (false (tui:take-resize) "a resize was reported twice")))
+
+(defun frame-of (view &key (width 100) (height 12))
+  "VIEW painted, as a list of strings. What the person would see."
+  (let ((screen (tui:make-blank-screen :width width :height height)))
+    (tui:paint view screen)
+    (tui:screen-rows screen)))
+
+(defun frame-has (frame text)
+  (some (lambda (row) (search text row)) frame))
+
+(define-test "streamed output becomes whole lines, however it arrives"
+  ;; A line arrives in five pieces and a piece holds three lines. Drawing each
+  ;; piece as it comes is how a client turns one sentence into five rows.
+  (let ((view (tui:make-view)))
+    ;; Written with FORMAT because a Common Lisp string has no \n escape --
+    ;; "a\nb" is the seven characters a, n, b, and a test that used it would
+    ;; assert on output the splitter never saw.
+    (dolist (piece (list "one" " and" (format nil " two~%three~%fo") (format nil "ur~%")))
+      (tui:absorb view "model.delta" (list (cons "text" piece))))
+    (is equal '("one and two" "three" "four") (tui::view-lines view))
+    (is string= "" (tui::view-partial view)))
+  ;; An unfinished line is still shown -- it is what the model is saying now.
+  (let ((view (tui:make-view)))
+    (tui:absorb view "model.delta" (list (cons "text" "thinking")))
+    (is equal '() (tui::view-lines view))
+    (true (frame-has (frame-of view) "thinking"))))
+
+(define-test "one frame shows sessions, output and tasks together"
+  ;; This is #45's reason to exist: the three things were in three places and
+  ;; the operator held the layout in their head.
+  (let ((view (tui:make-view)))
+    (setf (tui::view-current view) "alpha")
+    (tui:absorb view "session.list"
+                (list (cons "sessions" '(("alpha" . "alpha  vivarium")
+                                         ("beta" . "beta   notes")))))
+    (tui:absorb view "turn.started" nil)
+    (tui:absorb view "model.delta" (list (cons "text" (format nil "the answer is 42~%"))))
+    (tui:absorb view "tool.started" (list (cons "call" "bash npm test")))
+    (tui:absorb view "task.started" (list (cons "id" "t1") (cons "text" "indexing")))
+    (tui:absorb view "task.completed" (list (cons "id" "t2") (cons "text" "linted")))
+    (let ((frame (frame-of view)))
+      (true (frame-has frame "alpha  vivarium") "no session list")
+      (true (frame-has frame "beta   notes") "the other session is missing")
+      (true (frame-has frame "the answer is 42") "no output")
+      (true (frame-has frame "bash npm test") "no tool call")
+      (true (frame-has frame "~ indexing") "no running task")
+      (true (frame-has frame "+ linted") "no finished task")
+      (true (frame-has frame "working") "the turn does not look busy")
+      ;; The current session is marked, not merely listed.
+      (true (some (lambda (row) (search "> alpha" row)) frame)
+            "the current session is not marked"))))
+
+(define-test "a narrow pane keeps the output and drops the rest"
+  ;; Where this actually lives is a tmux split, not an 80-column window. Side
+  ;; panes that squeeze the output to nothing are worse than no side panes.
+  (let ((view (tui:make-view)))
+    (tui:absorb view "session.list" (list (cons "sessions" '(("a" . "alpha")))))
+    (tui:absorb view "model.delta" (list (cons "text" (format nil "still readable~%"))))
+    (let ((wide (frame-of view :width 120 :height 12))
+          (narrow (frame-of view :width 40 :height 12)))
+      (true (frame-has wide "tasks") "the wide frame has no task pane")
+      (true (frame-has narrow "still readable") "the narrow frame lost the output")
+      (false (frame-has narrow "tasks") "the task pane survived into 40 columns")))
+  ;; Three rows is a status bar's worth of pane: show output, nothing else.
+  (let ((view (tui:make-view)))
+    (tui:absorb view "model.delta" (list (cons "text" (format nil "tiny~%"))))
+    (true (frame-has (frame-of view :width 80 :height 3) "tiny"))))
+
+(define-test "ctrl-c stops the turn, and only then leaves"
+  ;; Quitting on the keystroke people use to stop a runaway command is how a
+  ;; client loses a session someone was in the middle of.
+  (let ((view (tui:make-view)))
+    (setf (tui::view-busy view) t)
+    (is eq :cancel (tui:type-key view (tui::make-key :value #\c :control t)))
+    (setf (tui::view-busy view) nil)
+    (is eq :quit (tui:type-key view (tui::make-key :value #\c :control t))))
+  ;; Ctrl-D with something typed is not a quit -- that is a half-written prompt.
+  (let ((view (tui:make-view)))
+    (tui:type-key view (tui::make-key :value #\h))
+    (is eq nil (tui:type-key view (tui::make-key :value #\d :control t)))
+    (is eq :quit (progn (tui:type-key view (tui::make-key :value :backspace))
+                        (tui:type-key view (tui::make-key :value #\d :control t))))))
+
+(define-test "typing, sending, and what the cursor follows"
+  (let ((view (tui:make-view)))
+    (dolist (character (coerce "hi" 'list))
+      (tui:type-key view (tui::make-key :value character)))
+    (is string= "hi" (tui::view-input view))
+    (true (frame-has (frame-of view) "> hi"))
+    ;; The cursor sits after what was typed, not wherever the last write ended.
+    (let* ((screen (tui:make-blank-screen :width 100 :height 12))
+           (place (progn (tui:paint view screen) (tui:cursor-for view screen))))
+      (is = 4 (cdr place) "the cursor is not after the typed text"))
+    (is eq :send (tui:type-key view (tui::make-key :value :enter)))
+    (is string= "hi" (tui:take-input view))
+    (is string= "" (tui::view-input view))
+    ;; An empty line is not a prompt worth paying for.
+    (is eq nil (tui:type-key view (tui::make-key :value :enter)))))
+
+(define-test "long lines wrap at words and scroll from the bottom"
+  (is equal '("the quick" "brown fox") (tui:wrap "the quick brown fox" 10))
+  ;; A word longer than the pane still has to break somewhere.
+  (is equal '("abcde" "fghij") (tui:wrap "abcdefghij" 5))
+  (let ((view (tui:make-view)))
+    (dotimes (index 50)
+      (tui:absorb view "model.delta" (list (cons "text" (format nil "line~d~%" index)))))
+    ;; Following: the newest is shown without anybody asking.
+    (let ((rows (tui:visible-rows view 20 5)))
+      (is equal '("line45" "line46" "line47" "line48" "line49") rows))
+    (tui:type-key view (tui::make-key :value :page-up))
+    (let ((rows (tui:visible-rows view 20 5)))
+      (is equal '("line35" "line36" "line37" "line38" "line39") rows))
+    (tui:type-key view (tui::make-key :value :page-down))
+    (is equal '("line45" "line46" "line47" "line48" "line49")
+        (tui:visible-rows view 20 5))))
+
+(define-test "an unknown event is ignored, not fatal"
+  ;; A client one version behind its daemon should lose a feature, not fall over.
+  (let ((view (tui:make-view)))
+    (tui:absorb view "something.invented.later" (list (cons "text" "?")))
+    (is equal '() (tui::view-lines view))
+    (true (frame-of view))))

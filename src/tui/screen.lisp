@@ -48,6 +48,18 @@ a shifted layout is a confusing one."
           when (>= at 0)
             do (setf (aref (screen-back screen) row at) character))))
 
+(defun screen-rows (screen &optional (which :back))
+  "The buffer as a list of strings, for tests and for looking at.
+
+Reading the grid rather than parsing the escape sequences a flush emits: what
+is being asserted is what the frame SAYS, and a test that decodes cursor moves
+to find out is testing the wrong layer twice."
+  (let ((grid (ecase which (:back (screen-back screen)) (:front (screen-front screen)))))
+    (loop for row below (screen-height screen)
+          collect (let ((line (make-string (screen-width screen))))
+                    (dotimes (column (screen-width screen) line)
+                      (setf (char line column) (aref grid row column)))))))
+
 (defun move-to (row column)
   (format nil "~c[~d;~dH" #\Escape (1+ row) (1+ column)))
 
