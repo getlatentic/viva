@@ -667,3 +667,17 @@ twice; it is somebody's record.")))
   (true (search "workspace:*on-output*" (repository-file "src/workspace/harness.lisp")))
   (true (search ":tool-output" (repository-file "src/console/shell.lisp")))
   (true (search "\"tool.output\"" (repository-file "src/daemon/events.lisp"))))
+
+(define-test "two clients stopping one job do not race"
+  ;; The job's state was a question asked of the OS at each call, and
+  ;; PROCESS-STATUS can change between the check and the act -- which is how
+  ;; `stop it` raced `it already exited` and left a SIGKILL aimed at a pid the
+  ;; kernel had since recycled. The state is now the job's own, written in one
+  ;; place under its lock, and the stop is claimed once.
+  (let ((job (jobs:start "while true; do sleep 1; done" :name "suite-racer")))
+    (sleep 0.4)
+    (is string= "running" (jobs:status-of job))
+    (mapc #'bt:join-thread
+          (loop repeat 8 collect (bt:make-thread (lambda () (ignore-errors (jobs:stop job))))))
+    (false (jobs:alive-p job) "the job survived eight concurrent stops")
+    (false (jobs:find-job "suite-racer") "a stopped job must leave the table")))

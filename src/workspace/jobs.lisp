@@ -21,7 +21,15 @@
   (command "" :type string)
   (process nil)
   (log "" :type string)
-  (directory "" :type string))
+  (directory "" :type string)
+  ;; :starting :running :exited :stopping. A STATE the job owns, not a question
+  ;; asked of the OS at each call -- PROCESS-STATUS can change between the check
+  ;; and the act, which is how `stop it` raced `it already exited` and left a
+  ;; SIGKILL aimed at a pid the kernel had recycled.
+  (state :starting :type keyword)
+  ;; Held for the whole of a state change, so two clients stopping the same job
+  ;; serialise instead of both deciding it is theirs to kill.
+  (lock (bt:make-lock "vivarium.job") :read-only t))
 
 (defvar *jobs* (make-hash-table :test #'equal)
   "Running jobs by name. The daemon is long-lived, so these outlive the turn
@@ -54,13 +62,29 @@ that started them -- which is the entire point.")
       (bt:with-lock-held (*lock*) (setf (gethash name *jobs*) job))
       job)))
 
+(defun observe (job)
+  "Bring the job's own state up to date with the OS, under its lock.
+
+One place asks PROCESS-STATUS and one place writes the answer down. Everything
+else reads the job's state, so a decision and the act that follows it cannot
+straddle a change."
+  (bt:with-lock-held ((job-lock job))
+    (let ((running (eq :running (sb-ext:process-status (job-process job)))))
+      (case (job-state job)
+        (:stopping (unless running (setf (job-state job) :exited)))
+        (:exited)
+        (t (setf (job-state job) (if running :running :exited)))))
+    (job-state job)))
+
 (defun alive-p (job)
-  (eq :running (sb-ext:process-status (job-process job))))
+  (member (observe job) '(:starting :running :stopping)))
 
 (defun status-of (job)
-  (if (alive-p job)
-      "running"
-      (format nil "exited ~a" (or (sb-ext:process-exit-code (job-process job)) "?"))))
+  (case (observe job)
+    (:running "running")
+    (:starting "starting")
+    (:stopping "stopping")
+    (t (format nil "exited ~a" (or (sb-ext:process-exit-code (job-process job)) "?")))))
 
 (defun all-jobs ()
   (bt:with-lock-held (*lock*)
@@ -87,6 +111,14 @@ up for an hour has an hour of logs and the model has a context window."
 The process group, not the process. `sh -c \"npm run dev\"` is a shell whose
 child is the server, and killing only the shell leaves the server holding the
 port -- which looks exactly like the stop having failed."
+  ;; Claim the stop, once. Whichever client gets here first moves the job to
+  ;; :STOPPING and does the work; a second one finds it already stopping and
+  ;; does not send a second signal at a pid that may by then be somebody else's.
+  (let ((mine (bt:with-lock-held ((job-lock job))
+                (when (member (job-state job) '(:starting :running))
+                  (setf (job-state job) :stopping)
+                  t))))
+    (declare (ignorable mine)))
   (when (alive-p job)
     (let ((pid (sb-ext:process-pid (job-process job))))
       (ignore-errors (sb-posix:killpg pid sb-unix:sigterm))
