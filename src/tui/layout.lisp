@@ -104,3 +104,17 @@ its neighbour, which is the only reason panes look like panes."
            (if (> (length line) (region-width region))
                (subseq line 0 (region-width region))
                line)))))
+
+(defun within-p (region row column)
+  (and (<= (region-row region) row)
+       (< row (+ (region-row region) (region-height region)))
+       (<= (region-column region) column)
+       (< column (+ (region-column region) (region-width region)))))
+
+(defun region-at (regions row column)
+  "Which region holds ROW, COLUMN -- as (NAME . REGION), or NIL.
+
+The regions tile exactly, so at most one can match and a miss means the click
+landed outside the area entirely. That is only true because DIVIDE leaves no
+gaps; hit-testing is the first thing to break when a layout does."
+  (find-if (lambda (entry) (within-p (cdr entry) row column)) regions))

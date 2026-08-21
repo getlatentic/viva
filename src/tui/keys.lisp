@@ -67,6 +67,13 @@ into a wrong one, and a wrong key is acted on."
   (let ((length (length bytes)))
     (cond
       ((zerop length) nil)
+      ;; CSI < ... M/m -- an SGR mouse report, which is not a key at all.
+      ;; Handled here because it arrives on the same wire and would otherwise
+      ;; be decoded as an escape followed by digits typed very fast.
+      ((and (> length 3) (char= #\Escape (char bytes 0)) (char= #\[ (char bytes 1))
+            (char= #\< (char bytes 2))
+            (member (char bytes (1- length)) '(#\M #\m)))
+       (decode-mouse (subseq bytes 3 (1- length)) (char bytes (1- length))))
       ;; CSI ... u  -- the kitty dialect
       ((and (> length 3) (char= #\Escape (char bytes 0)) (char= #\[ (char bytes 1))
             (char= #\u (char bytes (1- length))))

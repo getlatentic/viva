@@ -3,6 +3,9 @@
   (:local-nicknames (#:a #:alexandria))
   (:export #:supported-p #:with-kitty-keyboard
            #:*query* #:*push-flags* #:*pop-flags* #:*reply-timeout*
+           #:mouse #:mouse-p #:mouse-action #:mouse-button #:mouse-row #:mouse-column
+           #:mouse-control #:mouse-alt #:mouse-shift #:decode-mouse
+           #:with-mouse-reporting #:*enable-mouse* #:*disable-mouse*
            #:decode #:describe-key #:read-key #:*sequence-timeout*
            #:with-raw-terminal #:terminal-p
            #:make-blank-screen #:screen-rows #:put #:flush #:clear-back
@@ -16,6 +19,6 @@
            #:view-lines #:view-partial #:view-input #:view-status #:view-busy
            #:view-sessions #:view-current #:view-tasks #:view-scroll
            #:terminal-size #:with-resize-notice #:take-resize #:*fallback-size*
-           #:divide #:region-of #:draw-in #:region
+           #:divide #:region-at #:within-p #:region-of #:draw-in #:region
            #:region-row #:region-column #:region-width #:region-height
            #:key #:key-value #:key-control #:key-alt #:key-shift))

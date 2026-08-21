@@ -154,6 +154,7 @@
                 :serial t
                 :components ((:file "package")
                              (:file "keyboard")
+                             (:file "mouse")
                              (:file "keys")
                              (:file "terminal")
                              (:file "screen")

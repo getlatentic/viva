@@ -1424,3 +1424,58 @@ print(sum([2, 3, 5]))
     (let ((squashed (tui:resize-pane tree (tui:pane-id a) -50)))
       (is equal '(1 1) (tui:branch-weights squashed))
       (false (tiling-fault (tui:layout-form squashed) 80 24)))))
+
+(defun sgr-mouse (code column row final)
+  "The bytes a terminal sends for one SGR mouse report, one-based like the wire."
+  (format nil "~c[<~d;~d;~d~c" #\Escape code column row final))
+
+(define-test "a click decodes to a place on the screen"
+  ;; Mouse reporting is a mode we ask the host to turn on and sequences we
+  ;; decode -- the same shape as the kitty keyboard protocol, and nothing
+  ;; emulated. It is also what makes herdr hand the mouse over: it asks its
+  ;; emulator whether the program in a pane enabled tracking, and forwards
+  ;; rather than consuming when it has.
+  (let ((click (tui:decode (sgr-mouse 0 10 5 #\M))))
+    (true (tui:mouse-p click) "a mouse report decoded as something else")
+    (is eq :press (tui:mouse-action click))
+    (is eq :left (tui:mouse-button click))
+    ;; ONE-based on the wire, zero-based everywhere in this package.
+    (is = 4 (tui:mouse-row click) "the row was not converted at the boundary")
+    (is = 9 (tui:mouse-column click)))
+  ;; Press and release differ only in the final byte, and reading the wrong one
+  ;; turns every click into a click that is never released.
+  (is eq :release (tui:mouse-action (tui:decode (sgr-mouse 0 10 5 #\m))))
+  (is eq :drag (tui:mouse-action (tui:decode (sgr-mouse 32 10 5 #\M))))
+  (is eq :wheel-up (tui:mouse-action (tui:decode (sgr-mouse 64 10 5 #\M))))
+  (is eq :wheel-down (tui:mouse-action (tui:decode (sgr-mouse 65 10 5 #\M))))
+  (is eq :right (tui:mouse-button (tui:decode (sgr-mouse 2 1 1 #\M))))
+  ;; Modifiers ride in the same field.
+  (let ((ctrl-click (tui:decode (sgr-mouse 16 3 3 #\M))))
+    (true (tui:mouse-control ctrl-click))
+    (false (tui:mouse-alt ctrl-click)))
+  ;; SGR because the original encoding cannot express a column past 223 --
+  ;; not an edge case on a wide screen, but the right-hand third of one.
+  (is = 299 (tui:mouse-column (tui:decode (sgr-mouse 0 300 40 #\M))))
+  ;; A key is still a key.
+  (false (tui:mouse-p (tui:decode (string #\Tab)))))
+
+(define-test "a click lands in exactly one pane"
+  ;; At most one region can match, and only because DIVIDE leaves no gaps.
+  ;; Hit-testing is the first thing to break when a layout stops tiling.
+  (let* ((a (tui:fresh-pane :session "s1"))
+         (tree (tui:split-pane a (tui:pane-id a) :beside (tui:fresh-pane :session "s2")))
+         (regions (tui:divide (tui:layout-form tree) :width 80 :height 24)))
+    (let ((left (tui:region-at regions 10 5))
+          (right (tui:region-at regions 10 70)))
+      (true left) (true right)
+      (false (equal (car left) (car right)) "both halves hit the same pane"))
+    ;; Every cell hits something, and never two things.
+    (dotimes (row 24)
+      (dotimes (column 80)
+        (let ((hits (remove-if-not (lambda (entry) (tui::within-p (cdr entry) row column))
+                                   regions)))
+          (unless (= 1 (length hits))
+            (fail (format nil "~d,~d hit ~d panes" row column (length hits)))))))
+    ;; Outside is nothing, not the nearest pane.
+    (false (tui:region-at regions 99 0))
+    (false (tui:region-at regions 0 999))))
