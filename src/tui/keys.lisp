@@ -95,3 +95,51 @@ into a wrong one, and a wrong key is acted on."
             (and (key-control key) "C-") (and (key-alt key) "M-")
             (let ((value (key-value key)))
               (if (characterp value) (string value) (string-downcase (symbol-name value)))))))
+
+;;; Reading one key
+;;;
+;;; A key is one byte or several, and nothing in the bytes says which until you
+;;; have them. ESC alone is the Escape key; ESC [ A is Up; ESC [ 105;5 u is
+;;; Ctrl-I. So the reader takes ESC, then looks -- and the looking must be
+;;; bounded, because a person pressing Escape and nothing else must not wait
+;;; for a sequence that will never arrive.
+
+(defparameter *sequence-timeout* 0.05
+  "Seconds to wait for the rest of an escape sequence.
+
+Escape alone is a key people press, and a terminal sends the rest of a real
+sequence in one write -- so anything that has not arrived by now is not coming.
+Too long and Escape feels broken; too short and a slow link splits a real
+sequence into a false Escape plus rubbish.")
+
+(defun read-key (stream &key (timeout *sequence-timeout*))
+  "One key from STREAM, or NIL at end of input.
+
+Blocks for the FIRST byte -- there is nothing to do until a person types -- and
+only then bounds the wait, because by then the question is `is there more of
+this sequence`, which has an answer that arrives immediately or not at all."
+  (let ((first (read-char stream nil nil)))
+    (when first
+      (if (char/= #\Escape first)
+          (decode (string first))
+          (let ((deadline (+ (get-internal-real-time)
+                             (round (* timeout internal-time-units-per-second))))
+                (collected (make-string-output-stream)))
+            (write-char first collected)
+            (loop
+              (let ((next (read-char-no-hang stream nil nil)))
+                (cond
+                  ((null next)
+                   (when (> (get-internal-real-time) deadline)
+                     ;; Nothing more came: Escape on its own.
+                     (return (decode (get-output-stream-string collected))))
+                   (sleep 0.002))
+                  (t
+                   (write-char next collected)
+                   ;; A CSI sequence ends at its final byte -- an alphabetic
+                   ;; character or `~`. Stopping there rather than on the
+                   ;; timeout is what makes a fast keypress feel instant.
+                   (when (and (alpha-char-p next) (char/= #\[ next))
+                     (return (decode (get-output-stream-string collected))))
+                   (when (char= #\~ next)
+                     (return (decode (get-output-stream-string collected)))))))))))))

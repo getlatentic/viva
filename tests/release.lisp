@@ -960,3 +960,33 @@ print(sum([2, 3, 5]))
     ;; An unknown sequence is NIL, never a guess. A wrong key gets acted on.
     (false (k (format nil "~c[999~~" #\Escape)))
     (false (k ""))))
+
+(define-test "reading a key knows where a sequence ends, and when there is none"
+  ;; ESC alone is a key people press; ESC [ A is Up. Nothing in the bytes says
+  ;; which until you have them, so the reader takes ESC and then looks -- with
+  ;; a bound, because a person pressing Escape must not wait for a sequence
+  ;; that will never arrive.
+  (flet ((from (text) (tui::read-key (make-string-input-stream text) :timeout 0.02)))
+    ;; A complete sequence returns as soon as its final byte arrives, without
+    ;; waiting out the timeout.
+    (is eq :up (tui:key-value (from (format nil "~c[A" #\Escape))))
+    (let ((ctrl-i (from (format nil "~c[105;5u" #\Escape))))
+      (is eql #\i (tui:key-value ctrl-i))
+      (true (tui:key-control ctrl-i)))
+    ;; Escape with nothing after it is Escape, and costs the timeout once.
+    (is eq :escape (tui:key-value (from (string #\Escape))))
+    ;; An ordinary byte does not wait at all.
+    (is eql #\a (tui:key-value (from "a")))
+    ;; End of input is NIL, not a key.
+    (false (from ""))))
+
+(define-test "a complete sequence does not wait out the timeout"
+  ;; If the reader waited for the bound on every escape sequence, every arrow
+  ;; key would cost it -- which is how a TUI comes to feel laggy for reasons
+  ;; nobody can point at.
+  (let ((start (get-internal-real-time)))
+    (tui::read-key (make-string-input-stream (format nil "~c[A" #\Escape)) :timeout 1.0)
+    (let ((elapsed (/ (- (get-internal-real-time) start) internal-time-units-per-second)))
+      (true (< elapsed 0.5)
+            "an arrow key took ~,3fs against a 1s bound; it waited when it did not have to"
+            elapsed))))
