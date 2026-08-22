@@ -3,14 +3,24 @@
 A full-screen client for the vivarium daemon, in Rust, on ratatui.
 
 ```
-sh tui/install.sh     # builds, and links it onto your PATH
-vivarium-tui
+sh tui/install.sh     # builds it
+vivarium tui
 ```
 
-One command. It starts the daemon if there is not one — `daemon start` is
-idempotent, so the client can simply make sure rather than telling you about
-our architecture. It finds the launcher through `VIVARIUM_BIN`, your PATH, or
-the checkout it was built in.
+`vivarium` is the only command. The launcher finds this binary in the tree and
+runs it — there is no second name to install, find, keep in step or explain,
+and the person typing it does not care which language drew the frame. `live` is
+the older name for the same thing.
+
+The routing happens in the shell launcher, **before** SBCL loads: reaching the
+binary through the Lisp CLI worked and cost a minute of quickload first, to
+hand the terminal to a program that starts in milliseconds. It is 18ms now.
+
+It starts the daemon if there is not one — `daemon start` is idempotent, so the
+client makes sure rather than telling you about our architecture.
+
+Where the Rust binary has not been built, `vivarium tui` says so and runs the
+Lisp full-screen client instead. A checkout with no cargo must still have one.
 
 The installer is separate from the Lisp one on purpose. This binary needs a
 Rust toolchain, and somebody who only wants the engine and the line client

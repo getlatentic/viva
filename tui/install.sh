@@ -19,22 +19,11 @@ command -v cargo >/dev/null 2>&1 || {
 echo "== building"
 cargo build --release --manifest-path "$here/Cargo.toml"
 
-binary="$here/target/release/vivarium-tui"
-for candidate in "$HOME/.local/bin" "$HOME/bin" /usr/local/bin; do
-  if [ -d "$candidate" ] && [ -w "$candidate" ]; then
-    target="$candidate"
-    break
-  fi
-done
-target=${target:-$HOME/.local/bin}
-mkdir -p "$target"
-ln -sf "$binary" "$target/vivarium-tui"
-
-echo "== linked"
-echo "  $target/vivarium-tui -> $binary"
-case ":$PATH:" in
-  *":$target:"*) echo "  run: vivarium-tui" ;;
-  *) echo "  $target is not on your PATH; add it, or run $target/vivarium-tui" ;;
-esac
+# NOT linked onto the PATH under its own name. `vivarium` is the command; the
+# launcher finds this binary in the tree and runs it. A second name to install,
+# find, keep in step and explain buys nothing -- the person running it does not
+# care which language drew the frame.
+echo "== built"
+echo "  $here/target/release/vivarium-tui"
 echo
-echo "It needs a daemon: $root/bin/vivarium daemon start --background"
+echo "Run it with:  $root/bin/vivarium tui"

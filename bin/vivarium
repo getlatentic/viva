@@ -35,4 +35,32 @@ set -a
 [ -f "${HOME:-}/.vivarium/.env" ] && . "$HOME/.vivarium/.env"
 [ -f "$root/.env" ] && . "$root/.env"
 set +a
+
+# The full-screen client is a separate binary, and this is where it is reached
+# -- BEFORE sbcl, not from inside it. Routing to it from the Lisp CLI worked
+# and cost the whole system load first: a minute of quickload to hand the
+# terminal to a program that starts in milliseconds. The launcher already knows
+# the root and the environment, which is all that was needed.
+#
+# It falls through to the Lisp client when the Rust one has not been built,
+# because a checkout with no cargo must still have a full-screen client.
+case "${1:-}" in
+  tui|live)
+    for candidate in \
+      "$root/tui/target/release/vivarium-tui" \
+      "$root/tui/target/debug/vivarium-tui"
+    do
+      if [ -x "$candidate" ]; then
+        shift
+        VIVARIUM_BIN="$root/bin/vivarium" exec "$candidate" "$@"
+      fi
+    done
+    if [ "${1:-}" = "tui" ]; then
+      printf 'The Rust client is not built here, so this is the Lisp one.\n' >&2
+      printf 'Build the other with:  sh %s/tui/install.sh\n\n' "$root" >&2
+      set -- live "${@:2}"
+    fi
+    ;;
+esac
+
 exec sbcl --script "$root/bin/entry.lisp" "$@"

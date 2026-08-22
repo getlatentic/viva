@@ -77,21 +77,29 @@ fn run() -> std::io::Result<()> {
     // THE GREETING ALREADY CARRIES THE SESSIONS. Asking for them again was
     // the first draft: a second round trip to learn what the daemon had
     // already said, and a first frame that was empty until it answered.
+    // Wait for the GREETING, not for a non-empty session list. Waiting for
+    // sessions meant a daemon with none -- a fresh one, which is exactly when
+    // somebody is looking hardest at how long this takes -- stalled for the
+    // whole deadline before drawing anything.
     let deadline = Instant::now() + Duration::from_secs(10);
-    while model.sessions.is_empty() && Instant::now() < deadline {
+    let mut greeted = false;
+    while !greeted && Instant::now() < deadline {
         for message in connection.drain() {
             match message {
-                Incoming::Greeting(greeting) => take_sessions(&mut model, &greeting),
+                Incoming::Greeting(greeting) => {
+                    take_sessions(&mut model, &greeting);
+                    greeted = true;
+                }
                 Incoming::Event(event) => model.absorb(&event),
                 Incoming::Response(reply) => take_response(&mut model, &reply),
                 Incoming::Closed => {
                     model.connected = false;
-                    break;
+                    greeted = true;
                 }
             }
         }
-        if model.sessions.is_empty() {
-            std::thread::sleep(Duration::from_millis(20));
+        if !greeted {
+            std::thread::sleep(Duration::from_millis(10));
         }
     }
 

@@ -7,8 +7,13 @@
               "Start, stop or inspect the long-lived organism.")
         (list "attach" #'command-attach
               "Open a session inside the organism; closing leaves it running.")
-        (list "live" #'command-live
+        ;; The LAUNCHER intercepts these and runs the Rust client when it has
+        ;; been built. Reaching here means it has not, so these are the Lisp
+        ;; full-screen client -- which is why both names land on it.
+        (list "tui" #'command-live
               "Full screen: sessions, the running turn and tasks at once.")
+        (list "live" #'command-live
+              "The same as `tui`; the older name for it.")
         (list "shell" #'command-shell
               "Work in a directory, interactively.")
         (list "ipc" #'command-ipc
@@ -58,13 +63,12 @@ THE ORGANISM
       --cwd DIR               where a new session works
       --since N               replay events after sequence N
 
-  live [SESSION] [options]    full screen: sessions, the turn and tasks at once
-      --new                   start empty; do not continue what is recorded here
-      --resume ID             continue a named recorded session
-      --cwd DIR               where a new session works
+  tui                         full screen: sessions, the turn and tasks at once
+                              (`live` is the older name for the same thing)
 
-  With no session named, `live` rejoins a running one, or continues the most
-  recent recorded conversation for this directory. `attach` starts clean.
+  `tui` starts the daemon if there is not one, rejoins a session for this
+  directory, or continues the most recent conversation recorded here.
+  `attach` is line-oriented: it pipes, scripts and diffs, and starts clean.
 
   A session outlives the terminal that started it. Closing a client removes a
   subscriber, not the work.
