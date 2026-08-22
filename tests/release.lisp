@@ -1775,3 +1775,39 @@ print(sum([2, 3, 5]))
         (is eq :new (tui:tab-at view (1- end)))))
     ;; And it is past the named tabs, not on top of one.
     (is = 0 (tui:tab-at view (second (first (tui:view-tab-ranges view)))))))
+
+(define-test "a tool call reads as what it did, never as a printed object"
+  ;; The event's `call` is a JSON object, and formatting it with ~a puts
+  ;; #<HASH-TABLE :TEST EQUAL :COUNT 3 {800910C643}> in the middle of somebody's
+  ;; conversation -- the client showing its own internals to a person who asked
+  ;; what the agent was doing.
+  (flet ((call (name &rest arguments)
+           (list (cons "name" name)
+                 (cons "arguments" (and arguments (apply #'list arguments))))))
+    (is string= "bash npm test"
+        (tui:call-summary (call "bash" (cons "command" "npm test"))))
+    ;; The salient key wins over whatever else is in there.
+    (is string= "read src/tui/view.lisp"
+        (tui:call-summary (call "read" (cons "offset" "0")
+                                       (cons "path" "src/tui/view.lisp"))))
+    ;; No salient key: any string beats printing the object.
+    (is string= "invented something"
+        (tui:call-summary (call "invented" (cons "unknown_key" "something"))))
+    ;; No arguments at all: the name alone, which is uninformative but honest.
+    (is string= "bash" (tui:call-summary (call "bash")))
+    ;; Newlines flattened -- a multi-line command must not become five rows.
+    (is string= "bash cd /x && npm test"
+        (tui:call-summary (call "bash" (cons "command" (format nil "cd /x &&~%npm test")))))
+    ;; Nothing at all is still not a printed structure.
+    (false (search "HASH-TABLE" (tui:call-summary nil))))
+  ;; And through the fold, which is where it actually went wrong.
+  (let ((view (tui:make-view))
+        (call (make-hash-table :test #'equal))
+        (arguments (make-hash-table :test #'equal)))
+    (setf (gethash "command" arguments) "npm run dev"
+          (gethash "name" call) "bash"
+          (gethash "arguments" call) arguments)
+    (tui:absorb view "tool.started" (list (cons "call" call)))
+    (let ((frame (frame-of view)))
+      (true (frame-has frame "bash npm run dev") "the call did not render")
+      (false (frame-has frame "HASH-TABLE") "the client printed its own internals"))))

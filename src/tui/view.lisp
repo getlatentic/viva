@@ -44,6 +44,58 @@ the other just to be testable."
     (hash-table (gethash key data))
     (list (cdr (assoc key data :test #'equal)))))
 
+(defparameter *salient-keys*
+  '("command" "path" "pattern" "note" "target" "source" "name" "text")
+  "The argument worth showing, in the order worth trying.")
+
+(defun one-line (text limit)
+  "TEXT with newlines flattened, cut to LIMIT."
+  (let* ((flat (substitute #\Space #\Newline (or text "")))
+         (trimmed (string-trim " " flat)))
+    (if (> (length trimmed) limit)
+        (concatenate 'string (subseq trimmed 0 limit) "...")
+        trimmed)))
+
+(defun any-string-value (arguments)
+  "Any string in ARGUMENTS, whichever shape it arrived in.
+
+Both shapes, because the wire brings a hash table and a test writes an alist --
+and a fallback that handles only one of them is a fallback that works in
+production and not in the test, or the reverse. Either way it is not tested."
+  (etypecase arguments
+    (null nil)
+    (hash-table (loop for found being the hash-values of arguments
+                      when (stringp found) return found))
+    (list (loop for (nil . found) in arguments
+                when (stringp found) return found))))
+
+(defun call-summary (call)
+  "`bash npm test` rather than a printed hash table.
+
+The event's `call` is a JSON object, and a client that formats it with ~a gets
+`#<HASH-TABLE :TEST EQUAL :COUNT 3 {800910C643}>` in the middle of the
+conversation -- which is not merely ugly: it is the client showing its own
+internals to somebody who asked what the agent was doing. The line client has
+rendered this properly since it existed; this is that, ported rather than
+reinvented, because two renderings of one event drift.
+
+Falls back to the tool NAME alone, never to the object. A name with no
+argument is uninformative; a printed structure is worse than uninformative."
+  (if (or (stringp call) (null call))
+      ;; A daemon that sends the call already rendered, or nothing at all. Both
+      ;; are things a client one version apart will see, and neither is a
+      ;; reason to signal in the middle of drawing a frame.
+      (or call "")
+      (let ((name (field call "name"))
+            (arguments (field call "arguments")))
+        (format nil "~a~@[ ~a~]"
+                (or name "tool")
+                (a:when-let ((value (or (loop for key in *salient-keys*
+                                              for found = (field arguments key)
+                                              when (stringp found) return found)
+                                        (any-string-value arguments))))
+                  (one-line value 72))))))
+
 (defun add-line (view text)
   (let ((lines (append (view-lines view) (list text))))
     (setf (view-lines view)
@@ -93,7 +145,10 @@ its daemon should lose a feature, not fall over."
        (add-line view (format nil "> ~a" (or text ""))))
       ((equal name "tool.started")
        (end-line view)
-       (add-line view (format nil "  · ~a" (or (field data "call") text ""))))
+       (add-line view (format nil "  · ~a"
+                             (a:if-let ((call (field data "call")))
+                               (call-summary call)
+                               (or text "")))))
       ((equal name "turn.started")
        (setf (view-busy view) t (view-status view) "working"))
       ((member name '("turn.completed" "turn.failed" "turn.cancelled") :test #'equal)
