@@ -31,3 +31,6 @@ third-party/
 # source, and a regenerated family is byte-identical from its seed.
 experiments/families/results/
 experiments/families/__pycache__/
+
+# Rust build output for the tui client.
+tui/target/
