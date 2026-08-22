@@ -61,6 +61,74 @@ impl Event {
     }
 }
 
+/// The launcher that can start a daemon, if one can be found.
+///
+/// Looked for in the order a person would expect: what they told us, what is
+/// on their PATH, then the repository this binary was built inside. The last
+/// matters because a freshly built client is usually being run from a checkout
+/// where `vivarium` has not been installed yet.
+pub fn launcher() -> Option<PathBuf> {
+    if let Ok(named) = std::env::var("VIVARIUM_BIN") {
+        let path = PathBuf::from(named);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    if let Ok(path) = std::env::var("PATH") {
+        for directory in path.split(':') {
+            let candidate = PathBuf::from(directory).join("vivarium");
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    // tui/target/{debug,release}/vivarium-tui -> ../../../bin/vivarium
+    let exe = std::env::current_exe().ok()?;
+    let root = exe.parent()?.parent()?.parent()?.parent()?;
+    let candidate = root.join("bin/vivarium");
+    candidate.exists().then_some(candidate)
+}
+
+/// Start a daemon and wait for its socket, if there is not one already.
+///
+/// `daemon start` is idempotent -- it answers `already running` and exits
+/// zero -- so this does not need to ask first, and asking would be a race
+/// anyway: between the answer and the start, either could change.
+pub fn ensure_daemon(path: &PathBuf) -> Result<(), String> {
+    if UnixStream::connect(path).is_ok() {
+        return Ok(());
+    }
+    let launcher = launcher().ok_or_else(|| {
+        format!("no daemon on {}, and no `vivarium` to start one with. \
+Put it on your PATH or set VIVARIUM_BIN.", path.display())
+    })?;
+    let started = std::process::Command::new(&launcher)
+        .args(["daemon", "start", "--background"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|problem| format!("could not run {}: {problem}", launcher.display()))?;
+    if !started.status.success() {
+        return Err(format!(
+            "{} daemon start failed: {}",
+            launcher.display(),
+            String::from_utf8_lossy(&started.stderr).trim()
+        ));
+    }
+    // The first start of the day compiles the world, so this waits in minutes
+    // rather than seconds -- and says what it is waiting for, because a blank
+    // terminal for four minutes is indistinguishable from a hang.
+    eprintln!("starting the vivarium daemon…");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+    while std::time::Instant::now() < deadline {
+        if UnixStream::connect(path).is_ok() {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    Err(format!("the daemon did not come up on {}", path.display()))
+}
+
 pub struct Connection {
     writer: UnixStream,
     incoming: Receiver<Incoming>,

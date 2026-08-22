@@ -7,7 +7,10 @@ sh tui/install.sh     # builds, and links it onto your PATH
 vivarium-tui
 ```
 
-It needs a daemon: `vivarium daemon start --background`.
+One command. It starts the daemon if there is not one — `daemon start` is
+idempotent, so the client can simply make sure rather than telling you about
+our architecture. It finds the launcher through `VIVARIUM_BIN`, your PATH, or
+the checkout it was built in.
 
 The installer is separate from the Lisp one on purpose. This binary needs a
 Rust toolchain, and somebody who only wants the engine and the line client
@@ -66,6 +69,24 @@ answering the same question from disk all along, and no client could ask it.
 A tab is a session you have **open**, like a browser tab. The sidebar is for
 finding a session among all of them; `+` starts one. Two tabs in the same
 project are told apart by session id rather than both reading `alpha`.
+
+## Speed
+
+A frame is laid out once per change, not once per draw, and only the visible
+rows are rendered. Before that, every keypress re-wrapped the whole
+conversation — twice, because asking a paragraph how tall it is wraps it as
+well — so a long session was slower than a short one at exactly the moment
+somebody noticed.
+
+| | before | after |
+|---|---|---|
+| 120 turns, one frame | 26 ms | 0.49 ms |
+| 10 turns | 2.5 ms | 0.48 ms |
+| 200 turns | 43 ms | 0.49 ms |
+
+Flat, which is the part that matters: the length of a conversation no longer
+costs anything to draw. And the loop draws only when something changed, so an
+idle client writes **0 bytes**. `cargo test --release` holds both to numbers.
 
 ## What ratatui bought, said honestly
 

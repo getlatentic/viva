@@ -361,12 +361,21 @@ def main():
             fail("enter did not close the picker")
         else:
             ok("enter resumes the highlighted session")
+        # HOME first. A resumed conversation opens at its newest output, like
+        # any other, so the first thing said in it is above the window -- the
+        # earlier version of this check looked at the visible rows and reported
+        # a missing prompt while the transcript held it three screens up.
+        client.pump(4.0)
+        client.send(b"\x1b[H")
+        client.pump(2.0)
         body = "\n".join(client.term.lines()[2:-5])
         if "›" not in body:
-            print(client.term.text())
+            print("\n".join(client.term.lines()[:12]))
             fail("the resumed conversation shows no earlier prompt")
         else:
-            ok("a resumed session shows what was said in it")
+            ok("a resumed session shows what was said in it, from the top")
+        client.send(b"\x1b[F")                     # End, back to following
+        client.pump(1.0)
 
         # Scrolling back must reveal something that was not on screen.
         bottom = client.term.text()

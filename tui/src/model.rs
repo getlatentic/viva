@@ -74,6 +74,10 @@ pub struct Conversation {
     pub last_seq: u64,
     pub gap: bool,
     pub scroll: u16,
+    /// Bumped on every change. The renderer wraps a whole transcript to lay it
+    /// out, which costs the length of the conversation -- so it does that once
+    /// per change rather than once per frame, and this is how it knows.
+    pub revision: u64,
     /// True while the view is pinned to the newest output. A person who has
     /// scrolled up is reading; yanking them back to the bottom on the next
     /// token is the single rudest thing a log view can do.
@@ -86,6 +90,7 @@ impl Conversation {
     }
 
     fn push(&mut self, role: Role, text: impl Into<String>) {
+        self.revision += 1;
         let text = text.into();
         // Consecutive assistant text is one entry, so a reply that arrived in
         // forty chunks renders as one paragraph rather than forty.
@@ -108,6 +113,7 @@ impl Conversation {
     }
 
     fn absorb_text(&mut self, text: &str) {
+        self.revision += 1;
         self.partial.push_str(text);
         while let Some(at) = self.partial.find('\n') {
             let line: String = self.partial.drain(..=at).collect();
@@ -116,12 +122,19 @@ impl Conversation {
     }
 
     /// The transcript including whatever is streaming right now.
-    pub fn visible_entries(&self) -> Vec<Entry> {
-        let mut all = self.entries.clone();
-        if !self.partial.is_empty() {
-            all.push(Entry { role: Role::Assistant, text: self.partial.clone() });
-        }
-        all
+    ///
+    /// BORROWED, not cloned. Cloning every entry to render a frame costs the
+    /// whole conversation per frame, which is most of why a long session felt
+    /// slower than a short one.
+    pub fn visible_entries(&self) -> impl Iterator<Item = (Role, &str)> {
+        self.entries
+            .iter()
+            .map(|entry| (entry.role, entry.text.as_str()))
+            .chain(
+                (!self.partial.is_empty())
+                    .then(|| (Role::Assistant, self.partial.as_str()))
+                    .into_iter(),
+            )
     }
 }
 
@@ -255,6 +268,7 @@ impl Model {
                 conversation.push(Role::Tool, call.to_string());
             }
             "tool.output" => {
+                conversation.revision += 1;
                 // Live output from a command still running. It belongs to the
                 // task pane as well as the transcript: a build that prints for
                 // four minutes is the thing a person is waiting on.
@@ -276,6 +290,7 @@ impl Model {
                 conversation.busy = false;
             }
             "task.started" => {
+                conversation.revision += 1;
                 let id = event.text("task").to_string();
                 let parent = event.data.get("parent").and_then(|v| v.as_str()).map(str::to_string);
                 let label = if text.is_empty() { id.clone() } else { text.clone() };
@@ -429,11 +444,16 @@ mod tests {
         let mut model = model_with("s1");
         model.absorb(&event("user.message", "s1", json!({"text": "run the tests"})));
         model.absorb(&event("model.delta", "s1", json!({"text": "all green\n"})));
-        let entries = model.current_conversation().unwrap().visible_entries();
-        let roles: Vec<Role> = entries.iter().map(|entry| entry.role).collect();
+        let entries: Vec<(Role, String)> = model
+            .current_conversation()
+            .unwrap()
+            .visible_entries()
+            .map(|(role, text)| (role, text.to_string()))
+            .collect();
+        let roles: Vec<Role> = entries.iter().map(|(role, _)| *role).collect();
         assert_eq!(roles, vec![Role::User, Role::Assistant]);
-        assert_eq!(entries[0].text, "run the tests");
-        assert!(entries[1].text.contains("all green"));
+        assert_eq!(entries[0].1, "run the tests");
+        assert!(entries[1].1.contains("all green"));
     }
 
     #[test]
@@ -445,7 +465,14 @@ mod tests {
         for piece in ["one", " and", " two\nthree\nfo", "ur\n"] {
             model.absorb(&event("model.delta", "s1", json!({"text": piece})));
         }
-        let text = model.current_conversation().unwrap().visible_entries()[0].text.clone();
+        let text = model
+            .current_conversation()
+            .unwrap()
+            .visible_entries()
+            .next()
+            .unwrap()
+            .1
+            .to_string();
         assert_eq!(text, "one and two\nthree\nfour\n");
     }
 
@@ -455,9 +482,14 @@ mod tests {
         let mut model = model_with("s1");
         model.absorb(&event("model.delta", "s1", json!({"text": "thinking"})));
         assert!(model.current_conversation().unwrap().entries.is_empty());
-        let visible = model.current_conversation().unwrap().visible_entries();
+        let visible: Vec<(Role, String)> = model
+            .current_conversation()
+            .unwrap()
+            .visible_entries()
+            .map(|(role, text)| (role, text.to_string()))
+            .collect();
         assert_eq!(visible.len(), 1);
-        assert_eq!(visible[0].text, "thinking");
+        assert_eq!(visible[0].1, "thinking");
     }
 
     #[test]

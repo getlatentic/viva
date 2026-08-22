@@ -29,7 +29,91 @@ pub struct Hitboxes {
     pub picker_rows: Vec<(usize, Rect)>,
 }
 
-pub fn draw(frame: &mut Frame, model: &Model) -> Hitboxes {
+/// The transcript, laid out once per change instead of once per frame.
+///
+/// Wrapping is what costs: building the lines and asking the paragraph how
+/// tall it is both walk the whole conversation, and doing that at every
+/// keypress means a long session is slower than a short one at exactly the
+/// moment a person notices. Measured at 43ms a frame for 200 turns before this
+/// existed, which is three frames' worth of work to move a cursor.
+#[derive(Default)]
+pub struct Rendered {
+    key: Option<(String, u64, u16)>,
+    lines: Vec<Line<'static>>,
+    total: u16,
+}
+
+/// Break LINES to WIDTH, keeping each span's style across the break.
+///
+/// Wrapping HERE rather than at render time is the point. A Paragraph wraps
+/// every time it is drawn, so a frame costs the length of the conversation
+/// however little of it is visible -- and a person scrolling is asking for a
+/// frame per keypress. Wrapped once per change, the render is a slice.
+fn wrap_lines(lines: &[Line<'static>], width: u16) -> Vec<Line<'static>> {
+    let width = width.max(1) as usize;
+    let mut wrapped: Vec<Line<'static>> = Vec::with_capacity(lines.len());
+    for line in lines {
+        let mut row: Vec<Span<'static>> = Vec::new();
+        let mut used = 0usize;
+        for span in &line.spans {
+            let style = span.style;
+            let mut rest: &str = &span.content;
+            while !rest.is_empty() {
+                let room = width.saturating_sub(used);
+                if room == 0 {
+                    wrapped.push(Line::from(std::mem::take(&mut row)));
+                    used = 0;
+                    continue;
+                }
+                let taken = rest.chars().take(room).collect::<String>();
+                if taken.len() == rest.len() {
+                    used += taken.chars().count();
+                    row.push(Span::styled(taken, style));
+                    rest = "";
+                } else {
+                    // Break at the last space that fits, so a word is not cut
+                    // in half unless it is longer than the pane.
+                    let cut = taken.rfind(' ').map(|at| at + 1).unwrap_or(taken.len());
+                    let (head, _) = taken.split_at(cut);
+                    row.push(Span::styled(head.to_string(), style));
+                    rest = &rest[cut..];
+                    wrapped.push(Line::from(std::mem::take(&mut row)));
+                    used = 0;
+                }
+            }
+        }
+        wrapped.push(Line::from(row));
+    }
+    wrapped
+}
+
+impl Rendered {
+    /// The rows to draw for a window HEIGHT tall starting at OFFSET.
+    ///
+    /// A slice, so rendering costs the height of the pane rather than the
+    /// length of the session.
+    fn window(&self, offset: u16, height: u16) -> Vec<Line<'static>> {
+        let start = (offset as usize).min(self.lines.len());
+        let end = (start + height as usize).min(self.lines.len());
+        self.lines[start..end].to_vec()
+    }
+
+    fn refresh(&mut self, model: &Model, width: u16) {
+        let revision = model
+            .current_conversation()
+            .map(|conversation| conversation.revision)
+            .unwrap_or(0);
+        let key = (model.current.clone(), revision, width);
+        if self.key.as_ref() == Some(&key) {
+            return;
+        }
+        self.lines = wrap_lines(&transcript_lines(model), width);
+        self.total = self.lines.len().min(u16::MAX as usize) as u16;
+        self.key = Some(key);
+    }
+}
+
+pub fn draw(frame: &mut Frame, model: &Model, rendered: &mut Rendered) -> Hitboxes {
     let area = frame.area();
     let mut hits = Hitboxes::default();
 
@@ -67,7 +151,7 @@ pub fn draw(frame: &mut Frame, model: &Model) -> Hitboxes {
     if body.len() > 1 {
         draw_sessions(frame, body[0], model, &mut hits);
     }
-    draw_transcript(frame, transcript_area, model, &mut hits);
+    draw_transcript(frame, transcript_area, model, rendered, &mut hits);
     if body.len() > 2 {
         draw_tasks(frame, body[2], model, &mut hits);
     }
@@ -248,11 +332,11 @@ pub fn transcript_lines(model: &Model) -> Vec<Line<'static>> {
     let Some(conversation) = model.current_conversation() else {
         return lines;
     };
-    for entry in conversation.visible_entries() {
-        match entry.role {
+    for (role, text) in conversation.visible_entries() {
+        match role {
             Role::User => {
                 lines.push(Line::from(""));
-                for (index, piece) in entry.text.lines().enumerate() {
+                for (index, piece) in text.lines().enumerate() {
                     let prefix = if index == 0 { "› " } else { "  " };
                     lines.push(Line::from(vec![
                         Span::styled(prefix, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
@@ -265,16 +349,16 @@ pub fn transcript_lines(model: &Model) -> Vec<Line<'static>> {
                 lines.push(Line::from(""));
             }
             Role::Assistant => {
-                for piece in entry.text.split('\n') {
+                for piece in text.split('\n') {
                     lines.push(Line::from(Span::raw(piece.to_string())));
                 }
             }
             Role::Tool => lines.push(Line::from(vec![
                 Span::styled("· ", Style::default().fg(DIM)),
-                Span::styled(entry.text.clone(), Style::default().fg(DIM)),
+                Span::styled(text.to_string(), Style::default().fg(DIM)),
             ])),
             Role::Note => lines.push(Line::from(Span::styled(
-                format!("! {}", entry.text),
+                format!("! {}", text),
                 Style::default().fg(Color::Indexed(203)),
             ))),
         }
@@ -282,7 +366,13 @@ pub fn transcript_lines(model: &Model) -> Vec<Line<'static>> {
     lines
 }
 
-fn draw_transcript(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) {
+fn draw_transcript(
+    frame: &mut Frame,
+    area: Rect,
+    model: &Model,
+    rendered: &mut Rendered,
+    hits: &mut Hitboxes,
+) {
     let title = model
         .sessions
         .iter()
@@ -294,11 +384,10 @@ fn draw_transcript(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitb
     frame.render_widget(block, area);
     hits.transcript = inner;
 
-    let lines = transcript_lines(model);
-    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
-    let total = paragraph.line_count(inner.width) as u16;
-    let offset = scroll_offset(model, total, inner.height);
-    frame.render_widget(paragraph.scroll((offset, 0)), inner);
+    rendered.refresh(model, inner.width);
+    let offset = scroll_offset(model, rendered.total, inner.height);
+    // No wrap here: it is already wrapped, and only the visible rows are sent.
+    frame.render_widget(Paragraph::new(rendered.window(offset, inner.height)), inner);
 }
 
 /// How far down to start, given how much there is and how much fits.
@@ -418,7 +507,8 @@ mod tests {
     /// The frame as text, one string per row -- what a person would see.
     fn frame_of(model: &Model, width: u16, height: u16) -> Vec<String> {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-        terminal.draw(|f| { draw(f, model); }).unwrap();
+        let mut rendered = Rendered::default();
+        terminal.draw(|f| { draw(f, model, &mut rendered); }).unwrap();
         let buffer = terminal.backend().buffer().clone();
         (0..buffer.area.height)
             .map(|row| {
@@ -572,7 +662,8 @@ mod tests {
         model.open_tab("s2");
         let mut terminal = Terminal::new(TestBackend::new(100, 16)).unwrap();
         let mut hits = Hitboxes::default();
-        terminal.draw(|f| hits = draw(f, &model)).unwrap();
+        let mut rendered = Rendered::default();
+        terminal.draw(|f| hits = draw(f, &model, &mut rendered)).unwrap();
         assert_eq!(hits.tabs.len(), 2, "the tabs report no hitboxes");
         let plus = hits.new_tab.expect("the + reports no range and so can never be hit");
         let (_, first) = hits.tabs[0];

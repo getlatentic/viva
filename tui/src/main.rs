@@ -5,6 +5,7 @@
 //! change, the boundary would be in the wrong place. The Lisp client stays
 //! exactly as it is: it pipes, scripts and diffs, and that is why it exists.
 
+mod bench;
 mod input;
 mod model;
 mod protocol;
@@ -53,15 +54,22 @@ fn main() {
 }
 
 fn run() -> std::io::Result<()> {
+    // Said plainly, before anything else happens. Without this the failure is
+    // `Device not configured (os error 6)` from deep inside raw mode, which
+    // tells a person nothing about what they did.
+    if !std::io::IsTerminal::is_terminal(&stdout()) {
+        return Err(std::io::Error::other(
+            "vivarium-tui needs a terminal. Use `vivarium attach` when piping or scripting.",
+        ));
+    }
     let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
     let path = protocol::socket_path();
-    let mut connection = Connection::open(&path).map_err(|problem| {
-        std::io::Error::new(
-            problem.kind(),
-            format!("no daemon on {} ({problem}). Start one with `vivarium daemon start`.",
-                    path.display()),
-        )
-    })?;
+    // ONE COMMAND. Telling a person to start a daemon first is telling them
+    // about our architecture; `daemon start` is idempotent, so the client can
+    // simply make sure of it.
+    protocol::ensure_daemon(&path)
+        .map_err(|problem| std::io::Error::other(problem))?;
+    let mut connection = Connection::open(&path)?;
 
     let mut model = Model::new(cwd.clone());
     model.status = "ready — tab/click switches, arrows walk the list, ctrl-c stops a turn".into();
@@ -106,12 +114,21 @@ fn run() -> std::io::Result<()> {
     terminal.clear()?;
 
     let mut hits = ui::Hitboxes::default();
+    let mut rendered = ui::Rendered::default();
+    // DRAW ONLY WHEN SOMETHING CHANGED. Redrawing on a timer means an idle
+    // client spends the same effort as a busy one, and the effort is not small
+    // -- laying out a long transcript costs the length of the conversation.
+    let mut dirty = true;
     loop {
-        terminal.draw(|frame| hits = ui::draw(frame, &model))?;
+        if dirty {
+            terminal.draw(|frame| hits = ui::draw(frame, &model, &mut rendered))?;
+            dirty = false;
+        }
 
         // Everything the daemon has said, before the next frame: one repaint
         // for a burst of twenty events rather than twenty repaints.
         for message in connection.drain() {
+            dirty = true;
             match message {
                 Incoming::Event(event) => model.absorb(&event),
                 Incoming::Response(reply) => take_response(&mut model, &reply),
@@ -123,16 +140,22 @@ fn run() -> std::io::Result<()> {
             }
         }
 
-        if event::poll(Duration::from_millis(50))? {
+        // EVERY key that is already waiting, before drawing again. Holding a
+        // key or spinning a wheel delivers events faster than a frame, and
+        // repainting between each one makes the client slower the harder it is
+        // being used -- which is the wrong way round.
+        let mut waiting = event::poll(Duration::from_millis(30))?;
+        while waiting {
+            dirty = true;
             let action = input::read(&event::read()?, &mut model, &hits);
             match perform(&mut connection, &mut model, action) {
-                Ok(true) => break,
+                Ok(true) => return Ok(()),
                 Ok(false) => {}
                 Err(problem) => model.status = format!("{problem}"),
             }
+            waiting = event::poll(Duration::from_millis(0))?;
         }
     }
-    Ok(())
 }
 
 /// Do what a keypress or click asked for. Returns true to leave.
