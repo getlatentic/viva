@@ -34,3 +34,5 @@ experiments/families/__pycache__/
 
 # Rust build output for the tui client.
 tui/target/
+
+tui/__pycache__/

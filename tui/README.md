@@ -3,11 +3,15 @@
 A full-screen client for the vivarium daemon, in Rust, on ratatui.
 
 ```
-cargo build --release --manifest-path tui/Cargo.toml
-./tui/target/release/vivarium-tui
+sh tui/install.sh     # builds, and links it onto your PATH
+vivarium-tui
 ```
 
 It needs a daemon: `vivarium daemon start --background`.
+
+The installer is separate from the Lisp one on purpose. This binary needs a
+Rust toolchain, and somebody who only wants the engine and the line client
+should not be told to install one.
 
 ## What it is, and what it is not
 
