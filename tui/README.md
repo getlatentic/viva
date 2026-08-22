@@ -37,11 +37,25 @@ scripts and diffs, and that is why it exists.
 | Ctrl-N | start a session and open it in a tab |
 | Ctrl-W | close the tab — the session keeps running |
 | Ctrl-R | re-read the session list |
+| Ctrl-P / Ctrl-F | find any session, running or not |
 | ↑ from the prompt | move to the session list |
 | ↑ ↓ Enter in the list | walk it, open one |
 | Esc | back to the prompt |
 | PgUp PgDn Home End | scroll; End follows again |
 | click, wheel | tabs, `+`, sessions, scrolling |
+
+## Finding a session that is not running
+
+The sidebar answers *what is running*. Most sessions are not: they are files
+from yesterday. `Ctrl-P` opens a picker over every recorded session, narrowing
+as you type, and Enter continues the one you choose — the daemon reloads it and
+republishes the conversation, so it arrives with its history rather than as a
+blank pane.
+
+That needed two verbs the socket did not have — `session.recorded` and
+`session.search`. Both are facts about the workspace rather than about any
+interface, which is why they belong in the daemon: `vivarium sessions` had been
+answering the same question from disk all along, and no client could ask it.
 
 ## Tabs are sessions, not workspaces
 

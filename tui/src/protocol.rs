@@ -181,6 +181,28 @@ pub struct SessionInfo {
     pub model: String,
 }
 
+/// A session that is not running: what choosing one from a list needs.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct Recorded {
+    pub id: String,
+    #[serde(default)]
+    pub cwd: String,
+    #[serde(default)]
+    pub messages: u64,
+    #[serde(default)]
+    pub opening: String,
+}
+
+impl Recorded {
+    pub fn short_cwd(&self) -> &str {
+        let trimmed = self.cwd.trim_end_matches('/');
+        match trimmed.rsplit_once('/') {
+            Some((_, last)) if !last.is_empty() => last,
+            _ => trimmed,
+        }
+    }
+}
+
 impl SessionInfo {
     /// The project, not the path it would be truncated to. Four sessions in
     /// sibling directories all rendered as `/Users/dev/works` in a twenty

@@ -16,7 +16,7 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use model::Model;
-use protocol::{Connection, Incoming, SessionInfo};
+use protocol::{Connection, Incoming, Recorded, SessionInfo};
 use ratatui::prelude::*;
 use serde_json::{json, Value};
 use std::io::stdout;
@@ -191,6 +191,47 @@ fn perform(
             }
         }
         Action::Refresh => refresh_sessions(connection, model)?,
+        Action::Search(text) => {
+            let asked = if text.trim().is_empty() {
+                connection.send(json!({"type": "session.recorded", "limit": 50}))?
+            } else {
+                connection.send(json!({"type": "session.search", "text": text, "limit": 50}))?
+            };
+            let (reply, events) = connection.wait_for(asked, Duration::from_secs(15));
+            for event in events {
+                model.absorb(&event);
+            }
+            model.picker.searching = false;
+            if let Some(found) = reply.as_ref().and_then(|r| r.get("recorded")).and_then(Value::as_array) {
+                model.picker.results = found
+                    .iter()
+                    .filter_map(|value| serde_json::from_value::<Recorded>(value.clone()).ok())
+                    .collect();
+                model.picker.selection = 0;
+            }
+        }
+        Action::Resume(id) => {
+            // Continue it in a NEW cell. A recorded session is a file, not a
+            // running thing, so resuming is starting -- and the daemon
+            // publishes what it loaded, which is what makes it visible here.
+            let started = connection.send(json!({
+                "type": "session.start", "cwd": model.cwd.clone(), "resume": id
+            }))?;
+            let (reply, events) = connection.wait_for(started, Duration::from_secs(60));
+            for event in events {
+                model.absorb(&event);
+            }
+            if let Some(new_id) = reply
+                .as_ref()
+                .and_then(|reply| reply.get("session"))
+                .and_then(|session| session.get("id"))
+                .and_then(Value::as_str)
+            {
+                let new_id = new_id.to_string();
+                refresh_sessions(connection, model)?;
+                open_session(connection, model, &new_id)?;
+            }
+        }
     }
     Ok(false)
 }

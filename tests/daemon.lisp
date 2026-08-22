@@ -2287,3 +2287,54 @@ it reports nothing, and the suite has to be killed to find out why."
                        "a fresh session announced a conversation it never had")
                    (actor:shutdown cell))))
           (ignore-errors (close stream)))))))
+
+(define-test "a client can find sessions it is not running"
+  ;; `session.list` answers `what is running`. A client with only that shows a
+  ;; person the sessions they happen to have open and none of the ones they had
+  ;; yesterday -- which is most of them.
+  (with-repository (environment)
+    (let* ((root (env:env-cwd environment))
+           (directory (session:session-directory root))
+           (recorded (session:open-session :directory directory :cwd root)))
+      (session:record-entry recorded :message
+                            (msg:make-user-message
+                             :content (list (msg:make-text "find me later"))))
+      (session:close-session recorded)
+      (with-daemon (path)
+        (let ((stream (daemon:connect path)))
+          (unwind-protect
+               (progn
+                 (read-line stream nil nil)
+                 ;; It is not running, so the live listing must not have it.
+                 (let ((live (daemon:request stream "type" "session.list")))
+                   (true (gethash "success" live))
+                   (false (find (session:session-id recorded)
+                                (coerce (gethash "sessions" live) 'list)
+                                :key (lambda (each) (gethash "id" each))
+                                :test #'equal)
+                          "a closed session was listed as running"))
+                 ;; The recorded listing must.
+                 (let* ((reply (daemon:request stream "type" "session.recorded" "cwd" root))
+                        (found (coerce (gethash "recorded" reply) 'list)))
+                   (true (gethash "success" reply))
+                   (let ((mine (find (session:session-id recorded) found
+                                     :key (lambda (each) (gethash "id" each))
+                                     :test #'equal)))
+                     (true mine "the recorded session was not listed")
+                     (is string= "find me later" (gethash "opening" mine)
+                         "the listing carries no opening line to choose by")
+                     (true (plusp (gethash "messages" mine)))))
+                 ;; And searching finds it by what was said in it.
+                 (let* ((hit (daemon:request stream "type" "session.search"
+                                                    "text" "find me later" "cwd" root))
+                        (found (coerce (gethash "recorded" hit) 'list)))
+                   (true (gethash "success" hit))
+                   (true (find (session:session-id recorded) found
+                               :key (lambda (each) (gethash "id" each))
+                               :test #'equal)
+                         "search did not find a session by its own text"))
+                 ;; A search with nothing to search for is refused, not answered
+                 ;; with everything.
+                 (let ((empty (daemon:request stream "type" "session.search")))
+                   (false (gethash "success" empty))))
+            (ignore-errors (close stream))))))))

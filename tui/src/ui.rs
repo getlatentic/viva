@@ -7,7 +7,7 @@
 
 use crate::model::{Focus, Model, Role, TaskState};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 
 pub const ACCENT: Color = Color::Indexed(13);
 const DIM: Color = Color::Indexed(244);
@@ -25,6 +25,8 @@ pub struct Hitboxes {
     pub transcript: Rect,
     pub tasks: Rect,
     pub input: Rect,
+    pub picker: Option<Rect>,
+    pub picker_rows: Vec<(usize, Rect)>,
 }
 
 pub fn draw(frame: &mut Frame, model: &Model) -> Hitboxes {
@@ -72,7 +74,78 @@ pub fn draw(frame: &mut Frame, model: &Model) -> Hitboxes {
 
     draw_input(frame, rows[2], model, &mut hits);
     draw_status(frame, rows[3], model);
+    if model.focus == Focus::Picker {
+        draw_picker(frame, area, model, &mut hits);
+    }
     hits
+}
+
+/// Every session there has ever been, searchable.
+///
+/// Over the frame rather than beside it. The sidebar answers `what is
+/// running`; this answers `what have I talked to`, and the second list is
+/// hundreds long where the first is three -- so it takes the screen while it
+/// is being used and gives it back afterwards.
+fn draw_picker(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) {
+    let width = area.width.saturating_sub(8).min(90).max(20);
+    let height = area.height.saturating_sub(6).min(24).max(6);
+    let box_area = Rect::new(
+        area.x + (area.width.saturating_sub(width)) / 2,
+        area.y + (area.height.saturating_sub(height)) / 2,
+        width,
+        height,
+    );
+    frame.render_widget(Clear, box_area);
+    let block = pane("find a session", true);
+    let inner = block.inner(box_area);
+    frame.render_widget(block, box_area);
+    hits.picker = Some(inner);
+
+    let rows = Layout::vertical([Constraint::Length(2), Constraint::Min(1)]).split(inner);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("search ", Style::default().fg(DIM)),
+            Span::styled(
+                model.picker.query.clone(),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("_", Style::default().fg(ACCENT)),
+        ])),
+        rows[0],
+    );
+
+    let mut lines: Vec<Line> = Vec::new();
+    hits.picker_rows.clear();
+    for (index, found) in model.picker.results.iter().enumerate() {
+        if index as u16 >= rows[1].height {
+            break;
+        }
+        let chosen = index == model.picker.selection;
+        let style = if chosen {
+            Style::default().fg(Color::Indexed(232)).bg(ACCENT).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let opening: String = found.opening.chars().take(48).collect();
+        lines.push(Line::from(vec![
+            Span::styled(format!("{:<10}", found.short_cwd()), style.fg(if chosen {
+                Color::Indexed(232)
+            } else {
+                Color::Indexed(252)
+            })),
+            Span::styled(format!(" {:>4} msg  ", found.messages), Style::default().fg(DIM)),
+            Span::styled(opening, style),
+        ]));
+        hits.picker_rows.push((index, Rect::new(rows[1].x, rows[1].y + index as u16, rows[1].width, 1)));
+    }
+    if lines.is_empty() {
+        // `looking` and `nothing found` are different answers, and a picker
+        // that says the second while the first is true teaches people it is
+        // broken.
+        let message = if model.picker.searching { "looking…" } else { "nothing found" };
+        lines.push(Line::from(Span::styled(message, Style::default().fg(DIM))));
+    }
+    frame.render_widget(Paragraph::new(lines), rows[1]);
 }
 
 fn pane(title: &str, focused: bool) -> Block<'_> {

@@ -25,6 +25,7 @@ import select
 import signal
 import struct
 import sys
+import tempfile
 import termios
 import time
 
@@ -127,11 +128,11 @@ class Terminal:
 
 
 class Client:
-    def __init__(self, cwd, rows=34, cols=120):
+    def __init__(self, cwd, rows=34, cols=120, environment=None):
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.chdir(cwd)
-            os.execv(BINARY, [BINARY])
+            os.execve(BINARY, [BINARY], environment or os.environ)
         self.rows, self.cols = rows, cols
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         self.raw = ""
@@ -222,9 +223,36 @@ def whole_frame(client):
     return input_row(client).lstrip().startswith("│›")
 
 
+def own_daemon(cwd):
+    """A daemon of our own, on its own socket, stopped afterwards.
+
+    NOT the one a person is using. An earlier version of this check drove the
+    default socket, and its probe prompts went into a real session in a real
+    workspace -- because `vivarium live` with no argument attaches to whatever
+    is live for that directory. A test that writes into somebody's work is a
+    test that has to be apologised for.
+    """
+    socket_path = os.path.join(tempfile.mkdtemp(), "check.sock")
+    environment = dict(os.environ, VIVARIUM_SOCKET=socket_path)
+    launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
+    process = subprocess.Popen(
+        [launcher, "daemon", "start", "--background"],
+        cwd=cwd, env=environment,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    process.wait()
+    for _ in range(600):
+        if os.path.exists(socket_path):
+            time.sleep(0.5)
+            return socket_path, environment
+        time.sleep(0.5)
+    sys.exit("the check's own daemon never came up")
+
+
 def main():
     cwd = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(ROOT)
-    client = Client(cwd)
+    socket_path, environment = own_daemon(cwd)
+    client = Client(cwd, environment=environment)
     try:
         client.wait_for("sessions", 60, "the first frame")
         ok("connects and draws a frame")
@@ -274,24 +302,71 @@ def main():
         # A new tab is a new session, and it must appear as both.
         before_tabs = client.term.lines()[0]
         client.send(b"\x0e")                       # ctrl-n
-        client.pump(6.0)
+        # Starting a session builds an agent and resolves a model, which on a
+        # daemon that has not done it yet is not instant.
+        client.pump(20.0)
         after_tabs = client.term.lines()[0]
-        if after_tabs == before_tabs:
-            fail(f"ctrl-n opened no tab: {after_tabs!r}")
-        elif after_tabs.count("│") < 2:
-            fail(f"a second tab did not appear: {after_tabs!r}")
+        # ONE MORE than there was, not `two`. The check's own daemon starts
+        # with no sessions at all, so asserting a second tab appeared failed on
+        # a run where the first one had just been created correctly.
+        before_count, after_count = before_tabs.count("│"), after_tabs.count("│")
+        if after_count != before_count + 1:
+            fail(f"ctrl-n did not add a tab: before={before_tabs!r} after={after_tabs!r}")
         else:
-            ok("ctrl-n starts a session and opens it in a tab")
+            ok(f"ctrl-n starts a session and opens it in a tab ({before_count} -> {after_count})")
 
         # And closing the view does not end the session it was showing.
         sessions_before = sum(1 for l in client.term.lines() if l.startswith("│>") or l.startswith("│ "))
         client.send(b"\x17")                       # ctrl-w
         client.pump(2.0)
-        if client.term.lines()[0].count("│") >= before_tabs.count("│") + 2:
-            fail("ctrl-w closed no tab")
+        closed_count = client.term.lines()[0].count("│")
+        if closed_count != after_count - 1:
+            fail(f"ctrl-w did not close the tab: {client.term.lines()[0]!r}")
+        elif not any("idle" in l or "working" in l for l in client.term.lines()):
+            fail("closing the tab took the session with it")
         else:
             ok("ctrl-w closes the view and leaves the session running")
         _ = sessions_before
+
+        # Finding a session that is not running -- the question the sidebar
+        # cannot answer, and most sessions are its answer.
+        client.send(b"\x10")                       # ctrl-p
+        client.pump(4.0)
+        if "find a session" not in client.term.text():
+            print(client.term.text())
+            fail("ctrl-p opened no picker")
+        else:
+            found = [l for l in client.term.lines() if "msg" in l]
+            if not found:
+                print(client.term.text())
+                fail("the picker listed nothing")
+            else:
+                ok(f"ctrl-p lists {len(found)} recorded session(s)")
+                client.send(b"vite")
+                client.pump(4.0)
+                narrowed = [l for l in client.term.lines() if "msg" in l]
+                if not narrowed:
+                    ok("searching narrowed to nothing (no match in this workspace)")
+                elif len(narrowed) < len(found):
+                    ok(f"typing narrows the list: {len(found)} -> {len(narrowed)}")
+                else:
+                    fail(f"typing did not narrow the list: {len(found)} -> {len(narrowed)}")
+        # Resume the one that is highlighted. A recorded session is a file,
+        # not a running thing, so continuing it is starting -- and the daemon
+        # publishes what it loaded, which is what makes it visible here. It
+        # also gives the scroll check below something to scroll.
+        client.send(b"\r")
+        client.pump(8.0)
+        if "find a session" in client.term.text():
+            fail("enter did not close the picker")
+        else:
+            ok("enter resumes the highlighted session")
+        body = "\n".join(client.term.lines()[2:-5])
+        if "›" not in body:
+            print(client.term.text())
+            fail("the resumed conversation shows no earlier prompt")
+        else:
+            ok("a resumed session shows what was said in it")
 
         # Scrolling back must reveal something that was not on screen.
         bottom = client.term.text()
@@ -299,7 +374,8 @@ def main():
         client.pump(1.5)
         scrolled = client.term.text()
         if scrolled == bottom:
-            fail("paging up changed nothing on screen")
+            fail("paging up changed nothing on screen "
+                 "(is there more conversation than fits?)")
         elif "scrolled" not in scrolled:
             fail("the client did not say it had stopped following")
         else:
@@ -341,6 +417,9 @@ def main():
             ok("leaves the alternate screen, the cursor and the mouse as it found them")
     finally:
         client.close()
+        launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
+        subprocess.run([launcher, "daemon", "stop"], env=environment,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     print()
     if FAILURES:

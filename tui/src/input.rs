@@ -22,6 +22,10 @@ pub enum Action {
     CloseTab,
     SelectTab(usize),
     Refresh,
+    /// Ask for every session matching what has been typed into the picker.
+    Search(String),
+    /// Continue a recorded session in a new tab.
+    Resume(String),
 }
 
 pub fn read(event: &Event, model: &mut Model, hits: &Hitboxes) -> Action {
@@ -40,8 +44,19 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
         .map(|conversation| conversation.busy)
         .unwrap_or(false);
 
+    if model.focus == Focus::Picker {
+        return picker_key(key, model);
+    }
+
     if control {
         return match key.code {
+            KeyCode::Char('p') | KeyCode::Char('f') => {
+                model.focus = Focus::Picker;
+                model.picker.query.clear();
+                model.picker.selection = 0;
+                model.picker.searching = true;
+                return Action::Search(String::new());
+            }
             // Ctrl-C stops the TURN and only leaves when there is none.
             // Quitting on the key people press to stop a runaway command is how
             // a client loses a session someone was in the middle of.
@@ -141,6 +156,44 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
     }
 }
 
+/// The picker's keys. A mode, so every key here means one thing.
+fn picker_key(key: &KeyEvent, model: &mut Model) -> Action {
+    match key.code {
+        KeyCode::Esc => {
+            model.focus = Focus::Input;
+            Action::None
+        }
+        KeyCode::Up => {
+            model.picker.move_selection(-1);
+            Action::None
+        }
+        KeyCode::Down => {
+            model.picker.move_selection(1);
+            Action::None
+        }
+        KeyCode::Enter => match model.picker.selected() {
+            Some(found) => {
+                let id = found.id.clone();
+                model.focus = Focus::Input;
+                Action::Resume(id)
+            }
+            None => Action::None,
+        },
+        KeyCode::Backspace => {
+            model.picker.query.pop();
+            model.picker.searching = true;
+            Action::Search(model.picker.query.clone())
+        }
+        KeyCode::Char(character) => {
+            model.picker.query.push(character);
+            model.picker.selection = 0;
+            model.picker.searching = true;
+            Action::Search(model.picker.query.clone())
+        }
+        _ => Action::None,
+    }
+}
+
 fn next_tab(model: &mut Model) -> Action {
     if model.tabs.len() < 2 {
         return Action::None;
@@ -176,6 +229,25 @@ fn clicked(mouse: &MouseEvent, model: &mut Model, hits: &Hitboxes) -> Action {
         MouseEventKind::ScrollUp => scroll_by(model, 3),
         MouseEventKind::ScrollDown => scroll_by(model, -3),
         MouseEventKind::Down(MouseButton::Left) => {
+            // The picker is over everything, so it answers first -- otherwise
+            // a click meant for it lands on whatever it is covering.
+            if let Some(area) = hits.picker {
+                if inside(area, column, row) {
+                    for (index, row_area) in &hits.picker_rows {
+                        if inside(*row_area, column, row) {
+                            model.picker.selection = *index;
+                            if let Some(found) = model.picker.selected() {
+                                let id = found.id.clone();
+                                model.focus = Focus::Input;
+                                return Action::Resume(id);
+                            }
+                        }
+                    }
+                    return Action::None;
+                }
+                model.focus = Focus::Input;
+                return Action::None;
+            }
             if let Some(area) = hits.new_tab {
                 if inside(area, column, row) {
                     return Action::NewTab;

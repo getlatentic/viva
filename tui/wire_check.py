@@ -239,6 +239,18 @@ def main():
     else:
         ok("a finished task looks different from a running one")
 
+    # A new tab, against a daemon whose answer is known exactly.
+    before = term.lines()[0]
+    os.write(fd, b"\x0e")
+    pump(3.0)
+    after = term.lines()[0]
+    if after == before:
+        fail(f"ctrl-n changed nothing in the tab bar: {after!r}")
+    elif "gamma" not in after:
+        fail(f"the started session did not appear as a tab: {after!r}")
+    else:
+        ok("ctrl-n starts a session and opens it in a tab")
+
     try:
         os.kill(pid, 9)
         os.waitpid(pid, 0)

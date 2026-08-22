@@ -293,6 +293,17 @@ falls in the gap and none arrives twice."
 
 ;;; Requests
 
+(defun summary-json (summary)
+  "A recorded session, as much as choosing one from a list needs and no more.
+
+The opening line rather than the whole conversation: a picker that loaded every
+transcript to draw a list would take longer the longer you had used it."
+  (object "id" (session:summary-id summary)
+          "cwd" (session:summary-cwd summary)
+          "time" (session:summary-time summary)
+          "messages" (session:summary-messages summary)
+          "opening" (session:summary-opening summary)))
+
 (defun cell-json (cell)
   "One coherent instant of a cell, not six field reads racing the coordinator."
   (let ((now (actor:snapshot cell)))
@@ -403,6 +414,30 @@ every later attach replays them the same way as anything else."
          (let ((cell (start-session command)))
            (watch client cell)
            (ok "session" (cell-json cell))))
+
+        ;; RECORDED sessions, which are not the same question as `session.list`.
+        ;; That one answers `what is running`; this one answers `what have I
+        ;; talked to`, and a client with only the first can show a person the
+        ;; sessions they happen to have open and none of the ones they had
+        ;; yesterday. Both are facts about the workspace rather than about any
+        ;; interface, which is why they belong here rather than in a client.
+        ((string= "session.recorded" type)
+         (ok "recorded"
+             (coerce (mapcar #'summary-json
+                             (session:list-sessions
+                              :cwd (text-of command "cwd")
+                              :limit (or (gethash "limit" command) 50)))
+                     'vector)))
+
+        ((string= "session.search" type)
+         (a:if-let ((text (text-of command "text")))
+           (ok "recorded"
+               (coerce (mapcar #'summary-json
+                               (session:search-sessions text
+                                                        :cwd (text-of command "cwd")
+                                                        :limit (or (gethash "limit" command) 50)))
+                       'vector))
+           (no "session.search needs text.")))
 
         ((string= "session.list" type)
          (ok "sessions" (coerce (mapcar #'cell-json (actor:all-cells)) 'vector)))

@@ -5,8 +5,8 @@
 //! the compiler and to a smoke test alike -- so the fold is pure and a test
 //! feeds it a known event stream and reads the result back.
 
-use crate::protocol::{Event, SessionInfo};
-use std::collections::BTreeMap;
+use crate::protocol::{Event, Recorded, SessionInfo};
+use std::collections::{BTreeMap, HashSet};
 
 /// Who said it. The whole reason the transcript is a list of entries rather
 /// than a string: `user.message` and `model.delta` arrive as different events,
@@ -129,6 +129,35 @@ impl Conversation {
 pub enum Focus {
     Input,
     Sessions,
+    /// The picker is open over everything else. A mode, deliberately: finding
+    /// a session among hundreds is a different activity from talking to one,
+    /// and pretending otherwise means every key has two meanings.
+    Picker,
+}
+
+/// Finding a session among all of them, running or not.
+#[derive(Debug, Default)]
+pub struct Picker {
+    pub query: String,
+    pub results: Vec<Recorded>,
+    pub selection: usize,
+    /// True while a search is out, so an empty list can say `looking` instead
+    /// of `nothing found` -- which are different answers.
+    pub searching: bool,
+}
+
+impl Picker {
+    pub fn move_selection(&mut self, step: isize) {
+        if self.results.is_empty() {
+            return;
+        }
+        let count = self.results.len() as isize;
+        self.selection = (self.selection as isize + step).rem_euclid(count) as usize;
+    }
+
+    pub fn selected(&self) -> Option<&Recorded> {
+        self.results.get(self.selection)
+    }
 }
 
 #[derive(Debug)]
@@ -149,6 +178,13 @@ pub struct Model {
     pub tab: usize,
     pub cwd: String,
     pub connected: bool,
+    pub picker: Picker,
+    /// Every session id ever listed. A tab whose session is missing from the
+    /// list is only gone if we had SEEN it there; one we have never seen is
+    /// young, not dead. Without the distinction, opening a session and asking
+    /// for the list in the same breath closes the tab that was just made,
+    /// because the daemon had not finished registering the cell.
+    known: HashSet<String>,
 }
 
 impl Model {
@@ -165,6 +201,8 @@ impl Model {
             tab: 0,
             cwd,
             connected: true,
+            picker: Picker::default(),
+            known: HashSet::new(),
         }
     }
 
@@ -299,7 +337,12 @@ impl Model {
     /// outlive what it points at.
     pub fn prune_tabs(&mut self) {
         let live: Vec<String> = self.sessions.iter().map(|s| s.id.clone()).collect();
-        self.tabs.retain(|id| live.contains(id));
+        for id in &live {
+            self.known.insert(id.clone());
+        }
+        let known = &self.known;
+        self.tabs
+            .retain(|id| live.contains(id) || !known.contains(id));
         if self.tab >= self.tabs.len() {
             self.tab = self.tabs.len().saturating_sub(1);
         }
@@ -457,11 +500,32 @@ mod tests {
     fn a_tab_cannot_outlive_the_session_it_points_at() {
         let mut model = model_with("s1");
         model.sessions.push(SessionInfo { id: "s2".into(), ..Default::default() });
+        model.prune_tabs();                       // both are now known
         model.open_tab("s2");
         model.sessions.retain(|s| s.id == "s1");
         model.prune_tabs();
         assert_eq!(model.tabs, vec!["s1"]);
         assert_eq!(model.current, "s1");
+    }
+
+    #[test]
+    fn a_tab_for_a_session_the_list_has_not_caught_up_with_survives() {
+        // Opening a session and asking for the list in the same breath closed
+        // the tab that had just been made: the daemon had registered the cell
+        // and not yet listed it, and pruning read that as `gone`. A session we
+        // have never seen is young, not dead.
+        let mut model = model_with("s1");
+        model.prune_tabs();
+        model.open_tab("s9");                     // started, not yet listed
+        model.prune_tabs();
+        assert!(model.tabs.contains(&"s9".to_string()), "the new tab was pruned");
+        assert_eq!(model.current, "s9");
+        // Once it HAS been seen, losing it does close the tab.
+        model.sessions.push(SessionInfo { id: "s9".into(), ..Default::default() });
+        model.prune_tabs();
+        model.sessions.retain(|s| s.id != "s9");
+        model.prune_tabs();
+        assert!(!model.tabs.contains(&"s9".to_string()), "a session that ended kept its tab");
     }
 
     #[test]
