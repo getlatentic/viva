@@ -113,13 +113,33 @@ class Terminal:
         return "\n".join(self.lines())
 
 
+def live_session_ids():
+    """The daemon's session ids for this repository, newest last."""
+    import subprocess
+    out = subprocess.run([os.path.join(ROOT, "bin", "vivarium"), "daemon", "status"],
+                         capture_output=True, text=True, cwd=ROOT).stdout
+    return [line.split()[0] for line in out.splitlines()
+            if line.startswith("  s") and ROOT in line]
+
+
 class Session:
-    def __init__(self, rows=30, cols=100):
+    def __init__(self, rows=30, cols=100, target=None, fresh=False):
+        """A client. TARGET attaches to one named session, FRESH makes a new one.
+
+        Without either, `vivarium live` picks whichever live session belongs to
+        this directory -- and with several open that is not the one the last
+        client used. A reattach check that does not name its session is
+        checking that SOME session has the text, which is not the property."""
         binary = os.path.join(ROOT, "bin", "vivarium")
+        argv = [binary, "live"]
+        if target:
+            argv.append(target)
+        elif fresh:
+            argv.append("--new")
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.chdir(ROOT)
-            os.execv(binary, [binary, "live"])
+            os.execv(binary, argv)
         self.rows, self.cols = rows, cols
         self.set_size(rows, cols)
         self.raw = ""
@@ -145,11 +165,22 @@ class Session:
             self.raw += text
             self.term.feed(text)
 
-    def wait_for(self, needle, seconds, label):
+    def body(self):
+        """The panes, without the input box and status line.
+
+        Searching the WHOLE screen for a prompt matches it on the input line
+        while it is still being typed -- so a check for "the prompt reached the
+        transcript" passed before Enter had even been pressed. That is the
+        third time a check in this file has matched the wrong region and
+        reported a feature working."""
+        return "\n".join(self.term.lines()[:-4])
+
+    def wait_for(self, needle, seconds, label, where=None):
         stop = time.time() + seconds
         while time.time() < stop:
             self.pump(0.4)
-            if needle in self.term.text():
+            haystack = (where or self.term.text)()
+            if needle in haystack:
                 return
         print(self.term.text())
         fail(f"timed out waiting for {label}")
@@ -231,7 +262,8 @@ def check_unknown_sequences(session):
 
 
 def main():
-    session = Session()
+    before = set(live_session_ids())
+    session = Session(fresh=True)
     try:
         session.wait_for("vivarium", 300, "the first frame")
 
@@ -279,22 +311,29 @@ def main():
 
         # 5 -- what the person said must survive a detach and reattach. The
         # local echo showed it once and lost it; only an event can persist.
+        mine = [s for s in live_session_ids() if s not in before]
+        if not mine:
+            fail("could not tell which session this client created")
+            return
+        target = mine[-1]
         marker = "conformance probe %d" % os.getpid()
         session.send(marker.encode() + b"\r")
-        session.wait_for("> " + marker, 60, "the prompt to echo into the transcript")
+        session.wait_for("> " + marker, 60, "the prompt to reach the transcript",
+                         where=session.body)
         ok("a sent prompt appears in the transcript")
 
         session.send(b"\x03")            # detach
         session.pump(3.0)
-        again = Session()
+        again = Session(target=target)
         try:
             again.wait_for("vivarium", 300, "the reattached frame")
             again.pump(4.0)
-            if "> " + marker not in again.term.text():
+            found = again.body().count("> " + marker)
+            if found == 0:
                 print(again.term.text())
-                fail("the prompt did not survive a reattach")
-            elif again.term.text().count("> " + marker) != 1:
-                fail("the prompt was replayed more than once")
+                fail(f"the prompt did not survive a reattach; looked for {'> ' + marker!r}")
+            elif found != 1:
+                fail(f"the prompt was replayed {found} times")
             else:
                 ok("the prompt survives a reattach, exactly once")
             check_unknown_sequences(again)
