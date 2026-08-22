@@ -27,6 +27,25 @@ it drawing until the daemon replied."
   (terpri stream)
   (force-output stream))
 
+(defun resume-choice (parsed cwd)
+  "Which recorded session a fresh client should continue, or :OMIT.
+
+AUTO-RESUME, unlike the line client, and for the same reason this one attaches
+with `since 0`: a full-screen client that opens onto an empty pane in a
+directory with a hundred recorded messages is indistinguishable from one that
+lost them. The line client prints what it finds as it goes and can afford to
+start clean; this one shows a state, and an empty state is a claim.
+
+Resolved HERE rather than by asking the daemon to `resume: true`, so a
+directory with no history simply starts fresh instead of the daemon recording a
+resume that found nothing -- which is a diagnostic, and a diagnostic on an
+ordinary first run is noise that teaches people to ignore diagnostics."
+  (cond ((option-true-p parsed "new") :omit)
+        ((flag parsed "resume") (flag parsed "resume"))
+        (t (a:if-let ((latest (ignore-errors (session:latest-session cwd))))
+             (session:summary-id latest)
+             :omit))))
+
 (defun session-entries (reply)
   "The session list as (id . label) pairs, as the view wants them."
   (loop for cell across (or (gethash "sessions" reply) #())
@@ -245,7 +264,8 @@ terminal it was invited into.")
                 (daemon:request stream "type" "session.attach" "session" wanted
                                        "since" 0)
                 (daemon:request stream "type" "session.start" "cwd" cwd
-                                       "model" (option parsed "model")))
+                                       "model" (option parsed "model")
+                                       "resume" (resume-choice parsed cwd)))
           (setf earlier events)
         (unless (gethash "success" reply)
           (format t "~&~a~%" (gethash "error" reply))

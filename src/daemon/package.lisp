@@ -46,7 +46,7 @@
   ;; the escape hatch every law here exists to remove. Ask through SNAPSHOT,
   ;; say through TELL and SUBMIT, listen through SUBSCRIBE. Tests reach inside
   ;; with :: on purpose; testing internals is what they are for.
-  (:export #:cell #:cell-id #:spawn #:tell #:submit #:submit-retention #:busy-p #:ask-now
+  (:export #:cell #:cell-id #:spawn #:tell #:submit #:submit-retention #:busy-p #:ask-now #:publish
            #:shutdown #:await-shutdown #:await-turn
            #:subscribe #:subscribe-since #:unsubscribe #:since
            #:find-cell #:all-cells #:snapshot #:+terminal-events+ #:*journal-root*
@@ -76,6 +76,7 @@
                     (#:models #:vivarium.models)
                     (#:operation #:vivarium.operation)
                     (#:event #:vivarium.event)
+                    (#:loop* #:vivarium.loop)
                     (#:actor #:vivarium.actor))
   (:export #:serve #:stop #:running-p #:socket-path #:connect
            #:daemon-error #:with-connection #:request #:diagnostics))

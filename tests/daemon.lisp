@@ -2218,3 +2218,72 @@ it reports nothing, and the suite has to be killed to find out why."
                                  (actor:since cell 0))))
       (is = 0 (length spoken)
           "the reflection prompt was announced as something a person said"))))
+
+(define-test "a resumed conversation is visible, not only remembered"
+  ;; RESUME rebuilds the agent's context, so the MODEL remembers what was said.
+  ;; No client could see it: the messages are loaded before the cell exists, so
+  ;; nothing was ever published and a resumed session opened onto an empty pane
+  ;; -- which is indistinguishable from one that lost its history.
+  (with-repository (environment)
+    (let* ((root (env:env-cwd environment))
+           (directory (session:session-directory root))
+           (first-session (session:open-session :directory directory :cwd root)))
+      ;; A conversation worth coming back to.
+      (session:record-entry first-session :message
+                            (msg:make-user-message
+                             :content (list (msg:make-text "what did I ask for"))))
+      (session:record-entry first-session :message
+                            (msg:make-assistant-message
+                             :content (list (msg:make-text "marmalade"))))
+      (session:close-session first-session)
+      (with-daemon (path)
+        (let ((stream (daemon:connect path)))
+          (unwind-protect
+               (progn
+                 (read-line stream nil nil)
+                 (multiple-value-bind (reply events)
+                     (daemon:request stream "type" "session.start" "cwd" root
+                                            "resume" "true")
+                   (declare (ignore events))
+                   (true (gethash "success" reply) "~a" (gethash "error" reply))
+                   (let* ((id (gethash "id" (gethash "session" reply)))
+                          (cell (actor:find-cell id))
+                          (published (actor:since cell 0))
+                          (texts (mapcar (lambda (event)
+                                           (list (event:event-name event)
+                                                 (alexandria:when-let
+                                                     ((data (event:event-data event)))
+                                                   (gethash "text" data))))
+                                         published)))
+                     (true (find '("user.message" "what did I ask for") texts :test #'equal)
+                           "the resumed prompt was not published: ~s" texts)
+                     (true (find-if (lambda (each)
+                                      (and (equal "model.delta" (first each))
+                                           (search "marmalade" (or (second each) ""))))
+                                    texts)
+                           "the resumed answer was not published: ~s" texts)
+                     (actor:shutdown cell))))
+            (ignore-errors (close stream))))))))
+
+(define-test "starting fresh publishes no conversation"
+  ;; The guard on the above: if every start announced a conversation, the test
+  ;; would pass on a build that published the same thing regardless.
+  (with-repository (environment)
+    (with-daemon (path)
+      (let ((stream (daemon:connect path)))
+        (unwind-protect
+             (progn
+               (read-line stream nil nil)
+               (let ((reply (daemon:request stream "type" "session.start"
+                                                   "cwd" (env:env-cwd environment))))
+                 (true (gethash "success" reply))
+                 (let* ((id (gethash "id" (gethash "session" reply)))
+                        (cell (actor:find-cell id))
+                        (spoken (remove-if-not
+                                 (lambda (event)
+                                   (equal "user.message" (event:event-name event)))
+                                 (actor:since cell 0))))
+                   (is = 0 (length spoken)
+                       "a fresh session announced a conversation it never had")
+                   (actor:shutdown cell))))
+          (ignore-errors (close stream)))))))

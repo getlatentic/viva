@@ -362,7 +362,29 @@ falls in the gap and none arrives twice."
                                                    :format-arguments (list (session:summary-id earlier)
                                                                            (session:summary-messages earlier)))))
             (error (condition) (note-failure "resume" condition)))))
-    (actor:spawn :label (or (text-of command "label") cwd) :agent agent)))
+    (let ((cell (actor:spawn :label (or (text-of command "label") cwd) :agent agent)))
+      (when earlier (announce-resumed cell agent))
+      cell)))
+
+(defun announce-resumed (cell agent)
+  "Publish a resumed conversation into the new cell's event stream.
+
+RESUME rebuilds the agent's context, so the MODEL remembers what was said. No
+client could see it: the messages were loaded before the cell existed, so
+nothing was ever published, and a resumed session opened onto an empty pane --
+which is indistinguishable from a session that lost its history.
+
+The cell's event stream is the transcript, and this is what makes that true
+after a resume as well as during a turn. Published once, into this cell, so
+every later attach replays them the same way as anything else."
+  (dolist (message (loop*:context-messages (harness:agent-context agent)))
+    (let ((text (msg:text-of message)))
+      (when (plusp (length text))
+        (cond ((msg:user-message-p message)
+               (actor:publish cell "user.message" (object "text" text)))
+              ((msg:assistant-message-p message)
+               (actor:publish cell "model.delta"
+                              (object "text" (format nil "~a~%" text)))))))))
 
 (defun handle (client command)
   (let* ((id (gethash "id" command))

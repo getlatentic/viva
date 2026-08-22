@@ -59,8 +59,12 @@ THE ORGANISM
       --since N               replay events after sequence N
 
   live [SESSION] [options]    full screen: sessions, the turn and tasks at once
-      --new                   always start a fresh one, never rejoin
+      --new                   start empty; do not continue what is recorded here
+      --resume ID             continue a named recorded session
       --cwd DIR               where a new session works
+
+  With no session named, `live` rejoins a running one, or continues the most
+  recent recorded conversation for this directory. `attach` starts clean.
 
   A session outlives the terminal that started it. Closing a client removes a
   subscriber, not the work.
