@@ -278,7 +278,11 @@ fn draw_tasks(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
     if lines.is_empty() {
         lines.push(Line::from(Span::styled("no tasks", Style::default().fg(DIM))));
     }
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), inner);
+    // trim: FALSE. Trimming strips leading whitespace, and the indent is how a
+    // task says whose child it is -- so a trimming wrap rendered a tree as a
+    // flat list and threw away the only thing the task pane knows that a
+    // session list does not.
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
 fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) {
@@ -386,6 +390,28 @@ mod tests {
         let answer = frame.iter().find(|line| line.contains("a README")).unwrap();
         assert!(question.contains('›'), "the question carries no marker: {question:?}");
         assert!(!answer.contains('›'), "the answer was marked as a question: {answer:?}");
+    }
+
+    #[test]
+    fn a_child_task_is_drawn_under_its_parent() {
+        // The indent is the whole of what the task pane knows that a flat list
+        // does not. A trimming wrap strips leading whitespace and renders the
+        // tree flat, which is how this shipped the first time.
+        let mut model = ready(&[]);
+        model.absorb(&event("task.started", json!({"task": "t1", "text": "run the suite"})));
+        model.absorb(&event(
+            "task.started",
+            json!({"task": "t2", "text": "compile it", "parent": "t1"}),
+        ));
+        let frame = frame_of(&model, 120, 16);
+        let parent = frame.iter().find(|l| l.contains("run the suite")).unwrap();
+        let child = frame.iter().find(|l| l.contains("compile it")).unwrap();
+        let parent_at = parent.find("run the suite").unwrap();
+        let child_at = child.find("compile it").unwrap();
+        assert!(
+            child_at > parent_at,
+            "the child is not indented under its parent ({child_at} vs {parent_at})"
+        );
     }
 
     #[test]

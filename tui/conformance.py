@@ -16,6 +16,7 @@ either invented a failure or hid one:
   - its name extraction twice returned furniture, comparing it with itself
 """
 import codecs
+import subprocess
 import fcntl
 import os
 import pty
@@ -29,6 +30,20 @@ import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BINARY = os.path.join(ROOT, "target", "debug", "vivarium-tui")
+
+
+def build():
+    """Build before driving, so the check cannot pass or fail on a stale binary.
+
+    It already did: a fix was made, the unit tests were rebuilt and passed, and
+    this check kept failing against the binary from before it."""
+    result = subprocess.run(["cargo", "build"], cwd=ROOT, capture_output=True)
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr.decode())
+        sys.exit("cargo build failed")
+
+
+build()
 CUP = re.compile(r"\x1b\[(\d*);(\d*)H")
 KNOWN = re.compile(
     r"\x1b\[(?:"
@@ -256,6 +271,46 @@ def main():
         else:
             ok("paging to both extremes leaves one intact frame")
 
+        # A new tab is a new session, and it must appear as both.
+        before_tabs = client.term.lines()[0]
+        client.send(b"\x0e")                       # ctrl-n
+        client.pump(6.0)
+        after_tabs = client.term.lines()[0]
+        if after_tabs == before_tabs:
+            fail(f"ctrl-n opened no tab: {after_tabs!r}")
+        elif after_tabs.count("│") < 2:
+            fail(f"a second tab did not appear: {after_tabs!r}")
+        else:
+            ok("ctrl-n starts a session and opens it in a tab")
+
+        # And closing the view does not end the session it was showing.
+        sessions_before = sum(1 for l in client.term.lines() if l.startswith("│>") or l.startswith("│ "))
+        client.send(b"\x17")                       # ctrl-w
+        client.pump(2.0)
+        if client.term.lines()[0].count("│") >= before_tabs.count("│") + 2:
+            fail("ctrl-w closed no tab")
+        else:
+            ok("ctrl-w closes the view and leaves the session running")
+        _ = sessions_before
+
+        # Scrolling back must reveal something that was not on screen.
+        bottom = client.term.text()
+        client.send(b"\x1b[5~" * 4)
+        client.pump(1.5)
+        scrolled = client.term.text()
+        if scrolled == bottom:
+            fail("paging up changed nothing on screen")
+        elif "scrolled" not in scrolled:
+            fail("the client did not say it had stopped following")
+        else:
+            ok("paging up reveals earlier output and says it is not following")
+        client.send(b"\x1b[F")                     # End
+        client.pump(1.5)
+        if "scrolled" in client.term.text():
+            fail("End did not return to following")
+        else:
+            ok("End returns to the newest output")
+
         # An idle client must cost nothing.
         before = len(client.raw)
         client.pump(2.0)
@@ -294,4 +349,7 @@ def main():
     print("conformance: all invariants hold")
 
 
-main()
+# Guarded, because this file is imported for its terminal model. Without it,
+# importing the model ran the whole suite as a side effect.
+if __name__ == "__main__":
+    main()
