@@ -739,6 +739,31 @@ twice; it is somebody's record.")))
       (uiop:delete-directory-tree (pathname root) :validate (constantly t)
                                                   :if-does-not-exist :ignore))))
 
+(define-test "a tool's world is established in one place"
+  ;; CALL-IN-TOOL-CONTEXT re-establishes what a tool reads, so that a call on a
+  ;; batch thread sees the same world as one on the caller's. A special bound
+  ;; around the run instead reaches the ordinary path and not the parallel one,
+  ;; and the failure is SILENT -- the tool still runs and still returns.
+  ;;
+  ;; That is not hypothetical. *ON-OUTPUT* was added that way and streamed
+  ;; output was dropped for every shell command a parallel batch ran: recorded
+  ;; sessions held 38 of them and not one TOOL-OUTPUT event, so a build that
+  ;; printed for four minutes read as a hang. Nothing failed, so nothing said
+  ;; so, and the list of specials is not enforced by anything the compiler
+  ;; sees. This is what says so.
+  (let* ((source (repository-file "src/workspace/harness.lisp"))
+         (opens (search "(defmethod agent:call-in-tool-context" source))
+         (closes (and opens (search "(defmethod " source :start2 (1+ opens)))))
+    (true opens "CALL-IN-TOOL-CONTEXT is gone; this check needs rewriting")
+    (loop with needle = "(workspace:*"
+          for at = (search needle source) then (search needle source :start2 (1+ at))
+          while at
+          do (true (and (> at opens) (< at closes))
+                   (format nil "a workspace special is bound outside ~
+CALL-IN-TOOL-CONTEXT, at character ~d: ~a" at
+                           (string-trim " " (subseq source at (min (length source)
+                                                                   (+ at 60)))))))))
+
 (define-test "the README does not sell an abort every harness has"
   ;; It claimed `a steer can abort a request in flight` as one of three
   ;; deliberate differences, with a 1,927ms-vs-323,875ms measurement. Any
