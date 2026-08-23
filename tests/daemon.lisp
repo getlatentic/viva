@@ -930,7 +930,18 @@ checkpoint."))
     (let ((cell (paced-cell environment :pause 0.01 :limit 1)))
       (unwind-protect
            (progn
-             ;; Break the journal under it: an unwritable path.
+             ;; CLOSE THE CELL'S STREAM FIRST, then break the path. The journal
+             ;; opens a stream per cell and caches it, so the path is consulted
+             ;; once -- setting it afterwards changed a field nothing would read
+             ;; again. This test passed anyway because it was RACING the worker
+             ;; thread's first publish, and won: it broke the path before the
+             ;; stream had been opened. Publishing session.started from SPAWN
+             ;; rather than from the worker settled that race the other way and
+             ;; the test began failing, correctly -- it had been asserting a
+             ;; timing accident.
+             (let ((closed (bt:make-semaphore :count 0)))
+               (vivarium.actor::journal-post (list :close cell closed))
+               (bt:wait-on-semaphore closed :timeout 15))
              (setf (vivarium.actor::cell-journal-path cell) "/nonexistent/nowhere/x.jsonl")
              (vivarium.actor::publish cell "model.delta" nil)
              (true (daemon-wait
@@ -2338,3 +2349,39 @@ it reports nothing, and the suite has to be killed to find out why."
                  (let ((empty (daemon:request stream "type" "session.search")))
                    (false (gethash "success" empty))))
             (ignore-errors (close stream))))))))
+
+(define-test "a session stream opens with the session opening"
+  ;; Proven in spec/StreamOpening.tla; asserted here against the code that
+  ;; spec describes. Resuming publishes a recorded conversation into the new
+  ;; cell from the CALLER's thread, and spawn returns as soon as the worker
+  ;; thread is made rather than once it has run -- so two threads raced to
+  ;; publish first and the caller won twenty times out of twenty.
+  ;;
+  ;; Nothing was lost: the cell lock assigns sequence numbers atomically, so
+  ;; the stream stayed contiguous and every event arrived exactly once. That is
+  ;; why the ReplayBarrier proof kept holding and said nothing about this.
+  ;; Contiguity is not ordering-by-meaning.
+  (with-repository (environment)
+    (let* ((root (env:env-cwd environment))
+           (directory (session:session-directory root))
+           (recorded (session:open-session :directory directory :cwd root)))
+      (session:record-entry recorded :message
+                            (msg:make-user-message
+                             :content (list (msg:make-text "said before"))))
+      (session:close-session recorded)
+      ;; Repeated, because once is a coin toss and the bug was a race.
+      (dotimes (attempt 8)
+        (let ((command (make-hash-table :test #'equal)))
+          (setf (gethash "cwd" command) root
+                (gethash "resume" command) "true")
+          (let* ((cell (vivarium.daemon::start-session command))
+                 (names (mapcar #'event:event-name (actor:since cell 0))))
+            (unwind-protect
+                 (progn
+                   (true names "attempt ~d published nothing at all" attempt)
+                   (is string= "session.started" (first names)
+                       "attempt ~d opened with ~a" attempt (first names))
+                   (is = 1 (count "session.started" names :test #'equal)
+                       "attempt ~d announced the start ~d times"
+                       attempt (count "session.started" names :test #'equal)))
+              (actor:shutdown cell))))))))

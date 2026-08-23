@@ -877,7 +877,6 @@ drives the machine through :STOPPING and :FLUSHING to :COMPLETED, and the
 flush's confirmation arrives as a message like everything else. A session the
 deadline declared :STUCK keeps receiving -- the table absorbs late completions
 as diagnostics -- and stays registered, visibly, until an operator resolves it."
-  (publish cell "session.started" (event::object "label" (cell-label cell)))
   (loop until (eq :completed (first (cell-machine cell)))
         do (let ((message (next-message cell)))
              (handler-case (handle cell (or message '(:stop-deadline)))
@@ -902,6 +901,21 @@ as diagnostics -- and stays registered, visibly, until an operator resolves it."
     (ensure-journal)
     (setf (cell-journal-path cell) (journal-path-for id))
     (bt:with-lock-held (*registry-lock*) (setf (gethash id *cells*) cell))
+    ;; SESSION.STARTED BEFORE THE THREAD, so it is always sequence 1.
+    ;;
+    ;; It used to be the worker's first act, which was fine while the worker
+    ;; was the only publisher. It no longer is: a resumed session has its
+    ;; conversation published from the caller's thread the moment SPAWN
+    ;; returns, and that beat the worker every time -- twenty runs out of
+    ;; twenty had the transcript before the session had started.
+    ;;
+    ;; Nothing was lost or reordered within the log: the cell lock still
+    ;; assigns sequence numbers atomically, so the stream stayed contiguous.
+    ;; What broke is weaker and unstated, which is why it went unnoticed --
+    ;; that a session's stream OPENS with the session opening. Publishing here,
+    ;; before anything else can, makes it true by construction rather than by
+    ;; whichever thread happened to win.
+    (publish cell "session.started" (event::object "label" (cell-label cell)))
     (setf (cell-thread cell)
           (bt:make-thread (lambda () (run-cell cell)) :name (format nil "vivarium-~a" id)))
     cell))

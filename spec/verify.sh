@@ -57,6 +57,8 @@ ReconcileLiveness:Reconcile:holds:nothing is left mid-flight forever
 ReconcileWitnessAtomic:Reconcile:violates:assumed-atomic compensation reports reverted while effects remain
 TaskMessagingSafety:TaskMessaging:holds:no message vanishes without the sender being told
 TaskMessagingWitnessDrop:TaskMessaging:violates:a full inbox that drops silently is reachable
+StreamOpeningSafety:StreamOpening:holds:a session stream opens with the session opening
+StreamOpeningWitnessRace:StreamOpening:violates:published from two threads, the transcript can precede the start
 '
 
 failures=0
