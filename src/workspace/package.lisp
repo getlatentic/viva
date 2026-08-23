@@ -240,6 +240,7 @@
            #:agent-gate #:suspend-agent #:resume-agent #:agent-suspended-p #:cancel-agent
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
            #:agent-extension-directories #:agent-compaction #:agent-active-tools
+           #:agent-last-tokens
            #:compact-now #:set-model #:set-active-tools #:apply-settings
            #:send-message #:append-custom #:navigate #:tree-lines #:close-agent
            #:delegate #:delegate-tool #:sub-agent #:agent-lane #:delegate-async

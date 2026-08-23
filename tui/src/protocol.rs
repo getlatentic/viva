@@ -247,6 +247,15 @@ pub struct SessionInfo {
     pub cwd: String,
     #[serde(default)]
     pub model: String,
+    #[serde(default)]
+    pub effort: String,
+    /// What the provider reported for the last request, and what this model
+    /// accepts. Measured by the daemon: a client cannot know how full a
+    /// context is from the transcript it happens to hold.
+    #[serde(default)]
+    pub tokens: u64,
+    #[serde(default)]
+    pub limit: u64,
 }
 
 /// A session that is not running: what choosing one from a list needs.

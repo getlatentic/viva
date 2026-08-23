@@ -583,7 +583,19 @@ outside the very ownership boundary the snapshot exists to respect."
           :sequence (cell-sequence cell) :turn (cell-turn cell)
           :queued (length (cell-queued cell))
           :model (cell-model cell)
-          :cwd (cell-cwd cell))))
+          :cwd (cell-cwd cell)
+          ;; What the last request actually cost, and what this model will
+          ;; take. MEASURED, not estimated -- it is the number the provider
+          ;; reported, and the same one compaction decides on. A client cannot
+          ;; say how full a context is without being told, and guessing from
+          ;; the transcript it happens to hold would be wrong by whatever it
+          ;; has not been sent.
+          :tokens (harness:agent-last-tokens (cell-agent cell))
+          :limit (vivarium.compaction:settings-context-limit
+                  (harness:agent-compaction (cell-agent cell)))
+          :effort (string-downcase
+                   (princ-to-string
+                    (or (agent:agent-reasoning-effort (cell-agent cell)) ""))))))
 
 (defun busy-p (cell)
   "Is there a turn whose outcome the coordinator has not yet consumed?

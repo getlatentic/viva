@@ -8,8 +8,10 @@
 mod bench;
 mod commands;
 mod input;
+mod markdown;
 mod model;
 mod protocol;
+mod status;
 mod ui;
 
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture};

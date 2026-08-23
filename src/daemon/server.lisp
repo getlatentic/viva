@@ -322,7 +322,10 @@ transcript to draw a list would take longer the longer you had used it."
             ;; green because almost every daemon test connects with zero
             ;; sessions: the primary public path was untested and broken.
             "cwd" (getf now :cwd)
-            "model" (getf now :model))))
+            "model" (getf now :model)
+            "effort" (getf now :effort)
+            "tokens" (getf now :tokens)
+            "limit" (getf now :limit))))
 
 (defun text-of (command key &optional default)
   (let ((value (gethash key command)))
