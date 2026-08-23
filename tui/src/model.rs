@@ -51,6 +51,9 @@ pub struct Entry {
     pub outcome: Outcome,
     /// The id the daemon gave this call, so its result can find it again.
     call: String,
+    /// Bumped whenever this entry changes, so a renderer can tell which of a
+    /// thousand entries it has to lay out again -- which is one of them.
+    pub stamp: u64,
     /// True once output has arrived as a stream. A command that streams also
     /// reports its whole output when it finishes, so a client that took both
     /// would print everything a running command said a second time.
@@ -65,6 +68,7 @@ impl Entry {
             output: Vec::new(),
             outcome: Outcome::Running,
             call: String::new(),
+            stamp: 0,
             streamed: false,
         }
     }
@@ -137,6 +141,9 @@ pub struct Conversation {
     /// out, which costs the length of the conversation -- so it does that once
     /// per change rather than once per frame, and this is how it knows.
     pub revision: u64,
+    /// The stamp given to the next entry that changes. Never reused, so an
+    /// entry that has been laid out cannot be mistaken for one that has not.
+    stamps: u64,
     /// Show every line a tool printed, rather than the first few. Off by
     /// default: a tool result is context for the conversation, and a
     /// four-hundred-line build log that pushes the conversation off the screen
@@ -200,6 +207,8 @@ impl Conversation {
 
     fn push(&mut self, role: Role, text: impl Into<String>) {
         self.revision += 1;
+        self.stamps += 1;
+        let stamp = self.stamps;
         let text = text.into();
         // Consecutive assistant text is one entry, so a reply that arrived in
         // forty chunks renders as one paragraph rather than forty.
@@ -207,11 +216,14 @@ impl Conversation {
             if let Some(last) = self.entries.last_mut() {
                 if last.role == Role::Assistant {
                     last.text.push_str(&text);
+                    last.stamp = stamp;
                     return;
                 }
             }
         }
-        self.entries.push(Entry::new(role, text));
+        let mut entry = Entry::new(role, text);
+        entry.stamp = stamp;
+        self.entries.push(entry);
     }
 
     pub fn end_partial(&mut self) {
@@ -230,7 +242,10 @@ impl Conversation {
             self.push(Role::Assistant, complete);
         }
         if !line.is_empty() {
-            self.streaming.push(Entry::new(Role::Assistant, line));
+            self.stamps += 1;
+            let mut entry = Entry::new(Role::Assistant, line);
+            entry.stamp = self.stamps;
+            self.streaming.push(entry);
         }
     }
 
@@ -253,14 +268,21 @@ impl Conversation {
     /// result landed on that step instead, and the delegate itself stayed
     /// marked as running for the rest of the session.
     fn tool_mut(&mut self, id: &str) -> Option<&mut Entry> {
-        self.entries.iter_mut().rev().find(|entry| {
+        self.stamps += 1;
+        let stamp = self.stamps;
+        let found = self.entries.iter_mut().rev().find(|entry| {
             entry.role == Role::Tool
                 && if id.is_empty() {
                     entry.outcome == Outcome::Running
                 } else {
                     entry.call == id
                 }
-        })
+        });
+        if let Some(entry) = found {
+            entry.stamp = stamp;
+            return Some(entry);
+        }
+        None
     }
 
     /// Take the unfinished line out, leaving nothing behind.

@@ -6,7 +6,7 @@
 //! arrangement.
 
 use crate::markdown;
-use crate::model::{Focus, Model, Outcome, Role, TaskState};
+use crate::model::{Entry, Focus, Model, Outcome, Role, TaskState};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 
@@ -38,10 +38,19 @@ pub struct Hitboxes {
 /// keypress means a long session is slower than a short one at exactly the
 /// moment a person notices. Measured at 43ms a frame for 200 turns before this
 /// existed, which is three frames' worth of work to move a cursor.
+/// One entry's rows, and the version of the entry they were made from.
+struct Laid {
+    stamp: u64,
+    expanded: bool,
+    lines: Vec<Line<'static>>,
+}
+
 #[derive(Default)]
 pub struct Rendered {
-    key: Option<(String, u64, u16)>,
-    lines: Vec<Line<'static>>,
+    key: Option<(String, u16)>,
+    blocks: Vec<Laid>,
+    /// Where each block begins, so a window can be found without walking.
+    starts: Vec<usize>,
     total: u16,
 }
 
@@ -159,23 +168,83 @@ impl Rendered {
     /// A slice, so rendering costs the height of the pane rather than the
     /// length of the session.
     fn window(&self, offset: u16, height: u16) -> Vec<Line<'static>> {
-        let start = (offset as usize).min(self.lines.len());
-        let end = (start + height as usize).min(self.lines.len());
-        self.lines[start..end].to_vec()
+        let first = (offset as usize).min(self.total as usize);
+        let last = (first + height as usize).min(self.total as usize);
+        let mut rows = Vec::with_capacity(last - first);
+        // Straight to the block the window opens on, rather than through every
+        // line above it.
+        let mut at = match self.starts.binary_search(&first) {
+            Ok(index) => index,
+            Err(index) => index.saturating_sub(1),
+        };
+        while at < self.blocks.len() {
+            let start = self.starts[at];
+            if start >= last {
+                break;
+            }
+            for (offset, line) in self.blocks[at].lines.iter().enumerate() {
+                let position = start + offset;
+                if position >= first && position < last {
+                    rows.push(line.clone());
+                }
+            }
+            at += 1;
+        }
+        rows
     }
 
+    /// Lay out only what changed.
+    ///
+    /// A token changes ONE entry, and re-wrapping the whole conversation for
+    /// it costs the length of the conversation: measured at 6.5ms a token for
+    /// ten turns and 70.8ms for four hundred, so a long session got slower at
+    /// exactly the moment somebody was watching output arrive. Each entry
+    /// carries a stamp that changes when it does, so a pass over a thousand
+    /// entries compares a thousand integers and lays out the one that moved.
     fn refresh(&mut self, model: &Model, width: u16) {
-        let revision = model
-            .current_conversation()
-            .map(|conversation| conversation.revision)
-            .unwrap_or(0);
-        let key = (model.current.clone(), revision, width);
-        if self.key.as_ref() == Some(&key) {
-            return;
+        let key = (model.current.clone(), width);
+        if self.key.as_ref() != Some(&key) {
+            // A different session, or a resize: nothing laid out for the old
+            // width can be reused at the new one.
+            self.blocks.clear();
+            self.key = Some(key);
         }
-        self.lines = wrap_lines(&transcript_lines(model), width);
-        self.total = self.lines.len().min(u16::MAX as usize) as u16;
-        self.key = Some(key);
+        let Some(conversation) = model.current_conversation() else {
+            self.blocks.clear();
+            self.starts.clear();
+            self.total = 0;
+            return;
+        };
+        let expanded = conversation.expanded;
+        let mut count = 0;
+        for entry in conversation.visible_entries() {
+            let fresh = match self.blocks.get(count) {
+                Some(block) => block.stamp != entry.stamp || block.expanded != expanded,
+                None => true,
+            };
+            if fresh {
+                let block = Laid {
+                    stamp: entry.stamp,
+                    expanded,
+                    lines: wrap_lines(&entry_lines(entry, expanded), width),
+                };
+                match self.blocks.get_mut(count) {
+                    Some(slot) => *slot = block,
+                    None => self.blocks.push(block),
+                }
+            }
+            count += 1;
+        }
+        self.blocks.truncate(count);
+
+        self.starts.clear();
+        self.starts.reserve(self.blocks.len());
+        let mut running = 0usize;
+        for block in &self.blocks {
+            self.starts.push(running);
+            running += block.lines.len();
+        }
+        self.total = running.min(u16::MAX as usize) as u16;
     }
 }
 
@@ -445,16 +514,20 @@ fn state_mark(state: &str) -> (&'static str, Color) {
 /// invisible on a monochrome terminal, to anyone who cannot tell two shades
 /// apart, and to any test that reads the frame back -- so the distinction that
 /// matters most is the one that must not depend on it.
-fn transcript_lines(model: &Model) -> Vec<Hanging> {
-    let mut lines: Vec<Hanging> = Vec::new();
-    let Some(conversation) = model.current_conversation() else {
-        return lines;
-    };
+/// The rows ONE entry needs.
+///
+/// One entry at a time, because a token changes one entry and re-wrapping the
+/// whole conversation for it costs the length of the conversation. Measured
+/// before this: one streamed token cost 6.5ms at ten turns and 70.8ms at four
+/// hundred, so a long session got slower at exactly the moment somebody was
+/// watching output arrive.
+fn entry_lines(entry: &Entry, expanded: bool) -> Vec<Hanging> {
     // How many lines of a tool result to show when it is not expanded. Three
     // is enough to see what a command said and not enough to bury the
     // conversation it belongs to.
     const GLIMPSE: usize = 3;
-    for entry in conversation.visible_entries() {
+    let mut lines: Vec<Hanging> = Vec::new();
+    {
         let text = entry.text.as_str();
         match entry.role {
             Role::User => {
@@ -492,7 +565,7 @@ fn transcript_lines(model: &Model) -> Vec<Hanging> {
                     Span::styled(text.to_string(),
                                  Style::default().fg(Color::Indexed(252))),
                 ])));
-                let shown = if conversation.expanded {
+                let shown = if expanded {
                     entry.output.len()
                 } else {
                     entry.output.len().min(GLIMPSE)
