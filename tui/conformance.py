@@ -220,11 +220,17 @@ def input_row(client):
     Not by content. The transcript marks what a person said with the same `›`
     the prompt uses -- correctly, since it is the same thing -- so a
     content-based search finds the last thing they typed and reports that
-    typing never reached the prompt. Third from the bottom: status, the box's
-    lower border, then the line itself.
+    typing never reached the prompt. Second from the bottom: the box's lower
+    edge, then the line itself. The box's top edge carries the status.
 
     This is the sixth time a harness here has picked the wrong row by matching
     on content that was not unique. Structure is not ambiguous; text is."""
+    lines = client.term.lines()
+    return lines[-2] if len(lines) >= 2 else ""
+
+
+def status_row(client):
+    """The input box's top edge, which is where the status is said."""
     lines = client.term.lines()
     return lines[-3] if len(lines) >= 3 else ""
 
@@ -245,7 +251,7 @@ def menu_region(client):
     if len(lines) < 6:
         return ""
     rows = []
-    index = len(lines) - 5          # status, box bottom, input, box top, then here
+    index = len(lines) - 4          # box bottom, input, box top, then here
     while index >= 0:
         rows.append(lines[index])
         if lines[index].lstrip().startswith("╭"):
@@ -372,18 +378,50 @@ def main():
         else:
             ok(f"ctrl-n starts a session and opens it in a tab ({before_count} -> {after_count})")
 
-        # And closing the view does not end the session it was showing.
-        sessions_before = sum(1 for l in client.term.lines() if l.startswith("│>") or l.startswith("│ "))
+        # A session nothing has been said in opens on the welcome: what will
+        # answer, what this directory has retained, what was said here before,
+        # and which keys do what. A blank page is a claim that nothing is here.
+        page = "\n".join(client.term.lines()[1:-3])
+        missing = [word for word in ("keys", "learned here", "recent here", "ctrl-p")
+                   if word not in page]
+        if missing:
+            print("---- frame at failure ----")
+            print("\n".join(client.term.lines()))
+            fail(f"the fresh session shows no welcome; missing {missing}")
+        else:
+            ok("a fresh session opens on the welcome")
+
+        # The sessions column is there when asked for, and gone when not: the
+        # tab bar already names the sessions on screen and counts the rest.
+        client.send(b"\x02")                       # ctrl-b
+        client.pump(1.5)
+        shown = any("sessions" in row for row in client.term.lines()[1:4])
+        client.send(b"\x1b")                       # escape: focus back to the prompt
+        client.send(b"\x02")                       # ctrl-b again
+        client.pump(1.5)
+        hidden = not any(row.lstrip().startswith("sessions") for row in client.term.lines()[1:4])
+        if not shown:
+            fail("ctrl-b did not show the sessions column")
+        elif not hidden:
+            fail("ctrl-b did not hide the sessions column again")
+        else:
+            ok("ctrl-b shows the running sessions beside the page, and hides them again")
+
+        # And closing the view does not end the session it was showing: the
+        # tab bar counts the running sessions, and the count must not fall.
+        def running(row):
+            found = re.search(r"(\d+) session", row)
+            return int(found.group(1)) if found else 0
+        sessions_before = running(client.term.lines()[0])
         client.send(b"\x17")                       # ctrl-w
         client.pump(2.0)
         closed_count = client.term.lines()[0].count("│")
         if closed_count != after_count - 1:
             fail(f"ctrl-w did not close the tab: {client.term.lines()[0]!r}")
-        elif not any("idle" in l or "working" in l for l in client.term.lines()):
-            fail("closing the tab took the session with it")
+        elif running(client.term.lines()[0]) < sessions_before:
+            fail(f"closing the tab took the session with it: {client.term.lines()[0]!r}")
         else:
             ok("ctrl-w closes the view and leaves the session running")
-        _ = sessions_before
 
         # Finding a session that is not running -- the question the sidebar
         # cannot answer, and most sessions are its answer.
@@ -460,20 +498,22 @@ def main():
         # that reported `the daemon closed the connection` and stopped made
         # `survives a restart` mean `if you restart the client too`.
         launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
-        tabs_before = client.term.lines()[0]
+        # The tabs only: the count at the right of the row may fall, since a
+        # session nothing was said in is correctly not brought back.
+        tabs_before = client.term.lines()[0].split("+")[0]
         transcript_before = client.term.text()
         subprocess.run([launcher, "daemon", "stop"], env=environment, cwd=cwd,
                        capture_output=True, timeout=120)
         client.pump(3.0)
-        if "reconnecting" not in client.term.lines()[-1]:
-            fail(f"the client did not say it was reconnecting: {client.term.lines()[-1]!r}")
+        if "reconnecting" not in status_row(client):
+            fail(f"the client did not say it was reconnecting: {status_row(client)!r}")
         subprocess.run([launcher, "daemon", "start", "--background"], env=environment,
                        cwd=cwd, capture_output=True, timeout=300)
         # Backoff doubles to a five-second cap; a restart that takes the daemon
         # twenty seconds to bring sessions back is answered within thirty.
         client.pump(30.0)
-        status = client.term.lines()[-1]
-        tabs_after = client.term.lines()[0]
+        status = status_row(client)
+        tabs_after = client.term.lines()[0].split("+")[0]
         if "reconnecting" in status or "lost" in status:
             print("---- frame at failure ----")
             print("\n".join(client.term.lines()))
@@ -578,8 +618,8 @@ def main():
         else:
             ok("any key closes the learned panel")
         # And the counts are on the status line without being asked for.
-        if "learned" not in client.term.lines()[-1]:
-            fail(f"the status line does not carry the counts: {client.term.lines()[-1]!r}")
+        if "learned" not in status_row(client):
+            fail(f"the status line does not carry the counts: {status_row(client)!r}")
         else:
             ok("the status line carries the counts unasked")
 

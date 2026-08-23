@@ -18,6 +18,7 @@ import glob
 import json
 import os
 import pty
+import re
 import select
 import socket
 import struct
@@ -243,8 +244,13 @@ def check(path):
         arguments = call.get("arguments") or {}
         if call.get("name") and not any(str(v).strip() for v in arguments.values()):
             bare.add(call["name"])
-    spoken = {cell.strip().lstrip("\u2714\u2718\u00b7").strip()
-              for row in lines for cell in row.split("\u2502")}
+    # A call is the title of a rule: `─ ✔ ls ─────`. The title is what sits
+    # between the mark and the rule that follows it.
+    spoken = set()
+    for row in lines:
+        found = re.search(r"[\u2714\u2718\u00b7] (.*?)(?:\s+\u2500|\s*$)", row)
+        if found:
+            spoken.add(found.group(1).strip())
     if not bare:
         ok("the newest turn has no call with an empty argument")
     for name in sorted(bare):

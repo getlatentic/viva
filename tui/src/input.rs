@@ -32,6 +32,8 @@ pub enum Action {
     /// recorded in. The picker lists sessions from EVERY directory, so
     /// resuming one into the client's own cwd looks for it where it is not.
     Resume { id: String, cwd: String },
+    /// Show or hide the sessions list beside the transcript.
+    ToggleSidebar,
 }
 
 pub fn read(event: &Event, model: &mut Model, hits: &Hitboxes) -> Action {
@@ -82,6 +84,7 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
             }
             KeyCode::Char('d') if model.input.is_empty() => Action::Quit,
             KeyCode::Char('n') => Action::NewTab,
+            KeyCode::Char('b') => Action::ToggleSidebar,
             KeyCode::Char('w') => Action::CloseTab,
             KeyCode::Char('r') => Action::Refresh,
             KeyCode::Char('l') => Action::Learned,

@@ -19,8 +19,13 @@ pub struct Command {
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "/find",
-        aliases: &["/sessions"],
+        aliases: &[],
         blurb: "find any session, running or not",
+    },
+    Command {
+        name: "/sessions",
+        aliases: &["/sidebar"],
+        blurb: "show or hide the list of running sessions",
     },
     Command {
         name: "/new",

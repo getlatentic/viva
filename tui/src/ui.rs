@@ -8,7 +8,7 @@
 use crate::markdown;
 use crate::model::{Entry, Focus, Model, Outcome, Role, TaskState};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wrap};
 
 pub const ACCENT: Color = Color::Indexed(13);
 const DIM: Color = Color::Indexed(244);
@@ -252,47 +252,52 @@ pub fn draw(frame: &mut Frame, model: &Model, rendered: &mut Rendered) -> Hitbox
     let area = frame.area();
     let mut hits = Hitboxes::default();
 
+    // THE TRANSCRIPT IS THE PAGE. It was one of three boxes side by side, and
+    // the boxes around a column of sessions and a column saying `no tasks`
+    // cost a quarter of the width at every moment to say what the tab bar
+    // already said. Now: tabs, the page, and an input whose top edge carries
+    // the status -- three rows of chrome where there were five.
     let rows = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(3),
         Constraint::Length(3),
-        Constraint::Length(1),
     ])
     .split(area);
 
     draw_tabs(frame, rows[0], model, &mut hits);
 
-    // Side panes are dropped as the width falls, widest cost first. A tmux
-    // pane is not a hundred columns, and side panes that squeeze the
-    // transcript to nothing are worse than no side panes.
-    let body = if area.width < 60 {
-        let single = Layout::horizontal([Constraint::Min(0)]).split(rows[1]);
-        vec![single[0]]
-    } else if area.width < 100 {
-        Layout::horizontal([Constraint::Length(22), Constraint::Min(0)])
-            .split(rows[1])
-            .to_vec()
-    } else {
-        Layout::horizontal([
-            Constraint::Length(24),
-            Constraint::Min(0),
-            Constraint::Length(30),
-        ])
-        .split(rows[1])
-        .to_vec()
-    };
-
-    let transcript_area = if body.len() == 1 { body[0] } else { body[1] };
-    if body.len() > 1 {
-        draw_sessions(frame, body[0], model, &mut hits);
+    // Side columns exist when asked for or needed, and only when there is
+    // room: a tmux pane is not a hundred columns, and side columns that
+    // squeeze the page to nothing are worse than none.
+    let show_sessions = model.sidebar && area.width >= 70;
+    let show_tasks = model.has_active_tasks() && area.width >= 90;
+    let mut constraints = Vec::new();
+    if show_sessions {
+        constraints.push(Constraint::Length(26));
     }
-    draw_transcript(frame, transcript_area, model, rendered, &mut hits);
-    if body.len() > 2 {
-        draw_tasks(frame, body[2], model, &mut hits);
+    constraints.push(Constraint::Min(0));
+    if show_tasks {
+        constraints.push(Constraint::Length(32));
+    }
+    let body = Layout::horizontal(constraints).split(rows[1]);
+    let mut at = 0;
+    if show_sessions {
+        draw_sessions(frame, body[at], model, &mut hits);
+        at += 1;
+    }
+    let page = body[at];
+    at += 1;
+    if model.is_blank() {
+        hits.transcript = page;
+        draw_welcome(frame, page, model);
+    } else {
+        draw_transcript(frame, page, model, rendered, &mut hits);
+    }
+    if show_tasks {
+        draw_tasks(frame, body[at], model, &mut hits);
     }
 
     draw_input(frame, rows[2], model, &mut hits);
-    draw_status(frame, rows[3], model);
     if model.showing_learned {
         draw_learned(frame, area, model);
     } else if model.focus == Focus::Picker {
@@ -437,7 +442,12 @@ fn draw_tabs(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) 
     let mut column = area.x + 1;
     spans.push(Span::raw(" "));
     for (index, id) in model.tabs.iter().enumerate() {
-        let text = format!(" {} ", model.tab_label(id));
+        // The session's state rides on its tab, so `working` is visible
+        // without a column for it: a mark before the name, or nothing.
+        let state = model.sessions.iter().find(|s| &s.id == id).map(|s| s.state.as_str());
+        let (mark, mark_colour) = state.map(state_mark).unwrap_or(("", BORDER));
+        let lead = if mark.is_empty() || mark == "-" { String::new() } else { format!("{mark} ") };
+        let text = format!(" {lead}{} ", model.tab_label(id));
         let width = text.chars().count() as u16;
         let style = if index == model.tab {
             Style::default().fg(Color::Indexed(232)).bg(ACCENT).add_modifier(Modifier::BOLD)
@@ -445,7 +455,13 @@ fn draw_tabs(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) 
             Style::default().fg(DIM)
         };
         hits.tabs.push((index, Rect::new(column, area.y, width, 1)));
-        spans.push(Span::styled(text, style));
+        if index == model.tab || lead.is_empty() {
+            spans.push(Span::styled(text, style));
+        } else {
+            spans.push(Span::styled(" ".to_string(), style));
+            spans.push(Span::styled(lead.clone(), Style::default().fg(mark_colour)));
+            spans.push(Span::styled(format!("{} ", model.tab_label(id)), style));
+        }
         column += width;
         spans.push(Span::styled("│", Style::default().fg(BORDER)));
         column += 1;
@@ -455,11 +471,32 @@ fn draw_tabs(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) 
     hits.new_tab = Some(Rect::new(column, area.y, 3, 1));
     spans.push(Span::styled(" + ", Style::default().fg(DIM)));
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+
+    // How many sessions are running, at the right: the sessions a person has
+    // not opened a tab on are otherwise invisible until they look for them.
+    let running = model.sessions.len();
+    let working = model.sessions.iter().filter(|s| s.state == "working").count();
+    let summary = match (running, working) {
+        (0, _) => String::new(),
+        (n, 0) => format!("{n} session{}  ctrl-b ", if n == 1 { "" } else { "s" }),
+        (n, w) => format!("{n} session{}, {w} working  ctrl-b ", if n == 1 { "" } else { "s" }),
+    };
+    let width = summary.chars().count() as u16;
+    if width > 0 && width + column + 4 < area.x + area.width {
+        let right = Rect::new(area.x + area.width - width, area.y, width, 1);
+        frame.render_widget(
+            Paragraph::new(Span::styled(summary, Style::default().fg(DIM))), right);
+    }
 }
 
 fn draw_sessions(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) {
     let focused = model.focus == Focus::Sessions;
-    let block = pane("sessions", focused);
+    // A column with an edge, not a box. The edge is where it meets the page.
+    let block = Block::default()
+        .borders(Borders::RIGHT)
+        .border_style(Style::default().fg(if focused { ACCENT } else { BORDER }))
+        .title(Span::styled(" sessions ", Style::default().fg(if focused { ACCENT } else { DIM })))
+        .padding(Padding::horizontal(1));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     hits.sessions = inner;
@@ -483,13 +520,16 @@ fn draw_sessions(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitbox
                 },
             ),
         ]));
-        lines.push(Line::from(Span::styled(
-            format!("    {}", session.state),
-            Style::default().fg(DIM),
-        )));
-        let row = inner.y + (index as u16) * 2;
+        // One row each. The state is its mark; the word is only said for a
+        // state that needs one, so an idle list is a list of names.
+        if session.state != "idle" && !session.state.is_empty() {
+            let last = lines.len() - 1;
+            lines[last].spans.push(Span::styled(format!("  {}", session.state),
+                                                Style::default().fg(DIM)));
+        }
+        let row = inner.y + index as u16;
         if row < inner.y + inner.height {
-            hits.session_rows.push((index, Rect::new(inner.x, row, inner.width, 2)));
+            hits.session_rows.push((index, Rect::new(inner.x, row, inner.width, 1)));
         }
     }
     if lines.is_empty() {
@@ -614,6 +654,97 @@ fn entry_lines(entry: &Entry, expanded: bool, width: u16) -> Vec<Hanging> {
     lines
 }
 
+/// The page before anything has been said on it.
+///
+/// A blank page is a claim -- that nothing is here -- and on a fresh session
+/// it is the moment a person most needs to know what is: which model will
+/// answer, what this directory has already retained, what was said here
+/// before, and which keys do what. Gone the moment the first event arrives.
+fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
+    let block = Block::default().padding(Padding::new(2, 2, 1, 0));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if inner.width < 30 || inner.height < 6 {
+        return;
+    }
+    let heading = Style::default().fg(ACCENT).add_modifier(Modifier::BOLD);
+    let key = Style::default().fg(Color::Indexed(252));
+    let dim = Style::default().fg(DIM);
+
+    let mut left: Vec<Line> = vec![
+        Line::from(Span::styled("viva", heading)),
+        Line::from(""),
+    ];
+    let session = model.sessions.iter().find(|s| s.id == model.current);
+    match session {
+        Some(session) => {
+            left.push(Line::from(vec![Span::styled("model    ", dim), Span::raw(session.model.clone())]));
+            if !session.effort.is_empty() {
+                left.push(Line::from(vec![Span::styled("effort   ", dim), Span::raw(session.effort.clone())]));
+            }
+            left.push(Line::from(vec![Span::styled("in       ", dim), Span::raw(session.short_label().to_string())]));
+        }
+        None => left.push(Line::from(Span::styled("no session open — ctrl-n starts one", dim))),
+    }
+    left.push(Line::from(""));
+    left.push(Line::from(Span::styled("learned here", heading)));
+    let learned = &model.learned;
+    if learned.inspected {
+        let count = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
+        left.push(Line::from(Span::raw(format!("{} · {} · {}",
+            count(learned.notes.len(), "note"),
+            count(learned.skills.len(), "skill"),
+            count(learned.tools.len(), "tool")))));
+        for name in learned.skills.iter().chain(learned.tools.iter()).map(|r| r.name.as_str()).take(4) {
+            left.push(Line::from(Span::styled(format!("  {name}"), dim)));
+        }
+    } else {
+        left.push(Line::from(Span::styled("nothing yet", dim)));
+    }
+
+    let mut right: Vec<Line> = vec![Line::from(Span::styled("keys", heading))];
+    for (k, what) in [
+        ("ctrl-p", "find any session, running or not"),
+        ("ctrl-n", "start a session in a new tab"),
+        ("ctrl-b", "show the running sessions"),
+        ("ctrl-o", "all of a tool's output"),
+        ("/", "the commands"),
+    ] {
+        right.push(Line::from(vec![Span::styled(format!("{k:<8}"), key), Span::styled(what, dim)]));
+    }
+    right.push(Line::from(""));
+    right.push(Line::from(Span::styled("recent here", heading)));
+    if model.recent.is_empty() {
+        right.push(Line::from(Span::styled("none recorded in this directory", dim)));
+    } else {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        for recorded in model.recent.iter().filter(|r| r.messages > 0).take(5) {
+            let opening: String = recorded.opening.chars().take(40).collect();
+            right.push(Line::from(vec![
+                Span::styled("· ", dim),
+                Span::raw(opening),
+                Span::styled(format!("  {} msgs, {} ago", recorded.messages, recorded.age(now)), dim),
+            ]));
+        }
+    }
+    right.push(Line::from(Span::styled("ctrl-p to continue one", dim)));
+
+    // Two columns when they fit, one under the other when they do not.
+    if inner.width >= 78 {
+        let columns = Layout::horizontal([Constraint::Length(34), Constraint::Min(0)]).split(inner);
+        frame.render_widget(Paragraph::new(left), columns[0]);
+        frame.render_widget(Paragraph::new(right).wrap(Wrap { trim: false }), columns[1]);
+    } else {
+        let mut all = left;
+        all.push(Line::from(""));
+        all.extend(right);
+        frame.render_widget(Paragraph::new(all).wrap(Wrap { trim: false }), inner);
+    }
+}
+
 /// A duration as a person reads one: `838ms`, `2.3s`, `1m04s`.
 fn elapsed(took: std::time::Duration) -> String {
     let millis = took.as_millis();
@@ -633,13 +764,9 @@ fn draw_transcript(
     rendered: &mut Rendered,
     hits: &mut Hitboxes,
 ) {
-    let title = model
-        .sessions
-        .iter()
-        .find(|session| session.id == model.current)
-        .map(|session| session.short_label().to_string())
-        .unwrap_or_else(|| "transcript".into());
-    let block = pane(&title, model.focus == Focus::Input);
+    // No box and no title: the tab already names the session, and a frame
+    // around the page is a frame around the only thing on screen.
+    let block = Block::default().padding(Padding::new(1, 1, 0, 0));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     hits.transcript = inner;
@@ -726,7 +853,11 @@ fn draw_learned(frame: &mut Frame, area: Rect, model: &Model) {
 }
 
 fn draw_tasks(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) {
-    let block = pane("tasks", false);
+    let block = Block::default()
+        .borders(Borders::LEFT)
+        .border_style(Style::default().fg(BORDER))
+        .title(Span::styled(" running ", Style::default().fg(DIM)))
+        .padding(Padding::horizontal(1));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     hits.tasks = inner;
@@ -767,10 +898,52 @@ fn draw_tasks(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
 }
 
 fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) {
-    let block = pane("", model.focus == Focus::Input);
+    // THE STATUS IS THE TOP EDGE. A separate row under the box said the same
+    // things one line lower and cost that line on every screen; the edge of
+    // the box was already being drawn and said nothing.
+    let (facts, notes) = status_text(model);
+    let edge = Style::default().fg(if model.focus == Focus::Input { ACCENT } else { BORDER });
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(edge);
     let inner = block.inner(area);
     frame.render_widget(block, area);
     hits.input = inner;
+    // The edge is written by hand, so what does not fit is DECIDED rather
+    // than clipped: the facts first, then the notes in the order they matter,
+    // and the learned counts are the first to go. Left to the widget, a
+    // wide status pushed `scrolled -- End to follow` off the screen while
+    // the counts stayed.
+    let top = Rect::new(area.x + 1, area.y, area.width.saturating_sub(2), 1);
+    let left = format!(" {facts} ");
+    let mut kept: Vec<String> = Vec::new();
+    let mut room = (top.width as usize).saturating_sub(left.chars().count() + 2);
+    for (long, short) in &notes {
+        // The long form, the short form, or nothing -- and nothing after it.
+        let gap = if kept.is_empty() { 2 } else { 3 };
+        let chosen = [long, short]
+            .into_iter()
+            .find(|form| !form.is_empty() && form.chars().count() + gap <= room);
+        match chosen {
+            Some(form) => {
+                room -= form.chars().count() + gap;
+                kept.push(form.clone());
+            }
+            None => break,
+        }
+    }
+    let right = if kept.is_empty() { String::new() } else { format!(" {} ", kept.join("   ")) };
+    let fill = (top.width as usize)
+        .saturating_sub(left.chars().count() + right.chars().count());
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(left, Style::default().fg(DIM)),
+            Span::styled("─".repeat(fill), edge),
+            Span::styled(right, Style::default().fg(DIM)),
+        ])),
+        top,
+    );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled("› ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
@@ -784,57 +957,58 @@ fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
     frame.set_cursor_position((column.min(inner.x + inner.width - 1), inner.y));
 }
 
-fn draw_status(frame: &mut Frame, area: Rect, model: &Model) {
+/// What the input's top edge says: the facts on the left, and on the right
+/// whatever is unusual right now, most important first. Each note has a
+/// short form for when the long one does not fit beside long facts -- a
+/// provider-prefixed model and a branch with a slash in it leave a quarter
+/// of a hundred-column screen for everything else.
+fn status_text(model: &Model) -> (String, Vec<(String, String)>) {
     let following = model
         .current_conversation()
         .map(|conversation| conversation.following)
         .unwrap_or(true);
-    // THE FACTS FIRST, then whatever is unusual. Which model is answering,
-    // how hard it is thinking, where, on what branch and how full its context
-    // is are true at every moment, and a client that shows only a transcript
-    // makes a person carry all of it in their head.
-    let facts = crate::status::facts(model);
-    let mut text = format!(" {}", facts.join("  ›  "));
+    let facts = crate::status::facts(model).join("  ›  ");
+    let mut notes: Vec<(String, String)> = Vec::new();
+    let note = |long: &str, short: &str| (long.to_string(), short.to_string());
     // The status carries what went wrong -- a closed connection, a refused
-    // request -- so it follows the facts rather than being replaced by them.
+    // request -- so it is never replaced by the facts.
     if !model.status.is_empty() {
-        text.push_str(&format!("{}{}", if facts.is_empty() { "" } else { "   " }, model.status));
-    }
-    if !following {
-        text.push_str("   [scrolled — End to follow]");
-    }
-    if model.current_conversation().map(|c| c.expanded).unwrap_or(false) {
-        text.push_str("   [tool output expanded — ctrl-o]");
+        notes.push(note(&model.status, &model.status));
     }
     if !model.connected {
-        text.push_str("   [daemon gone]");
+        notes.push(note("daemon gone", "daemon gone"));
     }
     if model.current_conversation().map(|c| c.gap).unwrap_or(false) {
-        text.push_str("   [missed events — ctrl-r to re-read]");
+        notes.push(note("missed events — ctrl-r to re-read", "missed events"));
     }
-    // ALWAYS the counts, never only behind a keystroke. A harness whose point
-    // is that it learns should say what it has learned without being asked.
+    if !following {
+        notes.push(note("scrolled — End to follow", "scrolled"));
+    }
+    if model.current_conversation().map(|c| c.expanded).unwrap_or(false) {
+        notes.push(note("tool output expanded — ctrl-o", "expanded"));
+    }
+    // ALWAYS the counts, once asked. A harness whose point is that it learns
+    // should say what it has learned without being asked, and a fresh project
+    // retaining nothing is exactly when somebody most needs to learn that it
+    // retains -- so zero is shown, not hidden.
     let learned = &model.learned;
-    // Shown even at zero, once asked. A fresh project retaining nothing is
-    // exactly when somebody most needs to learn that the harness retains --
-    // hiding the row until it is non-empty hides the feature from everyone who
-    // has not used it yet.
     if learned.inspected {
-        text.push_str(&format!(
-            "   learned {} note{} · {} skill{} · {} tool{}",
-            learned.notes.len(), if learned.notes.len() == 1 { "" } else { "s" },
-            learned.skills.len(), if learned.skills.len() == 1 { "" } else { "s" },
-            learned.tools.len(), if learned.tools.len() == 1 { "" } else { "s" },
+        notes.push((
+            format!(
+                "learned {} note{} · {} skill{} · {} tool{}",
+                learned.notes.len(), if learned.notes.len() == 1 { "" } else { "s" },
+                learned.skills.len(), if learned.skills.len() == 1 { "" } else { "s" },
+                learned.tools.len(), if learned.tools.len() == 1 { "" } else { "s" },
+            ),
+            format!("learned {}·{}·{}",
+                    learned.notes.len(), learned.skills.len(), learned.tools.len()),
         ));
         if !learned.refused.is_empty() {
-            text.push_str(&format!("  ({} refused — untrusted)", learned.refused.len()));
+            notes.push(note(&format!("{} refused — untrusted", learned.refused.len()),
+                            &format!("{} refused", learned.refused.len())));
         }
     }
-
-    frame.render_widget(
-        Paragraph::new(Span::styled(text, Style::default().fg(DIM))),
-        area,
-    );
+    (facts, notes)
 }
 
 #[cfg(test)]
@@ -926,6 +1100,7 @@ mod tests {
     #[test]
     fn one_frame_holds_the_sessions_the_talk_and_the_work() {
         let mut model = ready(&[("user.message", "run it")]);
+        model.sidebar = true;
         model.absorb(&event("task.started", json!({"task": "t1", "text": "indexing"})));
         model.absorb(&event("tool.output", json!({"text": "step 3 of 9\n"})));
         let frame = frame_of(&model, 120, 20).join("\n");
@@ -975,10 +1150,8 @@ kilo lima mike november oscar papa quebec";
         // `alpha` in the tab bar and in the sidebar, and a check that scans
         // whole rows for a word finds those first and tests nothing.
         let rows = frame_of(&model, 100, 26);
-        let cells: Vec<String> = rows
-            .iter()
-            .filter_map(|row| row.split("││").nth(1).map(str::to_string))
-            .collect();
+        // The page rows: below the tab bar, above the input box.
+        let cells: Vec<String> = rows[1..rows.len() - 3].to_vec();
         let carrying: Vec<&String> = cells.iter().filter(|cell| cell.contains("│ ")).collect();
         assert!(carrying.len() >= 2, "the result did not wrap, so nothing was tested");
         for word in ["alpha", "kilo", "quebec"] {
@@ -998,11 +1171,8 @@ kilo lima mike november oscar papa quebec";
         let filler = "word ".repeat(9);
         model.absorb(&event("model.delta",
                             json!({"text": format!("{filler}`react`-dom ends it\n")})));
-        let cells: Vec<String> = frame_of(&model, 100, 26)
-            .iter()
-            .filter_map(|row| row.split("││").nth(1).map(str::to_string))
-            .collect();
-        let joined = cells.join("\n");
+        let rows = frame_of(&model, 100, 26);
+        let joined = rows[1..rows.len() - 3].join("\n");
         assert!(joined.contains("react-dom"), "the word was cut in half:\n{joined}");
     }
 
@@ -1064,31 +1234,63 @@ kilo lima mike november oscar papa quebec";
     }
 
     #[test]
+    fn what_does_not_fit_on_the_edge_is_decided_not_clipped() {
+        // A wide status pushed `scrolled -- End to follow` off the screen
+        // while the learned counts stayed. The notes yield in order of
+        // importance, and the counts are the first to go.
+        let mut model = ready(&[]);
+        for index in 0..60 {
+            model.absorb(&event("model.delta", json!({"text": format!("line{index}\n")})));
+        }
+        if let Some(conversation) = model.conversations.get_mut("s1") {
+            conversation.following = false;
+            conversation.scroll = 10;
+        }
+        model.learned.inspected = true;
+        if let Some(session) = model.sessions.first_mut() {
+            session.model = "a-model-with-a-very-long-name-indeed".into();
+            session.effort = "high".into();
+        }
+        let rows = frame_of(&model, 84, 20);
+        let edge = &rows[rows.len() - 3];
+        assert!(edge.contains("scrolled"), "the scroll note was clipped: {edge:?}");
+        assert!(!edge.contains("learned"), "the counts outranked the scroll note: {edge:?}");
+        let wide = frame_of(&model, 160, 20);
+        assert!(wide[wide.len() - 3].contains("learned"), "the counts never fit at all");
+    }
+
+    #[test]
     fn a_narrow_pane_keeps_the_talk_and_drops_the_rest() {
         // Where this lives is a split, not a hundred-column window. Side panes
         // that squeeze the transcript to nothing are worse than none.
-        let model = ready(&[("model.delta", "still readable\n")]);
+        let mut model = ready(&[("model.delta", "still readable\n")]);
+        model.absorb(&event("task.started", json!({"task": "t1", "text": "indexing"})));
         let wide = frame_of(&model, 120, 16).join("\n");
         let narrow = frame_of(&model, 50, 16).join("\n");
-        assert!(wide.contains("tasks"), "the wide frame has no task pane");
+        assert!(wide.contains("running"), "the wide frame has no task column");
         assert!(narrow.contains("still readable"), "the narrow frame lost the transcript");
-        assert!(!narrow.contains("tasks"), "the task pane survived into 50 columns");
+        assert!(!narrow.contains("running"), "the task column survived into 50 columns");
     }
 
     #[test]
     fn the_current_session_is_marked_by_a_character_not_only_a_colour() {
-        let model = ready(&[]);
+        let mut model = ready(&[]);
+        model.sidebar = true;
         let frame = frame_of(&model, 100, 16);
         // The row INSIDE the sidebar. The tab bar carries the same name and
         // comes first, so the obvious `find` picks it and asserts about the
         // wrong row -- which is a test that passes or fails for reasons
-        // unrelated to what it claims to check.
-        let row = frame
+        // unrelated to what it claims to check. Below the tab bar, by position.
+        let row = frame[1..]
             .iter()
-            .find(|line| line.contains("alpha") && line.starts_with('│'))
+            .find(|line| line.contains("alpha"))
             .expect("the sidebar has no row for the current session");
         assert!(row.contains('>'), "the current session's row carries no marker: {row:?}");
         assert!(row.contains('*'), "the working session shows no state mark: {row:?}");
+        // Without the sidebar, the tab itself says the session is working.
+        model.sidebar = false;
+        let tabs = frame_of(&model, 100, 16)[0].clone();
+        assert!(tabs.contains("* alpha"), "the tab does not carry the state: {tabs:?}");
     }
 
     #[test]

@@ -76,10 +76,9 @@ fn run() -> std::io::Result<()> {
     let mut connection = Connection::open(&path)?;
 
     let mut model = Model::new(cwd.clone());
-    // Short, because the line now carries the facts as well and the keys are
-    // in `/help`. A permanent sentence teaching four bindings costs the width
-    // every session, to be read once.
-    model.status = "/help for keys".into();
+    // No standing hint. The welcome teaches the keys and `/` lists the
+    // commands, so the status carries only what happened -- and a note that
+    // is always there would outrank the ones that are not.
 
     // THE GREETING ALREADY CARRIES THE SESSIONS. Asking for them again was
     // the first draft: a second round trip to learn what the daemon had
@@ -124,6 +123,7 @@ fn run() -> std::io::Result<()> {
         // rather than appearing a moment later.
         let _ = refresh_learned(&mut connection, &mut model);
     }
+    let _ = refresh_recent(&mut connection, &mut model);
 
     // Set up the terminal LAST, so any failure above prints as ordinary text
     // instead of into an alternate screen nobody will ever see.
@@ -275,6 +275,10 @@ fn perform(
             model.showing_learned = true;
         }
         Action::Command(line) => return run_command(connection, model, &line),
+        Action::ToggleSidebar => {
+            model.sidebar = !model.sidebar;
+            model.focus = if model.sidebar { model::Focus::Sessions } else { model::Focus::Input };
+        }
         Action::Search(text) => {
             let asked = if text.trim().is_empty() {
                 connection.send(json!({"type": "session.recorded", "limit": 50}))?
@@ -355,6 +359,7 @@ fn run_command(
         "/help" => model.note(commands::help()),
         "/learned" => return perform(connection, model, input::Action::Learned).map(|_| false),
         "/new" => return perform(connection, model, input::Action::NewTab).map(|_| false),
+        "/sessions" => return perform(connection, model, input::Action::ToggleSidebar).map(|_| false),
         "/find" => {
             model.focus = model::Focus::Picker;
             model.picker.query = rest.clone();
@@ -444,7 +449,27 @@ fn rejoin(connection: &mut Connection, model: &mut Model) {
         let _ = attach(connection, model, &id);
     }
     let _ = refresh_learned(connection, model);
+    let _ = refresh_recent(connection, model);
     model.status = "reconnected".into();
+}
+
+/// What was recorded in this directory, for the welcome. A handful, newest
+/// first: the welcome is a door, not the picker.
+fn refresh_recent(connection: &mut Connection, model: &mut Model) -> std::io::Result<()> {
+    let asked = connection.send(json!({
+        "type": "session.recorded", "cwd": model.cwd, "limit": 6
+    }))?;
+    let (reply, events) = connection.wait_for(asked, Duration::from_secs(5));
+    for event in events {
+        model.absorb(&event);
+    }
+    if let Some(found) = reply.as_ref().and_then(|r| r.get("recorded")).and_then(Value::as_array) {
+        model.recent = found
+            .iter()
+            .filter_map(|value| serde_json::from_value::<Recorded>(value.clone()).ok())
+            .collect();
+    }
+    Ok(())
 }
 
 fn open_session(

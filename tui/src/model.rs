@@ -353,6 +353,13 @@ pub struct Model {
     pub cwd: String,
     pub connected: bool,
     pub picker: Picker,
+    /// The sessions list, shown beside the transcript. Off by default: the
+    /// tabs name the sessions a person chose to look at, the picker finds any
+    /// other, and a column that is always there costs a quarter of the width
+    /// to say what the tab bar already says.
+    pub sidebar: bool,
+    /// Sessions recorded in this directory, newest first, for the welcome.
+    pub recent: Vec<Recorded>,
     /// Which entry the slash menu has highlighted. Reset whenever the line
     /// changes, so the highlight cannot point past a list that just shrank.
     pub command_selection: usize,
@@ -385,6 +392,8 @@ impl Model {
             cwd,
             connected: true,
             picker: Picker::default(),
+            sidebar: false,
+            recent: Vec::new(),
             command_selection: 0,
             learned: Learned::default(),
             showing_learned: false,
@@ -400,6 +409,26 @@ impl Model {
 
     pub fn current_conversation(&self) -> Option<&Conversation> {
         self.conversations.get(&self.current)
+    }
+
+    /// Is anything running for the session on screen? The task pane is shown
+    /// while this is true and not otherwise: a column saying `no tasks` costs
+    /// a quarter of the width to say nothing.
+    pub fn has_active_tasks(&self) -> bool {
+        self.current_conversation()
+            .map(|conversation| {
+                conversation.tasks.values().any(|task| {
+                    matches!(task.state, TaskState::Running | TaskState::Draining)
+                })
+            })
+            .unwrap_or(false)
+    }
+
+    /// Nothing has been said in the session on screen, so the welcome is.
+    pub fn is_blank(&self) -> bool {
+        self.current_conversation()
+            .map(|conversation| conversation.visible_entries().next().is_none())
+            .unwrap_or(true)
     }
 
     /// Fold one event into the session it belongs to.

@@ -264,10 +264,29 @@ pub struct Recorded {
     pub id: String,
     #[serde(default)]
     pub cwd: String,
+    /// When it was recorded, as Lisp universal time: seconds since 1900.
+    #[serde(default)]
+    pub time: u64,
     #[serde(default)]
     pub messages: u64,
     #[serde(default)]
     pub opening: String,
+}
+
+impl Recorded {
+    /// How long ago, as a person says it: `3m`, `2h`, `4d`. Universal time
+    /// counts from 1900 and Unix from 1970; the gap is a constant.
+    pub fn age(&self, now_unix: u64) -> String {
+        const GAP: u64 = 2_208_988_800;
+        let then = self.time.saturating_sub(GAP);
+        let seconds = now_unix.saturating_sub(then);
+        match seconds {
+            0..=59 => "now".into(),
+            60..=3599 => format!("{}m", seconds / 60),
+            3600..=86_399 => format!("{}h", seconds / 3600),
+            _ => format!("{}d", seconds / 86_400),
+        }
+    }
 }
 
 /// One thing a project has retained: a note, a skill or a tool.
