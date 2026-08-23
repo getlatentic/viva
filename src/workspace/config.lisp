@@ -88,7 +88,7 @@ gitignored -- this file is not, and a key committed is a key published."
 (defun project-config-path (cwd)
   (env:join-path cwd ".vivarium" "config"))
 
-(defparameter +reserved-variables+ '("VIVARIUM_ROOT" "VIVARIUM_SOCKET" "VIVARIUM_CWD")
+(defparameter +reserved-variables+ '("VIVARIUM_ROOT" "VIVARIUM_SOCKET" "VIVARIUM_CWD" "VIVARIUM_JOURNAL")
   "Variables vivarium sets for its own machinery. A setting must never map onto
 one of these: VIVARIUM_ROOT is the REPOSITORY, set by the launcher on every
 run, and the `root` setting is the workspace jail. The mechanical mapping put

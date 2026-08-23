@@ -141,14 +141,13 @@ class Client:
             # binary directly leaves the routing untested, and driving
             # `vivarium tui` leaves the bare-name default untested -- and the
             # default is the path almost everybody takes.
-            # Through `viva`, the short name, because that is what a person
-            # types. It is a symlink to the same launcher, and the launcher
-            # resolves symlinks to find its root -- so driving it here is also
-            # a check that the resolution still works from the other name.
+            # THIS TREE'S launcher, never the one on PATH. `~/.local/bin/viva`
+            # points at whichever checkout was installed, and driving it from
+            # a worktree ran a client from one tree against a daemon from
+            # another: a reconnect check passed on a client that could not
+            # reconnect, because a stale tab looks like a surviving one.
             launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
-            short = os.path.expanduser("~/.local/bin/viva")
-            entry = short if os.path.exists(short) else launcher
-            os.execve(entry, [entry], environment or os.environ)
+            os.execve(launcher, [launcher], environment or os.environ)
         self.rows, self.cols = rows, cols
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         self.raw = ""
@@ -273,8 +272,14 @@ def own_daemon(cwd):
     is live for that directory. A test that writes into somebody's work is a
     test that has to be apologised for.
     """
-    socket_path = os.path.join(tempfile.mkdtemp(), "check.sock")
-    environment = dict(os.environ, VIVARIUM_SOCKET=socket_path)
+    # Its own journal too. On the default root, every session this check
+    # starts was written into the real home -- and once a daemon brings back
+    # whatever was live when the last one stopped, they would come back in
+    # the person's own daemon.
+    own = tempfile.mkdtemp()
+    socket_path = os.path.join(own, "check.sock")
+    environment = dict(os.environ, VIVARIUM_SOCKET=socket_path,
+                       VIVARIUM_JOURNAL=os.path.join(own, "journal"))
     launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
     process = subprocess.Popen(
         [launcher, "daemon", "start", "--background"],
@@ -292,6 +297,17 @@ def own_daemon(cwd):
 
 def main():
     cwd = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(ROOT)
+    # The short name resolves to a launcher. What a person types is `viva`,
+    # and the launcher finds its root by following the link -- so the link has
+    # to land on a bin/vivarium, whichever checkout it was installed from.
+    short = os.path.expanduser("~/.local/bin/viva")
+    if os.path.islink(short):
+        target = os.path.realpath(short)
+        if os.path.basename(target) == "vivarium" and os.access(target, os.X_OK):
+            ok(f"`viva` resolves to a launcher ({os.path.dirname(os.path.dirname(target))})")
+        else:
+            fail(f"`viva` resolves to {target}, which is not a launcher")
+
     socket_path, environment = own_daemon(cwd)
     client = Client(cwd, environment=environment)
     try:
@@ -436,6 +452,47 @@ def main():
             ok("a resumed session shows what was said in it, from the top")
         client.send(b"\x1b[F")                     # End, back to following
         client.pump(1.0)
+
+        # THE DAEMON DIES AND COMES BACK, under a live client. The session it
+        # was running is the one with a conversation, resumed a moment ago; it
+        # must come back under the same id, with the same conversation, into
+        # the same tab -- and the client must get there on its own. A client
+        # that reported `the daemon closed the connection` and stopped made
+        # `survives a restart` mean `if you restart the client too`.
+        launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
+        tabs_before = client.term.lines()[0]
+        transcript_before = client.term.text()
+        subprocess.run([launcher, "daemon", "stop"], env=environment, cwd=cwd,
+                       capture_output=True, timeout=120)
+        client.pump(3.0)
+        if "reconnecting" not in client.term.lines()[-1]:
+            fail(f"the client did not say it was reconnecting: {client.term.lines()[-1]!r}")
+        subprocess.run([launcher, "daemon", "start", "--background"], env=environment,
+                       cwd=cwd, capture_output=True, timeout=300)
+        # Backoff doubles to a five-second cap; a restart that takes the daemon
+        # twenty seconds to bring sessions back is answered within thirty.
+        client.pump(30.0)
+        status = client.term.lines()[-1]
+        tabs_after = client.term.lines()[0]
+        if "reconnecting" in status or "lost" in status:
+            print("---- frame at failure ----")
+            print("\n".join(client.term.lines()))
+            fail(f"the client never reconnected: {status!r}")
+        elif tabs_after != tabs_before:
+            fail(f"the tab did not survive the restart: {tabs_before!r} -> {tabs_after!r}")
+        else:
+            ok("the daemon restarts under a live client, and the tab is still there")
+        client.send(b"\x1b[H")
+        client.pump(2.0)
+        body = "\n".join(client.term.lines()[2:-5])
+        if "›" not in body:
+            print("---- frame at failure ----")
+            print("\n".join(client.term.lines()))
+            fail("after the restart the conversation is gone")
+        else:
+            ok("the session came back with its conversation, under the same id")
+        client.send(b"\x1b[F")
+        client.pump(1.5)
 
         # Scrolling back must reveal something that was not on screen.
         bottom = client.term.text()
