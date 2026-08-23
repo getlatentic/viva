@@ -97,7 +97,6 @@ live undefined-variable warning that every later warning would have hidden in.")
 
 (defvar *cells* (make-hash-table :test #'equal))
 (defvar *registry-lock* (bt:make-lock "vivarium.cells"))
-(defvar *counter* 0)
 
 (defparameter +stopping-grace+ 120
   "Seconds a shutting-down session waits for its turn to report. After this the
@@ -143,9 +142,16 @@ instants. Never PUBLISH inside: publishing takes the same lock."
 ;;; the ring's no-evict-before-commit machinery declares the degradation.
 
 (defvar *journal-root*
-  (namestring (merge-pathnames ".vivarium/journal/" (user-homedir-pathname)))
-  "Where session journals live. Tests point this at a temporary directory;
-they wrote 26MB into the real home before it was configurable.")
+  (let ((given (sb-posix:getenv "VIVARIUM_JOURNAL")))
+    (if (and given (plusp (length given)))
+        (namestring (uiop:ensure-directory-pathname given))
+        (namestring (merge-pathnames ".vivarium/journal/" (user-homedir-pathname)))))
+  "Where session journals and live markers live. In-process tests point this
+at a temporary directory; they wrote 26MB into the real home before it was
+configurable. VIVARIUM_JOURNAL does the same for a daemon started as a
+PROCESS: a check that runs its own daemon on its own socket was still writing
+into the real home, and once a daemon brings back whatever was live when the
+last one stopped, a test daemon's sessions would come back in yours.")
 
 (defstruct (journal-service (:conc-name journal-))
   (id 0 :type integer)
@@ -172,6 +178,57 @@ if it is ever forced to evict them.")
 
 (defun journal-path-for (id)
   (format nil "~a~a-~d.jsonl" *journal-root* id (get-universal-time)))
+
+(defun live-root ()
+  (merge-pathnames "live/" *journal-root*))
+
+(defun live-path (id)
+  (merge-pathnames (format nil "~a.json" id) (live-root)))
+
+(defun mark-live (cell)
+  "Write down that this session is running, and what starting it again needs.
+
+The journal says what a session SAID; nothing said which sessions were open
+when the daemon died, so none came back. A marker is a file whose existence is
+the fact: made when the cell registers, removed when it deregisters, and
+untouched by the daemon stopping -- a daemon that stops is exactly the case the
+marker exists for."
+  (let ((path (live-path (cell-id cell)))
+        ;; THE TRANSCRIPT'S CWD, not the environment's. The store of
+        ;; transcripts is keyed by the directory a session was started with,
+        ;; and the environment canonicalises its own -- on macOS /var is a
+        ;; link to /private/var, so the two name one directory under two
+        ;; slugs, and a marker carrying the canonical one found no
+        ;; transcript and was dropped.
+        (cwd (or (a:when-let ((session (harness:agent-session (cell-agent cell))))
+                   (session:session-cwd session))
+                 (cell-cwd cell))))
+    (ensure-directories-exist path)
+    (with-open-file (out path :direction :output :if-exists :supersede
+                              :external-format :utf-8)
+      (jzon:stringify (event::object "id" (cell-id cell)
+                                     "cwd" cwd
+                                     "label" (cell-label cell)
+                                     "model" (cell-model cell))
+                      :stream out))))
+
+(defun unmark-live (id)
+  (ignore-errors (delete-file (live-path id))))
+
+(defun live-sessions ()
+  "What was running when the last daemon stopped, oldest first.
+
+A marker that cannot be read is reported and skipped, not fatal: one corrupt
+file must not keep every other session from coming back."
+  (let ((found '()))
+    (dolist (path (ignore-errors (directory (merge-pathnames "*.json" (live-root)))))
+      (handler-case
+          (let ((table (with-open-file (in path :external-format :utf-8) (jzon:parse in))))
+            (when (and (hash-table-p table) (stringp (gethash "id" table)))
+              (push table found)))
+        (error (condition)
+          (format *error-output* "~&vivarium live-marker: ~a unreadable: ~a~%" path condition))))
+    (sort found #'string< :key (lambda (table) (gethash "id" table)))))
 
 (defun evolution-ledger-path ()
   (format nil "~aevolution.jsonl" *journal-root*))
@@ -880,7 +937,11 @@ fresh 120 seconds, so a session with any traffic at all never times out."
         (t nil)))
 
 (defun deregister (cell)
-  (bt:with-lock-held (*registry-lock*) (remhash (cell-id cell) *cells*)))
+  "The session has ended, by request. Only here is the live marker removed: a
+daemon that stops does not end its sessions, it loses them, and the marker is
+what lets the next one find them."
+  (bt:with-lock-held (*registry-lock*) (remhash (cell-id cell) *cells*))
+  (unmark-live (cell-id cell)))
 
 (defun run-cell (cell)
   "Receive, translate, transition, perform. The lifecycle lives in the kernel
@@ -898,10 +959,16 @@ as diagnostics -- and stays registered, visibly, until an operator resolves it."
                  (publish cell "session.error"
                           (event::object "detail" (princ-to-string condition))))))))
 
-(defun spawn (&key (label "") agent)
-  "Start a session that outlives whoever started it."
-  (let* ((id (bt:with-lock-held (*registry-lock*) (format nil "s~d" (incf *counter*))))
-         (cell (make-cell :id id :label label :agent agent
+(defun spawn (&key (label "") agent (id (session:new-id)))
+  "Start a session that outlives whoever started it.
+
+ID IS THE RECORDED SESSION'S ID, and durable. It was minted here from a counter
+that restarted with the process, so `s1` after a restart was a different
+conversation wearing the name every client still held -- which is why nothing
+could be brought back: a rehydrated cell under a reused name would have pointed
+every tab at somebody else's session, and silent mis-addressing is worse than
+visible loss. spec/Recovery.tla, RecoveryWitnessName."
+  (let* ((cell (make-cell :id id :label label :agent agent
                           :model (string (or (agent:agent-model agent) ""))
                           :cwd (env:env-cwd (harness:agent-environment agent)))))
     ;; The agent publishes through the cell, so every frontend sees the same
@@ -913,6 +980,9 @@ as diagnostics -- and stays registered, visibly, until an operator resolves it."
     (ensure-journal)
     (setf (cell-journal-path cell) (journal-path-for id))
     (bt:with-lock-held (*registry-lock*) (setf (gethash id *cells*) cell))
+    (handler-case (mark-live cell)
+      (error (condition)
+        (format *error-output* "~&vivarium live-marker: ~a not written: ~a~%" id condition)))
     ;; SESSION.STARTED BEFORE THE THREAD, so it is always sequence 1.
     ;;
     ;; It used to be the worker's first act, which was fine while the worker

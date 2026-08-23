@@ -2374,6 +2374,142 @@ it reports nothing, and the suite has to be killed to find out why."
                      (actor:shutdown cell))))
             (ignore-errors (close stream))))))))
 
+(define-test "a session's id is its transcript's id, and a resume keeps it"
+  ;; The cell was named from an in-memory counter that restarted with the
+  ;; process, so `s1` after a restart was a different conversation wearing the
+  ;; name every client still held. A resume also opened a NEW file under a new
+  ;; id holding only what came after -- measured: one header line, parent NIL
+  ;; -- so resuming the continuation later lost everything before it.
+  (with-repository (environment)
+    (let* ((root (env:env-cwd environment))
+           (directory (session:session-directory root))
+           (first-session (session:open-session :directory directory :cwd root))
+           (id (session:session-id first-session)))
+      (session:record-entry first-session :message
+                            (msg:make-user-message :content (list (msg:make-text "one"))))
+      (session:record-entry first-session :message
+                            (msg:make-assistant-message :content (list (msg:make-text "two"))))
+      (session:close-session first-session)
+      (with-daemon (path)
+        (let ((stream (daemon:connect path)))
+          (unwind-protect
+               (progn
+                 (read-line stream nil nil)
+                 (let ((reply (daemon:request stream "type" "session.start" "cwd" root
+                                                     "resume" id)))
+                   (true (gethash "success" reply) "~a" (gethash "error" reply))
+                   (is equal id (gethash "id" (gethash "session" reply))
+                       "the cell was not named after the transcript it continues")
+                   (let* ((cell (actor:find-cell id))
+                          (agent (vivarium.actor::cell-agent cell))
+                          (session (harness:agent-session agent)))
+                     ;; The SAME file, and what follows hangs off its leaf.
+                     (is equal (session:session-path session)
+                         (namestring (merge-pathnames (format nil "~a.jsonl" id) directory))
+                         "the continuation was written into a different file")
+                     (session:append-entry session :message
+                                           (msg:make-user-message
+                                            :content (list (msg:make-text "three"))))
+                     (let ((again (session:session-messages (session:load-session
+                                                             (session:session-path session)))))
+                       (is = 3 (length again)
+                           "resuming the continuation would lose what came before"))
+                     ;; Resuming a LIVE session attaches to it; no second cell.
+                     (let ((twice (daemon:request stream "type" "session.start" "cwd" root
+                                                         "resume" id)))
+                       (is equal id (gethash "id" (gethash "session" twice))))
+                     (is = 1 (count id (actor:all-cells) :key #'actor:cell-id :test #'equal)
+                         "resuming a live session started a second cell on its file")
+                     (actor:shutdown cell))))
+            (ignore-errors (close stream))))))))
+
+(define-test "a session that was running comes back when the daemon does"
+  ;; The journal says what a session SAID; nothing said which sessions were
+  ;; open when the daemon stopped, so none came back, and a person rebuilt one
+  ;; by hand from the picker under a new id. A live marker is a file whose
+  ;; existence is the fact: made when the cell registers, removed only when it
+  ;; deregisters -- a daemon that stops does not end its sessions, it loses
+  ;; them, and the marker is what lets the next one find them.
+  (with-repository (environment)
+    (let* ((root (env:env-cwd environment))
+           (directory (session:session-directory root))
+           (recorded (session:open-session :directory directory :cwd root))
+           (id (session:session-id recorded))
+           (empty (session:open-session :directory directory :cwd root))
+           (empty-id (session:session-id empty)))
+      (session:record-entry recorded :message
+                            (msg:make-user-message :content (list (msg:make-text "kept"))))
+      (session:close-session recorded)
+      (session:close-session empty)
+      (with-daemon (path)
+        (let ((stream (daemon:connect path)))
+          (unwind-protect
+               (progn
+                 (read-line stream nil nil)
+                 (daemon:request stream "type" "session.start" "cwd" root "resume" id)
+                 (true (probe-file (vivarium.actor::live-path id)) "no marker was written")
+                 ;; A session with nothing in it is an accident of attaching.
+                 (with-open-file (out (vivarium.actor::live-path empty-id)
+                                      :direction :output :if-exists :supersede)
+                   (format out "{\"id\":~s,\"cwd\":~s}" empty-id root))
+                 ;; The daemon dies without ending anything: the cell is simply
+                 ;; dropped from the registry, as a dead process drops it.
+                 (let ((cell (actor:find-cell id)))
+                   (bt:with-lock-held (vivarium.actor::*registry-lock*)
+                     (remhash id vivarium.actor::*cells*))
+                   (ignore-errors (harness:cancel-agent (vivarium.actor::cell-agent cell))))
+                 (is = 1 (vivarium.daemon::rehydrate-sessions)
+                     "the session that was running did not come back")
+                 (true (actor:find-cell id) "it came back under a different id, or not at all")
+                 (false (actor:find-cell empty-id) "an empty transcript was brought back")
+                 (false (probe-file (vivarium.actor::live-path empty-id))
+                        "the empty session's marker was kept")
+                 (actor:shutdown (actor:find-cell id)))
+            (ignore-errors (close stream))))))))
+
+(define-test "a turn the daemon died in the middle of is announced, not silent"
+  ;; The session comes back and the turn does not: it was a thread in a process
+  ;; that is gone. A person who closed the lid on an agent that was working and
+  ;; opens it to a session that is quietly idle has been told nothing.
+  (with-repository (environment)
+    (let* ((root (env:env-cwd environment))
+           (directory (session:session-directory root))
+           (cut (session:open-session :directory directory :cwd root))
+           (cut-id (session:session-id cut))
+           (whole (session:open-session :directory directory :cwd root))
+           (whole-id (session:session-id whole)))
+      ;; One ends on a question; the daemon died before the answer.
+      (session:record-entry cut :message
+                            (msg:make-user-message :content (list (msg:make-text "and then?"))))
+      (session:close-session cut)
+      ;; One ends on an answer; nothing was interrupted.
+      (session:record-entry whole :message
+                            (msg:make-user-message :content (list (msg:make-text "hello"))))
+      (session:record-entry whole :message
+                            (msg:make-assistant-message :content (list (msg:make-text "hi"))))
+      (session:close-session whole)
+      (with-daemon (path)
+        (let ((stream (daemon:connect path)))
+          (unwind-protect
+               (progn
+                 (read-line stream nil nil)
+                 (dolist (id (list cut-id whole-id))
+                   (with-open-file (out (vivarium.actor::live-path id)
+                                        :direction :output :if-exists :supersede)
+                     (format out "{\"id\":~s,\"cwd\":~s}" id root)))
+                 (is = 2 (vivarium.daemon::rehydrate-sessions))
+                 (flet ((notes (id)
+                          (remove-if-not (lambda (event)
+                                           (equal "session.error" (event:event-name event)))
+                                         (actor:since (actor:find-cell id) 0))))
+                   (is = 1 (length (notes cut-id)) "the interrupted turn was not announced")
+                   (true (search "did not finish"
+                                 (gethash "detail" (event:event-data (first (notes cut-id))))))
+                   (is = 0 (length (notes whole-id)) "a finished turn was reported as interrupted"))
+                 (actor:shutdown (actor:find-cell cut-id))
+                 (actor:shutdown (actor:find-cell whole-id)))
+            (ignore-errors (close stream))))))))
+
 (define-test "starting fresh publishes no conversation"
   ;; The guard on the above: if every start announced a conversation, the test
   ;; would pass on a build that published the same thing regardless.

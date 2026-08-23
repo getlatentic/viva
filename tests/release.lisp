@@ -612,10 +612,16 @@ twice; it is somebody's record.")))
   ;; that was never wired at all.
   (let ((source (repository-file "src/daemon/server.lisp")))
     (let ((lookup (search "(earlier (a:when-let ((wanted (text-of command \"resume\")))" source))
-          (open (search "(session (session:open-session" source)))
-      (true (and lookup open) "the resume lookup and the session open must both be there")
+          (open (search "(session:open-session :directory" source))
+          (reopen (search "(session:reopen-session" source)))
+      (true (and lookup open reopen)
+            "the resume lookup, the session open and the reopen must all be there")
       (true (< lookup open)
-            "the earlier session must be resolved BEFORE this session's file exists"))
+            "the earlier session must be resolved BEFORE this session's file exists")
+      ;; Continuing one touches its file too, and for the same reason must not
+      ;; happen until it is known which one.
+      (true (< lookup reopen)
+            "the earlier session must be resolved BEFORE its file is reopened"))
     ;; And the daemon says which it loaded, so a resume that finds nothing can
     ;; be told apart from one that worked.
     (true (search "found no session there" source))

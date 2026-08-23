@@ -75,6 +75,10 @@ says what would make one appear."
 environment or in .env at the repository root."
                   (mapcar (lambda (entry) (getf entry :key)) +catalogue+)))
           ((null label) (first available))
+          ;; By the choice's name, or by the model it resolves to. A session
+          ;; records the model it ran under, and bringing it back means
+          ;; asking for that model -- which only the second form can do.
           (t (or (find label available :key #'choice-label :test #'string-equal)
+                 (find label available :key #'choice-model :test #'string=)
                  (error "No model called ~s. Available: ~{~a~^, ~}"
                         label (mapcar #'choice-label available)))))))

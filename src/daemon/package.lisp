@@ -50,6 +50,7 @@
            #:shutdown #:await-shutdown #:await-turn
            #:subscribe #:subscribe-since #:unsubscribe #:since
            #:find-cell #:all-cells #:snapshot #:+terminal-events+ #:*journal-root*
+           #:live-sessions #:unmark-live #:live-root
            #:spawn-task #:cancel-task #:task-tree-snapshot #:ensure-supervisor
            #:ensure-evolver #:create-candidate #:activate-candidate
            #:promote-candidate #:revert-component #:discard-candidate

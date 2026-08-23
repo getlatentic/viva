@@ -183,6 +183,29 @@ leaving a reader to infer it from the shape of line two."
                                      "cwd" cwd "parent" parent)))
       session)))
 
+(defun reopen-session (path)
+  "Continue a recorded session in its own file: the tree as it was, and a
+stream to append what follows.
+
+This is what makes a session's id durable. A resume used to open a NEW file
+under a new id and load the old conversation into the agent -- so the new file
+held only what came after, with no link back, and resuming it later lost
+everything before the fork. Measured: a resumed session's file held one header
+line and a parent of NIL. The chain broke on its second link.
+
+THE ENTRY COUNTER IS PUSHED PAST THE FILE. An entry id is the process counter
+in its high bits, and the counter restarts with the process, so a reopened file
+already holds ids a fresh process is about to mint again. One collision corrupts
+the tree silently: the index keeps one entry under a name that now means two."
+  (let ((session (load-session path)))
+    (dolist (entry (session-entries session))
+      (a:when-let ((number (ignore-errors (parse-integer (entry-id entry) :radix 16))))
+        (setf *entry-counter* (max *entry-counter* (ash number -16)))))
+    (setf (session-stream session)
+          (open path :direction :output :if-exists :append
+                     :if-does-not-exist :error :external-format :utf-8))
+    session))
+
 (defun close-session (session)
   "Close the transcript, and remove it if nothing was ever said.
 

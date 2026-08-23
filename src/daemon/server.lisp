@@ -332,6 +332,15 @@ transcript to draw a list would take longer the longer you had used it."
     (if (stringp value) value default)))
 
 (defun start-session (command)
+  "Start a session, or continue one. Returns its cell.
+
+A SESSION THAT IS ALREADY RUNNING IS ATTACHED TO, NOT STARTED AGAIN. With ids
+durable, a resume can name a live cell -- a tab reopened after the client
+restarted, a picker entry for a session the daemon brought back -- and a second
+cell on the same transcript would be two writers to one file."
+  (a:when-let ((running (a:when-let ((wanted (text-of command "resume")))
+                          (and (not (string= "true" wanted)) (actor:find-cell wanted)))))
+    (return-from start-session running))
   (let* ((cwd (or (text-of command "cwd") (uiop:native-namestring (uiop:getcwd))))
          (choice (models:resolve-model (text-of command "model")))
          ;; BEFORE OPEN-SESSION. Opening writes this session's own file, so
@@ -343,7 +352,15 @@ transcript to draw a list would take longer the longer you had used it."
                     (if (string= "true" wanted)
                         (session:latest-session cwd)
                         (session:find-session wanted :cwd cwd))))
-         (session (session:open-session :directory (session:session-directory cwd) :cwd cwd))
+         ;; THE SAME FILE, when continuing. A resume used to open a new file
+         ;; under a new id, so the continuation held only what came after and
+         ;; resuming it later lost everything before -- the chain broke on its
+         ;; second link. Reopening keeps one id and one file per conversation,
+         ;; which is what makes the id durable enough to bring a session back.
+         (session (if earlier
+                      (session:reopen-session (session:summary-path earlier))
+                      (session:open-session :directory (session:session-directory cwd)
+                                            :cwd cwd)))
          (agent (harness:make-workspace-agent
                  :cwd cwd
                  :provider (models:choice-provider choice)
@@ -376,9 +393,76 @@ transcript to draw a list would take longer the longer you had used it."
                                                    :format-arguments (list (session:summary-id earlier)
                                                                            (session:summary-messages earlier)))))
             (error (condition) (note-failure "resume" condition)))))
-    (let ((cell (actor:spawn :label (or (text-of command "label") cwd) :agent agent)))
+    (let ((cell (actor:spawn :label (or (text-of command "label") cwd) :agent agent
+                             :id (session:session-id session))))
       (when earlier (announce-resumed cell agent))
       cell)))
+
+(defun announce-interruption (cell)
+  "Say so when the daemon died in the middle of a turn.
+
+The session comes back; the turn does not. It was a thread in a process that
+is gone, and the request it was waiting on died with it. What the transcript
+holds is everything up to the last message written -- the question, and any
+tool results before the end -- so the conversation is intact up to there. But
+a person who closed the lid on an agent that was working and opens it to a
+session that is quietly idle has been told nothing, and will ask again what
+has already been half-answered. The interruption is said in the session's own
+stream, where the work was, not in a log nobody reads."
+  (let* ((agent (vivarium.actor::cell-agent cell))
+         (messages (loop*:context-messages (harness:agent-context agent)))
+         (last (car (last messages))))
+    (when (and last
+               (or (msg:user-message-p last)
+                   (and (msg:assistant-message-p last)
+                        (msg:tool-calls-in last))))
+      (actor:publish cell "session.error"
+                     (object "detail" "the daemon stopped while this turn was running; the turn did not finish. Ask again to continue.")))))
+
+(defun rehydrate-sessions ()
+  "Bring back every session that was running when the last daemon stopped.
+
+Each one is a RESUME of its own transcript under its own id, which is the
+ordinary path and not a special one -- so what a person sees after a restart is
+exactly what they would see resuming by hand, including the work the session
+did. The live markers say which; the transcripts say what.
+
+ONE AT A TIME, EACH UNDER ITS OWN GUARD. A transcript that will not load, a
+marker whose file is gone, a directory that no longer exists: each is reported
+and the rest come back. Restoring 199 sessions is not cancelled by the 200th.
+
+A transcript with nothing in it is not brought back, and its marker is removed:
+it is an accident of attaching, by the same rule CLOSE-SESSION removes the file."
+  (let ((restored 0))
+    (dolist (marker (actor:live-sessions))
+      (let ((id (gethash "id" marker)) (cwd (gethash "cwd" marker)))
+        (handler-case
+            (let ((recorded (and (stringp cwd) (session:find-session id :cwd cwd))))
+              (cond ((null recorded)
+                     (actor:unmark-live id)
+                     (note-failure "rehydrate"
+                                   (make-condition 'simple-error
+                                                   :format-control "~a has no transcript under ~a; marker dropped"
+                                                   :format-arguments (list id cwd))))
+                    ((zerop (session:summary-messages recorded))
+                     (actor:unmark-live id))
+                    (t
+                     (let ((command (make-hash-table :test #'equal)))
+                       (setf (gethash "cwd" command) cwd
+                             (gethash "resume" command) id
+                             (gethash "label" command) (gethash "label" marker))
+                       (a:when-let ((model (gethash "model" marker)))
+                         (when (and (stringp model) (plusp (length model)))
+                           (setf (gethash "model" command) model)))
+                       (let ((cell (start-session command)))
+                         (announce-interruption cell)
+                         (incf restored))))))
+          (error (condition)
+            (note-failure "rehydrate"
+                          (make-condition 'simple-error
+                                          :format-control "~a not restored: ~a"
+                                          :format-arguments (list id condition)))))))
+    restored))
 
 (defun announce-resumed (cell agent)
   "Publish a resumed conversation into the new cell's event stream.
@@ -829,6 +913,10 @@ while the accept loop serves on."
              (setf published t)
              (handler-case (start-sweeper instance)
                (error (condition) (note-failure "sweeper" condition)))
+             ;; Before the announce, so the first client to connect is greeted
+             ;; with the sessions it had, not with an empty list that fills in.
+             (handler-case (rehydrate-sessions)
+               (error (condition) (note-failure "rehydrate" condition)))
              (when announce
                (handler-case (funcall announce path)
                  (error (condition) (note-failure "announce" condition))))
