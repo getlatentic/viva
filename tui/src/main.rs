@@ -24,6 +24,7 @@ use protocol::{Connection, Incoming, Recorded, SessionInfo};
 use ratatui::prelude::*;
 use serde_json::{json, Value};
 use std::io::stdout;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 /// Restores the terminal however the program leaves -- return, error or panic.
@@ -132,6 +133,7 @@ fn run() -> std::io::Result<()> {
 
     let mut hits = ui::Hitboxes::default();
     let mut rendered = ui::Rendered::default();
+    let mut reconnect = Reconnect::default();
     // DRAW ONLY WHEN SOMETHING CHANGED. Redrawing on a timer means an idle
     // client spends the same effort as a busy one, and the effort is not small
     // -- laying out a long transcript costs the length of the conversation.
@@ -152,7 +154,28 @@ fn run() -> std::io::Result<()> {
                 Incoming::Greeting(_) => {}
                 Incoming::Closed => {
                     model.connected = false;
-                    model.status = "the daemon closed the connection".into();
+                    reconnect.lost();
+                    model.status = "connection lost — reconnecting".into();
+                }
+            }
+        }
+
+        // A LOST CONNECTION IS RETRIED, NOT REPORTED. The daemon is the durable
+        // side, and a client that gave up on it the moment a restart closed
+        // the socket made `survives a restart` mean `if you restart the client
+        // too`. Tried on a backoff, so a daemon that is down for a minute is
+        // asked a dozen times rather than a thousand.
+        if !model.connected && reconnect.due() {
+            match reconnect.attempt(&path) {
+                Some(fresh) => {
+                    connection = fresh;
+                    rejoin(&mut connection, &mut model);
+                    dirty = true;
+                }
+                None => {
+                    model.status = format!("connection lost — reconnecting ({})",
+                                           reconnect.attempts);
+                    dirty = true;
                 }
             }
         }
@@ -344,6 +367,84 @@ fn run_command(
         _ => {}
     }
     Ok(false)
+}
+
+/// Getting back to a daemon that went away.
+#[derive(Default)]
+struct Reconnect {
+    next: Option<Instant>,
+    wait: Duration,
+    attempts: u32,
+}
+
+impl Reconnect {
+    fn lost(&mut self) {
+        if self.next.is_none() {
+            self.wait = Duration::from_millis(500);
+            self.attempts = 0;
+            self.next = Some(Instant::now() + self.wait);
+        }
+    }
+
+    fn due(&self) -> bool {
+        self.next.map(|at| Instant::now() >= at).unwrap_or(false)
+    }
+
+    /// One try. Starts a daemon if none is listening, the same way the first
+    /// connection does -- a person who closed the lid on a daemon that was
+    /// then killed should open it to a working client, not to instructions.
+    fn attempt(&mut self, path: &PathBuf) -> Option<Connection> {
+        self.attempts += 1;
+        let fresh = protocol::ensure_daemon(path)
+            .ok()
+            .and_then(|()| Connection::open(path).ok());
+        match fresh {
+            Some(connection) => {
+                self.next = None;
+                Some(connection)
+            }
+            None => {
+                self.wait = (self.wait * 2).min(Duration::from_secs(5));
+                self.next = Some(Instant::now() + self.wait);
+                None
+            }
+        }
+    }
+}
+
+/// Pick up where the old connection left off, on a daemon that may be new.
+///
+/// EVERYTHING IS RE-READ. A daemon that restarted brought the sessions back
+/// under the same ids, but its streams begin again at sequence one: folding
+/// the replay onto what this client already holds would show every turn
+/// twice, and trusting `last_seq` would skip most of it. The tabs stay --
+/// they name sessions, and the sessions are the thing that survived.
+fn rejoin(connection: &mut Connection, model: &mut Model) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut greeted = false;
+    while !greeted && Instant::now() < deadline {
+        for message in connection.drain() {
+            if let Incoming::Greeting(greeting) = message {
+                take_sessions(model, &greeting);
+                greeted = true;
+            }
+        }
+        if !greeted {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    if !greeted {
+        return;
+    }
+    model.connected = true;
+    model.conversations.clear();
+    let open: Vec<String> = model.tabs.clone();
+    for id in open {
+        model.conversation(&id);
+        let _ = attach(connection, model, &id);
+    }
+    let _ = refresh_learned(connection, model);
+    model.status = "reconnected".into();
 }
 
 fn open_session(
