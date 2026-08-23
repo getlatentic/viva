@@ -322,6 +322,7 @@ transcript to draw a list would take longer the longer you had used it."
             ;; green because almost every daemon test connects with zero
             ;; sessions: the primary public path was untested and broken.
             "cwd" (getf now :cwd)
+            "opening" (getf now :opening)
             "model" (getf now :model)
             "effort" (getf now :effort)
             "tokens" (getf now :tokens)

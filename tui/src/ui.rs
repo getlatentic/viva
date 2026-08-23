@@ -515,8 +515,10 @@ fn draw_sessions(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitbox
             Span::styled(marker.to_string(), Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
             Span::styled(cursor.to_string(), Style::default().fg(ACCENT)),
             Span::styled(format!("{mark} "), Style::default().fg(colour)),
+            // WHAT IT IS ABOUT, and where it is only when nothing was asked
+            // yet. Four sessions in one directory were four identical rows.
             Span::styled(
-                session.short_label().to_string(),
+                session.subject().to_string(),
                 if current {
                     Style::default().fg(Color::Indexed(252)).add_modifier(Modifier::BOLD)
                 } else {
@@ -539,6 +541,8 @@ fn draw_sessions(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitbox
     if lines.is_empty() {
         lines.push(Line::from(Span::styled("no sessions", Style::default().fg(DIM))));
     }
+    // No wrap: one row per session, so the row a click lands on is the
+    // session it names. A subject too long for the column is cut by the pane.
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
@@ -703,7 +707,7 @@ fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
             }
             left.push(Line::from(vec![Span::styled("in       ", dim), Span::raw(session.short_label().to_string())]));
         }
-        None => left.push(Line::from(Span::styled("no session open — ctrl-n starts one", dim))),
+        None => left.push(Line::from(Span::styled("no session open", dim))),
     }
     left.push(Line::from(""));
     left.push(Line::from(Span::styled("learned here", heading)));
@@ -753,9 +757,16 @@ fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
 
     // Two columns when they fit, one under the other when they do not.
     if inner.width >= 78 {
-        let columns = Layout::horizontal([Constraint::Length(34), Constraint::Min(0)]).split(inner);
-        frame.render_widget(Paragraph::new(left), columns[0]);
-        frame.render_widget(Paragraph::new(right).wrap(Wrap { trim: false }), columns[1]);
+        // A gap between them, and the left column wraps: without either, a
+        // line one character too long ran straight into the right column.
+        let columns = Layout::horizontal([
+            Constraint::Length(30),
+            Constraint::Length(4),
+            Constraint::Min(0),
+        ])
+        .split(inner);
+        frame.render_widget(Paragraph::new(left).wrap(Wrap { trim: false }), columns[0]);
+        frame.render_widget(Paragraph::new(right).wrap(Wrap { trim: false }), columns[2]);
     } else {
         let mut all = left;
         all.push(Line::from(""));
@@ -1328,6 +1339,47 @@ kilo lima mike november oscar papa quebec";
         assert!(air.trim().is_empty(), "the transcript sits on the prompt: {air:?}");
         assert!(rows.iter().any(|row| row.contains("the last thing said")),
                 "the air cost the last line");
+    }
+
+    #[test]
+    fn a_session_is_listed_by_what_it_is_about() {
+        // Four sessions in one directory were four identical rows: the name
+        // of the directory says where a session is, not which one it is.
+        let mut model = ready(&[]);
+        model.sidebar = true;
+        if let Some(session) = model.sessions.first_mut() {
+            session.opening = "why does the picker lose its filter".into();
+        }
+        let rows = frame_of(&model, 110, 16);
+        let listed = rows[1..]
+            .iter()
+            .find(|row| row.contains("why does the picker"))
+            .unwrap_or_else(|| panic!("the sidebar does not say what the session is about"));
+        assert!(listed.contains('>'), "the current session lost its marker: {listed:?}");
+        // A session nothing has been asked in falls back to where it is.
+        assert!(rows[1..].iter().any(|row| row.contains("beta")),
+                "a session with no question is not listed by its directory");
+    }
+
+    #[test]
+    fn the_welcome_columns_do_not_run_into_each_other() {
+        // A line one character longer than its column ran straight into the
+        // one beside it, and read as two sentences spliced together.
+        let mut model = ready(&[]);
+        model.sessions.clear();
+        model.current.clear();
+        let rows = frame_of(&model, 100, 20);
+        let left_edge = rows
+            .iter()
+            .find(|row| row.contains("keys"))
+            .and_then(|row| row.find("keys"))
+            .expect("the welcome has no key list");
+        for row in &rows {
+            if let Some(at) = row.find("no session open") {
+                assert!(at + "no session open".len() < left_edge,
+                        "the left column runs into the right: {row:?}");
+            }
+        }
     }
 
     #[test]

@@ -47,6 +47,12 @@ live undefined-variable warning that every later warning would have hidden in.")
   ;; it here; the snapshot never touches the agent at all.
   (model "" :type string)
   (cwd "" :type string)
+  ;; The first thing asked in this session, so a list of sessions can say what
+  ;; each one is ABOUT. A directory name says where a session is and nothing
+  ;; about which of the four open in it you are looking for. Remembered as it
+  ;; goes past rather than read back: the transcript is on disk and walking it
+  ;; for every session on every list is the wrong price for one line.
+  (opening "" :type string)
   ;; :idle :working :suspended :stopping :stuck
   (state :idle :type keyword)
   (mailbox (mailbox:make-mailbox))
@@ -495,6 +501,11 @@ and it is a known non-blocking primitive."
                                       :time (get-universal-time)
                                       :data data))
         (remember-event cell event)
+        (when (and (string= name "user.message") (zerop (length (cell-opening cell))))
+          (a:when-let ((text (and (hash-table-p data) (gethash "text" data))))
+            (when (stringp text)
+              (let ((flat (substitute #\Space #\Newline text)))
+                (setf (cell-opening cell) (subseq flat 0 (min 70 (length flat))))))))
         (when (eq :unreported (cell-degraded cell))
           (setf (cell-degraded cell) :reported
                 declare-loss t))
@@ -641,6 +652,7 @@ outside the very ownership boundary the snapshot exists to respect."
           :queued (length (cell-queued cell))
           :model (cell-model cell)
           :cwd (cell-cwd cell)
+          :opening (cell-opening cell)
           ;; What the last request actually cost, and what this model will
           ;; take. MEASURED, not estimated -- it is the number the provider
           ;; reported, and the same one compaction decides on. A client cannot

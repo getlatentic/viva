@@ -247,6 +247,11 @@ pub struct SessionInfo {
     pub cwd: String,
     #[serde(default)]
     pub model: String,
+    /// What was first asked here. A list of sessions is a list of things a
+    /// person was doing, and a directory name says where one is rather than
+    /// which of the four open in it they are looking for.
+    #[serde(default)]
+    pub opening: String,
     #[serde(default)]
     pub effort: String,
     /// What the provider reported for the last request, and what this model
@@ -271,6 +276,19 @@ pub struct Recorded {
     pub messages: u64,
     #[serde(default)]
     pub opening: String,
+}
+
+impl SessionInfo {
+    /// What to call this session in a list: what it is about, or -- before
+    /// anything has been asked -- where it is.
+    pub fn subject(&self) -> &str {
+        let opening = self.opening.trim();
+        if opening.is_empty() {
+            self.short_label()
+        } else {
+            opening
+        }
+    }
 }
 
 impl Recorded {
