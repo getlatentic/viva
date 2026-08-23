@@ -60,6 +60,12 @@ pub struct Entry {
     /// worker's calls sit level with the delegate's own and a person cannot
     /// see where one worker ends and the next begins.
     pub depth: u8,
+    /// The worker this call was made by, when it was made by one. Named on
+    /// the wire, so two workers running at once are told apart by whose call
+    /// it is rather than by when it arrived.
+    pub lane: String,
+    /// The worker a delegate STARTED, matched from the task it announced.
+    worker: String,
     /// Bumped whenever this entry changes, so a renderer can tell which of a
     /// thousand entries it has to lay out again -- which is one of them.
     pub stamp: u64,
@@ -85,6 +91,8 @@ impl Entry {
             call: String::new(),
             tool: String::new(),
             depth: 0,
+            lane: String::new(),
+            worker: String::new(),
             stamp: 0,
             started: None,
             took: None,
@@ -194,19 +202,6 @@ impl Conversation {
         self.pending = 0;
         self.scroll = offset;
         self.following = offset == 0;
-    }
-
-    /// Is any worker running? A call made while one is is drawn inside it.
-    ///
-    /// INSIDE A WORKER, NOT INSIDE A PARTICULAR ONE. A tool event carries no
-    /// parent, so with two workers running there is nothing on the wire that
-    /// says whose call this is -- and counting the running workers as a depth
-    /// drew two siblings from one batch as one nested in the other, which is
-    /// a claim the client cannot support.
-    fn inside_worker(&self) -> bool {
-        self.entries
-            .iter()
-            .any(|entry| entry.tool == "delegate" && entry.outcome == Outcome::Running)
     }
 
     /// Is there movement still owed?
@@ -494,15 +489,20 @@ impl Model {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string();
+                let lane = event.text("lane").to_string();
                 // A worker is always drawn at the outer level, whatever else
-                // is running: two asked for is two lines, side by side.
-                let depth = u8::from(tool != "delegate" && conversation.inside_worker());
+                // is running: two asked for is two lines, side by side. Any
+                // other call sits inside the worker that made it, which the
+                // lane names -- and inside nothing when the lane is the
+                // session's own.
+                let depth = u8::from(tool != "delegate" && !lane.is_empty());
 
                 conversation.push(Role::Tool, line);
                 if let Some(entry) = conversation.entries.last_mut() {
                     entry.call = id;
                     entry.tool = tool;
                     entry.depth = depth;
+                    entry.lane = lane;
                     entry.started = Some(std::time::Instant::now());
                 }
             }
@@ -561,6 +561,18 @@ impl Model {
             "task.started" => {
                 conversation.revision += 1;
                 let id = event.text("task").to_string();
+                // The worker a delegate just started. Announced right after
+                // the call that started it, which is how the call it belongs
+                // to is found -- the delegate's own event carries the
+                // PARENT's lane, since the parent is what announced it.
+                if let Some(entry) = conversation
+                    .entries
+                    .iter_mut()
+                    .rev()
+                    .find(|entry| entry.tool == "delegate" && entry.worker.is_empty())
+                {
+                    entry.worker = id.clone();
+                }
                 let parent = event.data.get("parent").and_then(|v| v.as_str()).map(str::to_string);
                 let label = if text.is_empty() { id.clone() } else { text.clone() };
                 conversation.tasks.insert(

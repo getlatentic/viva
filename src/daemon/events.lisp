@@ -85,6 +85,15 @@
           "name" (msg:tool-call-name call)
           "arguments" (or (msg:tool-call-arguments call) (make-hash-table :test #'equal))))
 
+(defun worker-lane (loop-event)
+  "The worker this event came from, or nothing for the session's own lane.
+
+Named rather than numbered on the wire: a client matches a call to the worker
+that made it, and the main lane is not a worker."
+  (let ((lane (getf loop-event :lane)))
+    (unless (or (null lane) (equal lane session:+main-lane+))
+      lane)))
+
 (defun from-loop (loop-event)
   "The organism's own vocabulary for one of the agent loop's events, or NIL for
 one that is not worth publishing."
@@ -111,13 +120,17 @@ one that is not worth publishing."
     ;; its worker answers, so it said nothing. From a person's seat that is a
     ;; distinction without a difference -- a worker ran for a minute and
     ;; nothing on screen admitted it.
+    ;; :WORKER, not :LANE. Every event now carries the lane it was emitted
+    ;; from, and a delegate is announced BY THE PARENT -- so the lane on this
+    ;; event is the parent's, and the worker it is about is a different name.
     (:delegate-start (values "task.started"
-                             (object "task" (getf loop-event :lane)
+                             (object "task" (getf loop-event :worker)
                                      "text" (getf loop-event :text)
                                      "parent" (getf loop-event :parent))))
     (:delegate-end (values (if (getf loop-event :failed) "task.failed" "task.completed")
-                           (object "task" (getf loop-event :lane))))
-    (:tool-start (values "tool.started" (object "call" (call-json (getf loop-event :call)))))
+                           (object "task" (getf loop-event :worker))))
+    (:tool-start (values "tool.started" (object "call" (call-json (getf loop-event :call))
+                                                "lane" (worker-lane loop-event))))
     ;; Streamed output from a command still running. Goes out on the same
     ;; stream as everything else, so an attached session, a pane, and any
     ;; future full-screen client all receive it without one of them needing to
@@ -126,6 +139,7 @@ one that is not worth publishing."
     (:tool-end (let ((result (getf loop-event :result)))
                  (values (if (tool:tool-result-error-p result) "tool.failed" "tool.completed")
                          (object "call" (call-json (getf loop-event :call))
+                                 "lane" (worker-lane loop-event)
                                  "output" (tool:tool-result-output result)))))
     ;; A turn's terminal event is the coordinator's to publish, and it publishes
     ;; exactly one. The loop reports :RUN-END and :CANCELLED about ITS OWN run --

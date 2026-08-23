@@ -1123,7 +1123,7 @@ rather than leaving it to be rediscovered a third time."
         (is = 2 (length events) "a delegate did not announce its beginning and its end")
         (is eq :delegate-start (getf (first events) :type))
         (is eq :delegate-end (getf (second events) :type))
-        (is equal (getf (first events) :lane) (getf (second events) :lane)
+        (is equal (getf (first events) :worker) (getf (second events) :worker)
             "the end named a different worker from the beginning")
         (true (search "count the files" (getf (first events) :text)))
         (false (getf (second events) :failed) "a worker that answered was reported as failed")))))

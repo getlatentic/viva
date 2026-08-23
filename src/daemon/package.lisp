@@ -18,6 +18,7 @@
   (:local-nicknames (#:a #:alexandria)
                     (#:jzon #:com.inuoe.jzon)
                     (#:msg #:vivarium.message)
+                    (#:session #:vivarium.session)
                     (#:tool #:vivarium.tool))
   (:export #:event #:make-event #:event-p #:event-name #:event-session
            #:event-sequence #:event-time #:event-data #:as-json #:from-json

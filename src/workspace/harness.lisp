@@ -522,8 +522,13 @@ could overturn would make the order of extensions load-bearing and invisible."
     ;; Where a run's own consequences can be acted on: everything the agent did
     ;; has happened, and nothing is waiting on the answer. Pi calls it agent_end.
     (:run-end (extension:fire :run-end event)))
+  ;; THE LANE TRAVELS WITH THE EVENT. A delegate hands its worker the parent's
+  ;; listener, so a worker's tool calls arrive on the same stream as the
+  ;; parent's with nothing to tell them apart -- and a client with two workers
+  ;; running has no way to say whose call it is looking at. The agent knows;
+  ;; the event did not.
   (a:when-let ((listener (agent-listener agent)))
-    (funcall listener event)))
+    (funcall listener (list* :lane (agent-lane agent) event))))
 
 ;;; Construction
 
@@ -832,7 +837,7 @@ environment at all and every tool would refuse."
     ;; is waiting on. Through the PARENT: the child publishes as this session
     ;; too, but a worker that reported its own beginning and then died would
     ;; leave the pane holding something that never ends.
-    (agent:emit parent (list :type :delegate-start :lane lane :text task
+    (agent:emit parent (list :type :delegate-start :worker lane :text task
                              :parent (let ((above (agent-lane parent)))
                                        (unless (equal above session:+main-lane+) above))))
     (unwind-protect
@@ -843,7 +848,7 @@ environment at all and every tool would refuse."
                                        :context (agent-context child))))
               (setf failed nil)
               (values (or (last-assistant-text produced) "") lane))))
-      (agent:emit parent (list :type :delegate-end :lane lane :failed failed)))))
+      (agent:emit parent (list :type :delegate-end :worker lane :failed failed)))))
 
 (defun delegate-async (parent task &key (request-limit 20))
   "Start a delegate and return the OPERATION rather than waiting.

@@ -391,6 +391,16 @@ def main():
         else:
             ok("a fresh session opens on the welcome")
 
+        # No column for work that is not happening. Located by POSITION -- the
+        # column's title sits at the right of the row under the tabs -- and
+        # not by searching the frame, where `/help` prints a blurb with the
+        # word `running` in it. That is the seventh time here.
+        head = client.term.lines()[1]
+        if "running" in head[-34:]:
+            fail(f"the running column is there with nothing running: {head[-34:]!r}")
+        else:
+            ok("no column for work that is not happening")
+
         # The sessions column is there when asked for, and gone when not: the
         # tab bar already names the sessions on screen and counts the rest.
         client.send(b"\x02")                       # ctrl-b

@@ -1289,9 +1289,15 @@ kilo lima mike november oscar papa quebec";
             model.absorb(&event("tool.started", json!({
                 "call": {"id": id, "name": "delegate", "arguments": {"task": task}}})));
         }
+        // The worker's own call names the worker that made it, which is how
+        // the client knows whose it is with two of them running.
         model.absorb(&event("tool.started", json!({
-            "call": {"id": "r1", "name": "read", "arguments": {"path": "main.rs"}}})));
+            "call": {"id": "r1", "name": "read", "arguments": {"path": "main.rs"}},
+            "lane": "lane-1"})));
         model.absorb(&event("tool.completed", json!({"call": {"id": "r1"}, "output": "fn main"})));
+        // A call on the session's own lane is inside nothing.
+        model.absorb(&event("tool.started", json!({
+            "call": {"id": "t1", "name": "ls", "arguments": {}}})));
         let rows = frame_of(&model, 110, 26);
         let workers: Vec<&String> = rows.iter().filter(|row| row.contains("worker")).collect();
         assert_eq!(workers.len(), 2, "two workers did not read as two: {rows:?}");
@@ -1307,6 +1313,9 @@ kilo lima mike november oscar papa quebec";
         // cannot support -- and two from one batch are siblings.
         assert_eq!(workers[0].find('─'), workers[1].find('─'),
                    "one worker was drawn inside the other:\n{}\n{}", workers[0], workers[1]);
+        let own = rows.iter().find(|row| row.contains("✔ ls") || row.contains("· ls")).unwrap();
+        assert_eq!(own.find('─'), workers[0].find('─'),
+                   "a call on the session's own lane was drawn inside a worker: {own:?}");
     }
 
     #[test]

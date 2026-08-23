@@ -135,21 +135,37 @@ traffic that put two client threads on one descriptor."
   ;; would be dropped in silence -- which is how a worker ran for a minute with
   ;; nothing on screen admitting it.
   (multiple-value-bind (name data)
-      (event:from-loop (list :type :delegate-start :lane "lane-3"
+      (event:from-loop (list :type :delegate-start :worker "lane-3"
                              :text "count the files" :parent nil))
     (is equal "task.started" name)
     (is equal "lane-3" (gethash "task" data))
     (is equal "count the files" (gethash "text" data)))
   (multiple-value-bind (name data)
-      (event:from-loop (list :type :delegate-end :lane "lane-3" :failed nil))
+      (event:from-loop (list :type :delegate-end :worker "lane-3" :failed nil))
     (is equal "task.completed" name)
     (is equal "lane-3" (gethash "task" data)))
   (is equal "task.failed"
-      (event:from-loop (list :type :delegate-end :lane "lane-3" :failed t)))
+      (event:from-loop (list :type :delegate-end :worker "lane-3" :failed t)))
   ;; Every name it produces must be one the protocol admits, or a client is
   ;; entitled to ignore it.
   (dolist (name (list "task.started" "task.completed" "task.failed"))
-    (true (event:name-valid-p name) name)))
+    (true (event:name-valid-p name) name))
+  ;; AND A TOOL EVENT SAYS WHOSE CALL IT IS. A delegate hands its worker the
+  ;; parent's listener, so the worker's calls arrive on the same stream as the
+  ;; parent's -- and with two workers running, a client had nothing to tell
+  ;; them apart by.
+  (let ((call (msg:make-tool-call :id "c1" :name "ls" :arguments (args))))
+    (multiple-value-bind (name data)
+        (event:from-loop (list :type :tool-start :call call :lane "lane-2"))
+      (is equal "tool.started" name)
+      (is equal "lane-2" (gethash "lane" data)))
+    ;; The session's own lane is not a worker, and says so by saying nothing.
+    (multiple-value-bind (name data)
+        (event:from-loop (list :type :tool-start :call call
+                               :lane vivarium.session:+main-lane+))
+      (declare (ignore name))
+      (false (gethash "lane" data)
+             "the session's own lane was reported as a worker"))))
 
 (define-test "clients arriving and leaving at once each get their own connection"
   (with-daemon (path)
