@@ -48,7 +48,8 @@ The page is the transcript, the full width of the screen.
 
 | part | shows |
 | --- | --- |
-| tab bar | the sessions you opened, each with its state, and a count of the rest |
+| tab bar | the name, the sessions you opened, each with its state, and a count of the rest |
+| sessions | what each running session is about, by the first thing asked in it |
 | page | your questions, marked; replies rendered from markdown; each tool call as a titled rule with its result and its time under it |
 | workers | a delegate reads as a `worker`, and the calls it makes are drawn inside it |
 | welcome | on a session nothing has been said in: the model, what this directory has retained, recent sessions here, and the keys |
@@ -95,7 +96,7 @@ Run each command yourself. The numbers come from these runs.
 | what | number | command |
 | --- | --- | --- |
 | Lisp tests | 1,925 pass | `viva test` |
-| Rust tests | 71 pass | `cargo test --manifest-path tui/Cargo.toml` |
+| Rust tests | 73 pass | `cargo test --manifest-path tui/Cargo.toml` |
 | TLA+ configurations | 23 agree | `./spec/verify.sh` |
 | terminal invariants | 30 hold | `python3 tui/conformance.py` |
 | recorded sessions replayed through the client | clean | `python3 tui/journal_replay.py` |
