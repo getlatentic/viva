@@ -185,7 +185,14 @@ class Client:
         return False
 
     def send(self, data):
-        os.write(self.fd, data)
+        # A client that has left takes its pty with it, and writing to the
+        # far end of a closed one raises EIO. Teardown keeps typing on
+        # purpose -- to prove the terminal was handed back -- so the write
+        # failing is the expected end, not a fault to raise here.
+        try:
+            os.write(self.fd, data)
+        except OSError:
+            pass
 
     def resize(self, rows, cols):
         self.rows, self.cols = rows, cols
@@ -391,6 +398,28 @@ def main():
         else:
             ok("a fresh session opens on the welcome")
 
+        # A bang line runs here and comes back as a call. Through a real
+        # daemon, so the whole chain is under test -- and a path dropped on
+        # the prompt is not mistaken for a command, which is what sent a
+        # dragged screenshot to the refusal instead of to the model.
+        client.send(b"!echo conformance-bang\r")
+        client.pump(8.0)
+        page = "\n".join(client.term.lines()[1:-3])
+        if "conformance-bang" not in page:
+            print("---- frame at failure ----")
+            print("\n".join(client.term.lines()))
+            fail("a bang line did not run")
+        else:
+            ok("! runs a command here, and it reads as a call")
+
+        client.send(b"/var/folders/x/screenshot.png\r")
+        client.pump(2.0)
+        page = "\n".join(client.term.lines()[1:-3])
+        if "is not a command here" in page:
+            fail("a dropped path was refused as a command")
+        else:
+            ok("a dropped path is not mistaken for a command")
+
         # No column for work that is not happening. Located by POSITION -- the
         # column's title sits at the right of the row under the tabs -- and
         # not by searching the frame, where `/help` prints a blurb with the
@@ -568,11 +597,16 @@ def main():
         client.send(b"/nonsense\r")
         client.pump(3.0)
         frame = client.term.text()
+        # FORWARDED OR NOT, by structure. Searching the frame for a model's
+        # manners found `assist` in the RESUMED conversation above -- the
+        # eighth time here that a check matched text it did not own. A command
+        # that was forwarded appears as a question, marked like any other.
+        page = "\n".join(client.term.lines()[1:-3])
         if "not a command" not in frame:
             print(frame)
             fail("an unknown slash command was not refused locally")
-        elif "Goodbye" in frame or "assist" in frame:
-            fail("the unknown command was answered by the model")
+        elif "› /nonsense" in page:
+            fail("the unknown command was sent to the model as a question")
         else:
             ok("an unknown slash command is refused, not forwarded")
 

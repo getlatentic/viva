@@ -947,7 +947,23 @@ fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
     // wide status pushed `scrolled -- End to follow` off the screen while
     // the counts stayed.
     let top = Rect::new(area.x + 1, area.y, area.width.saturating_sub(2), 1);
-    let left = format!(" {facts} ");
+    // THE FACTS YIELD FIRST. A lost connection must not be the thing that
+    // does: with a provider-prefixed model, a branch and a context reading,
+    // the row filled up and `reconnecting` was the piece dropped -- so the
+    // one moment the line had something urgent to say was the one moment it
+    // could not. Room for the first note is taken before the facts are laid
+    // out, and facts come off the right until it fits.
+    let mut shown: Vec<String> = facts.clone();
+    let reserved = notes
+        .first()
+        .map(|(_, short)| short.chars().count() + 3)
+        .unwrap_or(0);
+    while shown.len() > 1
+        && shown.join("  ›  ").chars().count() + reserved + 2 > top.width as usize
+    {
+        shown.pop();
+    }
+    let left = format!(" {} ", shown.join("  ›  "));
     let mut kept: Vec<String> = Vec::new();
     let mut room = (top.width as usize).saturating_sub(left.chars().count() + 2);
     for (long, short) in &notes {
@@ -993,12 +1009,12 @@ fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
 /// short form for when the long one does not fit beside long facts -- a
 /// provider-prefixed model and a branch with a slash in it leave a quarter
 /// of a hundred-column screen for everything else.
-fn status_text(model: &Model) -> (String, Vec<(String, String)>) {
+fn status_text(model: &Model) -> (Vec<String>, Vec<(String, String)>) {
     let following = model
         .current_conversation()
         .map(|conversation| conversation.following)
         .unwrap_or(true);
-    let facts = crate::status::facts(model).join("  ›  ");
+    let facts = crate::status::facts(model);
     let mut notes: Vec<(String, String)> = Vec::new();
     let note = |long: &str, short: &str| (long.to_string(), short.to_string());
     // The status carries what went wrong -- a closed connection, a refused
@@ -1288,6 +1304,28 @@ kilo lima mike november oscar papa quebec";
         assert!(!edge.contains("learned"), "the counts outranked the scroll note: {edge:?}");
         let wide = frame_of(&model, 160, 20);
         assert!(wide[wide.len() - 3].contains("learned"), "the counts never fit at all");
+    }
+
+    #[test]
+    fn a_lost_connection_is_never_what_yields() {
+        // With a provider-prefixed model, a branch and a context reading, the
+        // row filled up and `reconnecting` was the piece dropped -- so the one
+        // moment the line had something urgent to say was the one moment it
+        // could not. The facts come off instead.
+        let mut model = ready(&[]);
+        model.connected = false;
+        model.status = "connection lost — reconnecting".into();
+        if let Some(session) = model.sessions.first_mut() {
+            session.model = "openai/a-very-long-provider-prefixed-model".into();
+            session.effort = "high".into();
+            session.tokens = 1_280;
+            session.limit = 128_000;
+        }
+        let edge = frame_of(&model, 96, 16);
+        let row = &edge[edge.len() - 3];
+        assert!(row.contains("reconnecting"), "the lost connection was dropped: {row:?}");
+        // The model is the last fact to go, since it says what is answering.
+        assert!(row.contains("openai/a-very-long"), "the facts went entirely: {row:?}");
     }
 
     #[test]
