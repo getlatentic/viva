@@ -35,6 +35,7 @@ Inside the full screen client:
 | --- | --- |
 | `Ctrl-P` | find any session, running or not; type to narrow |
 | `Ctrl-N` | start a session in a new tab |
+| `Ctrl-B` | show the running sessions beside the page, or hide them |
 | `Ctrl-W` | close the tab; the session keeps running |
 | `Ctrl-O` | show all of a tool's output, or the first three lines again |
 | `Ctrl-L` | what this session has learned |
@@ -43,13 +44,15 @@ Inside the full screen client:
 | `Ctrl-C` | stop the running turn; leave when there is none |
 | wheel, `PageUp`, `Home`, `End` | move through the transcript |
 
-The screen has three panes and a status line.
+The page is the transcript, the full width of the screen.
 
-| pane | shows |
+| part | shows |
 | --- | --- |
-| transcript | your questions, marked; replies rendered from markdown; each tool call with its result under it |
-| tasks | subagents and delegates, while they run |
-| status line | model, effort, project, branch, and the share of the context the last request used |
+| tab bar | the sessions you opened, each with its state, and a count of the rest |
+| page | your questions, marked; replies rendered from markdown; each tool call as a titled rule with its result and its time under it |
+| welcome | on a session nothing has been said in: the model, what this directory has retained, recent sessions here, and the keys |
+| running | subagents and delegates, in a column that exists while one runs |
+| input edge | model, effort, project, branch, and the share of the context the last request used |
 
 The context share is the count the provider reported. It is not an estimate.
 
@@ -91,14 +94,14 @@ Run each command yourself. The numbers come from these runs.
 | what | number | command |
 | --- | --- | --- |
 | Lisp tests | 1,922 pass | `viva test` |
-| Rust tests | 67 pass | `cargo test --manifest-path tui/Cargo.toml` |
+| Rust tests | 69 pass | `cargo test --manifest-path tui/Cargo.toml` |
 | TLA+ configurations | 23 agree | `./spec/verify.sh` |
-| terminal invariants | 27 hold | `python3 tui/conformance.py` |
+| terminal invariants | 29 hold | `python3 tui/conformance.py` |
 | recorded sessions replayed through the client | clean | `python3 tui/journal_replay.py` |
 | 2 minutes of churn | 6,906 cycles, heap 67 MB flat | `viva soak --minutes 2` |
 | 200 sessions | heap 59 MB to 79 MB, 202 threads | the snippet below |
-| one streamed token, 10 turns | 3.50 ms | `cargo test --manifest-path tui/Cargo.toml bench -- --nocapture` |
-| one streamed token, 400 turns | 3.42 ms | the same |
+| one streamed token, 10 turns | 4.25 ms | `cargo test --manifest-path tui/Cargo.toml bench -- --nocapture` |
+| one streamed token, 400 turns | 4.29 ms | the same |
 
 Threads are the limit, not memory. The frame cost does not grow with the
 conversation: the client lays out only the entry that changed.
