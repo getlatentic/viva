@@ -1,0 +1,42 @@
+{"kind": "tiers", "tiers": [{"upto": 50, "rate": 8}, {"upto": 400, "rate": 2}, {"rate": 1}]}
+{"kind": "charge", "id": "c1-000", "units": 10}
+{"kind": "credit", "amount": 7}
+{"kind": "charge", "id": "c1-001", "units": 81, "status": "pending"}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c1-002", "units": 80}
+{"kind": "refund", "of": "missing-2"}
+{"kind": "charge", "id": "c1-003", "units": 62}
+{"kind": "refund", "of": "c1-000"}
+{"kind": "charge", "id": "c1-004", "units": 22, "status": "pending"}
+{"kind": "charge", "id": "c1-005", "units": 80}
+{"kind": "charge", "id": "c1-006", "units": 133}
+{"kind": "refund", "of": "missing-6"}
+{"kind": "charge", "id": "c1-007", "units": 44}
+{"kind": "charge", "id": "c1-008", "units": 50}
+{"kind": "charge", "id": "c1-009", "units": 122, "status": "pending"}
+{"kind": "charge", "id": "c1-010", "units": 132}
+{"kind": "refund", "of": "c1-005"}
+{"kind": "charge", "id": "c1-011", "units": 106, "status": "pending"}
+{"kind": "refund", "of": "missing-11"}
+{"kind": "charge", "id": "c1-012", "units": 91}
+{"kind": "refund", "of": "c1-000"}
+{"kind": "credit", "amount": 5}
+{"kind": "charge", "id": "c1-013", "units": 113}
+{"kind": "charge", "id": "c1-014", "units": 69}
+{"kind": "refund", "of": "c1-007"}
+{"kind": "charge", "id": "c1-015", "units": 19}
+{"kind": "charge", "id": "c1-016", "units": 97}
+{"kind": "refund", "of": "missing-16"}
+{"kind": "charge", "id": "c1-017", "units": 101}
+{"kind": "refund", "of": "c1-015"}
+{"kind": "credit", "amount": 5}
+{"kind": "charge", "id": "c1-018", "units": 36}
+{"kind": "refund", "of": "missing-18"}
+{"kind": "charge", "id": "c1-019", "units": 48}
+{"kind": "charge", "id": "c1-020", "units": 72}
+{"kind": "charge", "id": "c1-021", "units": 56}
+{"kind": "refund", "of": "c1-002"}
+{"kind": "refund", "of": "missing-21"}
+{"kind": "charge", "id": "c1-022", "units": 109, "status": "pending"}
+{"kind": "refund", "of": "c1-015"}
+{"kind": "charge", "id": "c1-023", "units": 136, "status": "pending"}

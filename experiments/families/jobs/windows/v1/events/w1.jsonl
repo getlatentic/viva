@@ -1,0 +1,20 @@
+{"kind": "clock", "offset": -1800}
+{"kind": "event", "id": "w1-000", "rev": 1, "at": 1700019515}
+{"kind": "event", "id": "w1-001", "rev": 1, "at": 1700019520}
+{"kind": "event", "id": "w1-001", "rev": 2, "at": 1700019560}
+{"kind": "heartbeat", "at": 1700019920}
+{"kind": "event", "id": "w1-002", "rev": 1, "at": 1700019720}
+{"kind": "heartbeat", "at": 1700020120}
+{"kind": "event", "id": "w1-003", "rev": 1, "at": 1700019750}
+{"kind": "event", "id": "w1-004", "rev": 1, "at": 1700019950}
+{"kind": "event", "id": "torn", 
+{"kind": "event", "id": "w1-005", "rev": 1, "at": 1700019980}
+{"kind": "event", "id": "w1-006", "rev": 1, "at": 1700020380}
+{"kind": "event", "id": "w1-007", "rev": 1, "at": 1700020470}
+{"kind": "heartbeat", "at": 1700020870}
+{"kind": "event", "id": "w1-008", "rev": 1, "at": 1700020475}
+{"kind": "event", "id": "w1-009", "rev": 1, "at": 1700020480}
+{"kind": "heartbeat", "at": 1700020880}
+{"kind": "event", "id": "w1-010", "rev": 1, "at": 1700020570}
+{"kind": "event", "id": "w1-011", "rev": 1, "at": 1700020600}
+{"kind": "event", "id": "torn", 

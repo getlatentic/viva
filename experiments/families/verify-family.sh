@@ -35,8 +35,13 @@ for job in "$here/jobs/$family"/v*; do
   fi
 
   # 3. CORRUPTED FAILS: every careless solver must score differently.
+  # AN ANSWER IS A LINE, not a word. The first version split on whitespace and
+  # counted words, which silently required every family to answer in a single
+  # token -- a family answering "sessions seconds" had each half written as its
+  # own answer, and its five careless solvers counted as ten.
   wrong=$(python3 "$here/solve.py" "$family" "$work" --careless)
-  for value in $wrong; do
+  printf '%s\n' "$wrong" | while IFS= read -r value; do
+    [ -n "$value" ] || continue
     printf '%s\n' "$value" > "$work/answer.txt"
     if (cd "$work" && ./check >/dev/null 2>&1); then
       fail "$family/$name: a careless answer ($value) passed -- the gate does not discriminate"
@@ -47,7 +52,7 @@ for job in "$here/jobs/$family"/v*; do
   # that scores what the correct solver scores never reached the gate at all,
   # and the rule it drops is untested -- which is how a decoy ends up at a path
   # nothing reads. The count is asserted, not reported.
-  distinct=$(printf '%s\n' "$wrong" | wc -w | tr -d ' ')
+  distinct=$(printf '%s' "$wrong" | grep -c . || true)
   expected=$(python3 "$here/solve.py" "$family" "$work" --careless-count)
   if [ "$distinct" != "$expected" ]; then
     fail "$family/$name: only $distinct of $expected careless solvers differ from the correct answer -- a rule is not load-bearing here"

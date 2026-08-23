@@ -13,10 +13,8 @@ root=$(cd "$here/../.." && pwd)
 set -a; . "$root/.env"; set +a
 [ "${DEEPSEEK_MODEL:-}" = "deepseek-v4-flash" ] || { echo "MODEL PIN FAILED" >&2; exit 1; }
 
-hour=$(date -u +%H)
-case "$hour" in
-  0[1-3]|0[6-9]) echo "PEAK WINDOW ($hour:00 UTC). Off-peak is mandatory; not running." >&2; exit 1 ;;
-esac
+. "$root/tools/offpeak.sh"
+offpeak_or_refuse || exit 1
 
 # The gate before the run, never after: a family whose rules are not all
 # load-bearing produces numbers that mean less than they look, and finding that

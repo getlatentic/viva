@@ -1,0 +1,45 @@
+{"kind": "tiers", "tiers": [{"upto": 200, "rate": 10}, {"upto": 600, "rate": 4}, {"rate": 1}]}
+{"kind": "charge", "id": "c2-000", "units": 58, "status": "pending"}
+{"kind": "credit", "amount": 30}
+{"kind": "charge", "id": "c2-001", "units": 6, "status": "pending"}
+{"kind": "credit", "amount": 5}
+{"kind": "charge", "id": "c2-002", "units": 62}
+{"kind": "charge", "id": "c2-003", "units": 95}
+{"kind": "refund", "of": "c2-002"}
+{"kind": "credit", "amount": 18}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c2-004", "units": 70}
+{"kind": "refund", "of": "c2-002"}
+{"kind": "charge", "id": "c2-005", "units": 69}
+{"kind": "refund", "of": "c2-002"}
+{"kind": "refund", "of": "missing-5"}
+{"kind": "credit", "amount": 6}
+{"kind": "charge", "id": "c2-006", "units": 127}
+{"kind": "charge", "id": "c2-007", "units": 18, "status": "pending"}
+{"kind": "charge", "id": "c2-008", "units": 104}
+{"kind": "refund", "of": "c2-005"}
+{"kind": "refund", "of": "missing-8"}
+{"kind": "credit", "amount": 1}
+{"kind": "charge", "id": "c2-009", "units": 98}
+{"kind": "refund", "of": "c2-002"}
+{"kind": "credit", "amount": 30}
+{"kind": "charge", "id": "c2-010", "units": 67}
+{"kind": "refund", "of": "c2-005"}
+{"kind": "charge", "id": "c2-011", "units": 103}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c2-012", "units": 63}
+{"kind": "charge", "id": "c2-013", "units": 51}
+{"kind": "refund", "of": "c2-005"}
+{"kind": "charge", "id": "c2-014", "units": 18}
+{"kind": "refund", "of": "c2-009"}
+{"kind": "credit", "amount": 20}
+{"kind": "charge", "id": "c2-015", "units": 97, "status": "pending"}
+{"kind": "credit", "amount": 8}
+{"kind": "charge", "id": "c2-016", "units": 20, "status": "pending"}
+{"kind": "charge", "id": "c2-017", "units": 97}
+{"kind": "refund", "of": "c2-017"}
+{"kind": "charge", "id": "c2-018", "units": 55}
+{"kind": "charge", "id": "c2-019", "units": 12}
+{"kind": "charge", "id": "c2-020", "units": 21}
+{"kind": "refund", "of": "missing-20"}
+{"kind": "credit", "amount": 15}

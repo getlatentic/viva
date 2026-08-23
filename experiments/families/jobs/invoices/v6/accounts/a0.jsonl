@@ -1,0 +1,47 @@
+{"kind": "tiers", "tiers": [{"upto": 200, "rate": 5}, {"upto": 600, "rate": 2}, {"rate": 1}]}
+{"kind": "charge", "id": "c0-000", "units": 11}
+{"kind": "charge", "id": "c0-001", "units": 119, "status": "pending"}
+{"kind": "charge", "id": "c0-002", "units": 71}
+{"kind": "credit", "amount": 26}
+{"kind": "charge", "id": "c0-003", "units": 69, "status": "pending"}
+{"kind": "refund", "of": "c0-000"}
+{"kind": "refund", "of": "missing-3"}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c0-004", "units": 77}
+{"kind": "refund", "of": "c0-002"}
+{"kind": "refund", "of": "missing-4"}
+{"kind": "credit", "amount": 27}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c0-005", "units": 57}
+{"kind": "charge", "id": "c0-006", "units": 77}
+{"kind": "charge", "id": "c0-007", "units": 29}
+{"kind": "charge", "id": "c0-008", "units": 103}
+{"kind": "refund", "of": "c0-002"}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c0-009", "units": 122}
+{"kind": "credit", "amount": 13}
+{"kind": "charge", "id": "c0-010", "units": 116}
+{"kind": "refund", "of": "c0-007"}
+{"kind": "charge", "id": "c0-011", "units": 17}
+{"kind": "charge", "id": "c0-012", "units": 128}
+{"kind": "credit", "amount": 8}
+{"kind": "charge", "id": "c0-013", "units": 108}
+{"kind": "charge", "id": "c0-014", "units": 12}
+{"kind": "charge", "id": "c0-015", "units": 118}
+{"kind": "charge", "id": "c0-016", "units": 116}
+{"kind": "credit", "amount": 27}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c0-017", "units": 10}
+{"kind": "refund", "of": "c0-006"}
+{"kind": "refund", "of": "missing-17"}
+{"kind": "charge", "id": "c0-018", "units": 35}
+{"kind": "refund", "of": "c0-005"}
+{"kind": "refund", "of": "missing-18"}
+{"kind": "charge", "id": "c0-019", "units": 77, "status": "pending"}
+{"kind": "refund", "of": "missing-19"}
+{"kind": "charge", "id": "c0-020", "units": 48}
+{"kind": "charge", "id": "c0-021", "units": 76}
+{"kind": "charge", "id": "c0-022", "units": 123}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c0-023", "units": 68}
+{"kind": "refund", "of": "c0-013"}

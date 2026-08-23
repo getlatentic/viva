@@ -1,0 +1,34 @@
+{"kind": "clock", "offset": 3600}
+{"kind": "event", "id": "w0-000", "rev": 1, "at": 1700036863}
+{"kind": "event", "id": "w0-001", "rev": 1, "at": 1700036868}
+{"kind": "event", "id": "torn", 
+{"kind": "event", "id": "w0-002", "rev": 1, "at": 1700037268}
+{"kind": "event", "id": "w0-002", "rev": 2, "at": 1700037278}
+{"kind": "event", "id": "w0-003", "rev": 1, "at": 1700037273}
+{"kind": "event", "id": "w0-003", "rev": 2, "at": 1700037274}
+{"kind": "event", "id": "w0-004", "rev": 2, "at": 1700037698}
+{"kind": "heartbeat", "at": 1700037673}
+{"kind": "event", "id": "w0-004", "rev": 1, "at": 1700037673}
+{"kind": "heartbeat", "at": 1700038073}
+{"kind": "event", "id": "w0-005", "rev": 1, "at": 1700037873}
+{"kind": "event", "id": "w0-006", "rev": 1, "at": 1700037903}
+{"kind": "heartbeat", "at": 1700038303}
+{"kind": "event", "id": "w0-007", "rev": 1, "at": 1700038303}
+{"kind": "heartbeat", "at": 1700038703}
+{"kind": "event", "id": "torn", 
+{"kind": "event", "id": "w0-008", "rev": 1, "at": 1700038308}
+{"kind": "event", "id": "w0-009", "rev": 1, "at": 1700038508}
+{"kind": "event", "id": "w0-010", "rev": 1, "at": 1700038513}
+{"kind": "heartbeat", "at": 1700038913}
+{"kind": "event", "id": "w0-011", "rev": 1, "at": 1700038518}
+{"kind": "event", "id": "w0-012", "rev": 1, "at": 1700038918}
+{"kind": "event", "id": "w0-013", "rev": 1, "at": 1700038923}
+{"kind": "heartbeat", "at": 1700039323}
+{"kind": "event", "id": "w0-014", "rev": 1, "at": 1700038953}
+{"kind": "event", "id": "w0-015", "rev": 1, "at": 1700039043}
+{"kind": "event", "id": "w0-016", "rev": 1, "at": 1700039443}
+{"kind": "heartbeat", "at": 1700039843}
+{"kind": "event", "id": "w0-017", "rev": 1, "at": 1700039448}
+{"kind": "event", "id": "w0-019", "rev": 2, "at": 1700039521}
+{"kind": "event", "id": "w0-018", "rev": 1, "at": 1700039478}
+{"kind": "event", "id": "w0-019", "rev": 1, "at": 1700039508}

@@ -1,0 +1,22 @@
+`events/` holds one file per writer. Report TWO numbers to answer.txt on one
+line, separated by a space: the number of sessions, then the total active
+seconds across all of them.
+
+  - each line is one JSON object; a line that does not parse is TORN and is
+    ignored, never repaired
+  - `at` is seconds since the epoch AS THAT WRITER'S CLOCK SAW IT. Each file
+    begins with a `{"kind": "clock", ...}` line giving that writer's `offset`,
+    which must be ADDED to every `at` in the file to reach true time
+  - a writer whose clock line also carries `"skew": n` drifts: the correction
+    for its k-th event (0-based, counting only kind "event") is offset + k*n
+  - only entries of kind "event" are events. A "heartbeat" carries an `at` and
+    is NOT an event: it neither opens a session nor extends one
+  - the same `id` may appear more than once; keep only the highest `rev`. A
+    lower rev may appear LATER in the file
+  - sessions are built from the surviving events in TRUE time order: a session
+    continues while consecutive events are <= 120 seconds apart, and a gap
+    greater than that starts a new one
+  - a session's active seconds is its last true time minus its first; a session
+    of one event contributes 0
+
+Grading runs against a pristine copy of events/ plus your answer.txt.

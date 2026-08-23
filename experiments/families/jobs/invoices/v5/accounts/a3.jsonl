@@ -1,0 +1,44 @@
+{"kind": "tiers", "tiers": [{"upto": 50, "rate": 8}, {"upto": 600, "rate": 3}, {"rate": 1}]}
+{"kind": "charge", "id": "c3-000", "units": 39, "status": "pending"}
+{"kind": "charge", "id": "c3-001", "units": 87, "status": "pending"}
+{"kind": "charge", "id": "c3-002", "units": 127}
+{"kind": "credit", "amount": 11}
+{"kind": "charge", "id": "c3-003", "units": 106, "status": "pending"}
+{"kind": "refund", "of": "c3-002"}
+{"kind": "credit", "amount": 3}
+{"kind": "charge", "id": "c3-004", "units": 64, "status": "pending"}
+{"kind": "charge", "id": "c3-005", "units": 58, "status": "pending"}
+{"kind": "refund", "of": "c3-002"}
+{"kind": "credit", "amount": 16}
+{"kind": "charge", "id": "c3-006", "units": 76}
+{"kind": "refund", "of": "c3-002"}
+{"kind": "refund", "of": "missing-6"}
+{"kind": "charge", "id": "c3-007", "units": 48}
+{"kind": "charge", "id": "c3-008", "units": 105}
+{"kind": "refund", "of": "c3-007"}
+{"kind": "credit", "amount": 13}
+{"kind": "charge", "id": "c3-009", "units": 81}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c3-010", "units": 27}
+{"kind": "credit", "amount": 22}
+{"kind": "charge", "id": "c3-011", "units": 112}
+{"kind": "charge", "id": "c3-012", "units": 76}
+{"kind": "refund", "of": "missing-12"}
+{"kind": "credit", "amount": 20}
+{"kind": "charge", "id": "c3-013", "units": 97}
+{"kind": "charge", "id": "c3-014", "units": 61, "status": "pending"}
+{"kind": "credit", "amount": 11}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c3-015", "units": 99, "status": "pending"}
+{"kind": "charge", "id": "c3-016", "units": 23}
+{"kind": "refund", "of": "c3-009"}
+{"kind": "refund", "of": "missing-16"}
+{"kind": "charge", "id": "c3-017", "units": 137}
+{"kind": "charge", "id": "c3-018", "units": 135}
+{"kind": "refund", "of": "c3-007"}
+{"kind": "refund", "of": "missing-18"}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c3-019", "units": 61}
+{"kind": "refund", "of": "missing-19"}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c3-020", "units": 48}

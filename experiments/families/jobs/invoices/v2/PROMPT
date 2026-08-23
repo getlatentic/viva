@@ -1,0 +1,19 @@
+`accounts/` holds one file per account. Write the total owed across ALL
+accounts to answer.txt, rounded DOWN to a whole number.
+
+  - each line is one JSON object; a line that does not parse is ignored
+  - `tiers` (the first line of each file) is a list of {"upto": u, "rate": r}
+    in ascending order, with the last having no `upto`, meaning the rest.
+    Units are billed cumulatively PER ACCOUNT in file order: the first units
+    fall in the first tier until `upto` is exhausted, then the next tier
+  - a `charge` has an `id` and `units`. Its price is the tiered cost of its
+    units, continuing the account's running total
+  - a charge whose `status` is "pending" is NOT billed and does NOT consume
+    tier capacity
+  - a `refund` has `of`, naming a charge id, and refunds that charge in full.
+    A refund naming a charge that does not exist, is pending, or has already
+    been refunded is VOID and does nothing
+  - a `credit` entry looks similar and is not a refund: it subtracts its
+    `amount` from the account total directly, and never consumes tier capacity
+
+Grading runs against a pristine copy of accounts/ plus your answer.txt.

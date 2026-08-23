@@ -1,0 +1,17 @@
+{"kind": "tiers", "tiers": [{"upto": 100, "rate": 8}, {"upto": 600, "rate": 4}, {"rate": 1}]}
+{"kind": "charge", "id": "c2-000", "units": 79}
+{"kind": "refund", "of": "c2-000"}
+{"kind": "charge", "id": "c2-001", "units": 84, "status": "pending"}
+{"kind": "charge", "id": "c2-002", "units": 31, "status": "pending"}
+{"kind": "credit", "amount": 20}
+{"kind": "charge", "id": "c2-003", "units": 78}
+{"kind": "charge", "id": "c2-004", "units": 81, "status": "pending"}
+{"kind": "charge", "id": "c2-005", "units": 102}
+{"kind": "refund", "of": "c2-003"}
+{"kind": "charge", "id": "c2-006", "units": 56}
+{"kind": "refund", "of": "c2-003"}
+{"kind": "refund", "of": "missing-6"}
+{"kind": "credit", "amount": 10}
+{"kind": "charge", "id": "c2-007", "units": 8}
+{"kind": "refund", "of": "c2-007"}
+{"kind": "charge", "id": "c2-008", "units": 26}

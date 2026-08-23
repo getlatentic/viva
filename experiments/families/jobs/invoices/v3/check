@@ -1,0 +1,3 @@
+#!/bin/sh
+# Computed from the pristine data, never from a stored answer.
+exec python3 check.py

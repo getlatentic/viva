@@ -1,0 +1,53 @@
+{"kind": "clock", "offset": 3600}
+{"kind": "event", "id": "w0-001", "rev": 2, "at": 1700048099}
+{"kind": "event", "id": "w0-000", "rev": 1, "at": 1700047865}
+{"kind": "event", "id": "w0-001", "rev": 1, "at": 1700048065}
+{"kind": "event", "id": "torn", 
+{"kind": "event", "id": "w0-002", "rev": 1, "at": 1700048265}
+{"kind": "event", "id": "w0-003", "rev": 1, "at": 1700048465}
+{"kind": "event", "id": "w0-003", "rev": 2, "at": 1700048482}
+{"kind": "heartbeat", "at": 1700048865}
+{"kind": "event", "id": "w0-004", "rev": 1, "at": 1700048555}
+{"kind": "event", "id": "w0-005", "rev": 1, "at": 1700048955}
+{"kind": "heartbeat", "at": 1700049355}
+{"kind": "event", "id": "w0-006", "rev": 1, "at": 1700049045}
+{"kind": "event", "id": "torn", 
+{"kind": "event", "id": "w0-007", "rev": 1, "at": 1700049445}
+{"kind": "event", "id": "w0-008", "rev": 1, "at": 1700049475}
+{"kind": "event", "id": "w0-009", "rev": 2, "at": 1700049588}
+{"kind": "event", "id": "w0-008", "rev": 2, "at": 1700049495}
+{"kind": "event", "id": "w0-009", "rev": 1, "at": 1700049565}
+{"kind": "heartbeat", "at": 1700049965}
+{"kind": "event", "id": "w0-010", "rev": 1, "at": 1700049595}
+{"kind": "event", "id": "torn", 
+{"kind": "event", "id": "w0-011", "rev": 1, "at": 1700049795}
+{"kind": "event", "id": "w0-012", "rev": 1, "at": 1700049800}
+{"kind": "event", "id": "w0-013", "rev": 1, "at": 1700049830}
+{"kind": "event", "id": "w0-014", "rev": 1, "at": 1700049835}
+{"kind": "event", "id": "w0-014", "rev": 2, "at": 1700049855}
+{"kind": "event", "id": "w0-015", "rev": 1, "at": 1700049865}
+{"kind": "event", "id": "w0-016", "rev": 1, "at": 1700050065}
+{"kind": "event", "id": "w0-017", "rev": 2, "at": 1700050114}
+{"kind": "heartbeat", "at": 1700050465}
+{"kind": "event", "id": "w0-017", "rev": 1, "at": 1700050095}
+{"kind": "event", "id": "w0-018", "rev": 2, "at": 1700050304}
+{"kind": "heartbeat", "at": 1700050495}
+{"kind": "event", "id": "w0-019", "rev": 2, "at": 1700050718}
+{"kind": "event", "id": "w0-018", "rev": 1, "at": 1700050295}
+{"kind": "event", "id": "w0-019", "rev": 1, "at": 1700050695}
+{"kind": "heartbeat", "at": 1700051095}
+{"kind": "event", "id": "w0-021", "rev": 2, "at": 1700050919}
+{"kind": "event", "id": "w0-020", "rev": 1, "at": 1700050700}
+{"kind": "event", "id": "w0-021", "rev": 1, "at": 1700050900}
+{"kind": "event", "id": "w0-022", "rev": 2, "at": 1700050960}
+{"kind": "heartbeat", "at": 1700051300}
+{"kind": "event", "id": "w0-022", "rev": 1, "at": 1700050930}
+{"kind": "heartbeat", "at": 1700051330}
+{"kind": "event", "id": "w0-024", "rev": 2, "at": 1700051007}
+{"kind": "event", "id": "w0-023", "rev": 1, "at": 1700050960}
+{"kind": "event", "id": "w0-024", "rev": 1, "at": 1700050990}
+{"kind": "event", "id": "w0-025", "rev": 1, "at": 1700051080}
+{"kind": "event", "id": "w0-025", "rev": 2, "at": 1700051099}
+{"kind": "event", "id": "w0-026", "rev": 1, "at": 1700051110}
+{"kind": "event", "id": "w0-027", "rev": 1, "at": 1700051140}
+{"kind": "heartbeat", "at": 1700051540}

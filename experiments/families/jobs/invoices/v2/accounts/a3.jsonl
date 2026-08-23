@@ -1,0 +1,23 @@
+{"kind": "tiers", "tiers": [{"upto": 200, "rate": 10}, {"upto": 400, "rate": 4}, {"rate": 1}]}
+{"kind": "charge", "id": "c3-000", "units": 75, "status": "pending"}
+{"kind": "credit", "amount": 28}
+{"kind": "charge", "id": "c3-001", "units": 139, "status": "pending"}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c3-002", "units": 59}
+{"kind": "refund", "of": "c3-002"}
+{"kind": "charge", "id": "c3-003", "units": 74}
+{"kind": "charge", "id": "c3-004", "units": 115}
+{"kind": "credit", "amount": 25}
+{"kind": "charge", "id": "c3-005", "units": 117}
+{"kind": "credit", "amount": 27}
+{"kind": "charge", "id": "c3-006", "units": 51}
+{"kind": "refund", "of": "missing-6"}
+{"kind": "charge", "id": "c3-007", "units": 115}
+{"kind": "charge", "id": "c3-008", "units": 43, "status": "pending"}
+{"kind": "charge", "id": "c3-009", "units": 85}
+{"kind": "charge", "id": "c3-010", "units": 91}
+{"kind": "refund", "of": "c3-009"}
+{"kind": "refund", "of": "missing-10"}
+{"kind": "charge", "id": "torn"
+{"kind": "charge", "id": "c3-011", "units": 45}
+{"kind": "refund", "of": "c3-006"}
