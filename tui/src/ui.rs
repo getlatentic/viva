@@ -5,6 +5,7 @@
 //! is not ours -- what is ours is above it, and this file is only the
 //! arrangement.
 
+use crate::markdown;
 use crate::model::{Focus, Model, Outcome, Role, TaskState};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
@@ -65,8 +66,8 @@ impl Hanging {
         Hanging { line, indent: None }
     }
 
-    fn under(indent: &'static str, style: Style, line: Line<'static>) -> Self {
-        Hanging { line, indent: Some(Span::styled(indent, style)) }
+    fn under(indent: impl Into<String>, style: Style, line: Line<'static>) -> Self {
+        Hanging { line, indent: Some(Span::styled(indent.into(), style)) }
     }
 }
 
@@ -74,51 +75,82 @@ fn wrap_lines(lines: &[Hanging], width: u16) -> Vec<Line<'static>> {
     let width = width.max(1) as usize;
     let mut wrapped: Vec<Line<'static>> = Vec::with_capacity(lines.len());
     for hanging in lines {
-        // A gutter as wide as the pane would leave no room for the text it is
-        // meant to be indenting, and the wrap would never advance.
-        let indent = hanging
-            .indent
-            .clone()
-            .filter(|span| span.content.chars().count() < width);
-        let carry = |row: &mut Vec<Span<'static>>| match &indent {
-            Some(span) => {
-                row.push(span.clone());
-                span.content.chars().count()
-            }
-            None => 0,
-        };
-        let mut row: Vec<Span<'static>> = Vec::new();
-        let mut used = 0usize;
-        for span in &hanging.line.spans {
-            let style = span.style;
-            let mut rest: &str = &span.content;
-            while !rest.is_empty() {
-                let room = width.saturating_sub(used);
-                if room == 0 {
-                    wrapped.push(Line::from(std::mem::take(&mut row)));
-                    used = carry(&mut row);
-                    continue;
-                }
-                let taken = rest.chars().take(room).collect::<String>();
-                if taken.len() == rest.len() {
-                    used += taken.chars().count();
-                    row.push(Span::styled(taken, style));
-                    rest = "";
-                } else {
-                    // Break at the last space that fits, so a word is not cut
-                    // in half unless it is longer than the pane.
-                    let cut = taken.rfind(' ').map(|at| at + 1).unwrap_or(taken.len());
-                    let (head, _) = taken.split_at(cut);
-                    row.push(Span::styled(head.to_string(), style));
-                    rest = &rest[cut..];
-                    wrapped.push(Line::from(std::mem::take(&mut row)));
-                    used = carry(&mut row);
-                }
-            }
-        }
-        wrapped.push(Line::from(row));
+        wrapped.extend(wrap_one(hanging, width));
     }
     wrapped
+}
+
+/// One line as the rows it needs, breaking between words.
+///
+/// ACROSS SPANS, not within one. A wrapper that breaks each span on its own
+/// sees `react-dom` written half as code and half as prose as two pieces, and
+/// cuts the word in half at the seam -- which only shows once something is
+/// styling the text, and then shows everywhere.
+fn wrap_one(hanging: &Hanging, width: usize) -> Vec<Line<'static>> {
+    let indent: Vec<(char, Style)> = match &hanging.indent {
+        Some(span) if span.content.chars().count() < width => {
+            span.content.chars().map(|character| (character, span.style)).collect()
+        }
+        _ => Vec::new(),
+    };
+    let glyphs: Vec<(char, Style)> = hanging
+        .line
+        .spans
+        .iter()
+        .flat_map(|span| span.content.chars().map(|character| (character, span.style)))
+        .collect();
+
+    let mut rows: Vec<Vec<(char, Style)>> = Vec::new();
+    let mut row: Vec<(char, Style)> = Vec::new();
+    let mut at = 0;
+    while at < glyphs.len() {
+        let blank = glyphs[at].0 == ' ';
+        let end = (at..glyphs.len())
+            .find(|index| (glyphs[*index].0 == ' ') != blank)
+            .unwrap_or(glyphs.len());
+        let run = &glyphs[at..end];
+        at = end;
+        if row.len() + run.len() <= width {
+            row.extend_from_slice(run);
+            continue;
+        }
+        // The break falls here. A run of spaces IS the break and is dropped;
+        // a word moves down whole, unless it is longer than the pane.
+        if blank {
+            rows.push(std::mem::replace(&mut row, indent.clone()));
+            continue;
+        }
+        if row.len() > indent.len() {
+            rows.push(std::mem::replace(&mut row, indent.clone()));
+        }
+        let mut rest = run;
+        while row.len() + rest.len() > width {
+            let room = width.saturating_sub(row.len());
+            if room == 0 {
+                rows.push(std::mem::replace(&mut row, indent.clone()));
+                continue;
+            }
+            row.extend_from_slice(&rest[..room]);
+            rest = &rest[room..];
+            rows.push(std::mem::replace(&mut row, indent.clone()));
+        }
+        row.extend_from_slice(rest);
+    }
+    rows.push(row);
+    rows.into_iter().map(to_line).collect()
+}
+
+/// Neighbouring characters written the same way become one span again, so a
+/// row costs what it says rather than one span per character.
+fn to_line(glyphs: Vec<(char, Style)>) -> Line<'static> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for (character, style) in glyphs {
+        match spans.last_mut() {
+            Some(last) if last.style == style => last.content.to_mut().push(character),
+            _ => spans.push(Span::styled(character.to_string(), style)),
+        }
+    }
+    Line::from(spans)
 }
 
 impl Rendered {
@@ -438,8 +470,12 @@ fn transcript_lines(model: &Model) -> Vec<Hanging> {
                 lines.push(Hanging::plain(Line::from("")));
             }
             Role::Assistant => {
-                for piece in text.split('\n') {
-                    lines.push(Hanging::plain(Line::from(Span::raw(piece.to_string()))));
+                // What the model wrote is markdown, and drawn as characters it
+                // shows its own punctuation. The indent comes back with it so
+                // a list item's second row sits under its text, not its bullet.
+                for drawn in markdown::render(text) {
+                    lines.push(Hanging::under(drawn.indent, Style::default(),
+                                              Line::from(drawn.spans)));
                 }
             }
             Role::Tool => {
@@ -844,6 +880,23 @@ kilo lima mike november oscar papa quebec";
             let before = cell.split(word).next().unwrap();
             assert!(before.contains("│ "), "the row carrying {word} left its block: {cell:?}");
         }
+    }
+
+    #[test]
+    fn a_word_is_not_cut_in_half_where_its_styling_changes() {
+        // `react-dom` written half as code and half as prose is one word in
+        // two spans. A wrapper that breaks each span on its own cuts it at the
+        // seam, which shows only once something is styling the text.
+        let mut model = ready(&[]);
+        let filler = "word ".repeat(9);
+        model.absorb(&event("model.delta",
+                            json!({"text": format!("{filler}`react`-dom ends it\n")})));
+        let cells: Vec<String> = frame_of(&model, 100, 26)
+            .iter()
+            .filter_map(|row| row.split("││").nth(1).map(str::to_string))
+            .collect();
+        let joined = cells.join("\n");
+        assert!(joined.contains("react-dom"), "the word was cut in half:\n{joined}");
     }
 
     #[test]

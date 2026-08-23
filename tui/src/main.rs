@@ -8,6 +8,7 @@
 mod bench;
 mod commands;
 mod input;
+mod markdown;
 mod model;
 mod protocol;
 mod ui;
