@@ -3,8 +3,9 @@
 An experimental agent harness in Common Lisp, for long work and many agents.
 
 Most coding agents live and die with a terminal window. viva runs the work in
-a daemon. Sessions survive a closed lid, a dropped network, and a restart of
-the client. You reattach and the conversation is still there.
+a daemon. Sessions survive a closed lid, a dropped network, a restart of the
+client, and a restart of the daemon. You reattach and the conversation is
+still there, under the same id.
 
 - Close the terminal and the turn keeps going.
 - 200 concurrent sessions cost 106 MB and one thread each.
@@ -39,6 +40,19 @@ Inside the full screen client:
 | `Ctrl-C` | stop the running turn; leave when there is none |
 
 Closing a client removes a subscriber. It does not end the work.
+
+What survives what:
+
+| event | the session | the turn that was running |
+| --- | --- | --- |
+| client closed or crashed | keeps running | keeps running |
+| lid closed | paused with the machine | resumes with the machine |
+| daemon stopped or killed | comes back when the daemon does, same id | lost; the session says so |
+| `session.stop` | ends | ends |
+
+A turn is a thread in the daemon. When the daemon dies, the turn dies with it,
+and the transcript holds everything up to the last message written. The
+restored session opens with a note that says the turn did not finish.
 
 ## What it keeps, and where
 

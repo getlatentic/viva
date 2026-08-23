@@ -454,7 +454,9 @@ it finds nobody home."
            (read-line stream nil nil)
            (daemon:request stream "type" "shutdown"))
          (loop repeat 50 while (daemon:running-p) do (sleep 0.1)))
-       (format t "~&sessions ended with the old process~%")
+       ;; Sessions come back with the new process; a turn that was running
+       ;; does not, and the restored session says so in its own stream.
+       (format t "~&running turns end with the old process; sessions come back~%")
        (start-detached-daemon))
       ((string= "stop" verb)
        (if (daemon:running-p)
