@@ -82,6 +82,22 @@ That needed two verbs the socket did not have — `session.recorded` and
 interface, which is why they belong in the daemon: `vivarium sessions` had been
 answering the same question from disk all along, and no client could ask it.
 
+## Slash commands are never prompts
+
+| | |
+|---|---|
+| `/quit` `/exit` `/detach` | leave; the session keeps running |
+| `/new` `/close` | a session in a new tab; close this tab |
+| `/find [text]` | find any session, running or not |
+| `/refresh` `/help` | re-read the session list; list these |
+
+**A closed set, and an unknown one is refused rather than forwarded.** The
+first version had no slash handling at all, so `/quit` went to the model as a
+prompt — and the model politely said goodbye while the client stayed exactly
+where it was. That is a paid request answered by a guess at what somebody
+meant. A slash in the *middle* of a line is still a line: `read src/main.rs`
+goes to the model.
+
 ## Tabs are sessions, not workspaces
 
 A tab is a session you have **open**, like a browser tab. The sidebar is for

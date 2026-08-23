@@ -222,6 +222,7 @@ fn perform(
             }
         }
         Action::Refresh => refresh_sessions(connection, model)?,
+        Action::Command(line) => return run_command(connection, model, &line),
         Action::Search(text) => {
             let asked = if text.trim().is_empty() {
                 connection.send(json!({"type": "session.recorded", "limit": 50}))?
@@ -266,6 +267,52 @@ fn perform(
     }
     Ok(false)
 }
+
+/// A line beginning with `/`. Returns true to leave.
+///
+/// A CLOSED SET, and an unknown one is refused rather than forwarded. The
+/// alternative is what the transcript showed: `/quit` sent to the model, and
+/// the model politely saying goodbye while the client stayed exactly where it
+/// was. That is a paid request answered by a guess at what somebody meant.
+fn run_command(
+    connection: &mut Connection,
+    model: &mut Model,
+    line: &str,
+) -> std::io::Result<bool> {
+    let mut parts = line.trim().splitn(2, char::is_whitespace);
+    let verb = parts.next().unwrap_or("").to_ascii_lowercase();
+    let rest = parts.next().unwrap_or("").trim().to_string();
+    match verb.as_str() {
+        // Leaving the client is not ending the session. That distinction is
+        // the whole point of a daemon, so both words for it do the same thing.
+        "/quit" | "/exit" | "/q" | "/detach" => return Ok(true),
+        "/help" | "/?" => model.note(HELP),
+        "/new" => return perform(connection, model, input::Action::NewTab).map(|_| false),
+        "/find" | "/sessions" => {
+            model.focus = model::Focus::Picker;
+            model.picker.query = rest.clone();
+            model.picker.selection = 0;
+            model.picker.searching = true;
+            return perform(connection, model, input::Action::Search(rest)).map(|_| false);
+        }
+        "/close" => return perform(connection, model, input::Action::CloseTab).map(|_| false),
+        "/refresh" => return perform(connection, model, input::Action::Refresh).map(|_| false),
+        other => model.note(format!(
+            "{other} is not a command here. /help lists them. \
+Nothing was sent to the model."
+        )),
+    }
+    Ok(false)
+}
+
+const HELP: &str = "\
+/quit /exit /detach   leave; the session keeps running
+/new                  start a session in a new tab
+/close                close this tab, leaving the session
+/find [text]          find any session, running or not
+/refresh              re-read the session list
+keys: tab switches, ctrl-n new, ctrl-w close, ctrl-p find,
+      arrows walk the list, pgup/pgdn scroll, ctrl-c stops a turn";
 
 fn open_session(
     connection: &mut Connection,

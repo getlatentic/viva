@@ -38,10 +38,15 @@ def build():
 
     It already did: a fix was made, the unit tests were rebuilt and passed, and
     this check kept failing against the binary from before it."""
-    result = subprocess.run(["cargo", "build"], cwd=ROOT, capture_output=True)
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr.decode())
-        sys.exit("cargo build failed")
+    # RELEASE, because that is the one the launcher prefers. Building only
+    # debug was the first version, and it meant this suite drove a release
+    # binary from before the change under test -- the same stale-artifact trap
+    # as running without building at all, wearing a different hat.
+    for profile in (["build"], ["build", "--release"]):
+        result = subprocess.run(["cargo"] + profile, cwd=ROOT, capture_output=True)
+        if result.returncode != 0:
+            sys.stderr.write(result.stderr.decode())
+            sys.exit(f"cargo {' '.join(profile)} failed")
 
 
 build()
@@ -407,6 +412,26 @@ def main():
         else:
             ok("End returns to the newest output")
 
+        # A SLASH LINE IS NEVER A PROMPT. `/quit` used to be sent to the
+        # model, which politely said goodbye while the client stayed put.
+        client.send(b"/nonsense\r")
+        client.pump(3.0)
+        frame = client.term.text()
+        if "not a command" not in frame:
+            print(frame)
+            fail("an unknown slash command was not refused locally")
+        elif "Goodbye" in frame or "assist" in frame:
+            fail("the unknown command was answered by the model")
+        else:
+            ok("an unknown slash command is refused, not forwarded")
+
+        client.send(b"/help\r")
+        client.pump(2.0)
+        if "/detach" not in client.term.text():
+            fail("/help listed nothing")
+        else:
+            ok("/help answers locally")
+
         # An idle client must cost nothing.
         before = len(client.raw)
         client.pump(2.0)
@@ -424,7 +449,14 @@ def main():
         else:
             ok("every sequence emitted is one this model accounts for")
 
-        # Leaving must give the terminal back.
+        # Leaving must give the terminal back -- and `/quit` must be a way to
+        # leave, not something to send.
+        client.send(b"/quit\r")
+        client.pump(3.0)
+        if "\x1b[?1049l" not in client.raw:
+            fail("/quit did not leave")
+        else:
+            ok("/quit leaves the client")
         client.send(b"\x03")
         client.pump(2.0)
         for needle, what in (("\x1b[?1049l", "the alternate screen"),

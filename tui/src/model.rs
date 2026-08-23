@@ -105,7 +105,7 @@ impl Conversation {
         self.entries.push(Entry { role, text });
     }
 
-    fn end_partial(&mut self) {
+    pub fn end_partial(&mut self) {
         if !self.partial.is_empty() {
             let text = std::mem::take(&mut self.partial);
             self.push(Role::Assistant, text);
@@ -389,6 +389,18 @@ impl Model {
         } else {
             short
         }
+    }
+
+    /// Say something to the person, in the transcript, from the client itself.
+    ///
+    /// In the transcript rather than only the status line: a reply to
+    /// something they typed belongs where the rest of the conversation is, and
+    /// a status line is gone by the next keystroke.
+    pub fn note(&mut self, text: impl Into<String>) {
+        let current = self.current.clone();
+        let conversation = self.conversation(&current);
+        conversation.end_partial();
+        conversation.push(Role::Note, text.into());
     }
 
     pub fn selected_session(&self) -> Option<&SessionInfo> {

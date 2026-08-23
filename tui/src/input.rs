@@ -22,6 +22,8 @@ pub enum Action {
     CloseTab,
     SelectTab(usize),
     Refresh,
+    /// A line beginning with `/`, handled here and never sent onward.
+    Command(String),
     /// Ask for every session matching what has been typed into the picker.
     Search(String),
     /// Continue a recorded session in a new tab.
@@ -116,7 +118,16 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
                 Action::None
             } else {
                 follow(model);
-                Action::Send(text)
+                // EVERY slash line is handled locally, including one naming no
+                // command at all. Falling through to the model with a typo is a
+                // paid request answered by a guess at what you meant -- and
+                // `/quit` answered by "Goodbye! If you need more help later"
+                // is the model being polite about a key you pressed to leave.
+                if text.starts_with('/') {
+                    Action::Command(text)
+                } else {
+                    Action::Send(text)
+                }
             }
         }
         KeyCode::Backspace => {
@@ -286,4 +297,52 @@ fn inside(area: ratatui::layout::Rect, column: u16, row: u16) -> bool {
         && column < area.x.saturating_add(area.width)
         && row >= area.y
         && row < area.y.saturating_add(area.height)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Model;
+
+    fn typed(model: &mut Model, text: &str) -> Action {
+        for character in text.chars() {
+            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), model);
+        }
+        key_pressed(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), model)
+    }
+
+    #[test]
+    fn a_slash_line_never_reaches_the_model() {
+        // `/quit` was sent as a prompt, and the model politely said goodbye
+        // while the client stayed exactly where it was. A paid request
+        // answered by a guess at what somebody meant.
+        let mut model = Model::new("/w".into());
+        for line in ["/quit", "/exit", "/detach", "/help", "/new", "/find vite", "/nonsense"] {
+            match typed(&mut model, line) {
+                Action::Command(captured) => assert_eq!(captured, line),
+                other => panic!("{line} became {other:?} instead of a command"),
+            }
+        }
+    }
+
+    #[test]
+    fn an_ordinary_line_still_reaches_the_model() {
+        // The guard must not eat the thing it guards.
+        let mut model = Model::new("/w".into());
+        match typed(&mut model, "what is in this folder") {
+            Action::Send(text) => assert_eq!(text, "what is in this folder"),
+            other => panic!("an ordinary prompt became {other:?}"),
+        }
+        // A slash in the MIDDLE is not a command; paths have slashes in them.
+        match typed(&mut model, "read src/main.rs") {
+            Action::Send(text) => assert_eq!(text, "read src/main.rs"),
+            other => panic!("a path became {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_empty_line_is_not_a_prompt_worth_paying_for() {
+        let mut model = Model::new("/w".into());
+        assert_eq!(typed(&mut model, "   "), Action::None);
+    }
 }
