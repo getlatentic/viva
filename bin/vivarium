@@ -44,6 +44,18 @@ set +a
 #
 # It falls through to the Lisp client when the Rust one has not been built,
 # because a checkout with no cargo must still have a full-screen client.
+# BARE `vivarium` IS THE FULL-SCREEN CLIENT, when there is a terminal to draw
+# on. Typing the name of the thing should open the thing; `vivarium tui` asks a
+# person to know which of two clients they want before they have seen either.
+#
+# Only when stdout is a terminal. Piped or redirected, `vivarium` stays the
+# line client it has always been -- that is the form that scripts and diffs,
+# and a full-screen program in a pipe is a program drawing into a buffer
+# nobody reads.
+if [ $# -eq 0 ] && [ -t 1 ] && [ -t 0 ]; then
+  set -- tui
+fi
+
 case "${1:-}" in
   tui|live)
     for candidate in \

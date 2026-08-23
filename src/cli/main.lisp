@@ -50,8 +50,8 @@
               "Diff two calibrate --out files; reports the noise floor.")))
 
 (defparameter +usage+
-  "vivarium                      open a session here -- starts the organism if
-                              it is not already running, and joins it
+  "vivarium                      the full-screen client, on a terminal;
+                              the line client when piped or redirected
 vivarium <command> [options]
 
 THE ORGANISM

@@ -132,11 +132,12 @@ class Client:
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.chdir(cwd)
-            # Through the LAUNCHER, not the binary. `vivarium tui` is the
-            # command a person types, so it is the thing that has to work --
-            # driving the binary directly would leave the routing untested.
+            # BARE `vivarium`, which is what a person types. Driving the
+            # binary directly leaves the routing untested, and driving
+            # `vivarium tui` leaves the bare-name default untested -- and the
+            # default is the path almost everybody takes.
             launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
-            os.execve(launcher, [launcher, "tui"], environment or os.environ)
+            os.execve(launcher, [launcher], environment or os.environ)
         self.rows, self.cols = rows, cols
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         self.raw = ""

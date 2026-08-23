@@ -4,8 +4,16 @@ A full-screen client for the vivarium daemon, in Rust, on ratatui.
 
 ```
 sh tui/install.sh     # builds it
-vivarium tui
+vivarium
 ```
+
+Bare `vivarium` opens it. Typing the name of the thing should open the thing —
+`vivarium tui` asks a person to choose between two clients before they have
+seen either. `vivarium tui` and `vivarium live` still name it explicitly.
+
+**Only when there is a terminal.** Piped or redirected, `vivarium` stays the
+line client it has always been: that is the form that scripts and diffs, and a
+full-screen program in a pipe draws into a buffer nobody reads.
 
 `vivarium` is the only command. The launcher finds this binary in the tree and
 runs it — there is no second name to install, find, keep in step or explain,
