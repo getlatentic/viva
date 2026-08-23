@@ -59,6 +59,9 @@ TaskMessagingSafety:TaskMessaging:holds:no message vanishes without the sender b
 TaskMessagingWitnessDrop:TaskMessaging:violates:a full inbox that drops silently is reachable
 StreamOpeningSafety:StreamOpening:holds:a session stream opens with the session opening
 StreamOpeningWitnessRace:StreamOpening:violates:published from two threads, the transcript can precede the start
+RecoverySafety:Recovery:holds:a session can outlive the daemon without losing an event or a name
+RecoveryWitnessOrder:Recovery:violates:the arrangement the daemon has today: told before written, a crash loses what was read
+RecoveryWitnessName:Recovery:violates:a counter-minted name points a client at a different conversation
 '
 
 failures=0
