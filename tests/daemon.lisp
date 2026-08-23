@@ -102,6 +102,28 @@ traffic that put two client threads on one descriptor."
     (read-line stream nil nil)
     (apply #'daemon:request stream plist)))
 
+(define-test "a delegate reaches the wire as work that starts and finishes"
+  ;; The seam between what the harness says and what a client receives had no
+  ;; test at all, so an event the harness emitted and FROM-LOOP did not know
+  ;; would be dropped in silence -- which is how a worker ran for a minute with
+  ;; nothing on screen admitting it.
+  (multiple-value-bind (name data)
+      (event:from-loop (list :type :delegate-start :lane "lane-3"
+                             :text "count the files" :parent nil))
+    (is equal "task.started" name)
+    (is equal "lane-3" (gethash "task" data))
+    (is equal "count the files" (gethash "text" data)))
+  (multiple-value-bind (name data)
+      (event:from-loop (list :type :delegate-end :lane "lane-3" :failed nil))
+    (is equal "task.completed" name)
+    (is equal "lane-3" (gethash "task" data)))
+  (is equal "task.failed"
+      (event:from-loop (list :type :delegate-end :lane "lane-3" :failed t)))
+  ;; Every name it produces must be one the protocol admits, or a client is
+  ;; entitled to ignore it.
+  (dolist (name (list "task.started" "task.completed" "task.failed"))
+    (true (event:name-valid-p name) name)))
+
 (define-test "clients arriving and leaving at once each get their own connection"
   (with-daemon (path)
     (let ((greetings '())

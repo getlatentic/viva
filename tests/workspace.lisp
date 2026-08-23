@@ -1097,6 +1097,37 @@ rather than leaving it to be rediscovered a third time."
       (true (mentions "streaming" (format nil "~{~a~}" seen))
             "the command's output never reached the listener"))))
 
+(define-test "a delegate announces itself as work in flight"
+  ;; The task pane answers "what is running right now", and a delegate reached
+  ;; it not at all: the pane is fed by the supervisor's task tree, and a
+  ;; delegate is a tool call that blocks until its worker answers. So a worker
+  ;; could run for a minute with nothing on screen admitting it.
+  (with-repository (environment)
+    (let* ((seen (list))
+           (agent (make-instance 'parallel-agent
+                                 :environment environment :resource-environment environment
+                                 :listener (lambda (event)
+                                             (case (getf event :type)
+                                               ((:delegate-start :delegate-end)
+                                                (push event seen))))
+                                 :script (list (msg:make-assistant-message
+                                                :content (list (msg:make-tool-call
+                                                                :id "d1" :name "delegate"
+                                                                :arguments (args "task" "count the files")))
+                                                :stop-reason :tool-calls)))))
+      ;; Through the batch path, so *AGENT* is established -- which is what
+      ;; DELEGATE reads to find the parent it is a worker for.
+      (setf (agent:agent-parallel-tools-p agent) t)
+      (loop*:run agent (list (msg:make-user-message :content (list (msg:make-text "go")))))
+      (let ((events (reverse seen)))
+        (is = 2 (length events) "a delegate did not announce its beginning and its end")
+        (is eq :delegate-start (getf (first events) :type))
+        (is eq :delegate-end (getf (second events) :type))
+        (is equal (getf (first events) :lane) (getf (second events) :lane)
+            "the end named a different worker from the beginning")
+        (true (search "count the files" (getf (first events) :text)))
+        (false (getf (second events) :failed) "a worker that answered was reported as failed")))))
+
 (define-test "reflection never overrides a cancellation"
   ;; The retention policy's law 3: a cancellation that landed during the work
   ;; stays in force. REFLECT on an aborting agent must return NIL without

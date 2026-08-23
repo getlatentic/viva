@@ -105,6 +105,18 @@ one that is not worth publishing."
                                   "tool_calls" (coerce (mapcar #'call-json
                                                                (msg:tool-calls-in message))
                                                        'vector))))))
+    ;; A DELEGATE IS WORK IN FLIGHT, and the task pane is what answers "what is
+    ;; running right now". It reached no pane at all: the pane is fed by the
+    ;; supervisor's task tree, and a delegate is a tool call that blocks until
+    ;; its worker answers, so it said nothing. From a person's seat that is a
+    ;; distinction without a difference -- a worker ran for a minute and
+    ;; nothing on screen admitted it.
+    (:delegate-start (values "task.started"
+                             (object "task" (getf loop-event :lane)
+                                     "text" (getf loop-event :text)
+                                     "parent" (getf loop-event :parent))))
+    (:delegate-end (values (if (getf loop-event :failed) "task.failed" "task.completed")
+                           (object "task" (getf loop-event :lane))))
     (:tool-start (values "tool.started" (object "call" (call-json (getf loop-event :call)))))
     ;; Streamed output from a command still running. Goes out on the same
     ;; stream as everything else, so an attached session, a pane, and any

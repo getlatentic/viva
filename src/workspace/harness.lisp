@@ -826,13 +826,24 @@ re-established here rather than relied on: a dynamic binding does not cross into
 a thread the loop spawned, so a delegate running in parallel would find no
 environment at all and every tool would refuse."
   (let* ((lane (format nil "lane-~d" (incf *lane-counter*)))
-         (child (sub-agent parent lane :request-limit request-limit)))
-    (agent:call-in-tool-context
-     child
-     (lambda ()
-       (let ((produced (loop*:run child (list (user-message task))
-                                  :context (agent-context child))))
-         (values (or (last-assistant-text produced) "") lane))))))
+         (child (sub-agent parent lane :request-limit request-limit))
+         (failed t))
+    ;; Announced, because a worker running for a minute is the thing a person
+    ;; is waiting on. Through the PARENT: the child publishes as this session
+    ;; too, but a worker that reported its own beginning and then died would
+    ;; leave the pane holding something that never ends.
+    (agent:emit parent (list :type :delegate-start :lane lane :text task
+                             :parent (let ((above (agent-lane parent)))
+                                       (unless (equal above session:+main-lane+) above))))
+    (unwind-protect
+         (agent:call-in-tool-context
+          child
+          (lambda ()
+            (let ((produced (loop*:run child (list (user-message task))
+                                       :context (agent-context child))))
+              (setf failed nil)
+              (values (or (last-assistant-text produced) "") lane))))
+      (agent:emit parent (list :type :delegate-end :lane lane :failed failed)))))
 
 (defun delegate-async (parent task &key (request-limit 20))
   "Start a delegate and return the OPERATION rather than waiting.
