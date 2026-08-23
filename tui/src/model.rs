@@ -192,6 +192,9 @@ pub struct Model {
     pub cwd: String,
     pub connected: bool,
     pub picker: Picker,
+    /// Which entry the slash menu has highlighted. Reset whenever the line
+    /// changes, so the highlight cannot point past a list that just shrank.
+    pub command_selection: usize,
     /// Every session id ever listed. A tab whose session is missing from the
     /// list is only gone if we had SEEN it there; one we have never seen is
     /// young, not dead. Without the distinction, opening a session and asking
@@ -215,6 +218,7 @@ impl Model {
             cwd,
             connected: true,
             picker: Picker::default(),
+            command_selection: 0,
             known: HashSet::new(),
         }
     }

@@ -230,6 +230,31 @@ def input_row(client):
     return lines[-3] if len(lines) >= 3 else ""
 
 
+def menu_region(client):
+    """The rows the slash menu draws into: directly above the input box.
+
+    Scoped by POSITION. Searching the whole frame for a command name finds it
+    in the transcript -- /help prints them, and so does a refusal -- and this
+    check has now made that mistake three times under three different names.
+    Structure is not ambiguous; text is."""
+    # Its own box, found by walking up from the input box to the top border.
+    # A fixed window of rows was the first attempt and it reached into the
+    # transcript -- which, in this workspace, contains a recorded `/quit`,
+    # because that is the bug that started all of this. The check then reported
+    # a menu that had narrowed perfectly as one that had not narrowed at all.
+    lines = client.term.lines()
+    if len(lines) < 6:
+        return ""
+    rows = []
+    index = len(lines) - 5          # status, box bottom, input, box top, then here
+    while index >= 0:
+        rows.append(lines[index])
+        if lines[index].lstrip().startswith("╭"):
+            break
+        index -= 1
+    return "\n".join(rows)
+
+
 def whole_frame(client):
     """Is exactly one frame on screen?
 
@@ -424,6 +449,38 @@ def main():
             fail("the unknown command was answered by the model")
         else:
             ok("an unknown slash command is refused, not forwarded")
+
+        # THE MENU. A closed set nobody can see is barely better than no set.
+        client.send(b"/")
+        client.pump(2.0)
+        region = menu_region(client)
+        offered = [name for name in ("/find", "/new", "/close", "/quit", "/help")
+                   if name in region]
+        if len(offered) < 4:
+            print(client.term.text())
+            fail(f"pressing / offered only {offered}")
+        else:
+            ok(f"pressing / offers {len(offered)} commands with what they do")
+
+        client.send(b"fi")
+        client.pump(1.5)
+        narrowed = menu_region(client)
+        if "/find" not in narrowed:
+            print(client.term.text())
+            fail("typing narrowed the menu away from the match")
+        elif "/quit" in narrowed:
+            print(client.term.text())
+            fail("typing did not narrow the menu")
+        else:
+            ok("typing narrows it to the one that matches")
+
+        # Escape abandons the line, so the menu goes with it.
+        client.send(b"\x1b")
+        client.pump(1.5)
+        if "/find" in menu_region(client) and "/quit" in menu_region(client):
+            fail("escape left the menu up")
+        else:
+            ok("escape dismisses the menu")
 
         client.send(b"/help\r")
         client.pump(2.0)

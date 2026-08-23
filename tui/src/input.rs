@@ -110,6 +110,48 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
         };
     }
 
+    // The slash menu owns a few keys while it is up, and only those. It is a
+    // suggestion over the prompt, not a mode: every other key still types.
+    let menu = crate::commands::matching(&model.input);
+    if !menu.is_empty() {
+        match key.code {
+            KeyCode::Up => {
+                model.command_selection = model
+                    .command_selection
+                    .checked_sub(1)
+                    .unwrap_or(menu.len() - 1);
+                return Action::None;
+            }
+            KeyCode::Down => {
+                model.command_selection = (model.command_selection + 1) % menu.len();
+                return Action::None;
+            }
+            // Tab COMPLETES rather than runs. Completing and running on the
+            // same key means a person who wanted `/find vite` gets `/find`.
+            KeyCode::Tab => {
+                let chosen = menu[model.command_selection.min(menu.len() - 1)];
+                model.input = format!("{} ", chosen.name);
+                model.command_selection = 0;
+                return Action::None;
+            }
+            KeyCode::Enter => {
+                let chosen = menu[model.command_selection.min(menu.len() - 1)];
+                model.input.clear();
+                model.command_selection = 0;
+                follow(model);
+                return Action::Command(chosen.name.to_string());
+            }
+            KeyCode::Esc => {
+                // Dismiss the menu by abandoning the line, which is what Esc
+                // means everywhere else here.
+                model.input.clear();
+                model.command_selection = 0;
+                return Action::None;
+            }
+            _ => {}
+        }
+    }
+
     match key.code {
         KeyCode::Enter => {
             let text = model.input.trim().to_string();
@@ -132,6 +174,7 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
         }
         KeyCode::Backspace => {
             model.input.pop();
+            model.command_selection = 0;
             Action::None
         }
         KeyCode::Tab => next_tab(model),
@@ -161,6 +204,9 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
         }
         KeyCode::Char(character) => {
             model.input.push(character);
+            // The list shrinks as it narrows, so a highlight further down than
+            // the new list would point at nothing.
+            model.command_selection = 0;
             Action::None
         }
         _ => Action::None,
@@ -242,6 +288,16 @@ fn clicked(mouse: &MouseEvent, model: &mut Model, hits: &Hitboxes) -> Action {
         MouseEventKind::Down(MouseButton::Left) => {
             // The picker is over everything, so it answers first -- otherwise
             // a click meant for it lands on whatever it is covering.
+            for (index, area) in &hits.command_rows {
+                if inside(*area, column, row) {
+                    let menu = crate::commands::matching(&model.input);
+                    if let Some(chosen) = menu.get(*index) {
+                        model.input.clear();
+                        model.command_selection = 0;
+                        return Action::Command(chosen.name.to_string());
+                    }
+                }
+            }
             if let Some(area) = hits.picker {
                 if inside(area, column, row) {
                     for (index, row_area) in &hits.picker_rows {
@@ -317,11 +373,77 @@ mod tests {
         // while the client stayed exactly where it was. A paid request
         // answered by a guess at what somebody meant.
         let mut model = Model::new("/w".into());
-        for line in ["/quit", "/exit", "/detach", "/help", "/new", "/find vite", "/nonsense"] {
+        // An alias resolves to its canonical command, because the menu that
+        // matched it knows which one it is. `/find vite` has a space, so no
+        // menu is up and the line passes through as typed -- the argument is
+        // the point of it. `/nonsense` matches nothing and reaches the
+        // dispatcher to be refused there.
+        for (line, expected) in [
+            ("/quit", "/quit"),
+            ("/exit", "/quit"),
+            ("/detach", "/quit"),
+            ("/help", "/help"),
+            ("/new", "/new"),
+            ("/find vite", "/find vite"),
+            ("/nonsense", "/nonsense"),
+        ] {
             match typed(&mut model, line) {
-                Action::Command(captured) => assert_eq!(captured, line),
+                Action::Command(captured) => assert_eq!(captured, expected, "typing {line}"),
                 other => panic!("{line} became {other:?} instead of a command"),
             }
+        }
+    }
+
+    #[test]
+    fn the_menu_offers_only_what_the_dispatcher_accepts() {
+        // Three copies of a list is three chances for the menu to offer
+        // something the dispatcher refuses -- and refusing an unknown command
+        // is the whole feature, so that would be the feature attacking itself.
+        for command in crate::commands::COMMANDS {
+            assert!(
+                crate::commands::lookup(command.name).is_some(),
+                "{} is offered and not dispatchable",
+                command.name
+            );
+            for alias in command.aliases {
+                assert!(
+                    crate::commands::lookup(alias).is_some(),
+                    "{alias} is an alias of {} and resolves to nothing",
+                    command.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_menu_narrows_and_gets_out_of_the_way() {
+        // It appears on `/`, narrows as it is typed, and leaves once an
+        // argument is being written -- a menu over the top of an argument is
+        // in the way rather than in help.
+        assert!(crate::commands::matching("/").len() > 3, "no menu on a bare slash");
+        let narrowed = crate::commands::matching("/f");
+        assert!(!narrowed.is_empty());
+        assert!(narrowed.len() < crate::commands::matching("/").len(), "typing did not narrow");
+        assert!(crate::commands::matching("/find vite").is_empty(), "the menu outstayed its use");
+        assert!(crate::commands::matching("hello").is_empty(), "a plain line raised a menu");
+        assert!(crate::commands::matching("read src/main.rs").is_empty());
+    }
+
+    #[test]
+    fn tab_completes_and_enter_runs() {
+        // The same key doing both means somebody who wanted `/find vite` gets
+        // `/find`.
+        let mut model = Model::new("/w".into());
+        for character in "/fi".chars() {
+            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), &mut model);
+        }
+        let completed = key_pressed(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &mut model);
+        assert_eq!(completed, Action::None, "tab ran the command instead of completing it");
+        assert_eq!(model.input, "/find ", "tab did not complete the name");
+        // And with a trailing space the menu is gone, so Enter sends the line.
+        match key_pressed(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut model) {
+            Action::Command(line) => assert_eq!(line, "/find"),
+            other => panic!("enter after completing became {other:?}"),
         }
     }
 

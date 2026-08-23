@@ -27,6 +27,7 @@ pub struct Hitboxes {
     pub input: Rect,
     pub picker: Option<Rect>,
     pub picker_rows: Vec<(usize, Rect)>,
+    pub command_rows: Vec<(usize, Rect)>,
 }
 
 /// The transcript, laid out once per change instead of once per frame.
@@ -160,8 +161,58 @@ pub fn draw(frame: &mut Frame, model: &Model, rendered: &mut Rendered) -> Hitbox
     draw_status(frame, rows[3], model);
     if model.focus == Focus::Picker {
         draw_picker(frame, area, model, &mut hits);
+    } else {
+        draw_command_menu(frame, rows[2], model, &mut hits);
     }
     hits
+}
+
+/// The commands a half-typed slash line could still become.
+///
+/// ABOVE the prompt and only while one is being typed. A closed set nobody can
+/// see is barely better than no set: the person has to already know the words
+/// to find out that the words exist.
+fn draw_command_menu(frame: &mut Frame, input_area: Rect, model: &Model, hits: &mut Hitboxes) {
+    let matches = crate::commands::matching(&model.input);
+    if matches.is_empty() {
+        return;
+    }
+    let width = input_area.width.min(64);
+    let height = (matches.len() as u16 + 2).min(input_area.y.max(3));
+    let area = Rect::new(
+        input_area.x,
+        input_area.y.saturating_sub(height),
+        width,
+        height,
+    );
+    frame.render_widget(Clear, area);
+    let block = pane("", true);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    hits.command_rows.clear();
+
+    let name_width = matches.iter().map(|c| c.name.len()).max().unwrap_or(6);
+    let mut lines: Vec<Line> = Vec::new();
+    for (index, command) in matches.iter().enumerate() {
+        if index as u16 >= inner.height {
+            break;
+        }
+        let chosen = index == model.command_selection.min(matches.len() - 1);
+        let style = if chosen {
+            Style::default().fg(Color::Indexed(232)).bg(ACCENT).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Indexed(252))
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {:name_width$} ", command.name), style),
+            Span::styled(format!(" {}", command.blurb), Style::default().fg(DIM)),
+        ]));
+        hits.command_rows.push((
+            index,
+            Rect::new(inner.x, inner.y + index as u16, inner.width, 1),
+        ));
+    }
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 /// Every session there has ever been, searchable.

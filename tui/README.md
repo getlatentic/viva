@@ -91,6 +91,19 @@ answering the same question from disk all along, and no client could ask it.
 | `/find [text]` | find any session, running or not |
 | `/refresh` `/help` | re-read the session list; list these |
 
+**Press `/` and the list appears**, narrowing as you type, with what each one
+does beside it. A closed set nobody can see is barely better than no set: you
+would have to already know the words to find out the words exist. Tab
+completes, Enter runs, Esc dismisses, and the menu leaves once you start typing
+an argument — a menu over the top of `/find vite` is in the way rather than in
+help.
+
+The menu, the dispatcher and `/help` all read **one table**. Three copies is
+three chances for the menu to offer something the dispatcher refuses, and since
+refusing an unknown command is the whole feature, that would be the feature
+attacking itself. A test walks the table and asserts every offered name and
+alias resolves.
+
 **A closed set, and an unknown one is refused rather than forwarded.** The
 first version had no slash handling at all, so `/quit` went to the model as a
 prompt — and the model politely said goodbye while the client stayed exactly

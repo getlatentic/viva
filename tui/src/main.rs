@@ -6,6 +6,7 @@
 //! exactly as it is: it pipes, scripts and diffs, and that is why it exists.
 
 mod bench;
+mod commands;
 mod input;
 mod model;
 mod protocol;
@@ -282,13 +283,21 @@ fn run_command(
     let mut parts = line.trim().splitn(2, char::is_whitespace);
     let verb = parts.next().unwrap_or("").to_ascii_lowercase();
     let rest = parts.next().unwrap_or("").trim().to_string();
-    match verb.as_str() {
+    // Resolved through the ONE table, so the menu cannot offer a command the
+    // dispatcher refuses -- which would be the feature attacking itself.
+    let Some(command) = commands::lookup(&verb) else {
+        model.note(format!(
+            "{verb} is not a command here. /help lists them. Nothing was sent to the model."
+        ));
+        return Ok(false);
+    };
+    match command.name {
         // Leaving the client is not ending the session. That distinction is
-        // the whole point of a daemon, so both words for it do the same thing.
-        "/quit" | "/exit" | "/q" | "/detach" => return Ok(true),
-        "/help" | "/?" => model.note(HELP),
+        // the whole point of a daemon, so every word for it does the same.
+        "/quit" => return Ok(true),
+        "/help" => model.note(commands::help()),
         "/new" => return perform(connection, model, input::Action::NewTab).map(|_| false),
-        "/find" | "/sessions" => {
+        "/find" => {
             model.focus = model::Focus::Picker;
             model.picker.query = rest.clone();
             model.picker.selection = 0;
@@ -297,22 +306,10 @@ fn run_command(
         }
         "/close" => return perform(connection, model, input::Action::CloseTab).map(|_| false),
         "/refresh" => return perform(connection, model, input::Action::Refresh).map(|_| false),
-        other => model.note(format!(
-            "{other} is not a command here. /help lists them. \
-Nothing was sent to the model."
-        )),
+        _ => {}
     }
     Ok(false)
 }
-
-const HELP: &str = "\
-/quit /exit /detach   leave; the session keeps running
-/new                  start a session in a new tab
-/close                close this tab, leaving the session
-/find [text]          find any session, running or not
-/refresh              re-read the session list
-keys: tab switches, ctrl-n new, ctrl-w close, ctrl-p find,
-      arrows walk the list, pgup/pgdn scroll, ctrl-c stops a turn";
 
 fn open_session(
     connection: &mut Connection,
