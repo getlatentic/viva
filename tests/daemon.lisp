@@ -102,6 +102,33 @@ traffic that put two client threads on one descriptor."
     (read-line stream nil nil)
     (apply #'daemon:request stream plist)))
 
+(define-test "a cell reports how full its context is, measured"
+  ;; A client cannot know how full a context is from the transcript it happens
+  ;; to hold: it was sent what it was sent, and the agent's context is a
+  ;; different thing. So the daemon reports the count the provider returned for
+  ;; the last request -- the same number compaction decides on -- and the limit
+  ;; the catalogue gives for this model. Before that: nothing. Zero is not
+  ;; `empty`, it is `nothing has come back yet`, and drawn as a percentage it
+  ;; would look measured.
+  (with-repository (environment)
+    (let ((cell (actor:spawn :label "counted"
+                             :agent (make-instance 'harness::workspace-agent
+                                                   :environment environment
+                                                   :resource-environment environment
+                                                   :provider nil :model "none"))))
+      (unwind-protect
+           (let ((agent (vivarium.actor::cell-agent cell)))
+             (is = 0 (getf (actor:snapshot cell) :tokens)
+                 "a session that has not asked anything reported a count")
+             (setf (harness:agent-last-tokens agent) 32000)
+             (setf (vivarium.compaction:settings-context-limit
+                    (harness:agent-compaction agent))
+                   128000)
+             (let ((now (actor:snapshot cell)))
+               (is = 32000 (getf now :tokens))
+               (is = 128000 (getf now :limit))))
+        (actor:shutdown cell)))))
+
 (define-test "a delegate reaches the wire as work that starts and finishes"
   ;; The seam between what the harness says and what a client receives had no
   ;; test at all, so an event the harness emitted and FROM-LOOP did not know
