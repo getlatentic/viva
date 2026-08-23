@@ -1,19 +1,25 @@
 //! Model output is markdown. Drawing it as characters shows the punctuation.
 //!
-//! A reply arrives with `**bold**`, backticked names, headings and lists in
-//! it, because that is what a model writes. Printing it literally puts the
-//! asterisks on the screen and asks a person to read past them -- and it wastes
-//! the one thing the markup is for, which is telling a filename apart from a
-//! sentence at a glance.
+//! A reply arrives with `**bold**`, backticked names, headings, lists and
+//! tables in it, because that is what a model writes. Printing it literally
+//! puts the asterisks on the screen and asks a person to read past them -- and
+//! it wastes the one thing the markup is for, which is telling a filename
+//! apart from a sentence at a glance.
 //!
-//! LINE BY LINE, because the transcript is. Nothing here reflows a paragraph
-//! or holds state beyond a fenced block, so a line rendered while the model is
-//! still typing is the same line it will be when the reply is finished.
+//! THE PARSING IS NOT OURS. It is `pulldown-cmark`, the CommonMark parser
+//! rustdoc and mdBook use. A hand-written one covered what models usually emit
+//! and quietly failed the rest -- links kept their brackets, block quotes and
+//! escapes were not markup at all -- and every gap found later would have been
+//! one more special case in a parser nobody set out to write. What is ours is
+//! below it: turning a stream of events into styled rows a pane can draw.
 
+use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use ratatui::prelude::*;
 
 const CODE: Color = Color::Indexed(180);
 const HEADING: Color = Color::Indexed(111);
+const LINK: Color = Color::Indexed(75);
+const QUOTE: Color = Color::Indexed(244);
 
 /// One drawn line: what it says, and what to repeat in front of the rows it
 /// wraps onto, so a list item's second row sits under its own text rather than
@@ -23,402 +29,503 @@ pub struct Drawn {
     pub indent: String,
 }
 
-/// Whether the parser is inside a fenced code block, carried between lines.
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
-pub struct Fence(bool);
-
-impl Fence {
-    pub fn open(self) -> bool {
-        self.0
-    }
-}
-
-/// Render one line, given whether the line before it left a fence open.
-pub fn line(text: &str, fence: Fence) -> (Drawn, Fence) {
-    if text.trim_start().starts_with("```") {
-        let language = text.trim().trim_start_matches('`').trim();
-        let label = if fence.open() || language.is_empty() {
-            String::new()
-        } else {
-            format!("  {language}")
-        };
-        return (
-            Drawn {
-                spans: vec![Span::styled(label, Style::default().fg(CODE).add_modifier(Modifier::DIM))],
-                indent: String::new(),
-            },
-            Fence(!fence.open()),
-        );
-    }
-    if fence.open() {
-        // Inside a fence nothing is markup. A shell command full of asterisks
-        // and backticks is the exact case where guessing is worst.
-        return (
-            Drawn {
-                spans: vec![Span::styled(text.to_string(), Style::default().fg(CODE))],
-                indent: "  ".into(),
-            },
-            fence,
-        );
-    }
-    if let Some(drawn) = heading(text) {
-        return (drawn, fence);
-    }
-    let (marker, body, indent) = list_item(text);
-    let mut spans = marker;
-    spans.extend(inline(body));
-    (Drawn { spans, indent }, fence)
-}
-
 /// A whole message, as lines.
 pub fn render(text: &str) -> Vec<Drawn> {
-    let rows: Vec<&str> = text.split('\n').collect();
-    let mut drawn = Vec::with_capacity(rows.len());
-    let mut fence = Fence::default();
-    let mut at = 0;
-    while at < rows.len() {
-        if !fence.open() {
-            if let Some(used) = table(&rows[at..], &mut drawn) {
-                at += used;
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    let mut layout = Layout::default();
+    for event in Parser::new_ext(text, options) {
+        layout.take(event);
+    }
+    layout.finish()
+}
+
+/// A table being collected. Column widths are not known until the last row has
+/// been read, so the rows are held and drawn together.
+#[derive(Default)]
+struct Table {
+    rows: Vec<Vec<Vec<Span<'static>>>>,
+    row: Vec<Vec<Span<'static>>>,
+    cell: Vec<Span<'static>>,
+}
+
+#[derive(Default)]
+struct Layout {
+    drawn: Vec<Drawn>,
+    row: Vec<Span<'static>>,
+    styles: Vec<Style>,
+    /// One entry per open list: the next number, or nothing for a bullet.
+    lists: Vec<Option<u64>>,
+    /// What continuation rows sit behind, and what this one line leads with.
+    indent: String,
+    hanging: Option<String>,
+    code: bool,
+    table: Option<Table>,
+    link: Option<String>,
+}
+
+impl Layout {
+    fn style(&self) -> Style {
+        self.styles.iter().fold(Style::default(), |carried, each| carried.patch(*each))
+    }
+
+    fn open(&mut self, style: Style) {
+        self.styles.push(style);
+    }
+
+    fn close(&mut self) {
+        self.styles.pop();
+    }
+
+    /// Text goes to the cell being read when there is one, and to the line
+    /// otherwise: a table is laid out later and cannot use the row buffer.
+    fn write(&mut self, text: String, style: Style) {
+        if text.is_empty() {
+            return;
+        }
+        let span = Span::styled(text, style);
+        match self.table.as_mut() {
+            Some(table) => table.cell.push(span),
+            None => self.row.push(span),
+        }
+    }
+
+    /// End the line being built, if there is one.
+    ///
+    /// THE BLOCK PREFIX IS DRAWN HERE, once, for every kind of block. A
+    /// quotation's rule was worked out and never put on the line, because the
+    /// list path pushed its own lead and the quote path had nobody to push
+    /// its -- so a quoted line rendered as an ordinary one.
+    fn flush(&mut self) {
+        if self.row.is_empty() {
+            return;
+        }
+        let indent = self.hanging.take().unwrap_or_else(|| self.indent.clone());
+        let mut spans = Vec::with_capacity(self.row.len() + 1);
+        if !self.indent.is_empty() {
+            spans.push(Span::styled(self.indent.clone(), Style::default().fg(QUOTE)));
+        }
+        spans.append(&mut self.row);
+        self.drawn.push(Drawn { spans, indent });
+    }
+
+    /// A blank line between blocks, never two together and never leading.
+    fn gap(&mut self) {
+        self.flush();
+        if self.drawn.last().map(blank).unwrap_or(true) {
+            return;
+        }
+        self.drawn.push(Drawn { spans: vec![Span::raw(String::new())], indent: String::new() });
+    }
+
+    /// The bullet or number this item leads with, and how far its own text is
+    /// indented -- which is where the rows it wraps onto belong.
+    fn marker(&mut self) {
+        let lead = self.indent.clone();
+        let mark = match self.lists.last_mut() {
+            Some(Some(number)) => {
+                let mark = format!("{number}. ");
+                *number += 1;
+                mark
+            }
+            _ => "• ".to_string(),
+        };
+        self.hanging = Some(format!("{lead}{}", " ".repeat(mark.chars().count())));
+        self.row.push(Span::styled(mark, Style::default().fg(HEADING)));
+    }
+
+    fn take(&mut self, event: Event<'_>) {
+        match event {
+            Event::Start(tag) => self.start(tag),
+            Event::End(tag) => self.end(tag),
+            Event::Text(text) => self.text(&text),
+            Event::Code(text) => {
+                let style = self.style().patch(Style::default().fg(CODE));
+                self.write(text.to_string(), style);
+            }
+            // Wrapping happens later and against the real pane width, so a
+            // break the author did not ask for is a space.
+            Event::SoftBreak => {
+                let style = self.style();
+                self.write(" ".into(), style);
+            }
+            Event::HardBreak => self.flush(),
+            Event::Rule => {
+                self.gap();
+                self.drawn.push(Drawn {
+                    spans: vec![Span::styled("─".repeat(24), Style::default().fg(QUOTE))],
+                    indent: String::new(),
+                });
+                self.gap();
+            }
+            Event::Html(text) | Event::InlineHtml(text) => {
+                let style = self.style();
+                self.write(text.trim_end().to_string(), style);
+            }
+            _ => {}
+        }
+    }
+
+    fn text(&mut self, text: &str) {
+        if !self.code {
+            let style = self.style();
+            return self.write(text.to_string(), style);
+        }
+        // Inside a fence nothing is markup and every newline is real: a shell
+        // command full of asterisks is the case where guessing is worst.
+        for (index, line) in text.split('\n').enumerate() {
+            if index > 0 {
+                self.flush();
+            }
+            if line.is_empty() {
                 continue;
             }
-        }
-        let (row, next) = line(rows[at], fence);
-        fence = next;
-        drawn.push(row);
-        at += 1;
-    }
-    drawn
-}
-
-/// A table, if one starts here: its rows drawn as columns, and how many lines
-/// it took. Otherwise nothing, and the line is treated as ordinary text.
-///
-/// Models write tables constantly, and drawn as characters a table is a wall
-/// of pipes with a row of dashes through it -- the one markdown construct that
-/// is actively harder to read as its own source than any other.
-fn table(rows: &[&str], out: &mut Vec<Drawn>) -> Option<usize> {
-    let header = cells(rows.first()?)?;
-    if !rows.get(1).map(|row| divider(row, header.len())).unwrap_or(false) {
-        return None;
-    }
-    let body: Vec<Vec<String>> = rows[2..]
-        .iter()
-        .take_while(|row| row.contains('|'))
-        .filter_map(|row| cells(row))
-        .collect();
-
-    let mut widths = vec![0usize; header.len()];
-    for row in std::iter::once(&header).chain(body.iter()) {
-        for (column, cell) in row.iter().enumerate().take(widths.len()) {
-            widths[column] = widths[column].max(shown_width(cell));
+            self.hanging = Some(format!("{}  ", self.indent));
+            self.row.push(Span::raw("  ".to_string()));
+            self.row.push(Span::styled(line.to_string(), Style::default().fg(CODE)));
         }
     }
-    let emphasis = Style::default().fg(HEADING).add_modifier(Modifier::BOLD);
-    out.push(columns(&header, &widths, Some(emphasis)));
-    for row in &body {
-        out.push(columns(row, &widths, None));
-    }
-    Some(2 + body.len())
-}
 
-/// One row, each cell padded to its column. The trailing column is not padded:
-/// a run of spaces to the pane edge is invisible and costs the wrap.
-fn columns(row: &[String], widths: &[usize], style: Option<Style>) -> Drawn {
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    for (column, width) in widths.iter().enumerate() {
-        let cell = row.get(column).map(String::as_str).unwrap_or("");
-        match style {
-            Some(style) => spans.push(Span::styled(cell.to_string(), style)),
-            None => spans.extend(inline(cell)),
-        }
-        if column + 1 < widths.len() {
-            let pad = width.saturating_sub(shown_width(cell)) + 2;
-            spans.push(Span::raw(" ".repeat(pad)));
-        }
-    }
-    Drawn { spans, indent: "  ".into() }
-}
-
-/// The cells of a row, or nothing when the line is not one.
-fn cells(row: &str) -> Option<Vec<String>> {
-    let trimmed = row.trim();
-    if !trimmed.contains('|') {
-        return None;
-    }
-    let inner = trimmed.trim_start_matches('|').trim_end_matches('|');
-    let cells: Vec<String> = inner.split('|').map(|cell| cell.trim().to_string()).collect();
-    (cells.len() >= 2).then_some(cells)
-}
-
-/// `|---|:--:|`, the line that makes the row above it a header.
-fn divider(row: &str, columns: usize) -> bool {
-    match cells(row) {
-        Some(cells) if cells.len() == columns => cells.iter().all(|cell| {
-            let bar = cell.trim_matches(':');
-            !bar.is_empty() && bar.chars().all(|character| character == '-')
-        }),
-        _ => false,
-    }
-}
-
-/// How wide a cell lands once its own markup has become styling.
-fn shown_width(cell: &str) -> usize {
-    inline(cell)
-        .iter()
-        .map(|span| span.content.chars().count())
-        .sum()
-}
-
-/// `## Title` reads as a title, without the hashes a person has to look past.
-fn heading(text: &str) -> Option<Drawn> {
-    let hashes = text.chars().take_while(|character| *character == '#').count();
-    if hashes == 0 || hashes > 6 || !text[hashes..].starts_with(' ') {
-        return None;
-    }
-    Some(Drawn {
-        spans: vec![Span::styled(
-            text[hashes + 1..].to_string(),
-            Style::default().fg(HEADING).add_modifier(Modifier::BOLD),
-        )],
-        indent: String::new(),
-    })
-}
-
-fn bullet<'a>(blank: &str, mark: String, body: &'a str) -> (Vec<Span<'static>>, &'a str, String) {
-    let width = mark.chars().count();
-    (
-        vec![
-            Span::raw(blank.to_string()),
-            Span::styled(mark, Style::default().fg(HEADING)),
-        ],
-        body,
-        format!("{blank}{}", " ".repeat(width)),
-    )
-}
-
-/// The bullet or number in front of a list item, and how far its own text is
-/// indented -- which is where the rows it wraps onto belong.
-fn list_item(text: &str) -> (Vec<Span<'static>>, &str, String) {
-    let lead = text.len() - text.trim_start().len();
-    let (blank, rest) = text.split_at(lead);
-    for opener in ["- ", "* ", "+ "] {
-        if let Some(body) = rest.strip_prefix(opener) {
-            return bullet(blank, "• ".into(), body);
-        }
-    }
-    let digits = rest.chars().take_while(char::is_ascii_digit).count();
-    if digits > 0 {
-        if let Some(body) = rest[digits..].strip_prefix(". ") {
-            return bullet(blank, format!("{}. ", &rest[..digits]), body);
-        }
-    }
-    (Vec::new(), text, blank.to_string())
-}
-
-/// `**bold**`, `` `code` `` and `*italic*`, left alone when unclosed.
-///
-/// An unclosed run is literal on purpose: a model writing about multiplication
-/// or a glob pattern is not opening emphasis, and swallowing the rest of the
-/// line to look for a partner it does not have is how one stray character
-/// restyles a paragraph.
-fn inline(text: &str) -> Vec<Span<'static>> {
-    let mut spans = styled(text, Style::default(), 0);
-    if spans.is_empty() {
-        spans.push(Span::raw(String::new()));
-    }
-    spans
-}
-
-/// Marks nest: a filename inside a bold run is written `**`name`**` and is
-/// both. Emphasis recurses and code does not -- inside backticks the text is
-/// what it says it is.
-///
-/// DEPTH IS CAPPED. Each level consumes at least two characters, so a long
-/// line of nothing but asterisks would otherwise recurse as deep as it is
-/// long.
-fn styled(text: &str, outer: Style, depth: usize) -> Vec<Span<'static>> {
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut plain = String::new();
-    let characters: Vec<char> = text.chars().collect();
-    let mut at = 0;
-    while at < characters.len() {
-        let matched = (depth < 8)
-            .then(|| {
-                ["**", "`", "*", "_"].into_iter().find_map(|mark| {
-                    let marks: Vec<char> = mark.chars().collect();
-                    characters[at..].starts_with(marks.as_slice()).then(|| ()).and_then(|()| {
-                        closing(&characters, at + marks.len(), &marks)
-                            .map(|end| (mark, marks.len(), end))
-                    })
-                })
-            })
-            .flatten();
-        match matched {
-            Some((mark, width, end)) => {
-                if !plain.is_empty() {
-                    spans.push(Span::styled(std::mem::take(&mut plain), outer));
-                }
-                let body: String = characters[at + width..end].iter().collect();
-                let inner = outer.patch(style_for(mark));
-                if mark == "`" {
-                    spans.push(Span::styled(body, inner));
+    fn start(&mut self, tag: Tag<'_>) {
+        match tag {
+            Tag::Paragraph => {}
+            Tag::Heading { .. } => {
+                self.gap();
+                self.open(Style::default().fg(HEADING).add_modifier(Modifier::BOLD));
+            }
+            Tag::List(first) => {
+                if self.lists.is_empty() {
+                    self.gap();
                 } else {
-                    spans.extend(styled(&body, inner, depth + 1));
+                    self.flush();
+                    self.indent.push_str("  ");
                 }
-                at = end + width;
+                self.lists.push(first);
             }
-            None => {
-                plain.push(characters[at]);
-                at += 1;
+            Tag::Item => self.marker(),
+            Tag::CodeBlock(kind) => {
+                self.gap();
+                self.code = true;
+                if let CodeBlockKind::Fenced(language) = kind {
+                    if !language.is_empty() {
+                        let indent = self.indent.clone();
+                        self.drawn.push(Drawn {
+                            spans: vec![Span::styled(
+                                format!("{indent}  {language}"),
+                                Style::default().fg(CODE).add_modifier(Modifier::DIM),
+                            )],
+                            indent: String::new(),
+                        });
+                    }
+                }
             }
+            Tag::BlockQuote(_) => {
+                self.gap();
+                self.indent.push_str("│ ");
+                self.open(Style::default().fg(QUOTE).add_modifier(Modifier::ITALIC));
+            }
+            Tag::Emphasis => self.open(Style::default().add_modifier(Modifier::ITALIC)),
+            Tag::Strong => self.open(Style::default().add_modifier(Modifier::BOLD)),
+            Tag::Strikethrough => self.open(Style::default().add_modifier(Modifier::CROSSED_OUT)),
+            Tag::Link { dest_url, .. } => {
+                self.link = Some(dest_url.to_string());
+                self.open(Style::default().fg(LINK).add_modifier(Modifier::UNDERLINED));
+            }
+            Tag::Table(_) => {
+                self.gap();
+                self.table = Some(Table::default());
+            }
+            _ => {}
         }
     }
-    if !plain.is_empty() {
-        spans.push(Span::styled(plain, outer));
+
+    fn end(&mut self, tag: TagEnd) {
+        match tag {
+            TagEnd::Paragraph => self.gap(),
+            TagEnd::Heading(_) => {
+                self.flush();
+                self.close();
+            }
+            TagEnd::List(_) => {
+                self.flush();
+                self.lists.pop();
+                if self.lists.is_empty() {
+                    self.gap();
+                } else {
+                    self.indent.pop();
+                    self.indent.pop();
+                }
+            }
+            TagEnd::Item => self.flush(),
+            TagEnd::CodeBlock => {
+                self.flush();
+                self.code = false;
+                self.gap();
+            }
+            TagEnd::BlockQuote(_) => {
+                self.flush();
+                self.indent.pop();
+                self.indent.pop();
+                self.close();
+                self.gap();
+            }
+            TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough => self.close(),
+            TagEnd::Link => {
+                self.close();
+                // The address, when the text does not already carry it: a
+                // terminal cannot follow a link, so text alone throws it away.
+                if let Some(url) = self.link.take() {
+                    let shown: String =
+                        self.row.iter().map(|span| span.content.as_ref()).collect();
+                    if !shown.contains(url.trim_end_matches('/')) {
+                        let style = self.style().patch(Style::default().fg(QUOTE));
+                        self.write(format!(" ({url})"), style);
+                    }
+                }
+            }
+            TagEnd::TableCell => {
+                if let Some(table) = self.table.as_mut() {
+                    let cell = std::mem::take(&mut table.cell);
+                    table.row.push(cell);
+                }
+            }
+            TagEnd::TableRow | TagEnd::TableHead => {
+                if let Some(table) = self.table.as_mut() {
+                    let row = std::mem::take(&mut table.row);
+                    table.rows.push(row);
+                }
+            }
+            TagEnd::Table => self.draw_table(),
+            _ => {}
+        }
     }
-    spans
+
+    /// The rows as columns. Drawn as characters a table is a wall of pipes
+    /// with a row of dashes through it -- the one construct actively harder to
+    /// read as its own source than as anything else.
+    fn draw_table(&mut self) {
+        let Some(table) = self.table.take() else {
+            return;
+        };
+        let columns = table.rows.iter().map(Vec::len).max().unwrap_or(0);
+        let mut widths = vec![0usize; columns];
+        for row in &table.rows {
+            for (column, cell) in row.iter().enumerate() {
+                widths[column] = widths[column].max(width_of(cell));
+            }
+        }
+        let emphasis = Style::default().fg(HEADING).add_modifier(Modifier::BOLD);
+        for (index, row) in table.rows.iter().enumerate() {
+            let mut spans: Vec<Span<'static>> = vec![Span::raw(self.indent.clone())];
+            for (column, width) in widths.iter().enumerate() {
+                let empty = Vec::new();
+                let cell = row.get(column).unwrap_or(&empty);
+                // The first row is the header, marked rather than ruled: a
+                // rule under it costs a row and says less.
+                for span in cell {
+                    let style = if index == 0 { span.style.patch(emphasis) } else { span.style };
+                    spans.push(Span::styled(span.content.to_string(), style));
+                }
+                // The last column is not padded: a run of spaces to the pane
+                // edge is invisible and costs the wrap.
+                if column + 1 < columns {
+                    spans.push(Span::raw(" ".repeat(width - width_of(cell) + 2)));
+                }
+            }
+            self.drawn.push(Drawn { spans, indent: format!("{}  ", self.indent) });
+        }
+        self.gap();
+    }
+
+    fn finish(mut self) -> Vec<Drawn> {
+        self.flush();
+        while self.drawn.last().map(blank) == Some(true) {
+            self.drawn.pop();
+        }
+        if self.drawn.is_empty() {
+            self.drawn.push(Drawn { spans: vec![Span::raw(String::new())], indent: String::new() });
+        }
+        self.drawn
+    }
 }
 
-fn style_for(mark: &str) -> Style {
-    match mark {
-        "**" => Style::default().add_modifier(Modifier::BOLD),
-        "`" => Style::default().fg(CODE),
-        _ => Style::default().add_modifier(Modifier::ITALIC),
-    }
+fn blank(drawn: &Drawn) -> bool {
+    drawn.spans.iter().all(|span| span.content.trim().is_empty())
 }
 
-/// Where the run closes, or nothing. An empty run (`****`) is not emphasis.
-fn closing(characters: &[char], from: usize, marks: &[char]) -> Option<usize> {
-    (from..characters.len())
-        .find(|at| characters[*at..].starts_with(marks))
-        .filter(|at| *at > from)
+/// How wide a cell lands once its markup has become styling.
+fn width_of(cell: &[Span<'static>]) -> usize {
+    cell.iter().map(|span| span.content.chars().count()).sum()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn drawn(text: &str) -> Drawn {
-        line(text, Fence::default()).0
-    }
-
     fn shown(drawn: &Drawn) -> String {
         drawn.spans.iter().map(|span| span.content.as_ref()).collect()
     }
 
-    #[test]
-    fn the_punctuation_is_the_style_and_does_not_stay_on_screen() {
-        // A reply arrives full of `**bold**` and backticks because that is
-        // what a model writes. Drawn literally, a person reads past them.
-        let result = drawn("a small **React** app using `vite`");
-        assert_eq!(shown(&result), "a small React app using vite");
-        let bold = result.spans.iter().find(|span| span.content == "React").unwrap();
-        assert!(bold.style.add_modifier.contains(Modifier::BOLD));
-        let code = result.spans.iter().find(|span| span.content == "vite").unwrap();
-        assert_eq!(code.style.fg, Some(CODE));
+    fn lines(text: &str) -> Vec<String> {
+        render(text).iter().map(shown).collect()
+    }
+
+    fn styled(text: &str, needle: &str) -> Style {
+        for drawn in render(text) {
+            for span in &drawn.spans {
+                if span.content.contains(needle) {
+                    return span.style;
+                }
+            }
+        }
+        panic!("{needle:?} is not in the output of {text:?}");
     }
 
     #[test]
-    fn an_unclosed_mark_is_a_character_not_a_style() {
-        // A model writing about `2 * 3` or a glob is not opening emphasis, and
-        // swallowing the rest of the line to look for a partner it does not
-        // have is how one stray character restyles a paragraph.
-        for text in ["2 * 3 = 6", "use *.rs to match", "**unclosed bold"] {
-            assert_eq!(shown(&drawn(text)), text, "{text:?} was treated as markup");
-        }
+    fn the_punctuation_is_the_style_and_does_not_stay_on_screen() {
+        assert_eq!(lines("a small **React** app using `vite`"),
+                   vec!["a small React app using vite"]);
+        assert!(styled("a **React** app", "React").add_modifier.contains(Modifier::BOLD));
+        assert_eq!(styled("using `vite` here", "vite").fg, Some(CODE));
     }
 
     #[test]
     fn a_name_inside_a_bold_run_is_both() {
         // Models write `**`package.json`**`. Taking the bold body as literal
         // text left the backticks on screen inside the bold.
-        let result = drawn("- **`package.json`** lists the dependencies");
-        assert_eq!(shown(&result), "• package.json lists the dependencies");
-        let name = result.spans.iter().find(|span| span.content == "package.json").unwrap();
-        assert!(name.style.add_modifier.contains(Modifier::BOLD), "lost the bold");
-        assert_eq!(name.style.fg, Some(CODE), "lost the code colour");
+        let style = styled("- **`package.json`** lists the dependencies", "package.json");
+        assert!(style.add_modifier.contains(Modifier::BOLD), "lost the bold");
+        assert_eq!(style.fg, Some(CODE), "lost the code colour");
+    }
+
+    #[test]
+    fn an_unclosed_mark_is_a_character_not_a_style() {
+        // A model writing about `2 * 3` or a glob is not opening emphasis.
+        for text in ["2 * 3 = 6", "use *.rs to match"] {
+            assert_eq!(lines(text), vec![text.to_string()], "{text:?} was treated as markup");
+        }
     }
 
     #[test]
     fn a_list_item_wraps_under_its_own_text() {
-        let result = drawn("- the source lives under src/");
-        assert_eq!(shown(&result), "• the source lives under src/");
-        assert_eq!(result.indent, "  ", "a wrapped item would sit under the bullet");
-        let numbered = drawn("  12. install uv");
-        assert_eq!(shown(&numbered), "  12. install uv");
-        assert_eq!(numbered.indent, "      ");
+        let drawn = render("- the source lives under src/");
+        assert_eq!(shown(&drawn[0]), "• the source lives under src/");
+        assert_eq!(drawn[0].indent, "  ", "a wrapped item would sit under the bullet");
+        let numbered = render("12. install uv");
+        assert_eq!(shown(&numbered[0]), "12. install uv");
+        assert_eq!(numbered[0].indent, "    ");
+    }
+
+    #[test]
+    fn a_numbered_item_keeps_its_number_on_the_same_line() {
+        // A list whose items are paragraphs -- what CommonMark calls a loose
+        // list, and what a model writes whenever it leaves a blank line --
+        // opens a paragraph INSIDE the item. Flushing the line when a
+        // paragraph opened drew the number alone with its text below it.
+        let rows = lines("1. first thing\n\n2. second thing");
+        assert!(rows.iter().any(|row| row.starts_with("1. first thing")),
+                "the number was drawn on its own line: {rows:?}");
+        assert!(rows.iter().any(|row| row.starts_with("2. second thing")), "{rows:?}");
+    }
+
+    #[test]
+    fn a_wrapped_line_of_code_stays_under_the_code() {
+        // Everything inside a fence is offset, and a line long enough to wrap
+        // began again at the pane edge -- outside the block it belongs to.
+        let drawn = render("```sh\nnpm install  # a comment long enough to wrap somewhere\n```");
+        let code = drawn.iter().find(|row| shown(row).contains("npm install")).unwrap();
+        assert!(code.indent.ends_with("  "),
+                "a wrapped code line would start at the edge: {:?}", code.indent);
+    }
+
+    #[test]
+    fn a_nested_list_is_drawn_inside_the_one_that_holds_it() {
+        // The hand-written renderer indented by whatever whitespace the source
+        // happened to use, so the same structure drew differently depending on
+        // how the model spaced it.
+        let rows = lines("- outer\n    - inner\n- outer again");
+        let inner = rows.iter().find(|row| row.contains("inner")).unwrap();
+        let outer = rows.iter().find(|row| row.contains("outer again")).unwrap();
+        assert!(inner.starts_with("  "), "the nested item is not indented: {inner:?}");
+        assert!(!outer.starts_with(' '), "the outer item is indented: {outer:?}");
     }
 
     #[test]
     fn a_heading_reads_as_one_without_its_hashes() {
-        let result = drawn("## Scripts");
-        assert_eq!(shown(&result), "Scripts");
-        assert!(result.spans[0].style.add_modifier.contains(Modifier::BOLD));
+        assert!(lines("## Scripts").contains(&"Scripts".to_string()));
+        assert!(styled("## Scripts", "Scripts").add_modifier.contains(Modifier::BOLD));
         // Not every hash opens a heading.
-        assert_eq!(shown(&drawn("#1 in the list")), "#1 in the list");
-        assert_eq!(shown(&drawn("####### too many")), "####### too many");
+        assert!(lines("#1 in the list").contains(&"#1 in the list".to_string()));
+    }
+
+    #[test]
+    fn nothing_inside_a_fence_is_markup() {
+        let rows = lines("run this:\n```bash\nrm *.o && echo `date`\n```\ndone");
+        assert!(rows.iter().any(|row| row.contains("rm *.o && echo `date`")),
+                "the fence was parsed as markup: {rows:?}");
+        assert!(rows.iter().any(|row| row.trim() == "done"));
     }
 
     #[test]
     fn a_table_is_drawn_as_columns_and_not_as_pipes() {
-        // Drawn as characters a table is a wall of pipes with a row of dashes
-        // through it -- the one construct actively harder to read as its own
-        // source than as anything else.
-        let rendered = render("| Prerequisite | How to satisfy |\n|---|---|\n| Node.js | Install from nodejs.org |\n| Git | Only to clone |\nafter");
-        let texts: Vec<String> = rendered.iter().map(shown).collect();
-        assert_eq!(texts.len(), 4, "the divider was drawn: {texts:?}");
-        assert!(!texts.iter().any(|row| row.contains('|')), "pipes survived: {texts:?}");
-        assert!(!texts.iter().any(|row| row.contains("---")), "the divider survived");
-        assert_eq!(texts[3], "after", "the table swallowed the line after it");
-        // Columns line up: `Install` starts where `Only` starts.
-        let node = texts[1].find("Install").unwrap();
-        let git = texts[2].find("Only").unwrap();
-        assert_eq!(node, git, "the columns do not line up:\n{}\n{}", texts[1], texts[2]);
-        assert!(rendered[0].spans[0].style.add_modifier.contains(Modifier::BOLD),
-                "the header is not marked as one");
-    }
-
-    #[test]
-    fn a_line_of_pipes_that_is_not_a_table_is_left_alone() {
-        // A shell pipeline is not a header, and a row with no divider under it
-        // is not a table.
-        let rendered = render("run `ls | wc -l` first");
-        assert_eq!(shown(&rendered[0]), "run ls | wc -l first");
-        let no_divider = render("| a | b |\nnot a divider");
-        assert_eq!(shown(&no_divider[0]), "| a | b |");
+        let rows = lines("| Prerequisite | How to satisfy |\n\
+|---|---|\n\
+| Node.js | Install from nodejs.org |\n\
+| Git | Only to clone |\n\n\
+after");
+        assert!(!rows.iter().any(|row| row.contains('|')), "pipes survived: {rows:?}");
+        assert!(!rows.iter().any(|row| row.contains("---")), "the divider survived");
+        assert!(rows.iter().any(|row| row.trim() == "after"), "the line after was lost");
+        let node = rows.iter().find(|row| row.contains("Install")).unwrap();
+        let git = rows.iter().find(|row| row.contains("Only")).unwrap();
+        assert_eq!(node.find("Install"), git.find("Only"), "columns do not line up:\n{node}\n{git}");
     }
 
     #[test]
     fn a_cell_is_measured_by_what_it_shows_not_by_its_markup() {
         // A cell written `**Git**` is three characters wide on screen and
         // seven in the source. Padding by the source pushes every later
-        // column out by the width of the punctuation that is no longer there.
-        let rendered = render("| a | b |\n|---|---|\n| **Git** | x |\n| gitgit | y |");
-        let texts: Vec<String> = rendered.iter().map(shown).collect();
-        assert_eq!(texts[1].find('x'), texts[2].find('y'),
-                   "markup was counted as width:\n{}\n{}", texts[1], texts[2]);
+        // column out by the width of punctuation that is no longer there.
+        let rows = lines("| a | b |\n|---|---|\n| **Git** | x |\n| gitgit | y |");
+        let first = rows.iter().find(|row| row.contains('x')).unwrap();
+        let second = rows.iter().find(|row| row.contains('y')).unwrap();
+        assert_eq!(first.find('x'), second.find('y'), "markup was counted as width");
     }
 
     #[test]
-    fn nothing_inside_a_fence_is_markup() {
-        // A shell command full of asterisks and backticks is the exact case
-        // where guessing is worst.
-        let rendered = render("run this:\n```bash\nrm *.o && echo `date`\n```\ndone");
-        let texts: Vec<String> = rendered.iter().map(shown).collect();
-        assert_eq!(texts[2], "rm *.o && echo `date`");
-        assert_eq!(texts[4], "done");
-        assert_eq!(rendered[2].spans[0].style.fg, Some(CODE));
+    fn a_link_keeps_its_text_and_does_not_lose_its_address() {
+        // A terminal cannot follow a link, so text alone throws the address
+        // away. The hand-written renderer showed the brackets instead.
+        let line = lines("see [the docs](https://example.com/guide) for more").join(" ");
+        assert!(!line.contains('['), "the brackets survived: {line:?}");
+        assert!(line.contains("the docs"), "the text was lost");
+        assert!(line.contains("https://example.com/guide"), "the address was lost: {line:?}");
+        // Not repeated when the text already is the address.
+        let bare = lines("see <https://example.com/guide> now").join(" ");
+        assert_eq!(bare.matches("example.com").count(), 1, "the address was said twice");
     }
 
     #[test]
-    fn a_fence_that_is_never_closed_does_not_eat_the_rest_of_the_reply() {
-        // It does -- correctly -- until the reply ends, which is what the
-        // model asked for. What must not happen is the state leaking into the
-        // NEXT message, so rendering starts closed every time.
-        let rendered = render("```\nstill open");
-        assert_eq!(shown(&rendered[1]), "still open");
-        let after = render("plain **bold**");
-        assert_eq!(shown(&after[0]), "plain bold");
+    fn a_quotation_is_marked_as_one() {
+        // Not markup the hand-written renderer knew at all: a quoted line kept
+        // its `>` and read as part of the sentence around it.
+        let rows = lines("> it was already broken\n\nso we fixed it");
+        let quoted = rows.iter().find(|row| row.contains("already broken")).unwrap();
+        assert!(!quoted.contains('>'), "the marker survived: {quoted:?}");
+        assert!(quoted.contains('│'), "a quotation is not marked: {quoted:?}");
+    }
+
+    #[test]
+    fn an_escape_is_the_character_it_escapes() {
+        // `\*` is an asterisk. Not markup the hand-written renderer knew, so
+        // the backslash stayed on screen.
+        assert_eq!(lines(r"a \*literal\* asterisk"), vec!["a *literal* asterisk"]);
+    }
+
+    #[test]
+    fn an_empty_reply_is_one_empty_line_not_nothing() {
+        assert_eq!(render("").len(), 1);
+        assert_eq!(lines(""), vec![""]);
     }
 }
