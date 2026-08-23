@@ -438,9 +438,13 @@ fn pane(title: &str, focused: bool) -> Block<'_> {
 }
 
 fn draw_tabs(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) {
-    let mut spans: Vec<Span> = Vec::new();
-    let mut column = area.x + 1;
-    spans.push(Span::raw(" "));
+    // THE NAME, always. A client that never says what it is leaves a person
+    // with a terminal full of somebody's transcript and no way to tell whose.
+    let mut spans: Vec<Span> = vec![
+        Span::styled(" viva ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+        Span::styled("│", Style::default().fg(BORDER)),
+    ];
+    let mut column = area.x + 7;
     for (index, id) in model.tabs.iter().enumerate() {
         // The session's state rides on its tab, so `working` is visible
         // without a column for it: a mark before the name, or nothing.
@@ -602,12 +606,26 @@ fn entry_lines(entry: &Entry, expanded: bool, width: u16) -> Vec<Hanging> {
                 };
                 // A TITLED RULE, so a call and what it printed read as one
                 // block with a top edge, and the time it took has a place.
+                //
+                // A DELEGATE IS NOT A COMMAND. It is a whole agent, and drawn
+                // like `ls` a person cannot count them: asking for two workers
+                // and getting one looked the same as asking for two and
+                // getting two. It says `worker`, in its own colour, and the
+                // calls it makes are drawn inside it.
                 let rule = Style::default().fg(BORDER);
-                let mut title = vec![
-                    Span::styled("─ ", rule),
-                    Span::styled(format!("{} ", entry.outcome.mark()), Style::default().fg(colour)),
-                    Span::styled(text.to_string(), Style::default().fg(Color::Indexed(252))),
-                ];
+                let worker = entry.tool == "delegate";
+                let lead = "  ".repeat(entry.depth as usize);
+                let mut title = vec![Span::styled(format!("{lead}─ "), rule)];
+                title.push(Span::styled(format!("{} ", entry.outcome.mark()),
+                                        Style::default().fg(colour)));
+                if worker {
+                    title.push(Span::styled("worker ", Style::default().fg(ACCENT)
+                                            .add_modifier(Modifier::BOLD)));
+                    let task = text.strip_prefix("delegate ").unwrap_or(text);
+                    title.push(Span::styled(task.to_string(), Style::default().fg(Color::Indexed(252))));
+                } else {
+                    title.push(Span::styled(text.to_string(), Style::default().fg(Color::Indexed(252))));
+                }
                 // Under ten milliseconds is not shown. A replayed session
                 // delivers a call and its result in the same instant, and a
                 // `(0ms)` there would be a measurement of the replay.
@@ -626,10 +644,11 @@ fn entry_lines(entry: &Entry, expanded: bool, width: u16) -> Vec<Hanging> {
                 } else {
                     entry.output.len().min(GLIMPSE)
                 };
-                let gutter = Style::default().fg(BORDER);
+                let gutter = Style::default().fg(if worker { ACCENT } else { BORDER });
+                let rail = format!("{lead}  │ ");
                 for line in entry.output.iter().take(shown) {
-                    lines.push(Hanging::under("  │ ", gutter, Line::from(vec![
-                        Span::styled("  │ ", gutter),
+                    lines.push(Hanging::under(rail.clone(), gutter, Line::from(vec![
+                        Span::styled(rail.clone(), gutter),
                         Span::styled(line.clone(), Style::default().fg(DIM)),
                     ])));
                 }
@@ -637,7 +656,7 @@ fn entry_lines(entry: &Entry, expanded: bool, width: u16) -> Vec<Hanging> {
                 // four hundred teaches a person the command printed three.
                 if entry.output.len() > shown {
                     lines.push(Hanging::plain(Line::from(Span::styled(
-                        format!("  │ … {} more line{}  (ctrl-o)",
+                        format!("{rail}… {} more line{}  (ctrl-o)",
                                 entry.output.len() - shown,
                                 if entry.output.len() - shown == 1 { "" } else { "s" }),
                         gutter,
@@ -661,7 +680,7 @@ fn entry_lines(entry: &Entry, expanded: bool, width: u16) -> Vec<Hanging> {
 /// answer, what this directory has already retained, what was said here
 /// before, and which keys do what. Gone the moment the first event arrives.
 fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
-    let block = Block::default().padding(Padding::new(2, 2, 1, 0));
+    let block = Block::default().padding(Padding::new(2, 2, 1, 1));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if inner.width < 30 || inner.height < 6 {
@@ -765,8 +784,9 @@ fn draw_transcript(
     hits: &mut Hitboxes,
 ) {
     // No box and no title: the tab already names the session, and a frame
-    // around the page is a frame around the only thing on screen.
-    let block = Block::default().padding(Padding::new(1, 1, 0, 0));
+    // around the page is a frame around the only thing on screen. One row of
+    // air at the foot, so the last thing said does not sit on the prompt.
+    let block = Block::default().padding(Padding::new(1, 1, 0, 1));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     hits.transcript = inner;
@@ -1257,6 +1277,48 @@ kilo lima mike november oscar papa quebec";
         assert!(!edge.contains("learned"), "the counts outranked the scroll note: {edge:?}");
         let wide = frame_of(&model, 160, 20);
         assert!(wide[wide.len() - 3].contains("learned"), "the counts never fit at all");
+    }
+
+    #[test]
+    fn two_workers_are_two_things_on_screen_and_their_calls_sit_inside_them() {
+        // Asking for two workers and getting one looked exactly like asking
+        // for two and getting two: a delegate was drawn like `ls`, and the
+        // tools its worker ran sat level with the delegate's own call.
+        let mut model = ready(&[]);
+        for (id, task) in [("d1", "design the architecture"), ("d2", "look for bugs")] {
+            model.absorb(&event("tool.started", json!({
+                "call": {"id": id, "name": "delegate", "arguments": {"task": task}}})));
+        }
+        model.absorb(&event("tool.started", json!({
+            "call": {"id": "r1", "name": "read", "arguments": {"path": "main.rs"}}})));
+        model.absorb(&event("tool.completed", json!({"call": {"id": "r1"}, "output": "fn main"})));
+        let rows = frame_of(&model, 110, 26);
+        let workers: Vec<&String> = rows.iter().filter(|row| row.contains("worker")).collect();
+        assert_eq!(workers.len(), 2, "two workers did not read as two: {rows:?}");
+        assert!(workers[0].contains("design the architecture"));
+        assert!(workers[1].contains("look for bugs"));
+        // The worker's own call is drawn inside the workers that are running.
+        let inner = rows.iter().find(|row| row.contains("read main.rs")).unwrap();
+        let first = workers[0].find('─').unwrap();
+        assert!(inner.find('─').unwrap() > first,
+                "the worker's call is not inside it: {inner:?}");
+        // The workers themselves stay side by side. A tool event carries no
+        // parent, so nesting one worker inside another is a claim the client
+        // cannot support -- and two from one batch are siblings.
+        assert_eq!(workers[0].find('─'), workers[1].find('─'),
+                   "one worker was drawn inside the other:\n{}\n{}", workers[0], workers[1]);
+    }
+
+    #[test]
+    fn the_page_does_not_sit_on_the_prompt_and_the_client_says_its_name() {
+        let model = ready(&[("model.delta", "the last thing said\n")]);
+        let rows = frame_of(&model, 100, 16);
+        assert!(rows[0].contains("viva"), "the client never says what it is: {:?}", rows[0]);
+        // Row -3 is the input box's top edge; -4 must be air, not the text.
+        let air = &rows[rows.len() - 4];
+        assert!(air.trim().is_empty(), "the transcript sits on the prompt: {air:?}");
+        assert!(rows.iter().any(|row| row.contains("the last thing said")),
+                "the air cost the last line");
     }
 
     #[test]

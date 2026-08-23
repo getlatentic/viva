@@ -51,6 +51,15 @@ pub struct Entry {
     pub outcome: Outcome,
     /// The id the daemon gave this call, so its result can find it again.
     call: String,
+    /// The tool's own name, kept apart from the line drawn for it: a
+    /// delegate is a worker and not a command, and telling them apart by
+    /// reading the drawn text back would be guessing at our own output.
+    pub tool: String,
+    /// How many workers are running above this call. A delegate runs a whole
+    /// sub-agent whose tools report on the same stream, so without this the
+    /// worker's calls sit level with the delegate's own and a person cannot
+    /// see where one worker ends and the next begins.
+    pub depth: u8,
     /// Bumped whenever this entry changes, so a renderer can tell which of a
     /// thousand entries it has to lay out again -- which is one of them.
     pub stamp: u64,
@@ -74,6 +83,8 @@ impl Entry {
             output: Vec::new(),
             outcome: Outcome::Running,
             call: String::new(),
+            tool: String::new(),
+            depth: 0,
             stamp: 0,
             started: None,
             took: None,
@@ -183,6 +194,19 @@ impl Conversation {
         self.pending = 0;
         self.scroll = offset;
         self.following = offset == 0;
+    }
+
+    /// Is any worker running? A call made while one is is drawn inside it.
+    ///
+    /// INSIDE A WORKER, NOT INSIDE A PARTICULAR ONE. A tool event carries no
+    /// parent, so with two workers running there is nothing on the wire that
+    /// says whose call this is -- and counting the running workers as a depth
+    /// drew two siblings from one batch as one nested in the other, which is
+    /// a claim the client cannot support.
+    fn inside_worker(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| entry.tool == "delegate" && entry.outcome == Outcome::Running)
     }
 
     /// Is there movement still owed?
@@ -463,9 +487,22 @@ impl Model {
                 conversation.end_partial();
                 let line = call_line(event.data.get("call"));
                 let id = call_id(event.data.get("call"));
+                let tool = event
+                    .data
+                    .get("call")
+                    .and_then(|call| call.get("name"))
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                // A worker is always drawn at the outer level, whatever else
+                // is running: two asked for is two lines, side by side.
+                let depth = u8::from(tool != "delegate" && conversation.inside_worker());
+
                 conversation.push(Role::Tool, line);
                 if let Some(entry) = conversation.entries.last_mut() {
                     entry.call = id;
+                    entry.tool = tool;
+                    entry.depth = depth;
                     entry.started = Some(std::time::Instant::now());
                 }
             }

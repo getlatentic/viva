@@ -145,6 +145,16 @@ def draw(events, rows=110, cols=120):
     return term
 
 
+def plain(text):
+    """The text with its markup taken off, as the client draws it.
+
+    The journal holds what the model WROTE, and the client draws it rendered:
+    a tail ending in `error` is four characters longer in the record than on
+    the screen. Comparing one against the other passed until a reply happened
+    to end on a backticked word."""
+    return re.sub(r"[*`_]", "", text)
+
+
 def flatten(lines):
     """The frame as one run of words, so a check is not defeated by wrapping.
 
@@ -184,7 +194,7 @@ def check(path):
     #    turn in the journal and not only the visible one: a model rarely ends
     #    its last sentence with a newline, so the closing paragraph is the
     #    unfinished line, and holding it in two places drew it again.
-    tails = [flatten([event["data"].get("text", "")])[-60:]
+    tails = [plain(flatten([event["data"].get("text", "")]))[-60:]
              for event in events if event["event"] == "turn.completed"
              and len(event["data"].get("text", "").strip()) > 60]
     twice = [tail for tail in tails if flat.count(tail) > 1]
@@ -198,7 +208,7 @@ def check(path):
     #    reply, and the result of every tool it called. The result rides on
     #    `tool.completed` under `output`, and reading only the streaming event
     #    left a transcript of calls with nothing under any of them.
-    ending = [flatten([event["data"].get("text", "")])[-60:]
+    ending = [plain(flatten([event["data"].get("text", "")]))[-60:]
               for event in newest if event["event"] == "turn.completed"
               and len(event["data"].get("text", "").strip()) > 60]
     if ending and ending[-1] not in flat:
@@ -207,7 +217,7 @@ def check(path):
     elif ending:
         ok("the newest reply is on screen, once")
 
-    firsts = [flatten([event["data"]["output"].strip().splitlines()[0]])
+    firsts = [plain(flatten([event["data"]["output"].strip().splitlines()[0]]))
               for event in newest
               if event["event"] in ("tool.completed", "tool.failed")
               and event["data"].get("output", "").strip()]
