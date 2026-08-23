@@ -159,7 +159,9 @@ pub fn draw(frame: &mut Frame, model: &Model, rendered: &mut Rendered) -> Hitbox
 
     draw_input(frame, rows[2], model, &mut hits);
     draw_status(frame, rows[3], model);
-    if model.focus == Focus::Picker {
+    if model.showing_learned {
+        draw_learned(frame, area, model);
+    } else if model.focus == Focus::Picker {
         draw_picker(frame, area, model, &mut hits);
     } else {
         draw_command_menu(frame, rows[2], model, &mut hits);
@@ -457,6 +459,65 @@ pub fn scroll_offset(model: &Model, total: u16, height: u16) -> u16 {
     }
 }
 
+/// What this session has retained, as the files it actually wrote.
+///
+/// Named by their scope, because that is the fact a person needs: a
+/// machine-level tool loads in every project they open, and a project-level
+/// one does not. Refused entries are shown as refused rather than folded in --
+/// "there is a tool here" and "the agent can call it" are different facts, and
+/// a client that merges them makes an untrusted project look equipped.
+fn draw_learned(frame: &mut Frame, area: Rect, model: &Model) {
+    let width = area.width.saturating_sub(6).min(96).max(24);
+    let height = area.height.saturating_sub(4).min(30).max(8);
+    let box_area = Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    frame.render_widget(Clear, box_area);
+    let block = pane("what this session has learned", true);
+    let inner = block.inner(box_area);
+    frame.render_widget(block, box_area);
+
+    let learned = &model.learned;
+    let mut lines: Vec<Line> = Vec::new();
+    let mut section = |lines: &mut Vec<Line>, title: &str, items: &[crate::protocol::Retained],
+                       colour: Color| {
+        lines.push(Line::from(Span::styled(
+            format!("{title}  ({})", items.len()),
+            Style::default().fg(colour).add_modifier(Modifier::BOLD),
+        )));
+        if items.is_empty() {
+            lines.push(Line::from(Span::styled("  none yet", Style::default().fg(DIM))));
+        }
+        for item in items {
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {:<22}", item.name), Style::default().fg(Color::Indexed(252))),
+                Span::styled(format!("{:<9}", item.scope), Style::default().fg(DIM)),
+                Span::styled(item.detail.clone(), Style::default().fg(DIM)),
+            ]));
+        }
+        lines.push(Line::from(""));
+    };
+    section(&mut lines, "notes", &learned.notes, ACCENT);
+    section(&mut lines, "skills", &learned.skills, Color::Indexed(114));
+    section(&mut lines, "tools", &learned.tools, Color::Indexed(220));
+    if !learned.refused.is_empty() {
+        section(&mut lines, "refused — this project is not trusted",
+                &learned.refused, Color::Indexed(203));
+        lines.push(Line::from(Span::styled(
+            "  `viva trust` lets a project's own tools run as you.",
+            Style::default().fg(DIM),
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        "  these are files; read, edit or delete them by hand.",
+        Style::default().fg(DIM),
+    )));
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
 fn draw_tasks(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) {
     let block = pane("tasks", false);
     let inner = block.inner(area);
@@ -530,6 +591,24 @@ fn draw_status(frame: &mut Frame, area: Rect, model: &Model) {
     }
     if model.current_conversation().map(|c| c.gap).unwrap_or(false) {
         text.push_str("   [missed events — ctrl-r to re-read]");
+    }
+    // ALWAYS the counts, never only behind a keystroke. A harness whose point
+    // is that it learns should say what it has learned without being asked.
+    let learned = &model.learned;
+    // Shown even at zero, once asked. A fresh project retaining nothing is
+    // exactly when somebody most needs to learn that the harness retains --
+    // hiding the row until it is non-empty hides the feature from everyone who
+    // has not used it yet.
+    if learned.inspected {
+        text.push_str(&format!(
+            "   learned {} note{} · {} skill{} · {} tool{}",
+            learned.notes.len(), if learned.notes.len() == 1 { "" } else { "s" },
+            learned.skills.len(), if learned.skills.len() == 1 { "" } else { "s" },
+            learned.tools.len(), if learned.tools.len() == 1 { "" } else { "s" },
+        ));
+        if !learned.refused.is_empty() {
+            text.push_str(&format!("  ({} refused — untrusted)", learned.refused.len()));
+        }
     }
     if let Some(session) = model.sessions.iter().find(|s| s.id == model.current) {
         if !session.model.is_empty() {

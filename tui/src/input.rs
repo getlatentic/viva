@@ -22,6 +22,8 @@ pub enum Action {
     CloseTab,
     SelectTab(usize),
     Refresh,
+    /// Ask what this session has retained, and show it.
+    Learned,
     /// A line beginning with `/`, handled here and never sent onward.
     Command(String),
     /// Ask for every session matching what has been typed into the picker.
@@ -45,6 +47,13 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
         .current_conversation()
         .map(|conversation| conversation.busy)
         .unwrap_or(false);
+
+    // The learned overlay is a look, not a mode: any key closes it. Making a
+    // person learn a second way out of a read-only panel is a tax on curiosity.
+    if model.showing_learned {
+        model.showing_learned = false;
+        return Action::None;
+    }
 
     if model.focus == Focus::Picker {
         return picker_key(key, model);
@@ -73,6 +82,7 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
             KeyCode::Char('n') => Action::NewTab,
             KeyCode::Char('w') => Action::CloseTab,
             KeyCode::Char('r') => Action::Refresh,
+            KeyCode::Char('l') => Action::Learned,
             _ => Action::None,
         };
     }

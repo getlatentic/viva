@@ -114,6 +114,9 @@ fn run() -> std::io::Result<()> {
         .map(|session| session.id.clone());
     if let Some(id) = opening {
         open_session(&mut connection, &mut model, &id)?;
+        // Before the first frame, so the counts are there from the start
+        // rather than appearing a moment later.
+        let _ = refresh_learned(&mut connection, &mut model);
     }
 
     // Set up the terminal LAST, so any failure above prints as ordinary text
@@ -223,6 +226,10 @@ fn perform(
             }
         }
         Action::Refresh => refresh_sessions(connection, model)?,
+        Action::Learned => {
+            refresh_learned(connection, model)?;
+            model.showing_learned = true;
+        }
         Action::Command(line) => return run_command(connection, model, &line),
         Action::Search(text) => {
             let asked = if text.trim().is_empty() {
@@ -296,6 +303,7 @@ fn run_command(
         // the whole point of a daemon, so every word for it does the same.
         "/quit" => return Ok(true),
         "/help" => model.note(commands::help()),
+        "/learned" => return perform(connection, model, input::Action::Learned).map(|_| false),
         "/new" => return perform(connection, model, input::Action::NewTab).map(|_| false),
         "/find" => {
             model.focus = model::Focus::Picker;
@@ -341,6 +349,28 @@ fn attach(connection: &mut Connection, model: &mut Model, id: &str) -> std::io::
     let (_, events) = connection.wait_for(asked, Duration::from_secs(20));
     for event in events {
         model.absorb(&event);
+    }
+    Ok(())
+}
+
+/// What this session has retained, in one request.
+///
+/// ONE request, not four: session.inspect answers notes, skills, tools and
+/// trust from a single instant. Four questions about one moment answered by
+/// four round trips would be four different moments.
+fn refresh_learned(connection: &mut Connection, model: &mut Model) -> std::io::Result<()> {
+    if model.current.is_empty() {
+        return Ok(());
+    }
+    let asked = connection.send(json!({
+        "type": "session.inspect", "session": model.current
+    }))?;
+    let (reply, events) = connection.wait_for(asked, Duration::from_secs(15));
+    for event in events {
+        model.absorb(&event);
+    }
+    if let Some(reply) = reply {
+        model.learned = protocol::Learned::from_reply(&reply);
     }
     Ok(())
 }

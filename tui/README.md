@@ -62,12 +62,32 @@ scripts and diffs, and that is why it exists.
 | Ctrl-N | start a session and open it in a tab |
 | Ctrl-W | close the tab — the session keeps running |
 | Ctrl-R | re-read the session list |
+| Ctrl-L | what this session has learned — notes, skills, tools |
 | Ctrl-P / Ctrl-F | find any session, running or not |
 | ↑ from the prompt | move to the session list |
 | ↑ ↓ Enter in the list | walk it, open one |
 | Esc | back to the prompt |
 | PgUp PgDn Home End | scroll; End follows again |
 | click, wheel | tabs, `+`, sessions, scrolling |
+
+## What it has learned is on screen
+
+The status line carries the counts always — `learned 3 notes · 2 skills · 1
+tool` — including at zero. A fresh project retaining nothing is exactly when
+somebody most needs to learn that the harness retains at all; hiding the row
+until it is non-empty hides the feature from everyone who has not used it yet.
+
+`Ctrl-L` opens the detail: each retained thing, its scope, and what it is for.
+Scope matters and is shown, because a machine-level tool loads in **every**
+project you open and a project-level one does not.
+
+Anything refused for trust is listed **as refused**, not folded in. "There is a
+tool here" and "the agent can call it" are different facts, and a client that
+merges them makes an untrusted project look equipped.
+
+It is one request — `session.inspect` answers notes, skills, tools and trust
+from a single instant. Four questions about one moment answered by four round
+trips would be four different moments.
 
 ## Finding a session that is not running
 

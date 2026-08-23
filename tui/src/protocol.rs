@@ -261,6 +261,63 @@ pub struct Recorded {
     pub opening: String,
 }
 
+/// One thing a project has retained: a note, a skill or a tool.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct Retained {
+    pub name: String,
+    #[serde(default)]
+    pub detail: String,
+    /// "machine" or "project" -- where it was found, and therefore who else
+    /// sees it. A machine-level tool loads in every project you open.
+    #[serde(default)]
+    pub scope: String,
+}
+
+/// What a session knows, from one `session.inspect`.
+#[derive(Debug, Clone, Default)]
+pub struct Learned {
+    /// Whether we have asked yet. Distinguishes "retained nothing" from "have
+    /// not looked", which look identical as counts and are different facts.
+    pub inspected: bool,
+    pub trusted: bool,
+    pub notes: Vec<Retained>,
+    pub skills: Vec<Retained>,
+    pub tools: Vec<Retained>,
+    /// Present on disk and NOT loaded, because the project is untrusted.
+    /// Shown as refused rather than folded in: "there is a tool here" and "the
+    /// agent can call it" are different facts.
+    pub refused: Vec<Retained>,
+}
+
+impl Learned {
+    pub fn total(&self) -> usize {
+        self.notes.len() + self.skills.len() + self.tools.len()
+    }
+
+    pub fn from_reply(reply: &Value) -> Self {
+        let list = |key: &str| -> Vec<Retained> {
+            reply
+                .get(key)
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| serde_json::from_value(item.clone()).ok())
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        Learned {
+            inspected: true,
+            trusted: reply.get("trusted").and_then(Value::as_bool).unwrap_or(false),
+            notes: list("notes"),
+            skills: list("skills"),
+            tools: list("tools"),
+            refused: list("refused"),
+        }
+    }
+}
+
 impl Recorded {
     pub fn short_cwd(&self) -> &str {
         let trimmed = self.cwd.trim_end_matches('/');

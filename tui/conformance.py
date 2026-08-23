@@ -482,6 +482,31 @@ def main():
         else:
             ok("escape dismisses the menu")
 
+        # WHAT IT HAS LEARNED. The whole point of the harness is that it
+        # retains; a client that cannot show what it retained is hiding the
+        # product.
+        client.send(b"\x0c")                       # ctrl-l
+        client.pump(4.0)
+        panel = client.term.text()
+        missing = [w for w in ("notes", "skills", "tools") if w not in panel]
+        if missing:
+            print(panel)
+            fail(f"the learned panel does not list {missing}")
+        else:
+            ok("ctrl-l shows notes, skills and tools")
+        # Any key closes it: a read-only look should not need a second way out.
+        client.send(b"x")
+        client.pump(1.5)
+        if "what this session has learned" in client.term.text():
+            fail("the learned panel would not close")
+        else:
+            ok("any key closes the learned panel")
+        # And the counts are on the status line without being asked for.
+        if "learned" not in client.term.lines()[-1]:
+            fail(f"the status line does not carry the counts: {client.term.lines()[-1]!r}")
+        else:
+            ok("the status line carries the counts unasked")
+
         client.send(b"/help\r")
         client.pump(2.0)
         if "/detach" not in client.term.text():

@@ -5,7 +5,7 @@
 //! the compiler and to a smoke test alike -- so the fold is pure and a test
 //! feeds it a known event stream and reads the result back.
 
-use crate::protocol::{Event, Recorded, SessionInfo};
+use crate::protocol::{Event, Learned, Recorded, SessionInfo};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 
@@ -196,6 +196,12 @@ pub struct Model {
     /// Which entry the slash menu has highlighted. Reset whenever the line
     /// changes, so the highlight cannot point past a list that just shrank.
     pub command_selection: usize,
+    /// What this session has retained. Kept on the model rather than fetched
+    /// when the overlay opens, so the status line can carry the counts always:
+    /// a harness whose whole point is that it learns should not hide what it
+    /// has learned behind a keystroke.
+    pub learned: Learned,
+    pub showing_learned: bool,
     /// Every session id ever listed. A tab whose session is missing from the
     /// list is only gone if we had SEEN it there; one we have never seen is
     /// young, not dead. Without the distinction, opening a session and asking
@@ -220,6 +226,8 @@ impl Model {
             connected: true,
             picker: Picker::default(),
             command_selection: 0,
+            learned: Learned::default(),
+            showing_learned: false,
             known: HashSet::new(),
         }
     }

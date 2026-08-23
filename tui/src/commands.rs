@@ -38,6 +38,11 @@ pub const COMMANDS: &[Command] = &[
         blurb: "re-read the session list",
     },
     Command {
+        name: "/learned",
+        aliases: &["/knows"],
+        blurb: "what this session has retained: notes, skills, tools",
+    },
+    Command {
         name: "/help",
         aliases: &["/?"],
         blurb: "list these",
