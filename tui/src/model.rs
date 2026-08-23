@@ -54,6 +54,12 @@ pub struct Entry {
     /// Bumped whenever this entry changes, so a renderer can tell which of a
     /// thousand entries it has to lay out again -- which is one of them.
     pub stamp: u64,
+    /// When the call began, by this client's clock, and how long it took.
+    /// Measured here rather than read from the event: an event's time is in
+    /// whole seconds, and the difference between a 40ms grep and an 800ms one
+    /// is the thing worth showing.
+    started: Option<std::time::Instant>,
+    pub took: Option<std::time::Duration>,
     /// True once output has arrived as a stream. A command that streams also
     /// reports its whole output when it finishes, so a client that took both
     /// would print everything a running command said a second time.
@@ -69,6 +75,8 @@ impl Entry {
             outcome: Outcome::Running,
             call: String::new(),
             stamp: 0,
+            started: None,
+            took: None,
             streamed: false,
         }
     }
@@ -429,6 +437,7 @@ impl Model {
                 conversation.push(Role::Tool, line);
                 if let Some(entry) = conversation.entries.last_mut() {
                     entry.call = id;
+                    entry.started = Some(std::time::Instant::now());
                 }
             }
             "tool.output" => {
@@ -468,6 +477,7 @@ impl Model {
                 let id = call_id(event.data.get("call"));
                 if let Some(entry) = conversation.tool_mut(&id) {
                     entry.outcome = if failed { Outcome::Failed } else { Outcome::Done };
+                    entry.took = entry.started.map(|since| since.elapsed());
                     if !entry.streamed {
                         for line in output.lines() {
                             entry.output.push(line.to_string());

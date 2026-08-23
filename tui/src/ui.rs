@@ -226,7 +226,7 @@ impl Rendered {
                 let block = Laid {
                     stamp: entry.stamp,
                     expanded,
-                    lines: wrap_lines(&entry_lines(entry, expanded), width),
+                    lines: wrap_lines(&entry_lines(entry, expanded, width), width),
                 };
                 match self.blocks.get_mut(count) {
                     Some(slot) => *slot = block,
@@ -521,7 +521,7 @@ fn state_mark(state: &str) -> (&'static str, Color) {
 /// before this: one streamed token cost 6.5ms at ten turns and 70.8ms at four
 /// hundred, so a long session got slower at exactly the moment somebody was
 /// watching output arrive.
-fn entry_lines(entry: &Entry, expanded: bool) -> Vec<Hanging> {
+fn entry_lines(entry: &Entry, expanded: bool, width: u16) -> Vec<Hanging> {
     // How many lines of a tool result to show when it is not expanded. Three
     // is enough to see what a command said and not enough to bury the
     // conversation it belongs to.
@@ -560,11 +560,27 @@ fn entry_lines(entry: &Entry, expanded: bool) -> Vec<Hanging> {
                     Outcome::Done => Color::Indexed(114),
                     Outcome::Running => Color::Indexed(220),
                 };
-                lines.push(Hanging::under("  ", Style::default(), Line::from(vec![
+                // A TITLED RULE, so a call and what it printed read as one
+                // block with a top edge, and the time it took has a place.
+                let rule = Style::default().fg(BORDER);
+                let mut title = vec![
+                    Span::styled("─ ", rule),
                     Span::styled(format!("{} ", entry.outcome.mark()), Style::default().fg(colour)),
-                    Span::styled(text.to_string(),
-                                 Style::default().fg(Color::Indexed(252))),
-                ])));
+                    Span::styled(text.to_string(), Style::default().fg(Color::Indexed(252))),
+                ];
+                // Under ten milliseconds is not shown. A replayed session
+                // delivers a call and its result in the same instant, and a
+                // `(0ms)` there would be a measurement of the replay.
+                if let Some(took) = entry.took.filter(|took| took.as_millis() >= 10) {
+                    title.push(Span::styled(format!("  ({})", elapsed(took)),
+                                            Style::default().fg(DIM)));
+                }
+                let used: usize = title.iter().map(|span| span.content.chars().count()).sum();
+                if used + 2 < width as usize {
+                    title.push(Span::styled(
+                        format!(" {}", "─".repeat(width as usize - used - 1)), rule));
+                }
+                lines.push(Hanging::plain(Line::from(title)));
                 let shown = if expanded {
                     entry.output.len()
                 } else {
@@ -596,6 +612,18 @@ fn entry_lines(entry: &Entry, expanded: bool) -> Vec<Hanging> {
         }
     }
     lines
+}
+
+/// A duration as a person reads one: `838ms`, `2.3s`, `1m04s`.
+fn elapsed(took: std::time::Duration) -> String {
+    let millis = took.as_millis();
+    if millis < 1000 {
+        format!("{millis}ms")
+    } else if millis < 60_000 {
+        format!("{:.1}s", took.as_secs_f64())
+    } else {
+        format!("{}m{:02}s", took.as_secs() / 60, took.as_secs() % 60)
+    }
 }
 
 fn draw_transcript(
@@ -1008,6 +1036,31 @@ kilo lima mike november oscar papa quebec";
         assert!(frame.contains("the daemon closed the connection"),
                 "the failure is not on screen:\n{frame}");
         assert!(frame.contains("alpha"), "the facts went missing with it");
+    }
+
+    #[test]
+    fn a_call_says_how_long_it_took_and_a_replayed_one_does_not() {
+        // The difference between a 40ms grep and an 800ms one is worth a
+        // glance; a replayed session delivers a call and its result in the
+        // same instant, and a `(0ms)` there would measure the replay.
+        let mut model = ready(&[]);
+        model.absorb(&event("tool.started",
+                            json!({"call": {"id": "c1", "name": "bash",
+                                            "arguments": {"command": "sleep"}}})));
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        model.absorb(&event("tool.completed", json!({"call": {"id": "c1"}, "output": "done"})));
+        model.absorb(&event("tool.started",
+                            json!({"call": {"id": "c2", "name": "ls", "arguments": {}}})));
+        model.absorb(&event("tool.completed", json!({"call": {"id": "c2"}, "output": "x"})));
+        let rows = frame_of(&model, 100, 26);
+        let slept = rows.iter().find(|row| row.contains("bash sleep")).unwrap();
+        assert!(slept.contains("ms)"), "the slow call shows no time: {slept:?}");
+        assert!(slept.contains("─"), "the call is not drawn as a titled rule: {slept:?}");
+        let quick = rows.iter().find(|row| row.contains("✔ ls")).unwrap();
+        assert!(!quick.contains("ms)"), "an instant call shows a time: {quick:?}");
+        assert_eq!(elapsed(std::time::Duration::from_millis(838)), "838ms");
+        assert_eq!(elapsed(std::time::Duration::from_millis(2300)), "2.3s");
+        assert_eq!(elapsed(std::time::Duration::from_secs(64)), "1m04s");
     }
 
     #[test]
