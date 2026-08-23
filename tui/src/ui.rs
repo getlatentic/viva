@@ -693,11 +693,12 @@ fn draw_status(frame: &mut Frame, area: Rect, model: &Model) {
     // is are true at every moment, and a client that shows only a transcript
     // makes a person carry all of it in their head.
     let facts = crate::status::facts(model);
-    let mut text = if facts.is_empty() {
-        format!(" {}", model.status)
-    } else {
-        format!(" {}", facts.join("  ›  "))
-    };
+    let mut text = format!(" {}", facts.join("  ›  "));
+    // The status carries what went wrong -- a closed connection, a refused
+    // request -- so it follows the facts rather than being replaced by them.
+    if !model.status.is_empty() {
+        text.push_str(&format!("{}{}", if facts.is_empty() { "" } else { "   " }, model.status));
+    }
     if !following {
         text.push_str("   [scrolled — End to follow]");
     }
@@ -728,11 +729,7 @@ fn draw_status(frame: &mut Frame, area: Rect, model: &Model) {
             text.push_str(&format!("  ({} refused — untrusted)", learned.refused.len()));
         }
     }
-    if let Some(session) = model.sessions.iter().find(|s| s.id == model.current) {
-        if !session.model.is_empty() {
-            text.push_str(&format!("   {}", session.model));
-        }
-    }
+
     frame.render_widget(
         Paragraph::new(Span::styled(text, Style::default().fg(DIM))),
         area,
@@ -925,6 +922,19 @@ kilo lima mike november oscar papa quebec";
         assert!(frame.contains("deepseek-4-flash"), "the model is not on screen");
         assert!(frame.contains("high"), "the effort is not on screen");
         assert!(frame.contains("25% of 128k"), "the context is not on screen:\n{frame}");
+    }
+
+    #[test]
+    fn the_status_line_keeps_saying_what_went_wrong() {
+        // The facts share the line with the status, they do not replace it: a
+        // closed connection and a refused request are reported there, and a
+        // line that showed only the facts would report neither.
+        let mut model = ready(&[]);
+        model.status = "the daemon closed the connection".into();
+        let frame = frame_of(&model, 120, 26).join("\n");
+        assert!(frame.contains("the daemon closed the connection"),
+                "the failure is not on screen:\n{frame}");
+        assert!(frame.contains("alpha"), "the facts went missing with it");
     }
 
     #[test]

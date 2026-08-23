@@ -75,7 +75,10 @@ fn run() -> std::io::Result<()> {
     let mut connection = Connection::open(&path)?;
 
     let mut model = Model::new(cwd.clone());
-    model.status = "ready — tab/click switches, arrows walk the list, ctrl-c stops a turn".into();
+    // Short, because the line now carries the facts as well and the keys are
+    // in `/help`. A permanent sentence teaching four bindings costs the width
+    // every session, to be read once.
+    model.status = "/help for keys".into();
 
     // THE GREETING ALREADY CARRIES THE SESSIONS. Asking for them again was
     // the first draft: a second round trip to learn what the daemon had
