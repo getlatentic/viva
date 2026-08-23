@@ -746,10 +746,18 @@ twice; it is somebody's record.")))
   ;; Pi does. The difference is what happens NEXT -- Pi's run ends and steering
   ;; is polled at the end of an iteration, so a steer waits out the request --
   ;; and that is a loop policy, not a capability nobody else has.
+  ;;
+  ;; The claim is what is guarded, not the topic. A README that does not raise
+  ;; steering at all cannot oversell it, and requiring the honest sentence
+  ;; anyway made a rewrite that simply dropped the subject look like a
+  ;; regression -- which is a test insisting on its own wording rather than on
+  ;; the thing it was written to protect.
   (let ((readme (repository-file "README.md")))
     (false (search "ABORTED after 1,927 ms" readme)
            "the front page still sells stop-early as a differentiator")
-    (true (search "carried into the next request" readme))))
+    (when (search "steer" readme)
+      (true (search "carried into the next request" readme)
+            "the README raises steering without saying where a steer lands"))))
 
 ;;; The package file is a dependency graph maintained by hand
 ;;;
