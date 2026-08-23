@@ -72,14 +72,102 @@ pub fn line(text: &str, fence: Fence) -> (Drawn, Fence) {
 
 /// A whole message, as lines.
 pub fn render(text: &str) -> Vec<Drawn> {
+    let rows: Vec<&str> = text.split('\n').collect();
+    let mut drawn = Vec::with_capacity(rows.len());
     let mut fence = Fence::default();
-    text.split('\n')
-        .map(|row| {
-            let (drawn, next) = line(row, fence);
-            fence = next;
-            drawn
-        })
-        .collect()
+    let mut at = 0;
+    while at < rows.len() {
+        if !fence.open() {
+            if let Some(used) = table(&rows[at..], &mut drawn) {
+                at += used;
+                continue;
+            }
+        }
+        let (row, next) = line(rows[at], fence);
+        fence = next;
+        drawn.push(row);
+        at += 1;
+    }
+    drawn
+}
+
+/// A table, if one starts here: its rows drawn as columns, and how many lines
+/// it took. Otherwise nothing, and the line is treated as ordinary text.
+///
+/// Models write tables constantly, and drawn as characters a table is a wall
+/// of pipes with a row of dashes through it -- the one markdown construct that
+/// is actively harder to read as its own source than any other.
+fn table(rows: &[&str], out: &mut Vec<Drawn>) -> Option<usize> {
+    let header = cells(rows.first()?)?;
+    if !rows.get(1).map(|row| divider(row, header.len())).unwrap_or(false) {
+        return None;
+    }
+    let body: Vec<Vec<String>> = rows[2..]
+        .iter()
+        .take_while(|row| row.contains('|'))
+        .filter_map(|row| cells(row))
+        .collect();
+
+    let mut widths = vec![0usize; header.len()];
+    for row in std::iter::once(&header).chain(body.iter()) {
+        for (column, cell) in row.iter().enumerate().take(widths.len()) {
+            widths[column] = widths[column].max(shown_width(cell));
+        }
+    }
+    let emphasis = Style::default().fg(HEADING).add_modifier(Modifier::BOLD);
+    out.push(columns(&header, &widths, Some(emphasis)));
+    for row in &body {
+        out.push(columns(row, &widths, None));
+    }
+    Some(2 + body.len())
+}
+
+/// One row, each cell padded to its column. The trailing column is not padded:
+/// a run of spaces to the pane edge is invisible and costs the wrap.
+fn columns(row: &[String], widths: &[usize], style: Option<Style>) -> Drawn {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for (column, width) in widths.iter().enumerate() {
+        let cell = row.get(column).map(String::as_str).unwrap_or("");
+        match style {
+            Some(style) => spans.push(Span::styled(cell.to_string(), style)),
+            None => spans.extend(inline(cell)),
+        }
+        if column + 1 < widths.len() {
+            let pad = width.saturating_sub(shown_width(cell)) + 2;
+            spans.push(Span::raw(" ".repeat(pad)));
+        }
+    }
+    Drawn { spans, indent: "  ".into() }
+}
+
+/// The cells of a row, or nothing when the line is not one.
+fn cells(row: &str) -> Option<Vec<String>> {
+    let trimmed = row.trim();
+    if !trimmed.contains('|') {
+        return None;
+    }
+    let inner = trimmed.trim_start_matches('|').trim_end_matches('|');
+    let cells: Vec<String> = inner.split('|').map(|cell| cell.trim().to_string()).collect();
+    (cells.len() >= 2).then_some(cells)
+}
+
+/// `|---|:--:|`, the line that makes the row above it a header.
+fn divider(row: &str, columns: usize) -> bool {
+    match cells(row) {
+        Some(cells) if cells.len() == columns => cells.iter().all(|cell| {
+            let bar = cell.trim_matches(':');
+            !bar.is_empty() && bar.chars().all(|character| character == '-')
+        }),
+        _ => false,
+    }
+}
+
+/// How wide a cell lands once its own markup has become styling.
+fn shown_width(cell: &str) -> usize {
+    inline(cell)
+        .iter()
+        .map(|span| span.content.chars().count())
+        .sum()
 }
 
 /// `## Title` reads as a title, without the hashes a person has to look past.
@@ -270,6 +358,46 @@ mod tests {
         // Not every hash opens a heading.
         assert_eq!(shown(&drawn("#1 in the list")), "#1 in the list");
         assert_eq!(shown(&drawn("####### too many")), "####### too many");
+    }
+
+    #[test]
+    fn a_table_is_drawn_as_columns_and_not_as_pipes() {
+        // Drawn as characters a table is a wall of pipes with a row of dashes
+        // through it -- the one construct actively harder to read as its own
+        // source than as anything else.
+        let rendered = render("| Prerequisite | How to satisfy |\n|---|---|\n| Node.js | Install from nodejs.org |\n| Git | Only to clone |\nafter");
+        let texts: Vec<String> = rendered.iter().map(shown).collect();
+        assert_eq!(texts.len(), 4, "the divider was drawn: {texts:?}");
+        assert!(!texts.iter().any(|row| row.contains('|')), "pipes survived: {texts:?}");
+        assert!(!texts.iter().any(|row| row.contains("---")), "the divider survived");
+        assert_eq!(texts[3], "after", "the table swallowed the line after it");
+        // Columns line up: `Install` starts where `Only` starts.
+        let node = texts[1].find("Install").unwrap();
+        let git = texts[2].find("Only").unwrap();
+        assert_eq!(node, git, "the columns do not line up:\n{}\n{}", texts[1], texts[2]);
+        assert!(rendered[0].spans[0].style.add_modifier.contains(Modifier::BOLD),
+                "the header is not marked as one");
+    }
+
+    #[test]
+    fn a_line_of_pipes_that_is_not_a_table_is_left_alone() {
+        // A shell pipeline is not a header, and a row with no divider under it
+        // is not a table.
+        let rendered = render("run `ls | wc -l` first");
+        assert_eq!(shown(&rendered[0]), "run ls | wc -l first");
+        let no_divider = render("| a | b |\nnot a divider");
+        assert_eq!(shown(&no_divider[0]), "| a | b |");
+    }
+
+    #[test]
+    fn a_cell_is_measured_by_what_it_shows_not_by_its_markup() {
+        // A cell written `**Git**` is three characters wide on screen and
+        // seven in the source. Padding by the source pushes every later
+        // column out by the width of the punctuation that is no longer there.
+        let rendered = render("| a | b |\n|---|---|\n| **Git** | x |\n| gitgit | y |");
+        let texts: Vec<String> = rendered.iter().map(shown).collect();
+        assert_eq!(texts[1].find('x'), texts[2].find('y'),
+                   "markup was counted as width:\n{}\n{}", texts[1], texts[2]);
     }
 
     #[test]
