@@ -92,12 +92,16 @@ pub struct Task {
 #[derive(Debug, Default)]
 pub struct Conversation {
     pub entries: Vec<Entry>,
-    /// Streamed assistant text that has not ended in a newline yet. Output
-    /// arrives split at arbitrary boundaries -- a line in five pieces, a piece
-    /// holding three lines -- and appending each piece as its own entry is how
-    /// a client turns one sentence into five paragraphs.
-    partial: String,
-    /// The unfinished assistant line, as an entry. Rebuilt on change.
+    /// The assistant line that has not ended in a newline yet, held as the
+    /// entry it renders as. Output arrives split at arbitrary boundaries -- a
+    /// line in five pieces, a piece holding three lines -- and appending each
+    /// piece as its own entry is how a client turns one sentence into five
+    /// paragraphs.
+    ///
+    /// ONE place holds it. While the same text sat in a buffer and again in a
+    /// rendered copy, ending a turn drained the buffer and left the copy
+    /// behind, so every reply drew its last paragraph twice and the leftover
+    /// outlived the turn -- surfacing again under the next question.
     streaming: Vec<Entry>,
     pub tasks: BTreeMap<String, Task>,
     pub busy: bool,
@@ -144,20 +148,23 @@ impl Conversation {
     }
 
     pub fn end_partial(&mut self) {
-        if !self.partial.is_empty() {
-            let text = std::mem::take(&mut self.partial);
+        let text = self.take_streaming();
+        if !text.is_empty() {
             self.push(Role::Assistant, text);
         }
     }
 
     fn absorb_text(&mut self, text: &str) {
         self.revision += 1;
-        self.partial.push_str(text);
-        while let Some(at) = self.partial.find('\n') {
-            let line: String = self.partial.drain(..=at).collect();
-            self.push(Role::Assistant, line);
+        let mut line = self.take_streaming();
+        line.push_str(text);
+        while let Some(at) = line.find('\n') {
+            let complete: String = line.drain(..=at).collect();
+            self.push(Role::Assistant, complete);
         }
-        self.refresh_streaming();
+        if !line.is_empty() {
+            self.streaming.push(Entry::new(Role::Assistant, line));
+        }
     }
 
     /// The transcript including whatever is streaming right now.
@@ -169,13 +176,9 @@ impl Conversation {
         self.entries.iter().chain(self.streaming.iter())
     }
 
-    /// Keep the streaming tail as a real entry, so callers see one kind of
-    /// thing rather than a list plus a special case.
-    fn refresh_streaming(&mut self) {
-        self.streaming.clear();
-        if !self.partial.is_empty() {
-            self.streaming.push(Entry::new(Role::Assistant, self.partial.clone()));
-        }
+    /// Take the unfinished line out, leaving nothing behind.
+    fn take_streaming(&mut self) -> String {
+        self.streaming.drain(..).map(|entry| entry.text).collect()
     }
 }
 
@@ -624,6 +627,52 @@ mod tests {
             .collect();
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0].1, "thinking");
+    }
+
+    #[test]
+    fn a_reply_that_does_not_end_in_a_newline_is_shown_once() {
+        // A model rarely ends its last sentence with a newline, so the tail of
+        // almost every reply was the unfinished line. Holding it in a buffer
+        // AND in a rendered copy meant ending the turn drained one and kept
+        // the other, and the closing paragraph appeared twice.
+        let mut model = model_with("s1");
+        model.absorb(&event("model.delta", "s1", json!({"text": "one\ntwo"})));
+        model.absorb(&event("turn.completed", "s1", json!({})));
+        let text: String = model
+            .current_conversation()
+            .unwrap()
+            .visible_entries()
+            .map(|entry| entry.text.clone())
+            .collect();
+        assert_eq!(text, "one\ntwo", "the closing line was drawn twice");
+    }
+
+    #[test]
+    fn a_finished_reply_does_not_reappear_under_the_next_question() {
+        // The leftover copy rendered after everything else, so it outlived its
+        // own turn and surfaced below the NEXT question -- one turn's answer
+        // shown as though it belonged to another.
+        let mut model = model_with("s1");
+        model.absorb(&event("model.delta", "s1", json!({"text": "first answer"})));
+        model.absorb(&event("turn.completed", "s1", json!({})));
+        model.absorb(&event("user.message", "s1", json!({"text": "next question"})));
+        model.absorb(&event("model.delta", "s1", json!({"text": "second answer"})));
+        let roles: Vec<Role> = model
+            .current_conversation()
+            .unwrap()
+            .visible_entries()
+            .map(|entry| entry.role)
+            .collect();
+        assert_eq!(roles, vec![Role::Assistant, Role::User, Role::Assistant]);
+        let last = model
+            .current_conversation()
+            .unwrap()
+            .visible_entries()
+            .last()
+            .unwrap()
+            .text
+            .clone();
+        assert_eq!(last, "second answer", "the previous turn's tail came back");
     }
 
     #[test]
