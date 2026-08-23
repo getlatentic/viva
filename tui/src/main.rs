@@ -250,12 +250,18 @@ fn perform(
                 model.picker.selection = 0;
             }
         }
-        Action::Resume(id) => {
+        Action::Resume { id, cwd } => {
             // Continue it in a NEW cell. A recorded session is a file, not a
             // running thing, so resuming is starting -- and the daemon
             // publishes what it loaded, which is what makes it visible here.
+            // ITS OWN directory, not ours. The daemon scopes find-session to
+            // the cwd it is given, so resuming a session recorded elsewhere
+            // into the client's directory finds nothing -- and a resume that
+            // finds nothing succeeds, producing an empty session that looks
+            // exactly like history that failed to load.
+            let where_it_lived = if cwd.is_empty() { model.cwd.clone() } else { cwd };
             let started = connection.send(json!({
-                "type": "session.start", "cwd": model.cwd.clone(), "resume": id
+                "type": "session.start", "cwd": where_it_lived, "resume": id
             }))?;
             let (reply, events) = connection.wait_for(started, Duration::from_secs(60));
             for event in events {

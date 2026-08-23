@@ -392,6 +392,23 @@ def main():
                     ok(f"typing narrows the list: {len(found)} -> {len(narrowed)}")
                 else:
                     fail(f"typing did not narrow the list: {len(found)} -> {len(narrowed)}")
+        # CLEAR THE FILTER, then move to a session that HAS messages.
+        #
+        # Two workspace assumptions bit here in turn. The narrowing check types
+        # a word that matches in one workspace only, so elsewhere the list was
+        # empty and Enter resumed nothing. Clearing the filter fixed that and
+        # exposed the second: the newest recorded session is the empty one
+        # ctrl-n created earlier in this very run, so resuming it correctly
+        # showed no conversation. Neither was a product fault.
+        client.send(b"\x7f" * 8)
+        client.pump(2.0)
+        rows = [l for l in client.term.lines() if " msg" in l]
+        wanted = next((i for i, l in enumerate(rows)
+                       if any(part.isdigit() and int(part) > 0
+                              for part in l.replace("msg", " ").split())), 0)
+        client.send(b"\x1b[B" * wanted)          # down to it
+        client.pump(1.5)
+
         # Resume the one that is highlighted. A recorded session is a file,
         # not a running thing, so continuing it is starting -- and the daemon
         # publishes what it loaded, which is what makes it visible here. It
@@ -411,7 +428,9 @@ def main():
         client.pump(2.0)
         body = "\n".join(client.term.lines()[2:-5])
         if "›" not in body:
-            print("\n".join(client.term.lines()[:12]))
+            print("---- frame at failure ----")
+            print("\n".join(client.term.lines()))
+            print("---- end ----")
             fail("the resumed conversation shows no earlier prompt")
         else:
             ok("a resumed session shows what was said in it, from the top")

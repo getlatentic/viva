@@ -28,8 +28,10 @@ pub enum Action {
     Command(String),
     /// Ask for every session matching what has been typed into the picker.
     Search(String),
-    /// Continue a recorded session in a new tab.
-    Resume(String),
+    /// Continue a recorded session in a new tab, in the directory it was
+    /// recorded in. The picker lists sessions from EVERY directory, so
+    /// resuming one into the client's own cwd looks for it where it is not.
+    Resume { id: String, cwd: String },
 }
 
 pub fn read(event: &Event, model: &mut Model, hits: &Hitboxes) -> Action {
@@ -250,9 +252,9 @@ fn picker_key(key: &KeyEvent, model: &mut Model) -> Action {
         }
         KeyCode::Enter => match model.picker.selected() {
             Some(found) => {
-                let id = found.id.clone();
+                let (id, cwd) = (found.id.clone(), found.cwd.clone());
                 model.focus = Focus::Input;
-                Action::Resume(id)
+                Action::Resume { id, cwd }
             }
             None => Action::None,
         },
@@ -324,9 +326,9 @@ fn clicked(mouse: &MouseEvent, model: &mut Model, hits: &Hitboxes) -> Action {
                         if inside(*row_area, column, row) {
                             model.picker.selection = *index;
                             if let Some(found) = model.picker.selected() {
-                                let id = found.id.clone();
+                                let (id, cwd) = (found.id.clone(), found.cwd.clone());
                                 model.focus = Focus::Input;
-                                return Action::Resume(id);
+                                return Action::Resume { id, cwd };
                             }
                         }
                     }

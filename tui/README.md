@@ -93,8 +93,9 @@ trips would be four different moments.
 ## Finding a session that is not running
 
 The sidebar answers *what is running*. Most sessions are not: they are files
-from yesterday. `Ctrl-P` opens a picker over every recorded session, narrowing
-as you type, and Enter continues the one you choose — the daemon reloads it and
+from yesterday. `Ctrl-P` opens a picker over every recorded session **in every directory**,
+narrowing as you type, and Enter continues the one you choose — in the
+directory it was recorded in, not the one you happen to be sitting in — the daemon reloads it and
 republishes the conversation, so it arrives with its history rather than as a
 blank pane.
 
