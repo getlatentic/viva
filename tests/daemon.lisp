@@ -2325,6 +2325,55 @@ it reports nothing, and the suite has to be killed to find out why."
                      (actor:shutdown cell))))
             (ignore-errors (close stream))))))))
 
+(define-test "a resumed conversation shows the work, not only the words"
+  ;; The prompts and the replies were published and nothing else, so a resumed
+  ;; session showed an agent answering out of nowhere: it had read files and run
+  ;; commands, and the pane said none of it. The model remembered every one,
+  ;; which made the screen a worse record of the session than the context it was
+  ;; drawn from. Measured on a real recorded session: 11 events replayed for a
+  ;; 34-message conversation.
+  (with-repository (environment)
+    (let* ((root (env:env-cwd environment))
+           (directory (session:session-directory root))
+           (first-session (session:open-session :directory directory :cwd root)))
+      (session:record-entry first-session :message
+                            (msg:make-user-message
+                             :content (list (msg:make-text "what is in here"))))
+      (session:record-entry first-session :message
+                            (msg:make-assistant-message
+                             :content (list (msg:make-tool-call
+                                             :id "c1" :name "ls"
+                                             :arguments (make-hash-table :test #'equal)))
+                             :stop-reason :tool-calls))
+      (session:record-entry first-session :message
+                            (msg:make-tool-result-message
+                             :call-id "c1" :output "README.md" :error-p nil))
+      (session:close-session first-session)
+      (with-daemon (path)
+        (let ((stream (daemon:connect path)))
+          (unwind-protect
+               (progn
+                 (read-line stream nil nil)
+                 (let ((reply (daemon:request stream "type" "session.start" "cwd" root
+                                                     "resume" "true")))
+                   (true (gethash "success" reply) "~a" (gethash "error" reply))
+                   (let* ((id (gethash "id" (gethash "session" reply)))
+                          (cell (actor:find-cell id))
+                          (published (actor:since cell 0))
+                          (names (mapcar #'event:event-name published)))
+                     (true (member "tool.started" names :test #'equal)
+                           "the call the agent made was not replayed: ~s" names)
+                     (true (member "tool.completed" names :test #'equal)
+                           "the result it got back was not replayed: ~s" names)
+                     ;; The result must name the call it belongs to, or a client
+                     ;; that matches results to calls by id cannot place it.
+                     (let ((done (find "tool.completed" published
+                                       :key #'event:event-name :test #'equal)))
+                       (is equal "c1" (gethash "id" (gethash "call" (event:event-data done))))
+                       (is equal "README.md" (gethash "output" (event:event-data done))))
+                     (actor:shutdown cell))))
+            (ignore-errors (close stream))))))))
+
 (define-test "starting fresh publishes no conversation"
   ;; The guard on the above: if every start announced a conversation, the test
   ;; would pass on a build that published the same thing regardless.

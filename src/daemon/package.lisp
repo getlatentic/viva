@@ -21,7 +21,7 @@
                     (#:tool #:vivarium.tool))
   (:export #:event #:make-event #:event-p #:event-name #:event-session
            #:event-sequence #:event-time #:event-data #:as-json #:from-json
-           #:from-loop #:+names+ #:name-valid-p))
+           #:from-loop #:+names+ #:name-valid-p #:call-json))
 
 (defpackage #:vivarium.actor
   (:use #:cl)

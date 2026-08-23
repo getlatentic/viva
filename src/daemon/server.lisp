@@ -390,15 +390,31 @@ which is indistinguishable from a session that lost its history.
 
 The cell's event stream is the transcript, and this is what makes that true
 after a resume as well as during a turn. Published once, into this cell, so
-every later attach replays them the same way as anything else."
+every later attach replays them the same way as anything else.
+
+THE WORK AS WELL AS THE WORDS. Only the prompts and the replies were published,
+so a resumed session showed an agent answering out of nowhere: it had read four
+files and run the tests, and the pane said none of it. The model remembered
+every one of them, which made the screen a worse record of the session than the
+context it was drawn from."
   (dolist (message (loop*:context-messages (harness:agent-context agent)))
     (let ((text (msg:text-of message)))
-      (when (plusp (length text))
-        (cond ((msg:user-message-p message)
-               (actor:publish cell "user.message" (object "text" text)))
-              ((msg:assistant-message-p message)
-               (actor:publish cell "model.delta"
-                              (object "text" (format nil "~a~%" text)))))))))
+      (cond ((msg:user-message-p message)
+             (when (plusp (length text))
+               (actor:publish cell "user.message" (object "text" text))))
+            ((msg:tool-result-message-p message)
+             (actor:publish cell
+                            (if (msg:tool-result-message-error-p message)
+                              "tool.failed" "tool.completed")
+                            (object "call" (object "id" (msg:tool-result-message-call-id message))
+                                    "output" (msg:tool-result-message-output message))))
+            ((msg:assistant-message-p message)
+             (when (plusp (length text))
+               (actor:publish cell "model.delta" (object "text" (format nil "~a~%" text))))
+             ;; After the text it introduced, in the order they happened.
+             (dolist (call (msg:tool-calls-in message))
+               (actor:publish cell "tool.started"
+                              (object "call" (event:call-json call)))))))))
 
 (defun handle (client command)
   (let* ((id (gethash "id" command))
