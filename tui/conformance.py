@@ -136,8 +136,14 @@ class Client:
             # binary directly leaves the routing untested, and driving
             # `vivarium tui` leaves the bare-name default untested -- and the
             # default is the path almost everybody takes.
+            # Through `viva`, the short name, because that is what a person
+            # types. It is a symlink to the same launcher, and the launcher
+            # resolves symlinks to find its root -- so driving it here is also
+            # a check that the resolution still works from the other name.
             launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
-            os.execve(launcher, [launcher], environment or os.environ)
+            short = os.path.expanduser("~/.local/bin/viva")
+            entry = short if os.path.exists(short) else launcher
+            os.execve(entry, [entry], environment or os.environ)
         self.rows, self.cols = rows, cols
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         self.raw = ""

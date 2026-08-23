@@ -50,9 +50,9 @@
               "Diff two calibrate --out files; reports the noise floor.")))
 
 (defparameter +usage+
-  "vivarium                      the full-screen client, on a terminal;
+  "viva                          the full-screen client, on a terminal;
                               the line client when piped or redirected
-vivarium <command> [options]
+viva <command> [options]      `vivarium` is the same command, spelled out
 
 THE ORGANISM
 

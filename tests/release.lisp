@@ -1811,3 +1811,48 @@ print(sum([2, 3, 5]))
     (let ((frame (frame-of view)))
       (true (frame-has frame "bash npm run dev") "the call did not render")
       (false (frame-has frame "HASH-TABLE") "the client printed its own internals"))))
+
+(define-test "installing gives the tool both of its names"
+  ;; `viva` is what somebody types twenty times a day and `vivarium` is what
+  ;; the project is called. There is no reason to make a person choose, and the
+  ;; launcher resolves symlinks to find its root -- so a second link behaves
+  ;; identically and costs nothing.
+  (let* ((directory (format nil "/tmp/vivarium-install-~d-~d/"
+                            (get-universal-time) (random 100000))))
+    (ensure-directories-exist directory)
+    (unwind-protect
+         (let ((output (with-output-to-string (out)
+                         (let ((*standard-output* out))
+                           (cli::command-install
+                            (cli::parse-arguments (list "--prefix" directory)))))))
+           (declare (ignorable output))
+           (let ((full (merge-pathnames "vivarium" directory))
+                 (short (merge-pathnames "viva" directory)))
+             (true (probe-file full) "the full name was not linked")
+             (true (probe-file short) "the short name was not linked")
+             ;; BOTH point at the same launcher, so they cannot drift.
+             (is equal (truename full) (truename short)
+                 "the two names resolve to different things")))
+      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
+                                                 :validate t)))))
+
+(define-test "a taken short name does not fail the install"
+  ;; Somebody may already have a `viva` of their own. Refusing to install the
+  ;; tool because its nickname is taken would be absurd.
+  (let ((directory (format nil "/tmp/vivarium-taken-~d-~d/"
+                           (get-universal-time) (random 100000))))
+    (ensure-directories-exist directory)
+    (unwind-protect
+         (progn
+           (with-open-file (out (merge-pathnames "viva" directory)
+                                :direction :output :if-does-not-exist :create)
+             (write-string "not ours" out))
+           (let ((code (with-output-to-string (captured)
+                         (let ((*standard-output* captured))
+                           (cli::command-install
+                            (cli::parse-arguments (list "--prefix" directory)))))))
+             (declare (ignorable code))
+             (true (probe-file (merge-pathnames "vivarium" directory))
+                   "a taken short name stopped the real install")))
+      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
+                                                 :validate t)))))

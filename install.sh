@@ -96,7 +96,7 @@ cat <<EOF
 Done. Next:
 
   1. put a provider key in ~/.vivarium/.env
-  2. cd into any project and run:  vivarium
+  2. cd into any project and run:  viva
   3. see what it has learned:      vivarium learned
   4. watch it learn something:     $root/demo/retention
 

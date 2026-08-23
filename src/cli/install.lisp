@@ -72,11 +72,19 @@ decide, and `already installed` and `something else is called vivarium` are
 different answers that must not look alike."
   (let ((launcher (launcher-path)))
     (multiple-value-bind (directory why) (install-directory (flag parsed "prefix"))
+      (handler-case (ensure-directories-exist (uiop:ensure-directory-pathname directory))
+        (error (condition)
+          (format *error-output* "~&cannot use ~a: ~a~%" directory condition)
+          (return-from command-install 1)))
+      ;; BOTH NAMES. `viva` is what somebody types twenty times a day and
+      ;; `vivarium` is what the project is called; there is no reason to make a
+      ;; person choose. The launcher resolves symlinks to find its root, so a
+      ;; second link costs nothing and behaves identically.
+      ;;
+      ;; The short one is not allowed to fail the install. Somebody may already
+      ;; have a `viva` of their own, and refusing to install the tool at all
+      ;; because its nickname is taken would be absurd.
       (let ((target (env:join-path directory "vivarium")))
-        (handler-case (ensure-directories-exist (uiop:ensure-directory-pathname directory))
-          (error (condition)
-            (format *error-output* "~&cannot use ~a: ~a~%" directory condition)
-            (return-from command-install 1)))
         (let ((existing (describe-existing target)))
           (case existing
             (:ours (format t "~&already installed: ~a -> ~a~%" target launcher))
@@ -90,6 +98,14 @@ different answers that must not look alike."
              (format *error-output* "~&~a already exists and is ~a, not this repository's launcher.~%~
 Move it, or choose somewhere else with --prefix DIR.~%" target existing)
              (return-from command-install 1))))
+        (let* ((short (env:join-path directory "viva"))
+               (existing (describe-existing short)))
+          (case existing
+            (:ours (format t "  and ~a~%" short))
+            (:none (if (ignore-errors (sb-posix:symlink launcher short) t)
+                       (format t "  and ~a~%" short)
+                       (format t "  (could not link ~a; ~a still works)~%" short target)))
+            (t (format t "  (~a is already ~a, so it was left alone)~%" short existing))))
         ;; The point of installing is being able to type the name, so a
         ;; directory that is not on PATH is a failed install wearing a success
         ;; message. Say the line that fixes it.
