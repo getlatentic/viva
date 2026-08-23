@@ -50,20 +50,53 @@ pub struct Rendered {
 /// every time it is drawn, so a frame costs the length of the conversation
 /// however little of it is visible -- and a person scrolling is asking for a
 /// frame per keypress. Wrapped once per change, the render is a slice.
-fn wrap_lines(lines: &[Line<'static>], width: u16) -> Vec<Line<'static>> {
+/// A line, and what stands in front of the rows it wraps onto.
+///
+/// A result line that begins with a gutter and loses it on the rows below
+/// breaks its own block open: the second half of a long line starts at the
+/// pane edge, outside the rule that says which call printed it.
+struct Hanging {
+    line: Line<'static>,
+    indent: Option<Span<'static>>,
+}
+
+impl Hanging {
+    fn plain(line: Line<'static>) -> Self {
+        Hanging { line, indent: None }
+    }
+
+    fn under(indent: &'static str, style: Style, line: Line<'static>) -> Self {
+        Hanging { line, indent: Some(Span::styled(indent, style)) }
+    }
+}
+
+fn wrap_lines(lines: &[Hanging], width: u16) -> Vec<Line<'static>> {
     let width = width.max(1) as usize;
     let mut wrapped: Vec<Line<'static>> = Vec::with_capacity(lines.len());
-    for line in lines {
+    for hanging in lines {
+        // A gutter as wide as the pane would leave no room for the text it is
+        // meant to be indenting, and the wrap would never advance.
+        let indent = hanging
+            .indent
+            .clone()
+            .filter(|span| span.content.chars().count() < width);
+        let carry = |row: &mut Vec<Span<'static>>| match &indent {
+            Some(span) => {
+                row.push(span.clone());
+                span.content.chars().count()
+            }
+            None => 0,
+        };
         let mut row: Vec<Span<'static>> = Vec::new();
         let mut used = 0usize;
-        for span in &line.spans {
+        for span in &hanging.line.spans {
             let style = span.style;
             let mut rest: &str = &span.content;
             while !rest.is_empty() {
                 let room = width.saturating_sub(used);
                 if room == 0 {
                     wrapped.push(Line::from(std::mem::take(&mut row)));
-                    used = 0;
+                    used = carry(&mut row);
                     continue;
                 }
                 let taken = rest.chars().take(room).collect::<String>();
@@ -79,7 +112,7 @@ fn wrap_lines(lines: &[Line<'static>], width: u16) -> Vec<Line<'static>> {
                     row.push(Span::styled(head.to_string(), style));
                     rest = &rest[cut..];
                     wrapped.push(Line::from(std::mem::take(&mut row)));
-                    used = 0;
+                    used = carry(&mut row);
                 }
             }
         }
@@ -380,8 +413,8 @@ fn state_mark(state: &str) -> (&'static str, Color) {
 /// invisible on a monochrome terminal, to anyone who cannot tell two shades
 /// apart, and to any test that reads the frame back -- so the distinction that
 /// matters most is the one that must not depend on it.
-pub fn transcript_lines(model: &Model) -> Vec<Line<'static>> {
-    let mut lines: Vec<Line> = Vec::new();
+fn transcript_lines(model: &Model) -> Vec<Hanging> {
+    let mut lines: Vec<Hanging> = Vec::new();
     let Some(conversation) = model.current_conversation() else {
         return lines;
     };
@@ -393,22 +426,20 @@ pub fn transcript_lines(model: &Model) -> Vec<Line<'static>> {
         let text = entry.text.as_str();
         match entry.role {
             Role::User => {
-                lines.push(Line::from(""));
+                let voice = Style::default().fg(ACCENT).add_modifier(Modifier::BOLD);
+                lines.push(Hanging::plain(Line::from("")));
                 for (index, piece) in text.lines().enumerate() {
                     let prefix = if index == 0 { "› " } else { "  " };
-                    lines.push(Line::from(vec![
-                        Span::styled(prefix, Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-                        Span::styled(
-                            piece.to_string(),
-                            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-                        ),
-                    ]));
+                    lines.push(Hanging::under("  ", voice, Line::from(vec![
+                        Span::styled(prefix, voice),
+                        Span::styled(piece.to_string(), voice),
+                    ])));
                 }
-                lines.push(Line::from(""));
+                lines.push(Hanging::plain(Line::from("")));
             }
             Role::Assistant => {
                 for piece in text.split('\n') {
-                    lines.push(Line::from(Span::raw(piece.to_string())));
+                    lines.push(Hanging::plain(Line::from(Span::raw(piece.to_string()))));
                 }
             }
             Role::Tool => {
@@ -420,37 +451,39 @@ pub fn transcript_lines(model: &Model) -> Vec<Line<'static>> {
                     Outcome::Done => Color::Indexed(114),
                     Outcome::Running => Color::Indexed(220),
                 };
-                lines.push(Line::from(vec![
+                lines.push(Hanging::under("  ", Style::default(), Line::from(vec![
                     Span::styled(format!("{} ", entry.outcome.mark()), Style::default().fg(colour)),
                     Span::styled(text.to_string(),
                                  Style::default().fg(Color::Indexed(252))),
-                ]));
+                ])));
                 let shown = if conversation.expanded {
                     entry.output.len()
                 } else {
                     entry.output.len().min(GLIMPSE)
                 };
+                let gutter = Style::default().fg(BORDER);
                 for line in entry.output.iter().take(shown) {
-                    lines.push(Line::from(vec![
-                        Span::styled("  │ ", Style::default().fg(BORDER)),
+                    lines.push(Hanging::under("  │ ", gutter, Line::from(vec![
+                        Span::styled("  │ ", gutter),
                         Span::styled(line.clone(), Style::default().fg(DIM)),
-                    ]));
+                    ])));
                 }
                 // The hidden lines are ANNOUNCED. Silently showing three of
                 // four hundred teaches a person the command printed three.
                 if entry.output.len() > shown {
-                    lines.push(Line::from(Span::styled(
+                    lines.push(Hanging::plain(Line::from(Span::styled(
                         format!("  │ … {} more line{}  (ctrl-o)",
                                 entry.output.len() - shown,
                                 if entry.output.len() - shown == 1 { "" } else { "s" }),
-                        Style::default().fg(BORDER),
-                    )));
+                        gutter,
+                    ))));
                 }
             }
-            Role::Note => lines.push(Line::from(Span::styled(
-                format!("! {text}"),
-                Style::default().fg(Color::Indexed(203)),
-            ))),
+            Role::Note => {
+                let alarm = Style::default().fg(Color::Indexed(203));
+                lines.push(Hanging::under("  ", alarm,
+                                          Line::from(Span::styled(format!("! {text}"), alarm))));
+            }
         }
     }
     lines
@@ -782,6 +815,35 @@ mod tests {
         let wide = frame_of(&model, 100, 60).join("\n");
         assert!(wide.contains("line39"), "expanding showed nothing more");
         assert!(wide.contains("expanded"), "nothing says the output is expanded");
+    }
+
+    #[test]
+    fn a_wrapped_result_line_stays_inside_its_own_block() {
+        // A result line longer than the pane loses the gutter on the rows
+        // below it, and the second half of the line starts at the pane edge
+        // -- outside the rule that says which call printed it.
+        let mut model = ready(&[]);
+        model.absorb(&event("tool.started",
+                            json!({"call": {"name": "bash", "arguments": {"command": "cat x"}}})));
+        let long = "alpha bravo charlie delta echo foxtrot golf hotel india juliet \
+kilo lima mike november oscar papa quebec";
+        model.absorb(&event("tool.completed", json!({"output": long})));
+        // Read the TRANSCRIPT CELL, not the frame. The session is also named
+        // `alpha` in the tab bar and in the sidebar, and a check that scans
+        // whole rows for a word finds those first and tests nothing.
+        let rows = frame_of(&model, 100, 26);
+        let cells: Vec<String> = rows
+            .iter()
+            .filter_map(|row| row.split("││").nth(1).map(str::to_string))
+            .collect();
+        let carrying: Vec<&String> = cells.iter().filter(|cell| cell.contains("│ ")).collect();
+        assert!(carrying.len() >= 2, "the result did not wrap, so nothing was tested");
+        for word in ["alpha", "kilo", "quebec"] {
+            let cell = cells.iter().find(|cell| cell.contains(word))
+                .unwrap_or_else(|| panic!("{word} is not in the transcript"));
+            let before = cell.split(word).next().unwrap();
+            assert!(before.contains("│ "), "the row carrying {word} left its block: {cell:?}");
+        }
     }
 
     #[test]
