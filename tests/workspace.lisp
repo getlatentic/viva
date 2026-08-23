@@ -1072,6 +1072,31 @@ rather than leaving it to be rediscovered a third time."
         (true (mentions "README.md" (msg:tool-result-message-output (first results))))
         (true (mentions "defun total" (msg:tool-result-message-output (second results))))))))
 
+(define-test "a running command's output reaches the listener from a parallel batch"
+  ;; The same fault as the environment one above, found later and in a worse
+  ;; place: *ON-OUTPUT* was bound around the run instead of in the one function
+  ;; that re-establishes a tool's world, so a call executed on a batch thread
+  ;; saw NIL and its output was dropped. Silently -- the command still worked
+  ;; and still returned, so a build that printed for four minutes simply read
+  ;; as a hang. Recorded sessions held 38 shell runs and not one TOOL-OUTPUT.
+  (with-repository (environment)
+    (let* ((seen (list))
+           (agent (make-instance 'parallel-agent
+                                 :environment environment :resource-environment environment
+                                 :listener (lambda (event)
+                                             (when (eq (getf event :type) :tool-output)
+                                               (push (getf event :text) seen)))
+                                 :script (list (msg:make-assistant-message
+                                                :content (list (msg:make-tool-call
+                                                                :id "c1" :name "bash"
+                                                                :arguments (args "command" "echo streaming")))
+                                                :stop-reason :tool-calls)))))
+      (setf (agent:agent-parallel-tools-p agent) t)
+      (loop*:run agent (list (msg:make-user-message
+                              :content (list (msg:make-text "go")))))
+      (true (mentions "streaming" (format nil "~{~a~}" seen))
+            "the command's output never reached the listener"))))
+
 (define-test "reflection never overrides a cancellation"
   ;; The retention policy's law 3: a cancellation that landed during the work
   ;; stays in force. REFLECT on an aborting agent must return NIL without

@@ -466,7 +466,15 @@ The one place that knows which specials a run depends on, so a parallel batch
 and an ordinary one see the same world."
   (let ((*agent* agent)
         (workspace:*environment* (agent-environment agent))
-        (workspace:*excluded-paths* (session-paths agent)))
+        (workspace:*excluded-paths* (session-paths agent))
+        ;; A running command's output goes out as it arrives, through the same
+        ;; event stream everything else the agent does uses. Bound HERE and not
+        ;; only around the run: a parallel batch executes each call on its own
+        ;; thread, where a binding the caller made is not visible -- which is
+        ;; the reason this function exists. Bound around the run alone, a
+        ;; command that printed for four minutes read as a hang.
+        (workspace:*on-output*
+          (lambda (chunk) (agent:emit agent (list :type :tool-output :text chunk)))))
     (funcall thunk)))
 
 (defmethod agent:before-tool ((agent workspace-agent) call)
@@ -640,15 +648,7 @@ cancel. A cancel must not be erasable by the thing it cancels."
   (let* ((produced (agent:call-in-tool-context
                     agent
                     (lambda ()
-                      ;; A running command's output goes out as it arrives,
-                      ;; through the same event stream every other thing the
-                      ;; agent does uses -- so an attached session, a pane and
-                      ;; a future full-screen client all get it without any of
-                      ;; them knowing about processes.
-                      (let ((workspace:*on-output*
-                              (lambda (chunk)
-                                (agent:emit agent (list :type :tool-output :text chunk))))
-                            (message (extension:fire :before-request (user-message text))))
+                      (let ((message (extension:fire :before-request (user-message text))))
                         (loop*:run agent (list message) :context (agent-context agent)))))))
     (extension:fire :agent-end (list :agent agent :messages produced))
     (values (last-assistant-text produced) produced)))
