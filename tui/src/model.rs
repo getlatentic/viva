@@ -49,6 +49,8 @@ pub struct Entry {
     /// left to tell which call produced what.
     pub output: Vec<String>,
     pub outcome: Outcome,
+    /// The id the daemon gave this call, so its result can find it again.
+    call: String,
     /// True once output has arrived as a stream. A command that streams also
     /// reports its whole output when it finishes, so a client that took both
     /// would print everything a running command said a second time.
@@ -57,7 +59,14 @@ pub struct Entry {
 
 impl Entry {
     fn new(role: Role, text: String) -> Self {
-        Entry { role, text, output: Vec::new(), outcome: Outcome::Running, streamed: false }
+        Entry {
+            role,
+            text,
+            output: Vec::new(),
+            outcome: Outcome::Running,
+            call: String::new(),
+            streamed: false,
+        }
     }
 }
 
@@ -180,9 +189,24 @@ impl Conversation {
         self.entries.iter().chain(self.streaming.iter())
     }
 
-    /// The call a result belongs to: the last one started.
-    fn last_tool_mut(&mut self) -> Option<&mut Entry> {
-        self.entries.iter_mut().rev().find(|entry| entry.role == Role::Tool)
+    /// The call an event belongs to: the one with this id, or -- for an event
+    /// that carries none -- the innermost call still running.
+    ///
+    /// BY ID, BECAUSE CALLS NEST. A `delegate` runs a whole sub-agent inside
+    /// its own call, and every tool that worker uses is reported on the same
+    /// stream between the delegate's start and its end. `The last call
+    /// started` is therefore the worker's last step, so the delegate's own
+    /// result landed on that step instead, and the delegate itself stayed
+    /// marked as running for the rest of the session.
+    fn tool_mut(&mut self, id: &str) -> Option<&mut Entry> {
+        self.entries.iter_mut().rev().find(|entry| {
+            entry.role == Role::Tool
+                && if id.is_empty() {
+                    entry.outcome == Outcome::Running
+                } else {
+                    entry.call == id
+                }
+        })
     }
 
     /// Take the unfinished line out, leaving nothing behind.
@@ -325,7 +349,11 @@ impl Model {
             "tool.started" => {
                 conversation.end_partial();
                 let line = call_line(event.data.get("call"));
+                let id = call_id(event.data.get("call"));
                 conversation.push(Role::Tool, line);
+                if let Some(entry) = conversation.entries.last_mut() {
+                    entry.call = id;
+                }
             }
             "tool.output" => {
                 conversation.revision += 1;
@@ -333,7 +361,7 @@ impl Model {
                 // joined. The transcript showed the call and dropped the
                 // result entirely, which is why five different commands read
                 // as five identical lines.
-                if let Some(entry) = conversation.last_tool_mut() {
+                if let Some(entry) = conversation.tool_mut("") {
                     entry.streamed = true;
                     for line in text.lines() {
                         entry.output.push(line.to_string());
@@ -361,7 +389,8 @@ impl Model {
                 // and on no other, so reading only the streaming one leaves a
                 // transcript of calls with nothing under any of them.
                 let output = event.text("output").to_string();
-                if let Some(entry) = conversation.last_tool_mut() {
+                let id = call_id(event.data.get("call"));
+                if let Some(entry) = conversation.tool_mut(&id) {
                     entry.outcome = if failed { Outcome::Failed } else { Outcome::Done };
                     if !entry.streamed {
                         for line in output.lines() {
@@ -520,6 +549,14 @@ const SALIENT: &[&str] = &[
 /// says the agent is busy and nothing whatever about what it is doing. The
 /// arguments are one level down, under "arguments" -- looking for them beside
 /// the name found nothing and silently fell back to the name.
+/// The id the daemon gave a call, or nothing when the event carries none.
+fn call_id(call: Option<&serde_json::Value>) -> String {
+    call.and_then(|call| call.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+
 pub fn call_line(call: Option<&serde_json::Value>) -> String {
     let Some(call) = call else {
         return "tool".into();
@@ -897,6 +934,54 @@ mod tests {
         let entry = model.conversations["s1"]
             .entries.iter().find(|e| e.role == Role::Tool).unwrap();
         assert_eq!(entry.output, vec!["compiling", "linking"], "the output was printed twice");
+    }
+
+    #[test]
+    fn a_delegate_keeps_its_own_result_when_its_worker_calls_tools() {
+        // `delegate` runs a whole sub-agent inside its own call, and the
+        // worker's tools are reported on the same stream between the
+        // delegate's start and its end. Matching a result to `the last call
+        // started` gave the delegate's answer to the worker's last step, and
+        // left the delegate marked as running for the rest of the session.
+        // Taken from a recorded session: seq 127 opens it, 142 closes it.
+        let mut model = model_with("s1");
+        model.absorb(&event("tool.started", "s1", json!({
+            "call": {"id": "d1", "name": "delegate", "arguments": {"task": "find how to run it"}}})));
+        model.absorb(&event("tool.started", "s1", json!({
+            "call": {"id": "r1", "name": "read", "arguments": {"path": "package.json"}}})));
+        model.absorb(&event("tool.completed", "s1", json!({
+            "call": {"id": "r1", "name": "read"}, "output": "{\n  \"name\": \"app\""})));
+        model.absorb(&event("tool.completed", "s1", json!({
+            "call": {"id": "d1", "name": "delegate"}, "output": "run npm install, then npm run dev"})));
+
+        let calls: Vec<&Entry> = model.conversations["s1"]
+            .entries.iter().filter(|entry| entry.role == Role::Tool).collect();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].outcome, Outcome::Done, "the delegate never stopped running");
+        assert!(calls[0].output.iter().any(|line| line.contains("npm run dev")),
+                "the delegate lost its own answer: {:?}", calls[0].output);
+        assert!(calls[1].output.iter().all(|line| !line.contains("npm run dev")),
+                "the delegate's answer landed on its worker's call: {:?}", calls[1].output);
+    }
+
+    #[test]
+    fn streamed_output_goes_to_the_innermost_call_still_running() {
+        // A streamed chunk carries no call id, so it goes to the call that is
+        // running -- the innermost one, not one that has already finished.
+        let mut model = model_with("s1");
+        model.absorb(&event("tool.started", "s1",
+                            json!({"call": {"id": "d1", "name": "delegate"}})));
+        model.absorb(&event("tool.started", "s1",
+                            json!({"call": {"id": "b1", "name": "bash",
+                                            "arguments": {"command": "make"}}})));
+        model.absorb(&event("tool.output", "s1", json!({"text": "compiling\n"})));
+        model.absorb(&event("tool.completed", "s1", json!({"call": {"id": "b1"}, "output": ""})));
+        model.absorb(&event("tool.output", "s1", json!({"text": "worker thinking\n"})));
+        let calls: Vec<&Entry> = model.conversations["s1"]
+            .entries.iter().filter(|entry| entry.role == Role::Tool).collect();
+        assert_eq!(calls[1].output, vec!["compiling"]);
+        assert_eq!(calls[0].output, vec!["worker thinking"],
+                   "output after the inner call finished did not fall back to the delegate");
     }
 
     #[test]
