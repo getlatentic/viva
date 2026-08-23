@@ -124,6 +124,15 @@ pub struct Conversation {
     pub last_seq: u64,
     pub gap: bool,
     pub scroll: u16,
+    /// Scroll asked for and not yet applied.
+    ///
+    /// A wheel sends a BURST, not an event. Applying a whole burst in one
+    /// frame moves the view without ever showing it move -- twenty events
+    /// became one frame sixty lines further on, which is a jump wearing a
+    /// scroll's name. Paid out a step per frame instead, at a cost of under a
+    /// millisecond each, so a fast gesture still finishes fast and the eye is
+    /// given something to follow.
+    pending: i32,
     /// Bumped on every change. The renderer wraps a whole transcript to lay it
     /// out, which costs the length of the conversation -- so it does that once
     /// per change rather than once per frame, and this is how it knows.
@@ -142,6 +151,51 @@ pub struct Conversation {
 impl Conversation {
     pub fn new() -> Self {
         Conversation { following: true, ..Default::default() }
+    }
+
+    /// The smallest move worth a frame: one notch of a wheel.
+    const STEP: i32 = 3;
+    /// The largest, so a fling arrives quickly without skipping the screen.
+    const LEAP: i32 = 60;
+
+    /// Ask to move by LINES, to be paid out over the frames that follow.
+    pub fn scroll_by(&mut self, lines: i32) {
+        self.pending += lines;
+    }
+
+    /// Jump, with nothing owed. Home and End mean the end, not a journey to it.
+    pub fn jump_to(&mut self, offset: u16) {
+        self.pending = 0;
+        self.scroll = offset;
+        self.following = offset == 0;
+    }
+
+    /// Is there movement still owed?
+    pub fn owes_scroll(&self) -> bool {
+        self.pending != 0
+    }
+
+    /// Pay out one frame's worth. True when the view moved.
+    ///
+    /// EASING OUT, a quarter of what is left each time: a slow gesture moves
+    /// exactly one notch and a two-hundred-line fling arrives in a handful of
+    /// frames, both of them visibly moving rather than arriving.
+    pub fn settle(&mut self) -> bool {
+        if self.pending == 0 {
+            return false;
+        }
+        let owed = self.pending.abs();
+        let step = (owed / 4).clamp(Self::STEP, Self::LEAP).min(owed) * self.pending.signum();
+        self.pending -= step;
+        let next = (self.scroll as i32 + step).max(0);
+        if next == 0 {
+            self.pending = 0;
+        }
+        self.scroll = next.min(u16::MAX as i32) as u16;
+        // Reaching the bottom resumes following, so a person who scrolled back
+        // and then returned does not have to know there is a mode.
+        self.following = next == 0;
+        true
     }
 
     fn push(&mut self, role: Role, text: impl Into<String>) {
@@ -724,6 +778,76 @@ mod tests {
             .text
             .clone();
         assert_eq!(last, "second answer", "the previous turn's tail came back");
+    }
+
+    #[test]
+    fn a_burst_of_wheel_events_does_not_arrive_in_one_frame() {
+        // A wheel sends a burst, not an event, and the loop drains every
+        // waiting event before drawing. Twenty of them became ONE frame sixty
+        // lines further on -- a jump wearing a scroll's name. Measured at the
+        // pty: twenty events produced the same bytes as one.
+        let mut conversation = Conversation::new();
+        for _ in 0..20 {
+            conversation.scroll_by(3);
+        }
+        let mut frames = 0;
+        while conversation.settle() {
+            frames += 1;
+            assert!(frames < 60, "the scroll never finished");
+        }
+        assert!(frames >= 5, "sixty lines arrived in {frames} frame(s)");
+        assert_eq!(conversation.scroll, 60, "the view did not end up where it was sent");
+        assert!(!conversation.owes_scroll());
+    }
+
+    #[test]
+    fn one_notch_moves_exactly_one_notch() {
+        // Easing must not cost precision: a single deliberate notch is three
+        // lines, not two and not four.
+        let mut conversation = Conversation::new();
+        conversation.scroll_by(3);
+        assert!(conversation.settle());
+        assert_eq!(conversation.scroll, 3);
+        assert!(!conversation.settle(), "a finished scroll asked for another frame");
+    }
+
+    #[test]
+    fn a_long_fling_moves_fastest_first() {
+        // Otherwise a two-hundred-line fling at three lines a frame is a
+        // crawl, and the cure for a jump becomes a different complaint.
+        let mut conversation = Conversation::new();
+        conversation.scroll_by(400);
+        conversation.settle();
+        let first = conversation.scroll as i32;
+        let mut previous = first;
+        let mut smaller_later = false;
+        while conversation.settle() {
+            let step = conversation.scroll as i32 - previous;
+            previous = conversation.scroll as i32;
+            if step < first {
+                smaller_later = true;
+            }
+        }
+        assert!(first > Conversation::STEP, "the fling started at a crawl: {first}");
+        assert!(smaller_later, "the fling never slowed as it arrived");
+        assert_eq!(conversation.scroll, 400);
+    }
+
+    #[test]
+    fn arriving_at_the_bottom_stops_and_follows_again() {
+        // Owing more than there is left to give would hold the view at the
+        // bottom asking for frames forever.
+        let mut conversation = Conversation::new();
+        conversation.jump_to(20);
+        conversation.scroll_by(-400);
+        let mut frames = 0;
+        while conversation.settle() {
+            frames += 1;
+            assert!(frames < 200, "the scroll ran past the bottom and kept going");
+        }
+        assert_eq!(conversation.scroll, 0);
+        assert!(conversation.following, "returning to the bottom did not resume following");
+        assert!(!conversation.owes_scroll());
     }
 
     #[test]

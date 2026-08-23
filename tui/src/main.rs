@@ -161,7 +161,17 @@ fn run() -> std::io::Result<()> {
         // key or spinning a wheel delivers events faster than a frame, and
         // repainting between each one makes the client slower the harder it is
         // being used -- which is the wrong way round.
-        let mut waiting = event::poll(Duration::from_millis(30))?;
+        // A scroll still owed is a reason to come straight back: the frames
+        // that pay it out are what make the movement visible.
+        let owed = model
+            .conversations
+            .get(&model.current)
+            .map(|conversation| conversation.owes_scroll())
+            .unwrap_or(false);
+        // Paced, not raced: a frame every few milliseconds is what makes the
+        // movement visible, and the same wait still answers a key at once.
+        let patience = if owed { 6 } else { 30 };
+        let mut waiting = event::poll(Duration::from_millis(patience))?;
         while waiting {
             dirty = true;
             let action = input::read(&event::read()?, &mut model, &hits);
@@ -171,6 +181,12 @@ fn run() -> std::io::Result<()> {
                 Err(problem) => model.status = format!("{problem}"),
             }
             waiting = event::poll(Duration::from_millis(0))?;
+        }
+
+        if let Some(conversation) = model.conversations.get_mut(&model.current) {
+            if conversation.settle() {
+                dirty = true;
+            }
         }
     }
 }

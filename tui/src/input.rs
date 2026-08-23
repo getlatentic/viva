@@ -210,7 +210,7 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
             // The far end of the scrollback, clamped when it is drawn.
             if let Some(conversation) = model.conversations.get_mut(&model.current) {
                 conversation.following = false;
-                conversation.scroll = u16::MAX;
+                conversation.jump_to(u16::MAX);
             }
             Action::None
         }
@@ -282,19 +282,13 @@ fn next_tab(model: &mut Model) -> Action {
 
 fn follow(model: &mut Model) {
     if let Some(conversation) = model.conversations.get_mut(&model.current) {
-        conversation.following = true;
-        conversation.scroll = 0;
+        conversation.jump_to(0);
     }
 }
 
 fn scroll_by(model: &mut Model, lines: i32) -> Action {
     if let Some(conversation) = model.conversations.get_mut(&model.current) {
-        let current = conversation.scroll as i32;
-        let next = (current + lines).max(0);
-        conversation.scroll = next.min(u16::MAX as i32) as u16;
-        // Reaching the bottom resumes following, so a person who scrolled back
-        // and then returned does not have to know there is a mode.
-        conversation.following = next == 0;
+        conversation.scroll_by(lines);
     }
     Action::None
 }
