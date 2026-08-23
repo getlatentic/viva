@@ -40,6 +40,7 @@ Inside the full screen client:
 | `Ctrl-O` | show all of a tool's output, or the first three lines again |
 | `Ctrl-L` | what this session has learned |
 | `Ctrl-R` | read the session again from the daemon |
+| `!` | run a shell command here; the model does not see it |
 | `/` | list the commands |
 | `Ctrl-C` | stop the running turn; leave when there is none |
 | wheel, `PageUp`, `Home`, `End` | move through the transcript |
@@ -96,9 +97,9 @@ Run each command yourself. The numbers come from these runs.
 | what | number | command |
 | --- | --- | --- |
 | Lisp tests | 1,925 pass | `viva test` |
-| Rust tests | 73 pass | `cargo test --manifest-path tui/Cargo.toml` |
+| Rust tests | 77 pass | `cargo test --manifest-path tui/Cargo.toml` |
 | TLA+ configurations | 23 agree | `./spec/verify.sh` |
-| terminal invariants | 30 hold | `python3 tui/conformance.py` |
+| terminal invariants | 33 hold | `python3 tui/conformance.py` |
 | recorded sessions replayed through the client | clean | `python3 tui/journal_replay.py` |
 | 2 minutes of churn | 6,906 cycles, heap 67 MB flat | `viva soak --minutes 2` |
 | 200 sessions | heap 59 MB to 79 MB, 202 threads | the snippet below |
