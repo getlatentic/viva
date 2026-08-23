@@ -63,6 +63,11 @@ REPLAY = [
 
 # What happens after: a subagent, its child, live output, and an ending.
 LIVE = [
+    # Real tool calls, in the shape the daemon actually sends: the arguments
+    # are one level down, under "arguments".
+    ("tool.started", {"call": {"name": "bash", "arguments": {"command": "ls -la src"}}}),
+    ("tool.started", {"call": {"name": "bash", "arguments": {"command": "cat README.md"}}}),
+    ("tool.started", {"call": {"name": "grep", "arguments": {"pattern": "TODO"}}}),
     ("task.started", {"task": "t1", "text": "run the suite"}),
     ("task.started", {"task": "t2", "text": "compile the crate", "parent": "t1"}),
     ("tool.output", {"text": "compiling vivarium-tui\n"}),
@@ -207,6 +212,21 @@ def main():
         fail(f"the answer was marked as a question: {answer!r}")
     else:
         ok("a question is told from an answer on the screen")
+
+    # A tool call says what it is doing. The name alone made a run read as
+    # five identical lines saying `ls`.
+    calls = [l for l in term.lines() if "· bash" in l or "· grep" in l]
+    if len(calls) < 3:
+        print(frame)
+        fail(f"only {len(calls)} tool calls rendered")
+    elif not any("ls -la src" in l for l in calls):
+        print("\n".join(calls))
+        fail("a tool call showed its name without its argument")
+    elif len({l.strip() for l in calls}) < 3:
+        print("\n".join(calls))
+        fail("three different calls rendered identically")
+    else:
+        ok("each tool call shows what it is actually doing")
 
     # The subagent, its child, and what the work printed.
     if "run the suite" not in frame or "compile the crate" not in frame:

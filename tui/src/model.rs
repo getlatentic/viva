@@ -6,6 +6,7 @@
 //! feeds it a known event stream and reads the result back.
 
 use crate::protocol::{Event, Recorded, SessionInfo};
+use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 
 /// Who said it. The whole reason the transcript is a list of entries rather
@@ -263,13 +264,8 @@ impl Model {
             "model.delta" => conversation.absorb_text(&text),
             "tool.started" => {
                 conversation.end_partial();
-                let call = event
-                    .data
-                    .get("call")
-                    .and_then(|call| call.get("command").or_else(|| call.get("name")))
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("tool");
-                conversation.push(Role::Tool, call.to_string());
+                let line = call_line(event.data.get("call"));
+                conversation.push(Role::Tool, line);
             }
             "tool.output" => {
                 conversation.revision += 1;
@@ -419,6 +415,51 @@ impl Model {
         let next = (self.selection as isize + step).rem_euclid(count);
         self.selection = next as usize;
     }
+}
+
+/// The argument worth showing, in the order worth trying.
+///
+/// The same list the line client settled on. A tool call is mostly one
+/// interesting value and several uninteresting ones, and which key holds it
+/// depends on the tool.
+const SALIENT: &[&str] = &[
+    "command", "path", "pattern", "query", "note", "target", "source", "name", "text", "url",
+];
+
+/// `bash cd /x && npm test` rather than `bash`.
+///
+/// The name alone made a run read as five identical lines saying `ls`, which
+/// says the agent is busy and nothing whatever about what it is doing. The
+/// arguments are one level down, under "arguments" -- looking for them beside
+/// the name found nothing and silently fell back to the name.
+pub fn call_line(call: Option<&serde_json::Value>) -> String {
+    let Some(call) = call else {
+        return "tool".into();
+    };
+    let name = call.get("name").and_then(Value::as_str).unwrap_or("tool");
+    let Some(arguments) = call.get("arguments").and_then(Value::as_object) else {
+        return name.to_string();
+    };
+    let salient = SALIENT
+        .iter()
+        .find_map(|key| arguments.get(*key).and_then(Value::as_str))
+        // Any string at all, when none of the usual keys is there: a tool this
+        // client has never heard of still has something worth showing.
+        .or_else(|| arguments.values().find_map(Value::as_str));
+    match salient {
+        Some(value) => format!("{name} {}", one_line(value, 72)),
+        None => name.to_string(),
+    }
+}
+
+/// One line of it, with the rest said to be there rather than shown.
+fn one_line(text: &str, width: usize) -> String {
+    let flattened = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flattened.chars().count() <= width {
+        return flattened;
+    }
+    let head: String = flattened.chars().take(width).collect();
+    format!("{head}…")
 }
 
 fn set_task_state(conversation: &mut Conversation, event: &Event, state: TaskState) {
@@ -609,6 +650,51 @@ mod tests {
         assert_eq!(tasks["t1"].latest, "linking...");
         model.absorb(&event("task.completed", "s1", json!({"task": "t1"})));
         assert_eq!(model.current_conversation().unwrap().tasks["t1"].state, TaskState::Done);
+    }
+
+    #[test]
+    fn a_tool_call_says_what_it_is_doing() {
+        // The name alone made a run read as five identical lines saying `ls`,
+        // which says the agent is busy and nothing whatever about what it is
+        // doing. The arguments are one level down, under "arguments" -- looking
+        // for them beside the name found nothing and fell back to the name.
+        let mut model = model_with("s1");
+        for (arguments, expected) in [
+            (json!({"command": "ls -la src"}), "bash ls -la src"),
+            (json!({"path": "src/main.rs"}), "bash src/main.rs"),
+            (json!({"pattern": "TODO"}), "bash TODO"),
+            // A key this client has never heard of still has something worth
+            // showing, so any string will do rather than nothing.
+            (json!({"invented": "a value"}), "bash a value"),
+            // Nothing string-shaped: the name alone, honestly.
+            (json!({"depth": 3}), "bash"),
+            (json!({}), "bash"),
+        ] {
+            let event = event(
+                "tool.started",
+                "s1",
+                json!({"call": {"name": "bash", "arguments": arguments}}),
+            );
+            model.absorb(&event);
+            let last = model.conversations["s1"].entries.last().unwrap();
+            assert_eq!(last.role, Role::Tool);
+            assert_eq!(last.text, expected);
+        }
+    }
+
+    #[test]
+    fn a_long_argument_is_one_line_with_the_rest_admitted() {
+        // A twenty-line heredoc in the transcript pushes the conversation off
+        // the screen to say one thing.
+        let long = "echo ".to_string() + &"x".repeat(200);
+        let line = call_line(Some(&json!({"name": "bash", "arguments": {"command": long}})));
+        assert!(line.chars().count() < 90, "a long argument was not cut: {line}");
+        assert!(line.ends_with('…'), "the cut was not admitted: {line}");
+        // Newlines are flattened, so one call stays one line.
+        let across = call_line(Some(&json!({
+            "name": "bash", "arguments": {"command": "cd /x\n  && npm test"}
+        })));
+        assert_eq!(across, "bash cd /x && npm test");
     }
 
     #[test]
