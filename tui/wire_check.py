@@ -68,6 +68,9 @@ LIVE = [
     ("tool.started", {"call": {"name": "bash", "arguments": {"command": "ls -la src"}}}),
     ("tool.started", {"call": {"name": "bash", "arguments": {"command": "cat README.md"}}}),
     ("tool.started", {"call": {"name": "grep", "arguments": {"pattern": "TODO"}}}),
+    ("tool.output", {"text": "src/a.rs:12: TODO\nsrc/b.rs:40: TODO\nsrc/c.rs:9: TODO\n"
+                             "src/d.rs:3: TODO\nsrc/e.rs:77: TODO\n"}),
+    ("tool.completed", {}),
     ("task.started", {"task": "t1", "text": "run the suite"}),
     ("task.started", {"task": "t2", "text": "compile the crate", "parent": "t1"}),
     ("tool.output", {"text": "compiling vivarium-tui\n"}),
@@ -215,7 +218,12 @@ def main():
 
     # A tool call says what it is doing. The name alone made a run read as
     # five identical lines saying `ls`.
-    calls = [l for l in term.lines() if "· bash" in l or "· grep" in l]
+    # Matched by the CALL TEXT, not by a prefix glyph. The prefix now carries
+    # the outcome -- a finished call is not a running one -- so a matcher keyed
+    # on "·" counted only the ones still in flight.
+    calls = [l for l in term.lines()
+             if any(f"{name} " in l for name in ("bash", "grep"))
+             and any(mark in l for mark in ("·", "✔", "✘"))]
     if len(calls) < 3:
         print(frame)
         fail(f"only {len(calls)} tool calls rendered")
@@ -227,6 +235,15 @@ def main():
         fail("three different calls rendered identically")
     else:
         ok("each tool call shows what it is actually doing")
+
+    # A tool result stays with its call, and a long one is glimpsed.
+    if "src/a.rs:12: TODO" not in frame:
+        print(frame)
+        fail("a tool result never reached the transcript")
+    elif "more line" not in frame:
+        fail("a long result was not glimpsed, or the hidden lines went unannounced")
+    else:
+        ok("a tool result sits under its call, glimpsed, with the rest announced")
 
     # The subagent, its child, and what the work printed.
     if "run the suite" not in frame or "compile the crate" not in frame:

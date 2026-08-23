@@ -5,7 +5,7 @@
 //! is not ours -- what is ours is above it, and this file is only the
 //! arrangement.
 
-use crate::model::{Focus, Model, Role, TaskState};
+use crate::model::{Focus, Model, Outcome, Role, TaskState};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 
@@ -385,8 +385,13 @@ pub fn transcript_lines(model: &Model) -> Vec<Line<'static>> {
     let Some(conversation) = model.current_conversation() else {
         return lines;
     };
-    for (role, text) in conversation.visible_entries() {
-        match role {
+    // How many lines of a tool result to show when it is not expanded. Three
+    // is enough to see what a command said and not enough to bury the
+    // conversation it belongs to.
+    const GLIMPSE: usize = 3;
+    for entry in conversation.visible_entries() {
+        let text = entry.text.as_str();
+        match entry.role {
             Role::User => {
                 lines.push(Line::from(""));
                 for (index, piece) in text.lines().enumerate() {
@@ -406,12 +411,44 @@ pub fn transcript_lines(model: &Model) -> Vec<Line<'static>> {
                     lines.push(Line::from(Span::raw(piece.to_string())));
                 }
             }
-            Role::Tool => lines.push(Line::from(vec![
-                Span::styled("· ", Style::default().fg(DIM)),
-                Span::styled(text.to_string(), Style::default().fg(DIM)),
-            ])),
+            Role::Tool => {
+                // A titled rule rather than a dim line, so a call and its
+                // result read as one block instead of as loose text that
+                // happens to follow.
+                let colour = match entry.outcome {
+                    Outcome::Failed => Color::Indexed(203),
+                    Outcome::Done => Color::Indexed(114),
+                    Outcome::Running => Color::Indexed(220),
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(format!("{} ", entry.outcome.mark()), Style::default().fg(colour)),
+                    Span::styled(text.to_string(),
+                                 Style::default().fg(Color::Indexed(252))),
+                ]));
+                let shown = if conversation.expanded {
+                    entry.output.len()
+                } else {
+                    entry.output.len().min(GLIMPSE)
+                };
+                for line in entry.output.iter().take(shown) {
+                    lines.push(Line::from(vec![
+                        Span::styled("  │ ", Style::default().fg(BORDER)),
+                        Span::styled(line.clone(), Style::default().fg(DIM)),
+                    ]));
+                }
+                // The hidden lines are ANNOUNCED. Silently showing three of
+                // four hundred teaches a person the command printed three.
+                if entry.output.len() > shown {
+                    lines.push(Line::from(Span::styled(
+                        format!("  │ … {} more line{}  (ctrl-o)",
+                                entry.output.len() - shown,
+                                if entry.output.len() - shown == 1 { "" } else { "s" }),
+                        Style::default().fg(BORDER),
+                    )));
+                }
+            }
             Role::Note => lines.push(Line::from(Span::styled(
-                format!("! {}", text),
+                format!("! {text}"),
                 Style::default().fg(Color::Indexed(203)),
             ))),
         }
@@ -584,7 +621,10 @@ fn draw_status(frame: &mut Frame, area: Rect, model: &Model) {
         .unwrap_or(true);
     let mut text = format!(" {}", model.status);
     if !following {
-        text.push_str("   [scrolled -- End to follow]");
+        text.push_str("   [scrolled — End to follow]");
+    }
+    if model.current_conversation().map(|c| c.expanded).unwrap_or(false) {
+        text.push_str("   [tool output expanded — ctrl-o]");
     }
     if !model.connected {
         text.push_str("   [daemon gone]");
@@ -718,6 +758,30 @@ mod tests {
         assert!(frame.contains("run it"), "no transcript");
         assert!(frame.contains("indexing"), "the subagent is not in the task pane");
         assert!(frame.contains("step 3 of 9"), "what the work is printing is not shown");
+    }
+
+    #[test]
+    fn a_long_tool_result_is_glimpsed_and_the_rest_announced() {
+        // Silently showing three lines of four hundred teaches a person the
+        // command printed three.
+        let mut model = ready(&[]);
+        model.absorb(&event("tool.started",
+                            json!({"call": {"name": "bash", "arguments": {"command": "build"}}})));
+        for n in 0..40 {
+            model.absorb(&event("tool.output", json!({"text": format!("line{n}\n")})));
+        }
+        let frame = frame_of(&model, 100, 26).join("\n");
+        assert!(frame.contains("line0"), "no output at all");
+        assert!(frame.contains("37 more lines"), "the hidden lines are not announced");
+        assert!(!frame.contains("line39"), "everything was shown despite the glimpse");
+        // Expanded, the rest is there and the status line says so.
+        if let Some(conversation) = model.conversations.get_mut("s1") {
+            conversation.expanded = true;
+            conversation.revision += 1;
+        }
+        let wide = frame_of(&model, 100, 60).join("\n");
+        assert!(wide.contains("line39"), "expanding showed nothing more");
+        assert!(wide.contains("expanded"), "nothing says the output is expanded");
     }
 
     #[test]

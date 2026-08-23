@@ -21,10 +21,40 @@ pub enum Role {
     Note,
 }
 
+/// How a tool call ended. Unknown while it runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    Running,
+    Done,
+    Failed,
+}
+
+impl Outcome {
+    pub fn mark(self) -> &'static str {
+        match self {
+            Outcome::Running => "·",
+            Outcome::Done => "✔",
+            Outcome::Failed => "✘",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Entry {
     pub role: Role,
     pub text: String,
+    /// What a tool printed. Held on the call rather than pushed into the
+    /// transcript as loose lines: a build that prints four hundred lines
+    /// otherwise buries the conversation it belongs to, and there is no way
+    /// left to tell which call produced what.
+    pub output: Vec<String>,
+    pub outcome: Outcome,
+}
+
+impl Entry {
+    fn new(role: Role, text: String) -> Self {
+        Entry { role, text, output: Vec::new(), outcome: Outcome::Running }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +97,8 @@ pub struct Conversation {
     /// holding three lines -- and appending each piece as its own entry is how
     /// a client turns one sentence into five paragraphs.
     partial: String,
+    /// The unfinished assistant line, as an entry. Rebuilt on change.
+    streaming: Vec<Entry>,
     pub tasks: BTreeMap<String, Task>,
     pub busy: bool,
     /// The highest sequence seen, and any gap found in it. A client is the
@@ -79,6 +111,11 @@ pub struct Conversation {
     /// out, which costs the length of the conversation -- so it does that once
     /// per change rather than once per frame, and this is how it knows.
     pub revision: u64,
+    /// Show every line a tool printed, rather than the first few. Off by
+    /// default: a tool result is context for the conversation, and a
+    /// four-hundred-line build log that pushes the conversation off the screen
+    /// has stopped being context.
+    pub expanded: bool,
     /// True while the view is pinned to the newest output. A person who has
     /// scrolled up is reading; yanking them back to the bottom on the next
     /// token is the single rudest thing a log view can do.
@@ -103,7 +140,7 @@ impl Conversation {
                 }
             }
         }
-        self.entries.push(Entry { role, text });
+        self.entries.push(Entry::new(role, text));
     }
 
     pub fn end_partial(&mut self) {
@@ -120,6 +157,7 @@ impl Conversation {
             let line: String = self.partial.drain(..=at).collect();
             self.push(Role::Assistant, line);
         }
+        self.refresh_streaming();
     }
 
     /// The transcript including whatever is streaming right now.
@@ -127,15 +165,17 @@ impl Conversation {
     /// BORROWED, not cloned. Cloning every entry to render a frame costs the
     /// whole conversation per frame, which is most of why a long session felt
     /// slower than a short one.
-    pub fn visible_entries(&self) -> impl Iterator<Item = (Role, &str)> {
-        self.entries
-            .iter()
-            .map(|entry| (entry.role, entry.text.as_str()))
-            .chain(
-                (!self.partial.is_empty())
-                    .then(|| (Role::Assistant, self.partial.as_str()))
-                    .into_iter(),
-            )
+    pub fn visible_entries(&self) -> impl Iterator<Item = &Entry> {
+        self.entries.iter().chain(self.streaming.iter())
+    }
+
+    /// Keep the streaming tail as a real entry, so callers see one kind of
+    /// thing rather than a list plus a special case.
+    fn refresh_streaming(&mut self) {
+        self.streaming.clear();
+        if !self.partial.is_empty() {
+            self.streaming.push(Entry::new(Role::Assistant, self.partial.clone()));
+        }
     }
 }
 
@@ -277,6 +317,20 @@ impl Model {
             }
             "tool.output" => {
                 conversation.revision += 1;
+                // Onto the CALL that is running, so output and call stay
+                // joined. The transcript showed the call and dropped the
+                // result entirely, which is why five different commands read
+                // as five identical lines.
+                if let Some(entry) = conversation
+                    .entries
+                    .iter_mut()
+                    .rev()
+                    .find(|entry| entry.role == Role::Tool)
+                {
+                    for line in text.lines() {
+                        entry.output.push(line.to_string());
+                    }
+                }
                 // Live output from a command still running. It belongs to the
                 // task pane as well as the transcript: a build that prints for
                 // four minutes is the thing a person is waiting on.
@@ -287,6 +341,21 @@ impl Model {
                 {
                     if let Some(line) = text.lines().last() {
                         task.latest = line.to_string();
+                    }
+                }
+            }
+            "tool.completed" | "tool.failed" => {
+                conversation.revision += 1;
+                let failed = name == "tool.failed";
+                if let Some(entry) = conversation
+                    .entries
+                    .iter_mut()
+                    .rev()
+                    .find(|entry| entry.role == Role::Tool)
+                {
+                    entry.outcome = if failed { Outcome::Failed } else { Outcome::Done };
+                    if failed && !text.is_empty() {
+                        entry.output.push(text.clone());
                     }
                 }
             }
@@ -513,7 +582,7 @@ mod tests {
             .current_conversation()
             .unwrap()
             .visible_entries()
-            .map(|(role, text)| (role, text.to_string()))
+            .map(|entry| (entry.role, entry.text.clone()))
             .collect();
         let roles: Vec<Role> = entries.iter().map(|(role, _)| *role).collect();
         assert_eq!(roles, vec![Role::User, Role::Assistant]);
@@ -536,8 +605,8 @@ mod tests {
             .visible_entries()
             .next()
             .unwrap()
-            .1
-            .to_string();
+            .text
+            .clone();
         assert_eq!(text, "one and two\nthree\nfour\n");
     }
 
@@ -551,7 +620,7 @@ mod tests {
             .current_conversation()
             .unwrap()
             .visible_entries()
-            .map(|(role, text)| (role, text.to_string()))
+            .map(|entry| (entry.role, entry.text.clone()))
             .collect();
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0].1, "thinking");
@@ -703,6 +772,54 @@ mod tests {
             "name": "bash", "arguments": {"command": "cd /x\n  && npm test"}
         })));
         assert_eq!(across, "bash cd /x && npm test");
+    }
+
+    #[test]
+    fn a_tool_result_stays_with_the_call_that_produced_it() {
+        // The transcript showed the call and dropped the result entirely,
+        // which is why five different commands read as five identical lines.
+        let mut model = model_with("s1");
+        model.absorb(&event("tool.started", "s1",
+                            json!({"call": {"name": "bash", "arguments": {"command": "ls src"}}})));
+        model.absorb(&event("tool.output", "s1", json!({"text": "a.rs\nb.rs\n"})));
+        model.absorb(&event("tool.completed", "s1", json!({})));
+        let entry = model.conversations["s1"]
+            .entries.iter().find(|e| e.role == Role::Tool).unwrap();
+        assert_eq!(entry.text, "bash ls src");
+        assert_eq!(entry.output, vec!["a.rs", "b.rs"]);
+        assert_eq!(entry.outcome, Outcome::Done);
+    }
+
+    #[test]
+    fn a_failed_call_looks_different_and_keeps_its_reason() {
+        let mut model = model_with("s1");
+        model.absorb(&event("tool.started", "s1",
+                            json!({"call": {"name": "bash", "arguments": {"command": "false"}}})));
+        model.absorb(&event("tool.failed", "s1", json!({"text": "exit 1"})));
+        let entry = model.conversations["s1"]
+            .entries.iter().find(|e| e.role == Role::Tool).unwrap();
+        assert_eq!(entry.outcome, Outcome::Failed);
+        assert!(entry.output.contains(&"exit 1".to_string()));
+        assert_ne!(Outcome::Failed.mark(), Outcome::Done.mark());
+    }
+
+    #[test]
+    fn output_goes_to_the_running_call_not_the_first_one() {
+        // Two calls in a turn: the second one's output must not land on the
+        // first. Appending to entries[0] would look right in a one-call turn
+        // and be wrong in every other.
+        let mut model = model_with("s1");
+        for (command, out) in [("ls", "first"), ("cat x", "second")] {
+            model.absorb(&event("tool.started", "s1",
+                                json!({"call": {"name": "bash",
+                                                "arguments": {"command": command}}})));
+            model.absorb(&event("tool.output", "s1", json!({"text": format!("{out}\n")})));
+        }
+        let calls: Vec<_> = model.conversations["s1"]
+            .entries.iter().filter(|e| e.role == Role::Tool).collect();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].output, vec!["first"]);
+        assert_eq!(calls[1].output, vec!["second"]);
     }
 
     #[test]

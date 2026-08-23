@@ -62,6 +62,7 @@ scripts and diffs, and that is why it exists.
 | Ctrl-N | start a session and open it in a tab |
 | Ctrl-W | close the tab — the session keeps running |
 | Ctrl-R | re-read the session list |
+| Ctrl-O | show every line a tool printed, or the first three |
 | Ctrl-L | what this session has learned — notes, skills, tools |
 | Ctrl-P / Ctrl-F | find any session, running or not |
 | ↑ from the prompt | move to the session list |
@@ -101,6 +102,27 @@ That needed two verbs the socket did not have — `session.recorded` and
 `session.search`. Both are facts about the workspace rather than about any
 interface, which is why they belong in the daemon: `vivarium sessions` had been
 answering the same question from disk all along, and no client could ask it.
+
+## A tool call and its result are one block
+
+```
+✔ bash ls -la src
+  │ main.rs
+  │ model.rs
+  │ … 37 more lines  (ctrl-o)
+```
+
+The result is held on the **call**, not pushed into the transcript as loose
+lines. A build printing four hundred lines otherwise buries the conversation it
+belongs to, and nothing is left to say which call produced what.
+
+Three lines by default. The hidden ones are **announced** — silently showing
+three of four hundred teaches a person the command printed three. `Ctrl-O`
+expands every result at once; per-block expansion would need a cursor in the
+transcript, and the question people ask is "show me what these printed".
+
+The mark carries the outcome: `·` running, `✔` done, `✘` failed. A failed call
+keeps its reason.
 
 ## Slash commands are never prompts
 

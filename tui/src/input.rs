@@ -83,6 +83,16 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
             KeyCode::Char('w') => Action::CloseTab,
             KeyCode::Char('r') => Action::Refresh,
             KeyCode::Char('l') => Action::Learned,
+            KeyCode::Char('o') => {
+                // Expand every tool result, not one. Per-block expansion needs
+                // a cursor in the transcript, and the question a person asks
+                // is "show me what these printed", not "show me that one".
+                if let Some(conversation) = model.conversations.get_mut(&model.current) {
+                    conversation.expanded = !conversation.expanded;
+                    conversation.revision += 1;
+                }
+                Action::None
+            }
             _ => Action::None,
         };
     }
