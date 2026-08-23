@@ -275,6 +275,17 @@ fn perform(
             model.showing_learned = true;
         }
         Action::Command(line) => return run_command(connection, model, &line),
+        Action::Shell(line) => {
+            if line.is_empty() {
+                model.status = "! needs a command".into();
+            } else if model.current.is_empty() {
+                model.status = "no session to run it in".into();
+            } else {
+                connection.send(json!({
+                    "type": "shell", "session": model.current, "command": line
+                }))?;
+            }
+        }
         Action::ToggleSidebar => {
             model.sidebar = !model.sidebar;
             model.focus = if model.sidebar { model::Focus::Sessions } else { model::Focus::Input };
@@ -360,6 +371,7 @@ fn run_command(
         "/learned" => return perform(connection, model, input::Action::Learned).map(|_| false),
         "/new" => return perform(connection, model, input::Action::NewTab).map(|_| false),
         "/sessions" => return perform(connection, model, input::Action::ToggleSidebar).map(|_| false),
+        "/shell" => return perform(connection, model, input::Action::Shell(rest)).map(|_| false),
         "/find" => {
             model.focus = model::Focus::Picker;
             model.picker.query = rest.clone();

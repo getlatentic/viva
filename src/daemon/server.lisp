@@ -420,6 +420,31 @@ stream, where the work was, not in a log nobody reads."
       (actor:publish cell "session.error"
                      (object "detail" "the daemon stopped while this turn was running; the turn did not finish. Ask again to continue.")))))
 
+(defun run-shell (cell line)
+  "Run LINE in the session's directory, and publish it like any other call.
+
+ON ITS OWN THREAD, so a command that takes a minute does not hold the
+connection that asked for it, and in an environment built from the session's
+cwd rather than the agent's own -- the agent belongs to the cell's thread, and
+reading its slots from here is the ownership boundary the snapshot exists to
+keep."
+  (let* ((cwd (getf (actor:snapshot cell) :cwd))
+         (id (format nil "shell-~d" (get-universal-time))))
+    (actor:publish cell "tool.started"
+                   (object "call" (object "id" id "name" "!"
+                                          "arguments" (object "command" line))))
+    (bt:make-thread
+     (lambda ()
+       (multiple-value-bind (output status)
+           (handler-case
+               (workspace:with-environment ((env:make-local-environment :cwd cwd))
+                 (workspace:run-bash line))
+             (error (condition) (values (princ-to-string condition) 1)))
+         (actor:publish cell (if (eql 0 status) "tool.completed" "tool.failed")
+                        (object "call" (object "id" id "name" "!")
+                                "output" output))))
+     :name "vivarium-shell")))
+
 (defun rehydrate-sessions ()
   "Bring back every session that was running when the last daemon stopped.
 
@@ -562,6 +587,21 @@ context it was drawn from."
          (if (null cell)
              (no "No such session.")
              (progn (unwatch client cell) (ok))))
+
+        ;; YOUR command, not the agent's. A shell line is what a person types
+        ;; when they want to look at something themselves, and asking a model
+        ;; to run `ls` is a paid round trip to a command they can spell.
+        ;;
+        ;; THE MODEL DOES NOT SEE IT. It is published so every attached client
+        ;; shows it, and it is not written to the transcript -- so it survives
+        ;; a reattach, which replays the journal, and not a resume, which
+        ;; rebuilds the conversation. That is the honest shape: the
+        ;; conversation is what the model was told.
+        ((string= "shell" type)
+         (let ((line (text-of command "command")))
+           (cond ((null cell) (no "No such session."))
+                 ((null line) (no "shell needs a command."))
+                 (t (run-shell cell line) (ok)))))
 
         ((string= "session.stop" type)
          (if cell (progn (actor:shutdown cell) (ok)) (no "No such session.")))

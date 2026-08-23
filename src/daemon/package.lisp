@@ -79,6 +79,7 @@
                     (#:operation #:vivarium.operation)
                     (#:event #:vivarium.event)
                     (#:loop* #:vivarium.loop)
+                    (#:workspace #:vivarium.workspace)
                     (#:actor #:vivarium.actor))
   (:export #:serve #:stop #:running-p #:socket-path #:connect
            #:daemon-error #:with-connection #:request #:diagnostics))

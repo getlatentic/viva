@@ -34,6 +34,9 @@ pub enum Action {
     Resume { id: String, cwd: String },
     /// Show or hide the sessions list beside the transcript.
     ToggleSidebar,
+    /// Run a shell command in the session's directory, without asking the
+    /// model to do it. The model does not see it.
+    Shell(String),
 }
 
 pub fn read(event: &Event, model: &mut Model, hits: &Hitboxes) -> Action {
@@ -190,8 +193,10 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
                 // paid request answered by a guess at what you meant -- and
                 // `/quit` answered by "Goodbye! If you need more help later"
                 // is the model being polite about a key you pressed to leave.
-                if text.starts_with('/') {
+                if crate::commands::looks_like_command(&text) {
                     Action::Command(text)
+                } else if let Some(shell) = text.strip_prefix('!') {
+                    Action::Shell(shell.trim().to_string())
                 } else {
                     Action::Send(text)
                 }
