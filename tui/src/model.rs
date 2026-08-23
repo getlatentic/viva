@@ -49,11 +49,15 @@ pub struct Entry {
     /// left to tell which call produced what.
     pub output: Vec<String>,
     pub outcome: Outcome,
+    /// True once output has arrived as a stream. A command that streams also
+    /// reports its whole output when it finishes, so a client that took both
+    /// would print everything a running command said a second time.
+    streamed: bool,
 }
 
 impl Entry {
     fn new(role: Role, text: String) -> Self {
-        Entry { role, text, output: Vec::new(), outcome: Outcome::Running }
+        Entry { role, text, output: Vec::new(), outcome: Outcome::Running, streamed: false }
     }
 }
 
@@ -174,6 +178,11 @@ impl Conversation {
     /// slower than a short one.
     pub fn visible_entries(&self) -> impl Iterator<Item = &Entry> {
         self.entries.iter().chain(self.streaming.iter())
+    }
+
+    /// The call a result belongs to: the last one started.
+    fn last_tool_mut(&mut self) -> Option<&mut Entry> {
+        self.entries.iter_mut().rev().find(|entry| entry.role == Role::Tool)
     }
 
     /// Take the unfinished line out, leaving nothing behind.
@@ -324,12 +333,8 @@ impl Model {
                 // joined. The transcript showed the call and dropped the
                 // result entirely, which is why five different commands read
                 // as five identical lines.
-                if let Some(entry) = conversation
-                    .entries
-                    .iter_mut()
-                    .rev()
-                    .find(|entry| entry.role == Role::Tool)
-                {
+                if let Some(entry) = conversation.last_tool_mut() {
+                    entry.streamed = true;
                     for line in text.lines() {
                         entry.output.push(line.to_string());
                     }
@@ -350,15 +355,18 @@ impl Model {
             "tool.completed" | "tool.failed" => {
                 conversation.revision += 1;
                 let failed = name == "tool.failed";
-                if let Some(entry) = conversation
-                    .entries
-                    .iter_mut()
-                    .rev()
-                    .find(|entry| entry.role == Role::Tool)
-                {
+                // The RESULT rides here, under `output`. Every tool that
+                // returns rather than streams -- read, ls, find, and a shell
+                // command once it has exited -- reports its work on this event
+                // and on no other, so reading only the streaming one leaves a
+                // transcript of calls with nothing under any of them.
+                let output = event.text("output").to_string();
+                if let Some(entry) = conversation.last_tool_mut() {
                     entry.outcome = if failed { Outcome::Failed } else { Outcome::Done };
-                    if failed && !text.is_empty() {
-                        entry.output.push(text.clone());
+                    if !entry.streamed {
+                        for line in output.lines() {
+                            entry.output.push(line.to_string());
+                        }
                     }
                 }
             }
@@ -520,12 +528,18 @@ pub fn call_line(call: Option<&serde_json::Value>) -> String {
     let Some(arguments) = call.get("arguments").and_then(Value::as_object) else {
         return name.to_string();
     };
+    // An argument that is present and EMPTY is not worth showing. `ls` with a
+    // path of "" means the working directory, and taking it as the thing to
+    // show left the call reading `ls ` with a separator and nothing after it.
+    fn worth_showing(value: &Value) -> Option<&str> {
+        value.as_str().filter(|text| !text.trim().is_empty())
+    }
     let salient = SALIENT
         .iter()
-        .find_map(|key| arguments.get(*key).and_then(Value::as_str))
+        .find_map(|key| arguments.get(*key).and_then(worth_showing))
         // Any string at all, when none of the usual keys is there: a tool this
         // client has never heard of still has something worth showing.
-        .or_else(|| arguments.values().find_map(Value::as_str));
+        .or_else(|| arguments.values().find_map(worth_showing));
     match salient {
         Some(value) => format!("{name} {}", one_line(value, 72)),
         None => name.to_string(),
@@ -844,12 +858,45 @@ mod tests {
         let mut model = model_with("s1");
         model.absorb(&event("tool.started", "s1",
                             json!({"call": {"name": "bash", "arguments": {"command": "false"}}})));
-        model.absorb(&event("tool.failed", "s1", json!({"text": "exit 1"})));
+        model.absorb(&event("tool.failed", "s1", json!({"output": "exit 1"})));
         let entry = model.conversations["s1"]
             .entries.iter().find(|e| e.role == Role::Tool).unwrap();
         assert_eq!(entry.outcome, Outcome::Failed);
         assert!(entry.output.contains(&"exit 1".to_string()));
         assert_ne!(Outcome::Failed.mark(), Outcome::Done.mark());
+    }
+
+    #[test]
+    fn a_tool_that_returns_rather_than_streams_still_shows_its_result() {
+        // `ls`, `read`, `find` -- every tool that returns rather than streams
+        // reports on `tool.completed`, under `output`, and on no other event.
+        // Reading only the streaming event left a transcript of calls with
+        // nothing under any of them, which is what a real session showed.
+        let mut model = model_with("s1");
+        model.absorb(&event("tool.started", "s1",
+                            json!({"call": {"name": "ls", "arguments": {"path": ""}}})));
+        model.absorb(&event("tool.completed", "s1",
+                            json!({"call": {"name": "ls"}, "output": "my-react-app/\n"})));
+        let entry = model.conversations["s1"]
+            .entries.iter().find(|e| e.role == Role::Tool).unwrap();
+        assert_eq!(entry.text, "ls");
+        assert_eq!(entry.output, vec!["my-react-app/"], "the result never reached the call");
+        assert_eq!(entry.outcome, Outcome::Done);
+    }
+
+    #[test]
+    fn a_streamed_command_does_not_repeat_itself_when_it_finishes() {
+        // A command that streams ALSO reports its whole output on completion.
+        // Taking both prints everything the command said a second time.
+        let mut model = model_with("s1");
+        model.absorb(&event("tool.started", "s1",
+                            json!({"call": {"name": "bash", "arguments": {"command": "make"}}})));
+        model.absorb(&event("tool.output", "s1", json!({"text": "compiling\nlinking\n"})));
+        model.absorb(&event("tool.completed", "s1",
+                            json!({"output": "compiling\nlinking\n"})));
+        let entry = model.conversations["s1"]
+            .entries.iter().find(|e| e.role == Role::Tool).unwrap();
+        assert_eq!(entry.output, vec!["compiling", "linking"], "the output was printed twice");
     }
 
     #[test]
