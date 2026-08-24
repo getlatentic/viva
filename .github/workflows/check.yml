@@ -8,9 +8,15 @@
 # is to say so rather than ship a job that is skipped.
 name: check
 
+# BRANCHES SPELLED OUT. Written as a bare `push:` with no value, no push ever
+# started a run -- the workflow was listed, Actions was enabled, and a manual
+# dispatch worked, so the only thing left was the empty value. CI that runs
+# only when asked is not CI.
 on:
   push:
+    branches: ["**"]
   pull_request:
+    branches: ["**"]
   workflow_dispatch:
 
 env:
