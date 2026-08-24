@@ -16,7 +16,7 @@ still there, under the same id.
 
 ```bash
 sh install.sh     # needs SBCL; installs Quicklisp if it is absent
-viva              # opens a session in the current directory
+viva              # opens this directory's session, or starts one
 ```
 
 ## Live with it
@@ -53,7 +53,7 @@ The page is the transcript, the full width of the screen.
 | sessions | what each running session is about, by the first thing asked in it |
 | page | your questions, marked; replies rendered from markdown; each tool call as a titled rule with its result and its time under it |
 | workers | a delegate reads as a `worker`, and the calls it makes are drawn inside it |
-| welcome | on a session nothing has been said in: the model, what this directory has retained, recent sessions here, and the keys |
+| welcome | on a session nothing has been said in: the model, what this directory has retained, the earlier sessions here, and the keys |
 | running | subagents and delegates, in a column that exists while one runs |
 | input edge | model, effort, project, branch, and the share of the context the last request used |
 
@@ -97,7 +97,7 @@ Run each command yourself. The numbers come from these runs.
 | what | number | command |
 | --- | --- | --- |
 | Lisp tests | 1,925 pass | `viva test` |
-| Rust tests | 77 pass | `cargo test --manifest-path tui/Cargo.toml` |
+| Rust tests | 78 pass | `cargo test --manifest-path tui/Cargo.toml` |
 | TLA+ configurations | 23 agree | `./spec/verify.sh` |
 | terminal invariants | 33 hold | `python3 tui/conformance.py` |
 | recorded sessions replayed through the client | clean | `python3 tui/journal_replay.py` |
