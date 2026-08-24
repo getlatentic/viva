@@ -694,17 +694,27 @@ twice; it is somebody's record.")))
   ;; `jobs output` reads afterwards, the callback is what reaches whoever is
   ;; watching now. The reader thread is also the drain -- an unread pipe fills
   ;; and stops the process producing it.
+  ;;
+  ;; THE JOB IS STILL RUNNING WHEN THIS LOOKS, and it has to still be running
+  ;; by a margin. The first version ticked once a second and read at two
+  ;; seconds, so it sampled at the exact instant of the third tick -- it passed
+  ;; here and failed on the first CI runner it met, where the whole output
+  ;; arrived inside the window. The evidence is that output came back BEFORE
+  ;; the job ended, which is what `watched` means; a later tick being missing
+  ;; is the same fact, and only true while the arithmetic holds.
   (let* ((seen '())
-         (job (jobs:start "for i in 1 2 3; do echo tick-$i; sleep 1; done"
+         (job (jobs:start "for i in 1 2 3; do echo tick-$i; sleep 4; done"
                           :name "suite-pumped"
                           :on-output (lambda (chunk) (push chunk seen)))))
     (unwind-protect
          (progn
-           (sleep 2)
+           ;; One second in: the first tick has happened and the second, four
+           ;; seconds out, has not.
+           (sleep 1)
            (let ((live (remove #\Newline (format nil "~{~a~}" (reverse seen)))))
+             (true (jobs:alive-p job)
+                   "the job ended before this could watch it; nothing was tested")
              (true (search "tick-1" live) "nothing arrived while the job was running")
-             ;; MID-RUN: the third tick has not happened yet, which is what
-             ;; makes this live rather than a report after the fact.
              (false (search "tick-3" live)
                     "the whole output arrived at once; that is not streaming"))
            (true (search "tick-1" (jobs:output-of job))
