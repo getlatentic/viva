@@ -110,29 +110,45 @@ mod tests {
 
     #[test]
     fn scrolling_does_not_get_slower_the_longer_the_conversation() {
-        // Scrolling re-wraps whatever the renderer decides to re-wrap. If that
-        // is the whole transcript, every keypress costs the length of the
-        // session -- which is exactly the shape of "it felt fine and then it
-        // did not".
+        // IT HAS TO ACTUALLY SCROLL. This drew the same frame ten times and
+        // called the number a scrolling cost -- a redraw benchmark wearing a
+        // scrolling name, which would have reported `flat` however expensive
+        // moving the window had become.
+        //
+        // Scrolling moves the window and nothing else: the layout is already
+        // done and the entries have not changed, so the cost is finding the
+        // rows and handing ratatui a frame that differs from the last one. If
+        // that grows with the session, every keypress costs the length of the
+        // conversation -- which is the shape of "it felt fine and then it did
+        // not".
         let mut short = big_model(10);
-        let mut long = big_model(200);
+        let mut long = big_model(400);
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
 
         let time = |model: &mut Model, terminal: &mut Terminal<TestBackend>| {
             let mut rendered = ui::Rendered::default();
             terminal.draw(|frame| { ui::draw(frame, model, &mut rendered); }).unwrap();
+            let rounds = 40;
             let started = Instant::now();
-            for _ in 0..10 {
+            for round in 0..rounds {
+                if let Some(conversation) = model.conversations.get_mut("s1") {
+                    // Up for half of them and down for the other half, so the
+                    // run neither runs out of transcript nor sits at an end
+                    // where the window stops moving and the frames stop
+                    // differing -- which would measure nothing.
+                    conversation.scroll_by(if round < rounds / 2 { 3 } else { -3 });
+                    while conversation.settle() {}
+                }
                 terminal.draw(|frame| { ui::draw(frame, model, &mut rendered); }).unwrap();
             }
-            started.elapsed() / 10
+            started.elapsed() / rounds as u32
         };
         let quick = time(&mut short, &mut terminal);
         let slow = time(&mut long, &mut terminal);
-        println!("10 turns: {quick:?}   200 turns: {slow:?}");
+        println!("one scroll step: 10 turns {quick:?}   400 turns {slow:?}");
         assert!(
             slow.as_micros() < quick.as_micros().max(1) * 6,
-            "twenty times the conversation cost {}x the frame ({quick:?} -> {slow:?})",
+            "forty times the conversation cost {}x the scroll ({quick:?} -> {slow:?})",
             slow.as_micros() / quick.as_micros().max(1)
         );
     }

@@ -211,22 +211,28 @@ def page_up(events, rows, cols):
     term = Terminal(rows, cols)
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
-    def pump(seconds):
+    def pump(seconds, sending=None):
+        """Read for SECONDS, and say how many bytes the client wrote."""
+        if sending is not None:
+            os.write(fd, sending)
+        total = 0
         stop = time.time() + seconds
         while time.time() < stop:
             readable, _, _ = select.select([fd], [], [], 0.05)
             if not readable:
                 continue
             try:
-                term.feed(decoder.decode(os.read(fd, 1 << 20)))
+                chunk = os.read(fd, 1 << 20)
             except OSError:
-                return
+                return total
+            total += len(chunk)
+            term.feed(decoder.decode(chunk))
+        return total
 
     try:
         pump(5.0)
         bottom = term.text()
-        os.write(fd, b"\x1b[5~" * 4)
-        pump(3.0)
+        written = pump(3.0, sending=b"\x1b[5~" * 4)
         scrolled = term.text()
         if bottom == scrolled:
             # Nothing above to reveal is not a failure to reveal it.
@@ -234,7 +240,7 @@ def page_up(events, rows, cols):
         # And it stays: the same screen a moment later, with no keys pressed.
         settled = term.text()
         pump(2.0)
-        return settled == term.text()
+        return (settled == term.text(), written)
     finally:
         os.close(fd)
 
@@ -305,10 +311,37 @@ def check(path):
         moved = page_up(events, term.rows, term.cols)
         if moved is None:
             ok("this journal is shorter than a screen, so there is no scrolling")
-        elif not moved:
+        elif moved is False:
             fail("paging up moved nothing, with more conversation than fits")
         else:
-            ok("paging up reveals what was above, and stays where it is put")
+            stayed, written = moved
+            if not stayed:
+                fail("the view kept moving after the keys stopped")
+            else:
+                ok("paging up reveals what was above, and stays where it is put")
+                # WHAT THE TERMINAL HAS TO DO, and whether it grows with the
+                # conversation. A budget per keypress was the first attempt
+                # and it was wrong: the movement is paid over several frames,
+                # so four page-ups are not four repaints. What matters is that
+                # the same gesture over a longer transcript does not cost
+                # more -- the shape of "it felt fine and then it did not".
+                # The SAME journal twice over: same content, twice the
+                # length. Halving it was the first attempt and the half was
+                # shorter than a screen, so the comparison never ran.
+                longer = page_up(events + events, term.rows, term.cols)
+                if not isinstance(longer, tuple):
+                    fail("the doubled journal did not scroll at all")
+                elif longer[1] > written * 2 + 4096:
+                    fail(f"twice the conversation cost {longer[1]} bytes "
+                         f"against {written} for one")
+                else:
+                    # The two numbers match exactly, and should: a journal
+                    # doubled repeats its own content, so the rows this
+                    # gesture crosses are the same rows. Twice the transcript,
+                    # the same cost, which is the whole claim.
+                    ok(f"a gesture costs the screen, not the session: "
+                       f"{written} bytes over {len(events)} events, "
+                       f"{longer[1]} over {len(events) * 2}")
 
     # 4. A call with an empty argument reads as the bare tool name. `ls` with a
     #    path of "" means the working directory; taking that as the thing to
