@@ -1,7 +1,11 @@
 # viva
 
-An experimental agent harness in Common Lisp. The work runs in a daemon, so a
-session outlives the terminal that started it.
+**Your agent's work should not end because you closed a terminal.**
+
+viva runs sessions in a daemon and writes down what it learns. Close the lid,
+drop the network, restart the daemon — reattach and the conversation is still
+there, under the same id. One machine holds hundreds of them at once, and each
+session can spawn subagents that cannot outlive it.
 
 ![Sessions on the left, the transcript on the right, each tool call a titled rule with its result beneath it](docs/viva.png)
 
@@ -20,16 +24,12 @@ viva              # opens this directory's session, or starts one
 ```
 
 Or take one file. CI builds `viva-macos-arm64` and `viva-linux-x86_64`, which
-need neither SBCL nor Quicklisp. CI starts a daemon with the file it built,
-asks that daemon for its sessions, then stops it. An artifact that cannot serve
-fails the build.
+need neither SBCL nor Quicklisp.
 
 ### Windows
 
 Run it under WSL. Both ends talk over a unix socket, and Windows has none, so
-the daemon does not build there. `.github/workflows/windows-probe.yml` measures
-what a Windows runner has: SBCL installs, SB-POSIX supplies 12 of the 20 calls
-this code makes, and the client hits 6 compile errors, every one `std::os::unix`.
+the daemon does not build there.
 
 ```powershell
 wsl --install               # PowerShell, once, then reboot
@@ -67,6 +67,8 @@ Keys inside the full screen client. Press `/` for the commands.
 | `!` | run a shell command here; the model does not see it |
 | `Ctrl-C` | stop the running turn; leave when there is none |
 
+## What survives what
+
 Closing a client removes a subscriber. It does not end the work. If the daemon
 goes away, the client reconnects by itself and reads the session again.
 
@@ -93,37 +95,45 @@ twice becomes a tool it calls by name. The agent writes these with the ordinary
 `write` tool, and you can author one by hand in the same format. `~/.vivarium/`
 applies to every directory, and the project directory wins on a name clash.
 
-## Measured
+## Self-improvement experiments
 
-Run each command yourself. The numbers come from these runs, and CI repeats
-every one of them on macOS and Linux.
+The question the project exists to answer: **does an agent that edits its own
+working environment beat one that re-derives the work each time?** Every
+experiment is pre-registered before it runs, with its kill criterion fixed in
+advance, so a result can lose.
 
-| what | number | command |
-| --- | --- | --- |
-| Lisp tests | 1,930 pass | `viva test` |
-| Rust tests | 85 pass | `cargo test --manifest-path tui/Cargo.toml` |
-| TLA+ configurations | 23 agree | `./spec/verify.sh` |
-| undefined variables | none, in 8 systems | `sbcl --script tools/check-warnings.lisp` |
-| terminal invariants | 33 hold | `python3 tui/conformance.py` |
-| recorded sessions replayed | clean | `python3 tui/journal_replay.py` |
-| 2 minutes of churn | 6,906 cycles, heap 67 MB flat | `viva soak --minutes 2` |
-| 200 sessions | heap 59 MB to 79 MB, 202 threads | the snippet below |
-| one streamed token | under 1 ms, flat from 10 turns to 400 | `cargo test --release --manifest-path tui/Cargo.toml bench -- --nocapture` |
+- [x] **Retention on real work.** 25 tasks, five recurring job shapes, policy
+  on. It retains, and what it retains is good: 5 artifacts, 4 of 5 worth
+  keeping on a cold review. Later tasks called the one tool it built five
+  times. [Results](experiments/dogfood/RESULTS.md).
+- [x] **Does retention pay?** Not yet, and honestly split. The corpus improved
+  8.2% against a 20% threshold, and one job shape got 18% worse. Averaging
+  those into a win is the thing the threshold exists to prevent.
+- [x] **Live self-modification** — compiling retained code into the running
+  Lisp image, mid-task. Killed on the pre-registered rule. Carrying the door
+  costs about 23% in tokens even when nothing opens it. The cleanest, most
+  fluent use in the battery still cost 43% to 73% more.
+  [Results](experiments/kc6/RESULTS.md).
+- [x] **Will a model invest if you let it?** Not on its own. Across 45
+  task-runs with the door open, every arm made zero `remember` calls and wrote
+  no `MEMORY.md`. Re-running under explicit framing did not move it.
+- [ ] **Composition** — does a capability that calls another capability beat a
+  text skill re-derived each time? This needs both retention and live
+  execution in one harness, which is why it is testable here.
+  [Pre-registration](docs/b15-preregistration.md).
+- [ ] **A Lisp-fluent model.** 19 of 59 self-modification attempts failed to
+  compile, which measures the model rather than the mechanism. The current
+  pin forbids the probe.
+- [ ] **Ergonomics on the door** — shipping an idiom guide in the tool
+  descriptions, since a door's ergonomics include its language.
 
-Threads are the limit, not memory. Frame cost does not grow with the
-conversation. The client lays out only the entry that changed.
+What the record supports so far: **retention pays where the work is mechanical
+and recurs, and costs where the work is judgment.** The round trip is the
+expense, not the language. Short tasks have no derivation cost to amortise an
+artifact against.
 
-```lisp
-;; With vivarium/daemon loaded and nothing else. The heap before is 59 MB.
-(dotimes (n 200) (vivarium.actor:spawn :label "/tmp/x"
-                   :agent (vivarium.harness:make-workspace-agent :cwd "/tmp/")))
-(round (sb-kernel:dynamic-usage) (* 1024 1024))   ; 79
-(length (sb-thread:list-all-threads))             ; 202
-```
-
-Eleven of the 23 TLA+ configurations must fail. A proof that stops proving
-breaks the run instead of passing quietly. `spec/Recovery.tla` covers a session
-that outlives its daemon.
+[docs/self-improvement-model.md](docs/self-improvement-model.md) states the
+model behind them.
 
 ## Files
 
@@ -140,25 +150,32 @@ tools/               the image build, and the checks that need a terminal
 docs/                design decisions and comparisons
 ```
 
-## Borrowed
+```bash
+viva test                                   # the Lisp suite
+cargo test --manifest-path tui/Cargo.toml   # the client
+./spec/verify.sh                            # the TLA+ configurations
+```
+
+CI runs all three on macOS and Linux, builds a standalone binary on each, then
+starts a daemon with the binary it built and asks it for its sessions. An
+artifact that cannot serve fails the build. Eleven of the 23 TLA+
+configurations must fail: a proof that stops proving breaks the run instead of
+passing quietly.
+
+## Acknowledgements
 
 - The agent loop is a port of [Pi](https://github.com/badlogic/pi-mono).
-  See [docs/harness-lineage.md](docs/harness-lineage.md).
+  [docs/harness-lineage.md](docs/harness-lineage.md) names what came from Pi
+  and what this project added.
 - The skill format follows Anthropic's Agent Skills.
 - The tool format follows MCP. `viva mcp` serves the registry to any client.
-- The Rust client draws with ratatui and parses markdown with pulldown-cmark.
-
-Other harnesses retain too. [docs/harness-comparison.md](docs/harness-comparison.md)
-says what each one does, with citations.
+- The Rust client draws with [ratatui](https://ratatui.rs) and parses markdown
+  with pulldown-cmark.
+- The Lisp engine runs on SBCL.
 
 ## Status
 
-A research harness. The experiments measure the retention policy, and nobody
-has run the composition experiment yet:
-[docs/b15-preregistration.md](docs/b15-preregistration.md).
-
-Retention is not yet an improvement. Kill criterion 6 tested compiling retained
-code into the live Lisp image. It lost on all 6 families and cost about twice
-as much as text: [experiments/kc6/RESULTS.md](experiments/kc6/RESULTS.md).
+A research harness, in use on its own development. The interface is stable
+enough to work in. The experiments are still moving the retention policy.
 
 The code still says `vivarium` inside. Only the command is `viva`.

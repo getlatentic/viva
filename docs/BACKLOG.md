@@ -136,10 +136,9 @@ what makes them cheap to author honestly and hard to rig.
 - **Tools as components** — subsumed: with tier 3 external, the organism's
   own tools becoming versioned artifacts is the same registry, not a
   special door.
-- **Multiplexer frontend** — a Superlogical-shaped surface over vivarium's
-  typed streams, steering, and retention: the behaviors a PTY multiplexer
-  cannot offer. Product-rank; revisit when the ecosystem ships its session
-  layer.
+- **Multiplexer frontend** — a surface over vivarium's typed streams,
+  steering, and retention: the behaviors a PTY multiplexer cannot offer.
+  Product-rank; revisit when the ecosystem ships its session layer.
 
 ## ARMED — tripwires, not work items until they fire
 
