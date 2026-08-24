@@ -63,10 +63,17 @@ def load(path):
     return rows
 
 
-def serve(path, events, ready):
+def serve(path, events, ready, cwd):
+    """The scripted daemon, reporting a session IN THE CLIENT'S DIRECTORY.
+
+    It used to report the journal's own directory, and the client opened it
+    anyway because it fell back to whichever session was newest. It does not
+    any more -- it opens this directory's session and starts one when there is
+    none -- so a daemon whose only session is somewhere else is a daemon with
+    nothing here, and the replay went to a session that was never attached."""
     label = events[0]["data"].get("label", "/w") if events else "/w"
     sessions = [{"id": "s1", "label": label, "state": "idle",
-                 "cwd": label, "model": "flash"}]
+                 "cwd": cwd, "model": "flash"}]
 
     def talk(client):
         def line(payload):
@@ -114,10 +121,14 @@ def serve(path, events, ready):
 
 
 def draw(events, rows=110, cols=120):
-    directory = tempfile.mkdtemp()
+    # REALPATH. The client reports the directory it is actually in, and on
+    # this platform /var is a link to /private/var -- so a daemon reporting
+    # the un-resolved name has no session here as far as the client is
+    # concerned, and the replay went to a session nobody attached to.
+    directory = os.path.realpath(tempfile.mkdtemp())
     path = os.path.join(directory, "replay.sock")
     ready = threading.Event()
-    threading.Thread(target=serve, args=(path, events, ready), daemon=True).start()
+    threading.Thread(target=serve, args=(path, events, ready, directory), daemon=True).start()
     ready.wait(5)
 
     pid, fd = pty.fork()

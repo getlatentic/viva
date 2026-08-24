@@ -389,7 +389,7 @@ def main():
         # answer, what this directory has retained, what was said here before,
         # and which keys do what. A blank page is a claim that nothing is here.
         page = "\n".join(client.term.lines()[1:-3])
-        missing = [word for word in ("keys", "learned here", "recent here", "ctrl-p")
+        missing = [word for word in ("keys", "learned here", "earlier sessions", "ctrl-p")
                    if word not in page]
         if missing:
             print("---- frame at failure ----")
@@ -537,9 +537,18 @@ def main():
         # that reported `the daemon closed the connection` and stopped made
         # `survives a restart` mean `if you restart the client too`.
         launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
-        # The tabs only: the count at the right of the row may fall, since a
-        # session nothing was said in is correctly not brought back.
-        tabs_before = client.term.lines()[0].split("+")[0]
+        # THE TAB OF THE SESSION WITH A CONVERSATION. The client starts a
+        # session for this directory at launch, and one nothing was said in is
+        # correctly NOT brought back -- so the bar legitimately loses a tab,
+        # and comparing the whole row reported that as a lost session.
+        def tabs_of(row):
+            return [part.strip() for part in row.split("+")[0].split("│") if part.strip()]
+        tabs_before = tabs_of(client.term.lines()[0])
+        # By PROJECT, not by label. A label carries part of the session id only
+        # while two tabs share a project name, so the surviving tab is spelled
+        # differently once it is the only one -- and comparing labels tested
+        # the disambiguator rather than whether the session came back.
+        project = next((tab.split()[0] for tab in tabs_before if tab != "viva"), "")
         transcript_before = client.term.text()
         subprocess.run([launcher, "daemon", "stop"], env=environment, cwd=cwd,
                        capture_output=True, timeout=120)
@@ -552,13 +561,15 @@ def main():
         # twenty seconds to bring sessions back is answered within thirty.
         client.pump(30.0)
         status = status_row(client)
-        tabs_after = client.term.lines()[0].split("+")[0]
+        tabs_after = tabs_of(client.term.lines()[0])
         if "reconnecting" in status or "lost" in status:
             print("---- frame at failure ----")
             print("\n".join(client.term.lines()))
             fail(f"the client never reconnected: {status!r}")
-        elif tabs_after != tabs_before:
-            fail(f"the tab did not survive the restart: {tabs_before!r} -> {tabs_after!r}")
+        elif not any(tab != "viva" for tab in tabs_after):
+            fail(f"no tab survived the restart: {tabs_before!r} -> {tabs_after!r}")
+        elif not any(tab.split()[0] == project for tab in tabs_after if tab != "viva"):
+            fail(f"the tab that came back names another project: {tabs_after!r}")
         else:
             ok("the daemon restarts under a live client, and the tab is still there")
         client.send(b"\x1b[H")

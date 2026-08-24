@@ -109,20 +109,27 @@ fn run() -> std::io::Result<()> {
         }
     }
 
-    // Open the session for this directory, or the newest one anywhere, so the
-    // client starts pointed at something rather than at nothing.
-    let opening = model
+    // THIS DIRECTORY'S SESSION, and one is STARTED when there is none.
+    //
+    // Whichever session happened to be newest was the fallback, so opening
+    // the client in one project could land you in another project's
+    // conversation. And with no live session anywhere it opened nothing at
+    // all: `viva` says it opens a session in the current directory, and on a
+    // daemon that had just started it opened a page saying `no session open`.
+    let here = model
         .sessions
         .iter()
         .find(|session| session.cwd.trim_end_matches('/') == cwd.trim_end_matches('/'))
-        .or_else(|| model.sessions.last())
         .map(|session| session.id.clone());
-    if let Some(id) = opening {
-        open_session(&mut connection, &mut model, &id)?;
-        // Before the first frame, so the counts are there from the start
-        // rather than appearing a moment later.
-        let _ = refresh_learned(&mut connection, &mut model);
+    match here {
+        Some(id) => open_session(&mut connection, &mut model, &id)?,
+        None => {
+            perform(&mut connection, &mut model, input::Action::NewTab)?;
+        }
     }
+    // Before the first frame, so the counts are there from the start rather
+    // than appearing a moment later.
+    let _ = refresh_learned(&mut connection, &mut model);
     let _ = refresh_recent(&mut connection, &mut model);
 
     // Set up the terminal LAST, so any failure above prints as ordinary text

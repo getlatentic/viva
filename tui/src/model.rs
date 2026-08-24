@@ -666,7 +666,13 @@ impl Model {
             })
             .count();
         if duplicates > 1 {
-            format!("{short} {id}")
+            // ENOUGH OF THE ID TO TELL THEM APART, not all of it. An id was
+            // `s2` when it came from a counter and is a timestamp now that it
+            // is the transcript's, so a second tab in one project grew from
+            // two characters to twenty and pushed the others off the bar.
+            let tail: String = id.chars().rev().take(4).collect::<Vec<_>>()
+                .into_iter().rev().collect();
+            format!("{short} {tail}")
         } else {
             short
         }
@@ -1040,6 +1046,15 @@ mod tests {
         model.open_tab("s2");
         assert_eq!(model.tab_label("s1"), "alpha s1");
         assert_eq!(model.tab_label("s2"), "alpha s2");
+        // A durable id is a timestamp, and all of one on a tab pushes the
+        // others off the bar. Enough of it to tell them apart is four.
+        model.sessions = vec![
+            SessionInfo { id: "20260824-092233-E138".into(), label: "/w/alpha".into(), ..Default::default() },
+            SessionInfo { id: "20260824-092250-BAE7".into(), label: "/w/alpha".into(), ..Default::default() },
+        ];
+        model.tabs = vec!["20260824-092233-E138".into(), "20260824-092250-BAE7".into()];
+        assert_eq!(model.tab_label("20260824-092233-E138"), "alpha E138");
+        assert_eq!(model.tab_label("20260824-092250-BAE7"), "alpha BAE7");
     }
 
     #[test]

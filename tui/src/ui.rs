@@ -697,6 +697,7 @@ fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
     let mut left: Vec<Line> = vec![
         Line::from(Span::styled("viva", heading)),
         Line::from(""),
+        Line::from(Span::styled("this session", heading)),
     ];
     let session = model.sessions.iter().find(|s| s.id == model.current);
     match session {
@@ -707,7 +708,7 @@ fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
             }
             left.push(Line::from(vec![Span::styled("in       ", dim), Span::raw(session.short_label().to_string())]));
         }
-        None => left.push(Line::from(Span::styled("no session open", dim))),
+        None => left.push(Line::from(Span::styled("starting a session…", dim))),
     }
     left.push(Line::from(""));
     left.push(Line::from(Span::styled("learned here", heading)));
@@ -736,7 +737,11 @@ fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
         right.push(Line::from(vec![Span::styled(format!("{k:<8}"), key), Span::styled(what, dim)]));
     }
     right.push(Line::from(""));
-    right.push(Line::from(Span::styled("recent here", heading)));
+    // NAMED FOR WHAT THEY ARE. `recent here` beside a left column saying no
+    // session was open read as a list of messages -- and the two columns
+    // looked like they disagreed, when one was about what is RUNNING and the
+    // other about what is RECORDED.
+    right.push(Line::from(Span::styled("earlier sessions here", heading)));
     if model.recent.is_empty() {
         right.push(Line::from(Span::styled("none recorded in this directory", dim)));
     } else {
@@ -754,6 +759,8 @@ fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
         }
     }
     right.push(Line::from(Span::styled("ctrl-p to continue one", dim)));
+    right.push(Line::from(""));
+    right.push(Line::from(Span::styled("nothing said here yet — ask something", dim)));
 
     // Two columns when they fit, one under the other when they do not.
     if inner.width >= 78 {
@@ -1413,11 +1420,33 @@ kilo lima mike november oscar papa quebec";
             .and_then(|row| row.find("keys"))
             .expect("the welcome has no key list");
         for row in &rows {
-            if let Some(at) = row.find("no session open") {
-                assert!(at + "no session open".len() < left_edge,
-                        "the left column runs into the right: {row:?}");
+            for phrase in ["starting a session", "learned here", "this session"] {
+                if let Some(at) = row.find(phrase) {
+                    assert!(at + phrase.len() < left_edge,
+                            "the left column runs into the right: {row:?}");
+                }
             }
         }
+    }
+
+    #[test]
+    fn the_welcome_says_which_column_is_running_and_which_is_recorded() {
+        // `recent here` beside a left column saying no session was open read
+        // as a list of messages, and the two columns looked like they
+        // disagreed -- when one is about what is RUNNING and the other about
+        // what is RECORDED.
+        let mut model = ready(&[]);
+        model.recent = vec![crate::protocol::Recorded {
+            id: "r1".into(),
+            messages: 12,
+            opening: "why does the picker lose its filter".into(),
+            ..Default::default()
+        }];
+        let frame = frame_of(&model, 110, 22).join("\n");
+        assert!(frame.contains("this session"), "the left column names nothing");
+        assert!(frame.contains("earlier sessions here"),
+                "the recorded list does not say it is sessions:\n{frame}");
+        assert!(frame.contains("why does the picker"), "the recorded list is empty");
     }
 
     #[test]
