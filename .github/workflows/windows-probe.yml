@@ -1,0 +1,58 @@
+# What Windows actually has, measured on Windows.
+#
+# The README says Windows does not build, and that claim rests on six compile
+# errors in the client. What it does NOT rest on is any measurement of the
+# daemon: whether SBCL installs, whether SB-POSIX exists there and with which
+# symbols, and which of this code's calls survive. A port planned from a
+# reading of the source would be planned from a guess.
+#
+# Not part of `check`: this reports, it does not gate. It runs when asked.
+name: windows probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The client, on Windows
+        shell: bash
+        run: |
+          echo "== cargo check =="
+          cargo check --manifest-path tui/Cargo.toml 2>&1 | tail -40 || true
+          echo "== errors: $(cargo check --manifest-path tui/Cargo.toml 2>&1 | grep -c '^error') =="
+
+      - name: SBCL
+        shell: bash
+        run: |
+          choco install sbcl --no-progress -y || echo "choco install failed"
+          which sbcl || ls "/c/Program Files/Steel Bank Common Lisp" || true
+          sbcl --version || true
+
+      - name: What SB-POSIX has there
+        shell: bash
+        continue-on-error: true
+        run: |
+          cat > probe.lisp <<'LISP'
+          (handler-case (require :sb-posix)
+            (error (c) (format t "~&sb-posix will not load: ~a~%" c)))
+          (let ((package (find-package "SB-POSIX")))
+            (cond ((null package) (format t "~&no SB-POSIX package at all~%"))
+                  (t (let ((present 0) (missing '()))
+                       (dolist (name '("GETENV" "GETPID" "LOCKF" "OPEN" "CLOSE"
+                                       "OPENDIR" "READDIR" "CLOSEDIR" "STAT" "LSTAT"
+                                       "RENAME" "RMDIR" "UNLINK" "KILL" "KILLPG"
+                                       "FORK" "PIPE" "WAITPID" "TCGETATTR" "TCSETATTR"))
+                         (if (find-symbol name package) (incf present) (push name missing)))
+                       (format t "~&~d of 20 present~%" present)
+                       (format t "~&missing: ~{~a~^ ~}~%" (reverse missing))))))
+          (handler-case (progn (require :sb-bsd-sockets)
+                               (format t "~&sb-bsd-sockets loads~%")
+                               (format t "~&local-socket class: ~a~%"
+                                       (and (find-symbol "LOCAL-SOCKET" "SB-BSD-SOCKETS") t)))
+            (error (c) (format t "~&sb-bsd-sockets: ~a~%" c)))
+          LISP
+          sbcl --script probe.lisp || true
