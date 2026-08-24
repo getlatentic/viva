@@ -191,8 +191,8 @@ there, on a Windows runner:
 Both sides talk over a unix socket, and Windows has none. `fork` and the
 termios calls belong to the trial runner and the Lisp client, neither of which
 a Windows daemon needs. What it does need is a transport, and TCP on loopback
-is not a drop-in: a unix socket is protected by its file permissions and a
-port is not.
+is not a drop-in: file permissions guard a unix socket, and nothing guards a
+loopback port.
 
 Windows works today under WSL, where the Linux build is what runs.
 
