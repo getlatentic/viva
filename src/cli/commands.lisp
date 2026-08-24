@@ -425,12 +425,19 @@ it finds nobody home."
                             ;; What went wrong, and separately what happened.
                             ;; Both came out under `contained client failures`,
                             ;; so seven restored sessions read as seven faults.
+                            ;; KIND, or the older CONDITION, or neither. A
+                            ;; daemon outlives the client that talks to it, so
+                            ;; a long-running one predates this field -- and
+                            ;; printing NIL for it is the client falling over a
+                            ;; version gap rather than stepping across it.
+                            (flet ((kind-of (each)
+                                     (or (gethash "kind" each)
+                                         (gethash "condition" each)
+                                         "failure")))
                             (let* ((recent (coerce (or (gethash "recent" reply) #()) 'list))
-                                   (faults (remove "note" recent :test #'equal
-                                                                 :key (lambda (each)
-                                                                        (gethash "kind" each))))
+                                   (faults (remove "note" recent :test #'equal :key #'kind-of))
                                    (notes (remove-if-not (lambda (each)
-                                                           (equal "note" (gethash "kind" each)))
+                                                           (equal "note" (kind-of each)))
                                                          recent))
                                    (failures (or (gethash "failures" reply) 0))
                                    (hangups (gethash "hangups" reply)))
@@ -439,7 +446,7 @@ it finds nobody home."
                                         failures (and hangups (plusp hangups) hangups))
                                 (loop for each in faults repeat 5
                                       do (format t "~&  ~a in ~a: ~a~%"
-                                                 (gethash "kind" each)
+                                                 (kind-of each)
                                                  (gethash "where" each)
                                                  (gethash "detail" each))))
                               (when notes
@@ -447,7 +454,7 @@ it finds nobody home."
                                 (loop for each in notes repeat 5
                                       do (format t "~&  ~a: ~a~%"
                                                  (gethash "where" each)
-                                                 (gethash "detail" each))))))
+                                                 (gethash "detail" each)))))))
                           0)))))
          ;; Only a refused connection means no daemon. A greeting that will not
          ;; parse is a defect, and calling it `not running` is how one hid.
