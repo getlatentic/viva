@@ -1,20 +1,83 @@
 # viva
 
-**Your agent's work should not end because you closed a terminal.**
+viva is an experimental agent harness for persistent, self-extending agents.
+Sessions persist beyond the terminal. Agents extend their environment in two
+different ways. One is temporary: they compile new behaviour into the running
+Common Lisp image. The other is durable: they write notes, skills and tools
+into the workspace for later sessions to reuse.
 
-viva runs sessions in a daemon and writes down what it learns. Close the lid,
-drop the network, restart the daemon — reattach and the conversation is still
-there, under the same id. One machine holds hundreds of them at once, and each
-session can spawn subagents that cannot outlive it.
+Most harnesses treat a run as disposable. The process starts and the model
+works with the tools it was given. When the run ends, whatever was useful
+survives only as files or conversation history.
+
+The experiment is whether agents benefit from turning the work they do into
+capabilities they can reuse. The alternative is solving the same class of
+problem from a fixed harness every time. The answer is not assumed. Each
+experiment fixes its comparison and its kill criterion before it runs, and the
+repository keeps the negative results beside the positive ones.
 
 ![Sessions on the left, the transcript on the right, each tool call a titled rule with its result beneath it](docs/viva.png)
 
-- Close the terminal and the turn keeps going.
-- Restart the daemon and every session comes back, under the same id.
-- 200 sessions share 20 MB of heap and take one thread each.
-- Search every session you have ever had, by its text.
-- A session spawns scoped children that cannot outlive it.
-- It keeps what it learns as files you can read and edit.
+- Sessions run in the background and reattach by id.
+- Closing the terminal does not end a running turn.
+- One client works with many concurrent sessions.
+- 200 idle sessions share about 20 MB of heap and use one thread each.
+- Full-text search spans every session recorded, in every directory.
+- A session spawns scoped child agents that cannot outlive it.
+- Live-image modification is off by default.
+- `viva shell --capabilities on` enables it for the shell harness.
+- `viva trust` gates a project's own tools before a later session can call them.
+
+## What persists
+
+Three continuities, and they are three different mechanisms.
+
+**Conversation.** Session state lives in the daemon. A client can disconnect
+and later reattach to the same session and transcript, under the same id.
+Closing a client removes a subscriber rather than ending the work, and a client
+whose daemon goes away reconnects by itself.
+
+| event | the session | the turn that was running |
+| --- | --- | --- |
+| client closed or crashed | keeps running | keeps running |
+| lid closed | pauses with the machine | resumes with the machine |
+| daemon stopped or killed | comes back, same id | lost; the session says so |
+| `session.stop` | ends | ends |
+
+A turn is a thread in the daemon. When the daemon dies, the turn dies with it,
+and the transcript holds everything up to the last message written.
+
+**Capability.** An agent writes notes, skills and tools into the workspace as
+ordinary project files. Those files survive a process restart, and a later
+session reuses them once you have run `viva trust` on the project.
+
+**Execution.** With capabilities enabled, an agent compiles a function into the
+running Common Lisp image and invokes it immediately. That function lives only
+in that image. viva records its lineage in the journal, and it does not
+reconstruct the compiled function after a restart.
+
+The third is deliberately not durable yet.
+
+```text
+                       viva
+                        │
+          ┌─────────────┴─────────────┐
+          │                           │
+     persistent work             self-extension
+          │                           │
+      daemon/session          ┌───────┴────────┐
+                              │                │
+                         live image        workspace
+                         transient          durable
+                              │                │
+                         functions       notes / skills /
+                                           tools
+```
+
+Common Lisp makes the live half of the experiment practical. Its image model
+lets an agent define, compile, install and invoke new behaviour without
+crossing an edit-build-restart boundary. Durable reuse is a separate mechanism,
+and it goes through workspace files.
 
 ## Install
 
@@ -67,21 +130,6 @@ Keys inside the full screen client. Press `/` for the commands.
 | `!` | run a shell command here; the model does not see it |
 | `Ctrl-C` | stop the running turn; leave when there is none |
 
-## What survives what
-
-Closing a client removes a subscriber. It does not end the work. If the daemon
-goes away, the client reconnects by itself and reads the session again.
-
-| event | the session | the turn that was running |
-| --- | --- | --- |
-| client closed or crashed | keeps running | keeps running |
-| lid closed | pauses with the machine | resumes with the machine |
-| daemon stopped or killed | comes back, same id | lost; the session says so |
-| `session.stop` | ends | ends |
-
-A turn is a thread in the daemon. When the daemon dies, the turn dies with it,
-and the transcript holds everything up to the last message written.
-
 ## What it keeps, and where
 
 | tier | written to | reaches the model as |
@@ -97,10 +145,7 @@ applies to every directory, and the project directory wins on a name clash.
 
 ## Self-improvement experiments
 
-The question the project exists to answer: **does an agent that edits its own
-working environment beat one that re-derives the work each time?** Every
-experiment is pre-registered before it runs, with its kill criterion fixed in
-advance, so a result can lose.
+Where the answer stands today. Each entry links to the run that produced it.
 
 - [x] **Retention on real work.** 25 tasks, five recurring job shapes, policy
   on. It retains, and what it retains is good: 5 artifacts, 4 of 5 worth
@@ -126,6 +171,9 @@ advance, so a result can lose.
   pin forbids the probe.
 - [ ] **Ergonomics on the door** — shipping an idiom guide in the tool
   descriptions, since a door's ergonomics include its language.
+- [ ] **Rehydrating a live capability** — does reconstructing a minted
+  function after a restart beat simply reloading the file-backed tool? Held
+  until a result gives a reason to build it.
 
 What the record supports so far: **retention pays where the work is mechanical
 and recurs, and costs where the work is judgment.** The round trip is the

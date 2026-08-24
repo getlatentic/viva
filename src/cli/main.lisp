@@ -85,6 +85,8 @@ ORDINARY WORK
       --limit N               model requests per prompt (default 60)
       --colour false          plain output, for a log
       --resume [ID]           continue the last session here, or one by id
+      --capabilities on       let the agent compile new code into this image
+                              and call it (off by default; see the README)
   ipc [options]               serve one agent over stdin/stdout as JSON lines
       (same options; --limit defaults to 200)
       --append TEXT           add one line to the system prompt
