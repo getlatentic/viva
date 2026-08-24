@@ -78,6 +78,14 @@ jobs:
       - name: Client, release
         run: cargo build --release --manifest-path tui/Cargo.toml
 
+      # A warning nobody reads is the same as no warning. A docstring with an
+      # unescaped quote in it ended early, what followed parsed as a free
+      # variable reference, and the compiler said so on every build for as
+      # long as it was there. Whether it then SIGNALS depends on the compiler,
+      # which is how it passed on one machine and took four tests with it here.
+      - name: No undefined variables
+        run: sbcl --script tools/check-warnings.lisp
+
       # The suite drives scripted responders, so it asks no model anything.
       - name: Lisp suite
         run: ./bin/vivarium test

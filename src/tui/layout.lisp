@@ -101,10 +101,18 @@ neighbour, which is the only reason panes look like panes.
 
 COLUMN exists because the alternative is padding the text with spaces to move
 it right, and those spaces are opaque: they overwrite whatever was already
-drawn to their left. A session row drawn as `>`, then a state mark, then
-"    name" from column zero silently erased the first two -- so the sidebar
+drawn to their left. A session row drawn as `>`, then a state mark, then a
+padded name from column zero, silently erased the first two -- so the sidebar
 showed neither which session was current nor what any of them were doing, and
-looked exactly like a row that had simply not been written."
+looked exactly like a row that had simply not been written.
+
+The padding is not the only thing this comment has cost. Written with the
+padded name in double quotes, that quote ENDED THE DOCSTRING: what followed
+parsed as a free reference to NAME and a stray string, so the body began by
+reading an unbound variable. The compiler said so on every build and the
+warning went unread. Whether it then SIGNALS depends on the compiler: here the
+unused read is elided and the suite passes, and on CI it raised and took four
+tests with it. A warning nobody reads is the same as no warning."
   (when (< -1 row (region-height region))
     (let* ((line (or text ""))
            (room (- (region-width region) column)))
