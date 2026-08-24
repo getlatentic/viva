@@ -389,7 +389,10 @@ def main():
         # answer, what this directory has retained, what was said here before,
         # and which keys do what. A blank page is a claim that nothing is here.
         page = "\n".join(client.term.lines()[1:-3])
-        missing = [word for word in ("keys", "learned here", "earlier sessions", "ctrl-p")
+        # What the welcome ALWAYS says. The earlier-sessions line is
+        # conditional -- they live in the sessions column now, and the welcome
+        # only counts them -- so requiring it failed wherever there were none.
+        missing = [word for word in ("keys", "this session", "learned here", "ctrl-p")
                    if word not in page]
         if missing:
             print("---- frame at failure ----")
@@ -567,8 +570,14 @@ def main():
         subprocess.run([launcher, "daemon", "stop"], env=environment, cwd=cwd,
                        capture_output=True, timeout=120)
         client.pump(3.0)
-        if "reconnecting" not in status_row(client):
-            fail(f"the client did not say it was reconnecting: {status_row(client)!r}")
+        # EITHER WORD. The client starts a daemon when none is listening, so on
+        # a quick machine it has already rebuilt the one this check just
+        # stopped and says `reconnected` before the check can see
+        # `reconnecting`. Asserting the intermediate word tested how fast the
+        # runner was; what matters is that it noticed and acted.
+        noticed = status_row(client)
+        if "reconnect" not in noticed:
+            fail(f"the client did not notice the daemon had gone: {noticed!r}")
         subprocess.run([launcher, "daemon", "start", "--background"], env=environment,
                        cwd=cwd, capture_output=True, timeout=300)
         # Backoff doubles to a five-second cap; a restart that takes the daemon
