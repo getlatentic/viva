@@ -118,10 +118,17 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
                 model.move_selection(1);
                 Action::None
             }
-            KeyCode::Enter => model
-                .selected_session()
-                .map(|session| Action::Open(session.id.clone()))
-                .unwrap_or(Action::None),
+            // Open it if it is running, continue it if it is not. Both are
+            // `the conversation I picked`, and which verb it takes is the
+            // client's business rather than the person's.
+            KeyCode::Enter => match model.selected_row() {
+                Some(crate::model::Listed::Live(session)) => Action::Open(session.id.clone()),
+                Some(crate::model::Listed::Earlier(recorded)) => Action::Resume {
+                    id: recorded.id.clone(),
+                    cwd: recorded.cwd.clone(),
+                },
+                None => Action::None,
+            },
             KeyCode::Esc => {
                 model.focus = Focus::Input;
                 Action::None
@@ -356,9 +363,16 @@ fn clicked(mouse: &MouseEvent, model: &mut Model, hits: &Hitboxes) -> Action {
                 for (index, area) in &hits.session_rows {
                     if inside(*area, column, row) {
                         model.selection = *index;
-                        if let Some(session) = model.sessions.get(*index) {
-                            return Action::Open(session.id.clone());
-                        }
+                        return match model.selected_row() {
+                            Some(crate::model::Listed::Live(session)) => {
+                                Action::Open(session.id.clone())
+                            }
+                            Some(crate::model::Listed::Earlier(recorded)) => Action::Resume {
+                                id: recorded.id.clone(),
+                                cwd: recorded.cwd.clone(),
+                            },
+                            None => Action::None,
+                        };
                     }
                 }
                 return Action::None;

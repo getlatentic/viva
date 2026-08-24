@@ -6,7 +6,7 @@
 //! arrangement.
 
 use crate::markdown;
-use crate::model::{Entry, Focus, Model, Outcome, Role, TaskState};
+use crate::model::{Entry, Focus, Listed, Model, Outcome, Role, TaskState};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wrap};
 
@@ -506,40 +506,63 @@ fn draw_sessions(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitbox
     hits.sessions = inner;
 
     let mut lines: Vec<Line> = Vec::new();
-    for (index, session) in model.sessions.iter().enumerate() {
-        let current = session.id == model.current;
-        let (mark, colour) = state_mark(&session.state);
-        let marker = if current { ">" } else { " " };
+    let mut running = 0;
+    let rows = model.sidebar_rows();
+    let live = rows.iter().filter(|row| matches!(row, Listed::Live(_))).count();
+    for (index, row) in rows.iter().enumerate() {
+        // A rule between what is running and what was, drawn where they meet.
+        // Inline, not inserted afterwards: inserting a line shifted every row
+        // below it and left the click targets pointing one session up.
+        if index == live && live > 0 && index < rows.len() {
+            lines.push(Line::from(Span::styled(
+                "─".repeat(inner.width.min(24) as usize), Style::default().fg(BORDER))));
+        }
+        let current = row.id() == model.current;
         let cursor = if focused && index == model.selection { "[" } else { " " };
-        lines.push(Line::from(vec![
-            Span::styled(marker.to_string(), Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-            Span::styled(cursor.to_string(), Style::default().fg(ACCENT)),
-            Span::styled(format!("{mark} "), Style::default().fg(colour)),
-            // WHAT IT IS ABOUT, and where it is only when nothing was asked
-            // yet. Four sessions in one directory were four identical rows.
-            Span::styled(
-                session.subject().to_string(),
+        let (mark, colour) = match row {
+            Listed::Live(session) => {
+                running += 1;
+                state_mark(&session.state)
+            }
+            // A conversation with no process is not a state, it is a record.
+            Listed::Earlier(_) => ("·", BORDER),
+        };
+        let name = match row {
+            Listed::Live(_) => {
                 if current {
                     Style::default().fg(Color::Indexed(252)).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
-                },
-            ),
+                }
+            }
+            Listed::Earlier(_) => Style::default().fg(DIM),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(if current { ">" } else { " " }.to_string(),
+                         Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(cursor.to_string(), Style::default().fg(ACCENT)),
+            Span::styled(format!("{mark} "), Style::default().fg(colour)),
+            // WHAT IT IS ABOUT, and where it is only when nothing was asked
+            // yet. Four sessions in one directory were four identical rows.
+            Span::styled(row.subject(), name),
         ]));
-        // One row each. The state is its mark; the word is only said for a
-        // state that needs one, so an idle list is a list of names.
-        if session.state != "idle" && !session.state.is_empty() {
-            let last = lines.len() - 1;
-            lines[last].spans.push(Span::styled(format!("  {}", session.state),
-                                                Style::default().fg(DIM)));
+        if let Listed::Live(session) = row {
+            if session.state != "idle" && !session.state.is_empty() {
+                let last = lines.len() - 1;
+                lines[last].spans.push(Span::styled(format!("  {}", session.state),
+                                                    Style::default().fg(DIM)));
+            }
         }
-        let row = inner.y + index as u16;
-        if row < inner.y + inner.height {
-            hits.session_rows.push((index, Rect::new(inner.x, row, inner.width, 1)));
+        // From where the row was actually DRAWN, so a click lands on the
+        // session it points at.
+        let at = inner.y + (lines.len() as u16 - 1);
+        if at < inner.y + inner.height {
+            hits.session_rows.push((index, Rect::new(inner.x, at, inner.width, 1)));
         }
     }
+    let _ = running;
     if lines.is_empty() {
-        lines.push(Line::from(Span::styled("no sessions", Style::default().fg(DIM))));
+        lines.push(Line::from(Span::styled("no sessions here", Style::default().fg(DIM))));
     }
     // No wrap: one row per session, so the row a click lands on is the
     // session it names. A subject too long for the column is cut by the pane.
@@ -737,30 +760,20 @@ fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
         right.push(Line::from(vec![Span::styled(format!("{k:<8}"), key), Span::styled(what, dim)]));
     }
     right.push(Line::from(""));
-    // NAMED FOR WHAT THEY ARE. `recent here` beside a left column saying no
-    // session was open read as a list of messages -- and the two columns
-    // looked like they disagreed, when one was about what is RUNNING and the
-    // other about what is RECORDED.
-    right.push(Line::from(Span::styled("earlier sessions here", heading)));
-    if model.recent.is_empty() {
-        right.push(Line::from(Span::styled("none recorded in this directory", dim)));
-    } else {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        for recorded in model.recent.iter().filter(|r| r.messages > 0).take(5) {
-            let opening: String = recorded.opening.chars().take(40).collect();
-            right.push(Line::from(vec![
-                Span::styled("· ", dim),
-                Span::raw(opening),
-                Span::styled(format!("  {} msgs, {} ago", recorded.messages, recorded.age(now)), dim),
-            ]));
-        }
-    }
-    right.push(Line::from(Span::styled("ctrl-p to continue one", dim)));
+    // NOT THE EARLIER SESSIONS. They are in the sessions column, beside this,
+    // where they stay after the first thing is said -- listing them here as
+    // well put the same list in two places and lost it the moment the page
+    // filled up.
     right.push(Line::from(""));
-    right.push(Line::from(Span::styled("nothing said here yet — ask something", dim)));
+    let earlier = model.recent.iter().filter(|recorded| recorded.messages > 0).count();
+    right.push(Line::from(Span::styled(
+        match earlier {
+            0 => "nothing said here yet — ask something".to_string(),
+            1 => "nothing said here yet — 1 earlier session beside this".to_string(),
+            many => format!("nothing said here yet — {many} earlier sessions beside this"),
+        },
+        dim,
+    )));
 
     // Two columns when they fit, one under the other when they do not.
     if inner.width >= 78 {
@@ -1197,6 +1210,7 @@ mod tests {
         let mut model = ready(&[]);
         model.absorb(&event("tool.started",
                             json!({"call": {"name": "bash", "arguments": {"command": "cat x"}}})));
+        model.sidebar = false;                    // this is about the page
         let long = "alpha bravo charlie delta echo foxtrot golf hotel india juliet \
 kilo lima mike november oscar papa quebec";
         model.absorb(&event("tool.completed", json!({"output": long})));
@@ -1376,7 +1390,8 @@ kilo lima mike november oscar papa quebec";
 
     #[test]
     fn the_page_does_not_sit_on_the_prompt_and_the_client_says_its_name() {
-        let model = ready(&[("model.delta", "the last thing said\n")]);
+        let mut model = ready(&[("model.delta", "the last thing said\n")]);
+        model.sidebar = false;                    // this is about the page
         let rows = frame_of(&model, 100, 16);
         assert!(rows[0].contains("viva"), "the client never says what it is: {:?}", rows[0]);
         // Row -3 is the input box's top edge; -4 must be air, not the text.
@@ -1411,6 +1426,7 @@ kilo lima mike november oscar papa quebec";
         // A line one character longer than its column ran straight into the
         // one beside it, and read as two sentences spliced together.
         let mut model = ready(&[]);
+        model.sidebar = false;                    // this is about the welcome
         model.sessions.clear();
         model.current.clear();
         let rows = frame_of(&model, 100, 20);
@@ -1442,11 +1458,58 @@ kilo lima mike november oscar papa quebec";
             opening: "why does the picker lose its filter".into(),
             ..Default::default()
         }];
-        let frame = frame_of(&model, 110, 22).join("\n");
-        assert!(frame.contains("this session"), "the left column names nothing");
-        assert!(frame.contains("earlier sessions here"),
-                "the recorded list does not say it is sessions:\n{frame}");
-        assert!(frame.contains("why does the picker"), "the recorded list is empty");
+        let frame = frame_of(&model, 120, 22).join("\n");
+        assert!(frame.contains("this session"), "the welcome names nothing");
+        // The earlier ones live in the sessions column, where they stay once
+        // the page fills up -- not in the welcome, which is gone by then.
+        assert!(frame.contains("why does the picker"),
+                "an earlier session is not in the sessions column:\n{frame}");
+        assert!(frame.contains("1 earlier session beside this"),
+                "the welcome does not say where they are:\n{frame}");
+    }
+
+    #[test]
+    fn the_sessions_column_holds_what_is_running_and_what_was() {
+        // Running and recorded are the same thing to a person looking for a
+        // conversation they had: the difference is whether it still has a
+        // process, which is a mark on the row and not a second list.
+        let mut model = ready(&[]);
+        model.recent = vec![
+            crate::protocol::Recorded {
+                id: "r1".into(),
+                messages: 12,
+                opening: "an earlier question".into(),
+                ..Default::default()
+            },
+            // The running session's own transcript: listed once, not twice.
+            crate::protocol::Recorded { id: "s1".into(), messages: 3, ..Default::default() },
+        ];
+        // THE COLUMN, by position. `alpha` is also the tab, and the status
+        // line, and the page title -- so counting it across the frame counts
+        // three things that are not the list.
+        let rows = frame_of(&model, 120, 20);
+        let column: Vec<String> = rows[1..rows.len() - 3]
+            .iter()
+            .map(|row| row.chars().take(26).collect())
+            .collect();
+        assert!(column.iter().any(|row| row.contains("an earlier question")),
+                "the earlier session is not listed: {column:?}");
+        assert_eq!(column.iter().filter(|row| row.contains("alpha")).count(), 1,
+                   "the running session was listed twice: {column:?}");
+    }
+
+    #[test]
+    fn a_session_with_no_question_is_named_by_its_folder_and_id() {
+        // Two fresh sessions in one directory were two identical rows, and
+        // the id is what tells them apart.
+        let session = SessionInfo {
+            id: "20260824-092233-E138".into(),
+            label: "/w/alpha".into(),
+            ..Default::default()
+        };
+        assert_eq!(session.subject(), "alpha.E138");
+        let asked = SessionInfo { opening: "what is this".into(), ..session.clone() };
+        assert_eq!(asked.subject(), "what is this");
     }
 
     #[test]

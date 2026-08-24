@@ -430,21 +430,25 @@ def main():
         else:
             ok("no column for work that is not happening")
 
-        # The sessions column is there when asked for, and gone when not: the
-        # tab bar already names the sessions on screen and counts the rest.
-        client.send(b"\x02")                       # ctrl-b
-        client.pump(1.5)
-        shown = any("sessions" in row for row in client.term.lines()[1:4])
-        client.send(b"\x1b")                       # escape: focus back to the prompt
-        client.send(b"\x02")                       # ctrl-b again
-        client.pump(1.5)
-        hidden = not any(row.lstrip().startswith("sessions") for row in client.term.lines()[1:4])
-        if not shown:
-            fail("ctrl-b did not show the sessions column")
-        elif not hidden:
-            fail("ctrl-b did not hide the sessions column again")
+        # The sessions column is there by default and ctrl-b puts it away.
+        # It holds the conversations you have had here, which is what a person
+        # comes back for -- and it is a quarter of the width, so it goes.
+        def column_shown():
+            return any(row.lstrip().startswith("sessions") for row in client.term.lines()[1:4])
+        if not column_shown():
+            fail("the sessions column is not there to begin with")
         else:
-            ok("ctrl-b shows the running sessions beside the page, and hides them again")
+            client.send(b"\x02")                   # ctrl-b: away
+            client.pump(1.5)
+            gone = not column_shown()
+            client.send(b"\x02")                   # ctrl-b: back
+            client.pump(1.5)
+            if not gone:
+                fail("ctrl-b did not hide the sessions column")
+            elif not column_shown():
+                fail("ctrl-b did not bring the sessions column back")
+            else:
+                ok("the sessions column is there, and ctrl-b puts it away and back")
 
         # And closing the view does not end the session it was showing: the
         # tab bar counts the running sessions, and the count must not fall.

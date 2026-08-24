@@ -372,10 +372,11 @@ pub struct Model {
     pub cwd: String,
     pub connected: bool,
     pub picker: Picker,
-    /// The sessions list, shown beside the transcript. Off by default: the
-    /// tabs name the sessions a person chose to look at, the picker finds any
-    /// other, and a column that is always there costs a quarter of the width
-    /// to say what the tab bar already says.
+    /// The sessions list, shown beside the transcript. ON by default, now
+    /// that it lists what each conversation is ABOUT and holds the earlier
+    /// ones as well as the running ones: a column repeating the tab bar was
+    /// worth its width to nobody, and a column of the conversations you have
+    /// had here is the thing you came back for.
     pub sidebar: bool,
     /// Sessions recorded in this directory, newest first, for the welcome.
     pub recent: Vec<Recorded>,
@@ -411,7 +412,7 @@ impl Model {
             cwd,
             connected: true,
             picker: Picker::default(),
-            sidebar: false,
+            sidebar: true,
             recent: Vec::new(),
             command_selection: 0,
             learned: Learned::default(),
@@ -690,17 +691,73 @@ impl Model {
         conversation.push(Role::Note, text.into());
     }
 
+    /// One row of the sessions list: what is running here, then what was.
+    ///
+    /// BOTH IN ONE LIST. Running and recorded are the same thing to a person
+    /// looking for a conversation they had -- the difference is whether it
+    /// still has a process, which is a mark on the row and not a reason to
+    /// keep two lists in two places.
+    pub fn sidebar_rows(&self) -> Vec<Listed<'_>> {
+        let mut rows: Vec<Listed<'_>> = self.sessions.iter().map(Listed::Live).collect();
+        for recorded in &self.recent {
+            // Not the ones already running: a live session's transcript is in
+            // the recorded list too, and listing both makes one look like two.
+            if recorded.messages > 0
+                && !self.sessions.iter().any(|live| live.id == recorded.id)
+            {
+                rows.push(Listed::Earlier(recorded));
+            }
+        }
+        rows
+    }
+
     pub fn selected_session(&self) -> Option<&SessionInfo> {
         self.sessions.get(self.selection)
     }
 
+    /// What the highlighted row would open, whether it is running or not.
+    pub fn selected_row(&self) -> Option<Listed<'_>> {
+        self.sidebar_rows().into_iter().nth(self.selection)
+    }
+
     pub fn move_selection(&mut self, step: isize) {
-        if self.sessions.is_empty() {
+        let count = self.sidebar_rows().len() as isize;
+        if count == 0 {
             return;
         }
-        let count = self.sessions.len() as isize;
         let next = (self.selection as isize + step).rem_euclid(count);
         self.selection = next as usize;
+    }
+}
+
+/// A row in the sessions list: one that is running, or one that was.
+#[derive(Clone, Copy)]
+pub enum Listed<'a> {
+    Live(&'a SessionInfo),
+    Earlier(&'a Recorded),
+}
+
+impl Listed<'_> {
+    pub fn id(&self) -> &str {
+        match self {
+            Listed::Live(session) => &session.id,
+            Listed::Earlier(recorded) => &recorded.id,
+        }
+    }
+
+    pub fn cwd(&self) -> &str {
+        match self {
+            Listed::Live(session) => &session.cwd,
+            Listed::Earlier(recorded) => &recorded.cwd,
+        }
+    }
+
+    /// What this conversation is about, or where it is when nothing was asked.
+    pub fn subject(&self) -> String {
+        match self {
+            Listed::Live(session) => session.subject().to_string(),
+            Listed::Earlier(recorded) => recorded.subject(),
+        }
     }
 }
 

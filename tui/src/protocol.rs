@@ -278,15 +278,20 @@ pub struct Recorded {
     pub opening: String,
 }
 
+/// Enough of an id to tell two sessions apart, and no more.
+pub fn short_id(id: &str) -> String {
+    id.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect()
+}
+
 impl SessionInfo {
     /// What to call this session in a list: what it is about, or -- before
-    /// anything has been asked -- where it is.
-    pub fn subject(&self) -> &str {
+    /// anything has been asked -- where it is, and which one it is.
+    pub fn subject(&self) -> String {
         let opening = self.opening.trim();
         if opening.is_empty() {
-            self.short_label()
+            format!("{}.{}", self.short_label(), short_id(&self.id))
         } else {
-            opening
+            opening.to_string()
         }
     }
 }
@@ -294,6 +299,17 @@ impl SessionInfo {
 impl Recorded {
     /// How long ago, as a person says it: `3m`, `2h`, `4d`. Universal time
     /// counts from 1900 and Unix from 1970; the gap is a constant.
+    /// What this conversation is about, the same way a live one says it.
+    pub fn subject(&self) -> String {
+        let opening = self.opening.trim();
+        if opening.is_empty() {
+            let folder = self.cwd.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+            format!("{folder}.{}", short_id(&self.id))
+        } else {
+            opening.to_string()
+        }
+    }
+
     pub fn age(&self, now_unix: u64) -> String {
         const GAP: u64 = 2_208_988_800;
         let then = self.time.saturating_sub(GAP);
