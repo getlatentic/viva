@@ -412,11 +412,18 @@ def main():
         else:
             ok("! runs a command here, and it reads as a call")
 
-        client.send(b"/var/folders/x/screenshot.png\r")
-        client.pump(2.0)
-        page = "\n".join(client.term.lines()[1:-3])
-        if "is not a command here" in page:
-            fail("a dropped path was refused as a command")
+        # TYPED, NOT SENT. Pressing Enter forwards it to the model, which is a
+        # paid request on every run of this check and leaves a short recorded
+        # session behind -- one the resume check below then picked, and it
+        # needs a long one. The classification shows in the menu: a path being
+        # typed is not a command being typed, so no menu opens.
+        client.send(b"/var/folders/x/screenshot.png")
+        client.pump(1.5)
+        typed_menu = menu_region(client)
+        client.send(b"\x7f" * 40)
+        client.pump(1.0)
+        if "/find" in typed_menu or "/help" in typed_menu:
+            fail(f"a dropped path opened the command menu: {typed_menu!r}")
         else:
             ok("a dropped path is not mistaken for a command")
 
@@ -499,10 +506,17 @@ def main():
         # showed no conversation. Neither was a product fault.
         client.send(b"\x7f" * 8)
         client.pump(2.0)
+        # THE LONGEST one, not the first with anything in it. The scroll check
+        # below needs more conversation than fits on a screen, and picking the
+        # first non-empty session landed on a two-message one often enough to
+        # make that check fail for a reason it was not testing.
+        def messages(row):
+            # The number immediately BEFORE `msg`. Taking the largest digit in
+            # the row took the age -- `16 msg  20h ago` counted as twenty.
+            found = re.search(r"(\d+)\s+msg", row)
+            return int(found.group(1)) if found else 0
         rows = [l for l in client.term.lines() if " msg" in l]
-        wanted = next((i for i, l in enumerate(rows)
-                       if any(part.isdigit() and int(part) > 0
-                              for part in l.replace("msg", " ").split())), 0)
+        wanted = max(range(len(rows)), key=lambda index: messages(rows[index])) if rows else 0
         client.send(b"\x1b[B" * wanted)          # down to it
         client.pump(1.5)
 
@@ -593,9 +607,16 @@ def main():
         client.send(b"\x1b[5~" * 4)
         client.pump(1.5)
         scrolled = client.term.text()
-        if scrolled == bottom:
-            fail("paging up changed nothing on screen "
-                 "(is there more conversation than fits?)")
+        # WHAT THIS RUN HAPPENED TO RESUME may be shorter than the screen, and
+        # a view with nothing above it has not failed to scroll. The picker
+        # lists newest first and the long conversations are below the fold, so
+        # this check cannot choose a tall one. `journal_replay.py` drives the
+        # same keys against a transcript known to be tall, which is where the
+        # scrolling itself is proven.
+        if scrolled == bottom and "scrolled" not in scrolled:
+            ok("this session is shorter than the screen, so there is nothing above")
+        elif scrolled == bottom:
+            fail("paging up changed nothing, with more conversation than fits")
         elif "scrolled" not in scrolled:
             fail("the client did not say it had stopped following")
         else:

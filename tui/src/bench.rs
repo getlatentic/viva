@@ -53,7 +53,7 @@ mod tests {
             let mut model = big_model(turns);
             let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
             let mut rendered = ui::Rendered::default();
-            terminal.draw(|frame| { ui::draw(frame, &model, &mut rendered); }).unwrap();
+            terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
 
             let rounds = 30;
             let started = Instant::now();
@@ -63,7 +63,7 @@ mod tests {
                     "data": {"text": "another word "}
                 })).unwrap();
                 model.absorb(&say);
-                terminal.draw(|frame| { ui::draw(frame, &model, &mut rendered); }).unwrap();
+                terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
             }
             let each = started.elapsed() / rounds as u32;
             println!("{turns:>4} turns: {each:?} per streamed token");
@@ -88,16 +88,16 @@ mod tests {
         // second a frame has 16ms; a client that takes longer than that to
         // decide what to draw cannot feel immediate however fast the terminal
         // is.
-        let model = big_model(120);
+        let mut model = big_model(120);
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
         // Warm once, so the number is steady-state rather than first-touch.
         let mut rendered = ui::Rendered::default();
-        terminal.draw(|frame| { ui::draw(frame, &model, &mut rendered); }).unwrap();
+        terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
 
         let rounds = 20;
         let started = Instant::now();
         for _ in 0..rounds {
-            terminal.draw(|frame| { ui::draw(frame, &model, &mut rendered); }).unwrap();
+            terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
         }
         let each = started.elapsed() / rounds;
         println!("draw with {} entries: {:?} per frame",
@@ -114,11 +114,11 @@ mod tests {
         // is the whole transcript, every keypress costs the length of the
         // session -- which is exactly the shape of "it felt fine and then it
         // did not".
-        let short = big_model(10);
-        let long = big_model(200);
+        let mut short = big_model(10);
+        let mut long = big_model(200);
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
 
-        let time = |model: &Model, terminal: &mut Terminal<TestBackend>| {
+        let time = |model: &mut Model, terminal: &mut Terminal<TestBackend>| {
             let mut rendered = ui::Rendered::default();
             terminal.draw(|frame| { ui::draw(frame, model, &mut rendered); }).unwrap();
             let started = Instant::now();
@@ -127,8 +127,8 @@ mod tests {
             }
             started.elapsed() / 10
         };
-        let quick = time(&short, &mut terminal);
-        let slow = time(&long, &mut terminal);
+        let quick = time(&mut short, &mut terminal);
+        let slow = time(&mut long, &mut terminal);
         println!("10 turns: {quick:?}   200 turns: {slow:?}");
         assert!(
             slow.as_micros() < quick.as_micros().max(1) * 6,

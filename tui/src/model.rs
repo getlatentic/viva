@@ -154,7 +154,14 @@ pub struct Conversation {
     /// silently is the same as not noticing.
     pub last_seq: u64,
     pub gap: bool,
-    pub scroll: u16,
+    /// The first row of the transcript on screen while reading back.
+    ///
+    /// ANCHORED TO THE CONTENT, not measured from the end. It was a distance
+    /// from the bottom, and the bottom moves -- so every token the agent
+    /// emitted dragged what somebody was reading one line further up the
+    /// screen, which is the whole of why scrolling felt wrong while a turn
+    /// was still running.
+    pub anchor: u16,
     /// Scroll asked for and not yet applied.
     ///
     /// A wheel sends a BURST, not an event. Applying a whole burst in one
@@ -197,11 +204,36 @@ impl Conversation {
         self.pending += lines;
     }
 
-    /// Jump, with nothing owed. Home and End mean the end, not a journey to it.
-    pub fn jump_to(&mut self, offset: u16) {
+    /// Back to the newest output, and stay with it. Nothing owed: End means
+    /// the end, not a journey to it.
+    pub fn follow(&mut self) {
         self.pending = 0;
-        self.scroll = offset;
-        self.following = offset == 0;
+        self.following = true;
+    }
+
+    /// To the top of the transcript, and stay there.
+    pub fn to_top(&mut self) {
+        self.pending = 0;
+        self.following = false;
+        self.anchor = 0;
+    }
+
+    /// Where the window sits, given how much there is and how much fits.
+    ///
+    /// Called by the renderer, which is the only thing that knows how many
+    /// rows the transcript came to at this width.
+    pub fn window_top(&mut self, total: u16, height: u16) -> u16 {
+        let furthest = total.saturating_sub(height);
+        if self.following {
+            self.anchor = furthest;
+            return furthest;
+        }
+        self.anchor = self.anchor.min(furthest);
+        // Back at the end is following again, so what arrives next is seen.
+        if self.anchor >= furthest {
+            self.following = true;
+        }
+        self.anchor
     }
 
     /// Is there movement still owed?
@@ -221,14 +253,11 @@ impl Conversation {
         let owed = self.pending.abs();
         let step = (owed / 4).clamp(Self::STEP, Self::LEAP).min(owed) * self.pending.signum();
         self.pending -= step;
-        let next = (self.scroll as i32 + step).max(0);
-        if next == 0 {
-            self.pending = 0;
+        // Scrolling up takes the window earlier in the transcript.
+        self.anchor = (self.anchor as i32 - step).max(0).min(u16::MAX as i32) as u16;
+        if step > 0 {
+            self.following = false;
         }
-        self.scroll = next.min(u16::MAX as i32) as u16;
-        // Reaching the bottom resumes following, so a person who scrolled back
-        // and then returned does not have to know there is a mode.
-        self.following = next == 0;
         true
     }
 
@@ -953,13 +982,20 @@ mod tests {
         assert_eq!(last, "second answer", "the previous turn's tail came back");
     }
 
+    /// A conversation sitting at the bottom of a transcript this tall.
+    fn at_the_end(total: u16, height: u16) -> Conversation {
+        let mut conversation = Conversation::new();
+        conversation.window_top(total, height);
+        conversation
+    }
+
     #[test]
     fn a_burst_of_wheel_events_does_not_arrive_in_one_frame() {
         // A wheel sends a burst, not an event, and the loop drains every
         // waiting event before drawing. Twenty of them became ONE frame sixty
         // lines further on -- a jump wearing a scroll's name. Measured at the
         // pty: twenty events produced the same bytes as one.
-        let mut conversation = Conversation::new();
+        let mut conversation = at_the_end(200, 20);
         for _ in 0..20 {
             conversation.scroll_by(3);
         }
@@ -969,7 +1005,7 @@ mod tests {
             assert!(frames < 60, "the scroll never finished");
         }
         assert!(frames >= 5, "sixty lines arrived in {frames} frame(s)");
-        assert_eq!(conversation.scroll, 60, "the view did not end up where it was sent");
+        assert_eq!(conversation.anchor, 180 - 60, "the view did not end up where it was sent");
         assert!(!conversation.owes_scroll());
     }
 
@@ -977,10 +1013,10 @@ mod tests {
     fn one_notch_moves_exactly_one_notch() {
         // Easing must not cost precision: a single deliberate notch is three
         // lines, not two and not four.
-        let mut conversation = Conversation::new();
+        let mut conversation = at_the_end(200, 20);
         conversation.scroll_by(3);
         assert!(conversation.settle());
-        assert_eq!(conversation.scroll, 3);
+        assert_eq!(conversation.anchor, 177);
         assert!(!conversation.settle(), "a finished scroll asked for another frame");
     }
 
@@ -988,39 +1024,59 @@ mod tests {
     fn a_long_fling_moves_fastest_first() {
         // Otherwise a two-hundred-line fling at three lines a frame is a
         // crawl, and the cure for a jump becomes a different complaint.
-        let mut conversation = Conversation::new();
+        let mut conversation = at_the_end(600, 20);
         conversation.scroll_by(400);
         conversation.settle();
-        let first = conversation.scroll as i32;
-        let mut previous = first;
+        let first = 580 - conversation.anchor as i32;
+        let mut previous = conversation.anchor as i32;
         let mut smaller_later = false;
         while conversation.settle() {
-            let step = conversation.scroll as i32 - previous;
-            previous = conversation.scroll as i32;
+            let step = previous - conversation.anchor as i32;
+            previous = conversation.anchor as i32;
             if step < first {
                 smaller_later = true;
             }
         }
         assert!(first > Conversation::STEP, "the fling started at a crawl: {first}");
         assert!(smaller_later, "the fling never slowed as it arrived");
-        assert_eq!(conversation.scroll, 400);
+        assert_eq!(conversation.anchor, 180);
     }
 
     #[test]
     fn arriving_at_the_bottom_stops_and_follows_again() {
         // Owing more than there is left to give would hold the view at the
         // bottom asking for frames forever.
-        let mut conversation = Conversation::new();
-        conversation.jump_to(20);
+        let mut conversation = at_the_end(200, 20);
+        conversation.scroll_by(30);
+        while conversation.settle() {}
+        assert!(!conversation.following, "scrolling back did not stop following");
         conversation.scroll_by(-400);
         let mut frames = 0;
         while conversation.settle() {
             frames += 1;
             assert!(frames < 200, "the scroll ran past the bottom and kept going");
         }
-        assert_eq!(conversation.scroll, 0);
+        assert_eq!(conversation.window_top(200, 20), 180);
         assert!(conversation.following, "returning to the bottom did not resume following");
         assert!(!conversation.owes_scroll());
+    }
+
+    #[test]
+    fn reading_back_stays_where_it_was_put_as_more_arrives() {
+        // The offset was a distance from the END, and the end moves: every
+        // token the agent emitted dragged what somebody was reading one line
+        // further up the screen.
+        let mut conversation = at_the_end(200, 20);
+        conversation.scroll_by(40);
+        while conversation.settle() {}
+        let looking_at = conversation.window_top(200, 20);
+        assert_eq!(looking_at, 140);
+        // Forty more rows of output arrive while they read.
+        assert_eq!(conversation.window_top(240, 20), looking_at,
+                   "the view moved while reading back");
+        // And the end is still reachable.
+        conversation.follow();
+        assert_eq!(conversation.window_top(240, 20), 220);
     }
 
     #[test]

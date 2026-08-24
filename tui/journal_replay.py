@@ -192,6 +192,53 @@ def latest_turn(events):
     return events[marks[-1]:] if marks else events
 
 
+def page_up(events, rows, cols):
+    """Page up in a live client, and say whether the view moved and stayed.
+
+    None when the transcript is shorter than the screen, since a view with
+    nothing above it is not a view that failed to move."""
+    directory = os.path.realpath(tempfile.mkdtemp())
+    path = os.path.join(directory, "scroll.sock")
+    ready = threading.Event()
+    threading.Thread(target=serve, args=(path, events, ready, directory), daemon=True).start()
+    ready.wait(5)
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.environ["VIVARIUM_SOCKET"] = path
+        os.chdir(directory)
+        os.execve(BINARY, [BINARY], os.environ)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+    term = Terminal(rows, cols)
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+
+    def pump(seconds):
+        stop = time.time() + seconds
+        while time.time() < stop:
+            readable, _, _ = select.select([fd], [], [], 0.05)
+            if not readable:
+                continue
+            try:
+                term.feed(decoder.decode(os.read(fd, 1 << 20)))
+            except OSError:
+                return
+
+    try:
+        pump(5.0)
+        bottom = term.text()
+        os.write(fd, b"\x1b[5~" * 4)
+        pump(3.0)
+        scrolled = term.text()
+        if bottom == scrolled:
+            # Nothing above to reveal is not a failure to reveal it.
+            return None if "scrolled" not in scrolled else False
+        # And it stays: the same screen a moment later, with no keys pressed.
+        settled = term.text()
+        pump(2.0)
+        return settled == term.text()
+    finally:
+        os.close(fd)
+
+
 def check(path):
     events = load(path)
     print(f"{os.path.basename(path)}: {len(events)} recorded events")
@@ -250,7 +297,20 @@ def check(path):
             note = "" if kept == len(firsts) else f" ({len(firsts) - kept} scrolled off the top)"
             ok(f"{kept} of {len(firsts)} results from the newest turn are on screen{note}")
 
-    # 3. A call with an empty argument reads as the bare tool name. `ls` with a
+    # 3. READING BACK STAYS PUT. The offset was a distance from the END, and
+    #    the end moves -- so every token the agent emitted dragged what
+    #    somebody was reading one line up the screen. Driven at the pty, since
+    #    the fault is in what the window lands on and not in the arithmetic.
+    if term.rows > 24:
+        moved = page_up(events, term.rows, term.cols)
+        if moved is None:
+            ok("this journal is shorter than a screen, so there is no scrolling")
+        elif not moved:
+            fail("paging up moved nothing, with more conversation than fits")
+        else:
+            ok("paging up reveals what was above, and stays where it is put")
+
+    # 4. A call with an empty argument reads as the bare tool name. `ls` with a
     #    path of "" means the working directory; taking that as the thing to
     #    show left the call reading `ls ` with a separator and nothing after.
     #

@@ -147,7 +147,7 @@ fn run() -> std::io::Result<()> {
     let mut dirty = true;
     loop {
         if dirty {
-            terminal.draw(|frame| hits = ui::draw(frame, &model, &mut rendered))?;
+            terminal.draw(|frame| hits = ui::draw(frame, &mut model, &mut rendered))?;
             dirty = false;
         }
 

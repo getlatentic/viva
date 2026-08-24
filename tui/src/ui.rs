@@ -248,7 +248,7 @@ impl Rendered {
     }
 }
 
-pub fn draw(frame: &mut Frame, model: &Model, rendered: &mut Rendered) -> Hitboxes {
+pub fn draw(frame: &mut Frame, model: &mut Model, rendered: &mut Rendered) -> Hitboxes {
     let area = frame.area();
     let mut hits = Hitboxes::default();
 
@@ -810,7 +810,7 @@ fn elapsed(took: std::time::Duration) -> String {
 fn draw_transcript(
     frame: &mut Frame,
     area: Rect,
-    model: &Model,
+    model: &mut Model,
     rendered: &mut Rendered,
     hits: &mut Hitboxes,
 ) {
@@ -823,25 +823,14 @@ fn draw_transcript(
     hits.transcript = inner;
 
     rendered.refresh(model, inner.width);
-    let offset = scroll_offset(model, rendered.total, inner.height);
+    let total = rendered.total;
+    let offset = model
+        .conversations
+        .get_mut(&model.current)
+        .map(|conversation| conversation.window_top(total, inner.height))
+        .unwrap_or(0);
     // No wrap here: it is already wrapped, and only the visible rows are sent.
     frame.render_widget(Paragraph::new(rendered.window(offset, inner.height)), inner);
-}
-
-/// How far down to start, given how much there is and how much fits.
-///
-/// Following pins to the bottom. Scrolled, the offset is clamped to what
-/// exists: without an upper bound, holding Page Up walks past the start of the
-/// conversation and the pane goes blank -- the text still there, the window
-/// moved off the end.
-pub fn scroll_offset(model: &Model, total: u16, height: u16) -> u16 {
-    let furthest = total.saturating_sub(height);
-    match model.current_conversation() {
-        Some(conversation) if !conversation.following => {
-            furthest.saturating_sub(conversation.scroll.min(furthest))
-        }
-        _ => furthest,
-    }
 }
 
 /// What this session has retained, as the files it actually wrote.
@@ -1092,7 +1081,7 @@ mod tests {
     }
 
     /// The frame as text, one string per row -- what a person would see.
-    fn frame_of(model: &Model, width: u16, height: u16) -> Vec<String> {
+    fn frame_of(model: &mut Model, width: u16, height: u16) -> Vec<String> {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         let mut rendered = Rendered::default();
         terminal.draw(|f| { draw(f, model, &mut rendered); }).unwrap();
@@ -1131,11 +1120,11 @@ mod tests {
         // monochrome terminal, to anyone who cannot tell two shades apart, and
         // to this test -- so the distinction that matters most must not depend
         // on it.
-        let model = ready(&[
+        let mut model = ready(&[
             ("user.message", "what is in this folder"),
             ("model.delta", "a README and a Cargo.toml\n"),
         ]);
-        let frame = frame_of(&model, 100, 20);
+        let frame = frame_of(&mut model, 100, 20);
         let question = frame.iter().find(|line| line.contains("what is in this folder")).unwrap();
         let answer = frame.iter().find(|line| line.contains("a README")).unwrap();
         assert!(question.contains('›'), "the question carries no marker: {question:?}");
@@ -1153,7 +1142,7 @@ mod tests {
             "task.started",
             json!({"task": "t2", "text": "compile it", "parent": "t1"}),
         ));
-        let frame = frame_of(&model, 120, 16);
+        let frame = frame_of(&mut model, 120, 16);
         let parent = frame.iter().find(|l| l.contains("run the suite")).unwrap();
         let child = frame.iter().find(|l| l.contains("compile it")).unwrap();
         let parent_at = parent.find("run the suite").unwrap();
@@ -1170,7 +1159,7 @@ mod tests {
         model.sidebar = true;
         model.absorb(&event("task.started", json!({"task": "t1", "text": "indexing"})));
         model.absorb(&event("tool.output", json!({"text": "step 3 of 9\n"})));
-        let frame = frame_of(&model, 120, 20).join("\n");
+        let frame = frame_of(&mut model, 120, 20).join("\n");
         assert!(frame.contains("alpha"), "no session list");
         assert!(frame.contains("beta"), "the other session is missing");
         assert!(frame.contains("run it"), "no transcript");
@@ -1188,7 +1177,7 @@ mod tests {
         for n in 0..40 {
             model.absorb(&event("tool.output", json!({"text": format!("line{n}\n")})));
         }
-        let frame = frame_of(&model, 100, 26).join("\n");
+        let frame = frame_of(&mut model, 100, 26).join("\n");
         assert!(frame.contains("line0"), "no output at all");
         assert!(frame.contains("37 more lines"), "the hidden lines are not announced");
         assert!(!frame.contains("line39"), "everything was shown despite the glimpse");
@@ -1197,7 +1186,7 @@ mod tests {
             conversation.expanded = true;
             conversation.revision += 1;
         }
-        let wide = frame_of(&model, 100, 60).join("\n");
+        let wide = frame_of(&mut model, 100, 60).join("\n");
         assert!(wide.contains("line39"), "expanding showed nothing more");
         assert!(wide.contains("expanded"), "nothing says the output is expanded");
     }
@@ -1217,7 +1206,7 @@ kilo lima mike november oscar papa quebec";
         // Read the TRANSCRIPT CELL, not the frame. The session is also named
         // `alpha` in the tab bar and in the sidebar, and a check that scans
         // whole rows for a word finds those first and tests nothing.
-        let rows = frame_of(&model, 100, 26);
+        let rows = frame_of(&mut model, 100, 26);
         // The page rows: below the tab bar, above the input box.
         let cells: Vec<String> = rows[1..rows.len() - 3].to_vec();
         let carrying: Vec<&String> = cells.iter().filter(|cell| cell.contains("│ ")).collect();
@@ -1239,7 +1228,7 @@ kilo lima mike november oscar papa quebec";
         let filler = "word ".repeat(9);
         model.absorb(&event("model.delta",
                             json!({"text": format!("{filler}`react`-dom ends it\n")})));
-        let rows = frame_of(&model, 100, 26);
+        let rows = frame_of(&mut model, 100, 26);
         let joined = rows[1..rows.len() - 3].join("\n");
         assert!(joined.contains("react-dom"), "the word was cut in half:\n{joined}");
     }
@@ -1257,7 +1246,7 @@ kilo lima mike november oscar papa quebec";
             session.tokens = 32_000;
             session.limit = 128_000;
         }
-        let frame = frame_of(&model, 120, 26).join("\n");
+        let frame = frame_of(&mut model, 120, 26).join("\n");
         assert!(frame.contains("deepseek-4-flash"), "the model is not on screen");
         assert!(frame.contains("high"), "the effort is not on screen");
         assert!(frame.contains("25% of 128k"), "the context is not on screen:\n{frame}");
@@ -1270,7 +1259,7 @@ kilo lima mike november oscar papa quebec";
         // line that showed only the facts would report neither.
         let mut model = ready(&[]);
         model.status = "the daemon closed the connection".into();
-        let frame = frame_of(&model, 120, 26).join("\n");
+        let frame = frame_of(&mut model, 120, 26).join("\n");
         assert!(frame.contains("the daemon closed the connection"),
                 "the failure is not on screen:\n{frame}");
         assert!(frame.contains("alpha"), "the facts went missing with it");
@@ -1290,7 +1279,7 @@ kilo lima mike november oscar papa quebec";
         model.absorb(&event("tool.started",
                             json!({"call": {"id": "c2", "name": "ls", "arguments": {}}})));
         model.absorb(&event("tool.completed", json!({"call": {"id": "c2"}, "output": "x"})));
-        let rows = frame_of(&model, 100, 26);
+        let rows = frame_of(&mut model, 100, 26);
         let slept = rows.iter().find(|row| row.contains("bash sleep")).unwrap();
         assert!(slept.contains("ms)"), "the slow call shows no time: {slept:?}");
         assert!(slept.contains("─"), "the call is not drawn as a titled rule: {slept:?}");
@@ -1308,22 +1297,24 @@ kilo lima mike november oscar papa quebec";
         // importance, and the counts are the first to go.
         let mut model = ready(&[]);
         for index in 0..60 {
-            model.absorb(&event("model.delta", json!({"text": format!("line{index}\n")})));
+            // A blank line between them: one newline is a soft break, so
+            // `line0\nline1` is one paragraph and barely scrolls at all.
+            model.absorb(&event("model.delta", json!({"text": format!("line{index}\n\n")})));
         }
         if let Some(conversation) = model.conversations.get_mut("s1") {
             conversation.following = false;
-            conversation.scroll = 10;
+            conversation.anchor = 5;
         }
         model.learned.inspected = true;
         if let Some(session) = model.sessions.first_mut() {
             session.model = "a-model-with-a-very-long-name-indeed".into();
             session.effort = "high".into();
         }
-        let rows = frame_of(&model, 84, 20);
+        let rows = frame_of(&mut model, 84, 20);
         let edge = &rows[rows.len() - 3];
         assert!(edge.contains("scrolled"), "the scroll note was clipped: {edge:?}");
         assert!(!edge.contains("learned"), "the counts outranked the scroll note: {edge:?}");
-        let wide = frame_of(&model, 160, 20);
+        let wide = frame_of(&mut model, 160, 20);
         assert!(wide[wide.len() - 3].contains("learned"), "the counts never fit at all");
     }
 
@@ -1342,7 +1333,7 @@ kilo lima mike november oscar papa quebec";
             session.tokens = 1_280;
             session.limit = 128_000;
         }
-        let edge = frame_of(&model, 96, 16);
+        let edge = frame_of(&mut model, 96, 16);
         let row = &edge[edge.len() - 3];
         assert!(row.contains("reconnecting"), "the lost connection was dropped: {row:?}");
         // The model is the last fact to go, since it says what is answering.
@@ -1368,7 +1359,7 @@ kilo lima mike november oscar papa quebec";
         // A call on the session's own lane is inside nothing.
         model.absorb(&event("tool.started", json!({
             "call": {"id": "t1", "name": "ls", "arguments": {}}})));
-        let rows = frame_of(&model, 110, 26);
+        let rows = frame_of(&mut model, 110, 26);
         let workers: Vec<&String> = rows.iter().filter(|row| row.contains("worker")).collect();
         assert_eq!(workers.len(), 2, "two workers did not read as two: {rows:?}");
         assert!(workers[0].contains("design the architecture"));
@@ -1392,7 +1383,7 @@ kilo lima mike november oscar papa quebec";
     fn the_page_does_not_sit_on_the_prompt_and_the_client_says_its_name() {
         let mut model = ready(&[("model.delta", "the last thing said\n")]);
         model.sidebar = false;                    // this is about the page
-        let rows = frame_of(&model, 100, 16);
+        let rows = frame_of(&mut model, 100, 16);
         assert!(rows[0].contains("viva"), "the client never says what it is: {:?}", rows[0]);
         // Row -3 is the input box's top edge; -4 must be air, not the text.
         let air = &rows[rows.len() - 4];
@@ -1410,7 +1401,7 @@ kilo lima mike november oscar papa quebec";
         if let Some(session) = model.sessions.first_mut() {
             session.opening = "why does the picker lose its filter".into();
         }
-        let rows = frame_of(&model, 110, 16);
+        let rows = frame_of(&mut model, 110, 16);
         let listed = rows[1..]
             .iter()
             .find(|row| row.contains("why does the picker"))
@@ -1429,7 +1420,7 @@ kilo lima mike november oscar papa quebec";
         model.sidebar = false;                    // this is about the welcome
         model.sessions.clear();
         model.current.clear();
-        let rows = frame_of(&model, 100, 20);
+        let rows = frame_of(&mut model, 100, 20);
         let left_edge = rows
             .iter()
             .find(|row| row.contains("keys"))
@@ -1458,7 +1449,7 @@ kilo lima mike november oscar papa quebec";
             opening: "why does the picker lose its filter".into(),
             ..Default::default()
         }];
-        let frame = frame_of(&model, 120, 22).join("\n");
+        let frame = frame_of(&mut model, 120, 22).join("\n");
         assert!(frame.contains("this session"), "the welcome names nothing");
         // The earlier ones live in the sessions column, where they stay once
         // the page fills up -- not in the welcome, which is gone by then.
@@ -1487,7 +1478,7 @@ kilo lima mike november oscar papa quebec";
         // THE COLUMN, by position. `alpha` is also the tab, and the status
         // line, and the page title -- so counting it across the frame counts
         // three things that are not the list.
-        let rows = frame_of(&model, 120, 20);
+        let rows = frame_of(&mut model, 120, 20);
         let column: Vec<String> = rows[1..rows.len() - 3]
             .iter()
             .map(|row| row.chars().take(26).collect())
@@ -1513,13 +1504,40 @@ kilo lima mike november oscar papa quebec";
     }
 
     #[test]
+    fn reading_back_is_not_dragged_by_output_still_arriving() {
+        let mut model = ready(&[]);
+        model.sidebar = false;
+        for index in 0..80 {
+            // A blank line between them: one newline is a soft break, so
+            // `line0\nline1` is one paragraph and barely scrolls at all.
+            model.absorb(&event("model.delta", json!({"text": format!("line{index}\n\n")})));
+        }
+        // Scroll back, and settle whatever the movement owes.
+        if let Some(conversation) = model.conversations.get_mut("s1") {
+            conversation.scroll_by(20);
+            while conversation.settle() {}
+        }
+        let before = frame_of(&mut model, 100, 20);
+        // The agent keeps talking while a person reads what it already said.
+        for index in 80..90 {
+            // A blank line between them: one newline is a soft break, so
+            // `line0\nline1` is one paragraph and barely scrolls at all.
+            model.absorb(&event("model.delta", json!({"text": format!("line{index}\n\n")})));
+        }
+        let after = frame_of(&mut model, 100, 20);
+        assert_eq!(before, after,
+                   "the view moved while reading back:\nbefore\n{}\nafter\n{}",
+                   before.join("\n"), after.join("\n"));
+    }
+
+    #[test]
     fn a_narrow_pane_keeps_the_talk_and_drops_the_rest() {
         // Where this lives is a split, not a hundred-column window. Side panes
         // that squeeze the transcript to nothing are worse than none.
         let mut model = ready(&[("model.delta", "still readable\n")]);
         model.absorb(&event("task.started", json!({"task": "t1", "text": "indexing"})));
-        let wide = frame_of(&model, 120, 16).join("\n");
-        let narrow = frame_of(&model, 50, 16).join("\n");
+        let wide = frame_of(&mut model, 120, 16).join("\n");
+        let narrow = frame_of(&mut model, 50, 16).join("\n");
         assert!(wide.contains("running"), "the wide frame has no task column");
         assert!(narrow.contains("still readable"), "the narrow frame lost the transcript");
         assert!(!narrow.contains("running"), "the task column survived into 50 columns");
@@ -1529,7 +1547,7 @@ kilo lima mike november oscar papa quebec";
     fn the_current_session_is_marked_by_a_character_not_only_a_colour() {
         let mut model = ready(&[]);
         model.sidebar = true;
-        let frame = frame_of(&model, 100, 16);
+        let frame = frame_of(&mut model, 100, 16);
         // The row INSIDE the sidebar. The tab bar carries the same name and
         // comes first, so the obvious `find` picks it and asserts about the
         // wrong row -- which is a test that passes or fails for reasons
@@ -1542,7 +1560,7 @@ kilo lima mike november oscar papa quebec";
         assert!(row.contains('*'), "the working session shows no state mark: {row:?}");
         // Without the sidebar, the tab itself says the session is working.
         model.sidebar = false;
-        let tabs = frame_of(&model, 100, 16)[0].clone();
+        let tabs = frame_of(&mut model, 100, 16)[0].clone();
         assert!(tabs.contains("* alpha"), "the tab does not carry the state: {tabs:?}");
     }
 
@@ -1553,35 +1571,48 @@ kilo lima mike november oscar papa quebec";
         // off the end.
         let mut model = ready(&[]);
         for index in 0..60 {
-            model.absorb(&event("model.delta", json!({"text": format!("line{index}\n")})));
+            // A blank line between them: one newline is a soft break, so
+            // `line0\nline1` is one paragraph and barely scrolls at all.
+            model.absorb(&event("model.delta", json!({"text": format!("line{index}\n\n")})));
         }
+        let conversation = model.conversations.get_mut("s1").unwrap();
         // Following pins to the bottom whatever the numbers say.
-        assert_eq!(scroll_offset(&model, 60, 10), 50);
+        assert_eq!(conversation.window_top(60, 10), 50);
         // Scrolled back ten, the window moves ten -- not more.
-        if let Some(conversation) = model.conversations.get_mut("s1") {
-            conversation.following = false;
-            conversation.scroll = 10;
-        }
-        assert_eq!(scroll_offset(&model, 60, 10), 40);
+        conversation.scroll_by(10);
+        while conversation.settle() {}
+        assert_eq!(conversation.window_top(60, 10), 40);
         // Asked for far more than exists, it stops at the first line.
-        if let Some(conversation) = model.conversations.get_mut("s1") {
-            conversation.scroll = u16::MAX;
-        }
-        assert_eq!(scroll_offset(&model, 60, 10), 0, "scrolling ran past the start");
+        conversation.scroll_by(10_000);
+        while conversation.settle() {}
+        assert_eq!(conversation.window_top(60, 10), 0, "scrolling ran past the start");
         // And a conversation shorter than the pane never scrolls at all.
-        assert_eq!(scroll_offset(&model, 4, 10), 0);
+        assert_eq!(conversation.window_top(4, 10), 0);
     }
 
     #[test]
     fn scrolled_back_is_said_out_loud() {
         // A view that has stopped following looks identical to one with no new
         // output. Saying so is the difference between a pause and a bug.
-        let mut model = ready(&[("model.delta", "hello\n")]);
+        let mut model = ready(&[]);
+        for index in 0..60 {
+            model.absorb(&event("model.delta", json!({"text": format!("line{index}\n\n")})));
+        }
         if let Some(conversation) = model.conversations.get_mut("s1") {
+            conversation.scroll_by(20);
+            while conversation.settle() {}
+        }
+        let frame = frame_of(&mut model, 100, 16).join("\n");
+        assert!(frame.contains("scrolled"), "nothing says the view is not following");
+        // And with nothing to scroll, it does not claim to be scrolled back:
+        // a view that cannot move has not stopped following anything.
+        let mut brief = ready(&[("model.delta", "hello\n")]);
+        if let Some(conversation) = brief.conversations.get_mut("s1") {
             conversation.following = false;
         }
-        let frame = frame_of(&model, 100, 16).join("\n");
-        assert!(frame.contains("scrolled"), "nothing says the view is not following");
+        let short = frame_of(&mut brief, 100, 16).join("\n");
+        assert!(!short.contains("scrolled"),
+                "a transcript shorter than the pane called itself scrolled back");
     }
 
     #[test]
@@ -1591,7 +1622,7 @@ kilo lima mike november oscar papa quebec";
         let mut terminal = Terminal::new(TestBackend::new(100, 16)).unwrap();
         let mut hits = Hitboxes::default();
         let mut rendered = Rendered::default();
-        terminal.draw(|f| hits = draw(f, &model, &mut rendered)).unwrap();
+        terminal.draw(|f| hits = draw(f, &mut model, &mut rendered)).unwrap();
         assert_eq!(hits.tabs.len(), 2, "the tabs report no hitboxes");
         let plus = hits.new_tab.expect("the + reports no range and so can never be hit");
         let (_, first) = hits.tabs[0];

@@ -225,7 +225,7 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
             // The far end of the scrollback, clamped when it is drawn.
             if let Some(conversation) = model.conversations.get_mut(&model.current) {
                 conversation.following = false;
-                conversation.jump_to(u16::MAX);
+                conversation.to_top();
             }
             Action::None
         }
@@ -297,7 +297,7 @@ fn next_tab(model: &mut Model) -> Action {
 
 fn follow(model: &mut Model) {
     if let Some(conversation) = model.conversations.get_mut(&model.current) {
-        conversation.jump_to(0);
+        conversation.follow();
     }
 }
 
