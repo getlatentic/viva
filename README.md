@@ -20,7 +20,9 @@ viva              # opens this directory's session, or starts one
 ```
 
 Or take one file. `viva-macos-arm64` and `viva-linux-x86_64` are built by CI
-and need neither SBCL nor Quicklisp.
+and need neither SBCL nor Quicklisp. CI starts a daemon with the file it just
+built, asks it for its sessions, and stops it, so an artifact that cannot serve
+fails the build instead of being uploaded.
 
 ## Live with it
 
@@ -97,11 +99,14 @@ project directory wins when both define the same name.
 
 Run each command yourself. The numbers come from these runs.
 
+Every one of these also runs on macOS and Linux in CI.
+
 | what | number | command |
 | --- | --- | --- |
-| Lisp tests | 1,925 pass | `viva test` |
-| Rust tests | 80 pass | `cargo test --manifest-path tui/Cargo.toml` |
+| Lisp tests | 1,930 pass | `viva test` |
+| Rust tests | 85 pass | `cargo test --manifest-path tui/Cargo.toml` |
 | TLA+ configurations | 23 agree | `./spec/verify.sh` |
+| undefined variables | none, in 8 systems | `sbcl --script tools/check-warnings.lisp` |
 | terminal invariants | 33 hold | `python3 tui/conformance.py` |
 | recorded sessions replayed through the client | clean | `python3 tui/journal_replay.py` |
 | 2 minutes of churn | 6,906 cycles, heap 67 MB flat | `viva soak --minutes 2` |
