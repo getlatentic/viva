@@ -116,9 +116,18 @@ jobs:
       # Quicklisp. Without it, `the binary` is the client and the daemon is
       # still source somebody has to build.
       - name: Build the image
+        env:
+          VIVARIUM_SOCKET: ${{ runner.temp }}/smoke.sock
+          VIVARIUM_JOURNAL: ${{ runner.temp }}/smoke-journal
         run: |
           ./tools/build-image.sh "viva-${{ matrix.name }}"
+          # IT HAS TO SERVE, not merely start. `daemon status` was the whole
+          # check, and it exits 1 when nothing is running -- the normal state
+          # on a fresh runner -- so the build failed for reporting the truth.
+          ./viva-${{ matrix.name }} daemon start --background
           ./viva-${{ matrix.name }} daemon status
+          ./viva-${{ matrix.name }} sessions
+          ./viva-${{ matrix.name }} daemon stop
 
       - uses: actions/upload-artifact@v4
         with:
