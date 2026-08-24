@@ -1,8 +1,8 @@
 ;;;; `vivarium learned` -- what has this project's agent accumulated?
 ;;;;
 ;;;; The germline is files, which is the whole architecture, and a person
-;;;; should still not have to `cat .vivarium/MEMORY.md` and walk
-;;;; `.vivarium/tools/*/tool.json` to see what a project's agent knows.
+;;;; should still not have to `cat .viva/MEMORY.md` and walk
+;;;; `.viva/tools/*/tool.json` to see what a project's agent knows.
 ;;;;
 ;;;; Reads only. No model request, no daemon, no session -- so it works on a
 ;;;; project whose agent has never been started, and on one that is mid-turn.
@@ -59,5 +59,5 @@ Enable them with:  vivarium trust ~a~%" cwd)))
     (when (some (lambda (item) (eq :machine (germline:item-scope item)))
                 (append (germline:view-notes view) (germline:view-skills view)
                         (germline:view-tools view)))
-      (format t "~&~%~~ marks what comes from ~~/.vivarium and travels to every project.~%"))
+      (format t "~&~%~~ marks what comes from ~~/.viva and travels to every project.~%"))
     0))

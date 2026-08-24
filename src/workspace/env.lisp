@@ -76,6 +76,48 @@
           ((a:starts-with-subseq prefix path) (subseq path (length prefix)))
           (t path))))
 
+;;; Where viva keeps its own files
+;;;
+;;; One place, because the name is a product decision and it was spelled into
+;;; twenty modules. A machine that already holds the former directory goes on
+;;; using it, so an upgrade does not strand the sessions, journal and config
+;;; somebody already has.
+
+(defparameter +data-directory+ ".viva")
+(defparameter +former-data-directory+ ".vivarium")
+
+(defun data-directory (parent)
+  "PARENT's viva directory, and true when that is the former name.
+
+The former name wins only where it exists and the current one does not. So a
+fresh install never creates it, and an existing one never loses its files."
+  (let ((current (join-path parent +data-directory+))
+        (former (join-path parent +former-data-directory+)))
+    (if (and (uiop:directory-exists-p former)
+             (not (uiop:directory-exists-p current)))
+        (values former t)
+        (values current nil))))
+
+(defun home-directory ()
+  "The machine-level viva directory."
+  (data-directory (uiop:native-namestring (user-homedir-pathname))))
+
+(defun home-path (&rest leaves)
+  (apply #'join-path (home-directory) leaves))
+
+(defun project-path (cwd &rest leaves)
+  (apply #'join-path (data-directory cwd) leaves))
+
+(defun home-file (name former-name)
+  "NAME inside the machine-level directory, under FORMER-NAME on an install
+that predates the rename.
+
+The socket and its lock are named this way on purpose. A daemon already running
+holds the former socket, and giving the new build a different name in the same
+directory would put two daemons on one journal."
+  (multiple-value-bind (directory former) (home-directory)
+    (join-path directory (if former former-name name))))
+
 ;;; The environment
 
 (defclass environment ()

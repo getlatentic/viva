@@ -168,8 +168,8 @@ extension must not take the run with it."
 
 (defun extension-directories (environment)
   "Where extensions are looked for: this machine's, then this project's."
-  (list (env:join-path (uiop:native-namestring (user-homedir-pathname)) ".vivarium" "extensions")
-        (env:join-path (env:env-cwd environment) ".vivarium" "extensions")))
+  (list (env:home-path "extensions")
+        (env:project-path (env:env-cwd environment) "extensions")))
 
 (defun load-file-safely (path)
   (handler-case (progn (load path) nil)

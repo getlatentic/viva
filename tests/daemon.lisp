@@ -21,7 +21,7 @@
 (in-package #:vivarium.tests)
 
 ;; Before any cell spawns: the journal must never write into the real home.
-;; Test runs left 462 files and 26MB in ~/.vivarium/journal before this.
+;; Test runs left 462 files and 26MB in ~/.viva/journal before this.
 (setf actor:*journal-root*
       (format nil "/tmp/vivarium-test-journal-~36r/"
               (random (expt 2 40) (make-random-state t))))

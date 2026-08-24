@@ -53,8 +53,8 @@ thing."
   (ecase source
     (:flag "a flag on this command")
     (:environment "the environment")
-    (:project ".vivarium/config")
-    (:machine "~/.vivarium/config")
+    (:project (format nil "~a/config" env:+data-directory+))
+    (:machine (format nil "~~/~a/config" env:+data-directory+))
     (:default "the built-in default")))
 
 (defun command-config (parsed)

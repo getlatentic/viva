@@ -615,7 +615,7 @@ as_a     = "researcher"
 i_want   = "a single command that runs any experiment, with the arms, repeats and output shape in one place"
 so_that  = "a run is reproducible from its command line and an experiment cannot rot unnoticed"
 notes    = """
-DONE 2026-08-08. bin/vivarium + src/cli (package, args, arms, commands, main).
+DONE 2026-08-08. bin/viva + src/cli (package, args, arms, commands, main).
 Four subcommands: check, tasks, calibrate, compare. .env is loaded by the
 launcher so no run depends on the caller having sourced it.
 
@@ -655,7 +655,7 @@ acceptance = [
   "the two-sweep comparison done by hand during calibration becomes a command",
 ]
 tasks = [
-  "bin/vivarium with subcommands; keep the argument parsing boring",
+  "bin/viva with subcommands; keep the argument parsing boring",
   "move arm construction out of the experiment scripts and into one place",
   "--repeats defaulting to 3, with spread reported",
 ]

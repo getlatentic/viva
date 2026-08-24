@@ -153,7 +153,7 @@ DOES rather than about what it says."
   ;; ~/.local/bin -- and deriving the root from the LINK's directory looked for
   ;; the repository beside the link. The install reported success and the
   ;; command was broken; it only shows when you run it from elsewhere.
-  (let ((launcher (repository-file "bin/vivarium")))
+  (let ((launcher (repository-file "bin/viva")))
     (true (search "while [ -L \"$target\" ]" launcher)
           "the launcher must follow symlinks, or an installed vivarium cannot find its repo")
     (false (search "$(dirname \"$0\")/.." launcher)
@@ -180,7 +180,7 @@ DOES rather than about what it says."
                                     (random (expt 2 48) (make-random-state t))))
         (root (format nil "/tmp/vivarium-germline-~36r/" (random (expt 2 48) (make-random-state t)))))
     (unwind-protect
-         (let ((tools (merge-pathnames ".vivarium/tools/greet/" root)))
+         (let ((tools (merge-pathnames ".viva/tools/greet/" root)))
            (ensure-directories-exist tools)
            (with-open-file (out (merge-pathnames "tool.json" tools) :direction :output)
              (write-string "{\"name\":\"greet\",\"description\":\"hi\",\"exec\":[\"true\"]}" out))
@@ -285,7 +285,7 @@ DOES rather than about what it says."
 (defmacro with-config ((path &rest lines) &body body)
   "A project config of our own, removed afterwards."
   `(let* ((root (format nil "/tmp/vivarium-config-~36r/" (random (expt 2 48) (make-random-state t))))
-          (,path (merge-pathnames ".vivarium/config" root)))
+          (,path (merge-pathnames ".viva/config" root)))
      (unwind-protect
           (progn (ensure-directories-exist ,path)
                  (with-open-file (out ,path :direction :output :if-exists :supersede)
@@ -354,7 +354,7 @@ DOES rather than about what it says."
 
 (define-test "the resolved model reaches the daemon, not the raw flag"
   ;; The daemon resolves a model in ITS process, where the project's config is
-  ;; not in scope. Sending the flag meant `model=deepseek` in .vivarium/config
+  ;; not in scope. Sending the flag meant `model=deepseek` in .viva/config
   ;; was ignored by every attached session while `vivarium config` cheerfully
   ;; reported it.
   (let ((source (repository-file "src/cli/commands.lisp")))
@@ -362,15 +362,28 @@ DOES rather than about what it says."
           "session.start must carry the resolved model")))
 
 (define-test "credentials load from the machine as well as the clone"
-  ;; Settings moved to ~/.vivarium/config and keys stayed in the repository, so
-  ;; half the setup still lived in a checkout you might never open again.
-  (let ((launcher (shell-code (repository-file "bin/vivarium"))))
-    (true (search ".vivarium/.env" launcher))
+  ;; Settings live in the machine directory and keys stayed in the repository,
+  ;; so half the setup lived in a checkout you might never open again.
+  (let ((launcher (shell-code (repository-file "bin/viva"))))
+    (true (search "$viva_home/.env" launcher))
     ;; The repository's is sourced second so it wins for a run made inside it.
-    (let ((machine (search ".vivarium/.env" launcher))
+    (let ((machine (search "$viva_home/.env" launcher))
           (repo (search "$root/.env" launcher)))
       (true (and machine repo (< machine repo))
             "the repository's .env must be sourced after the machine's"))))
+
+(define-test "the launcher finds the keys an older install already has"
+  ;; The engine falls back to the former directory, and the launcher reads the
+  ;; keys BEFORE the engine starts. Resolving it differently here would send a
+  ;; machine that predates the rename into a run with no key at all.
+  (let ((launcher (shell-code (repository-file "bin/viva"))))
+    (true (search ".viva" launcher) "the launcher must know the current name")
+    (true (search ".vivarium" launcher)
+          "the launcher must fall back to the former directory")
+    (let ((current (search "viva_home=\"${HOME:-}/.viva\"" launcher))
+          (former (search "/.vivarium" launcher)))
+      (true (and current former (< current former))
+            "the current name is tried first, the former one only as a fallback"))))
 
 ;;; Sessions as tabs
 
@@ -732,8 +745,8 @@ twice; it is somebody's record.")))
   (let ((root (format nil "/tmp/vivarium-svc-~36r/" (random (expt 2 48) (make-random-state t)))))
     (unwind-protect
          (let ((environment (env:make-local-environment :cwd root)))
-           (ensure-directories-exist (merge-pathnames ".vivarium/services/" root))
-           (with-open-file (out (merge-pathnames ".vivarium/services/ticker" root)
+           (ensure-directories-exist (merge-pathnames ".viva/services/" root))
+           (with-open-file (out (merge-pathnames ".viva/services/ticker" root)
                                 :direction :output)
              (write-string "while true; do echo tick; sleep 1; done" out))
            (is equal '(("ticker" . "while true; do echo tick; sleep 1; done"))
@@ -746,7 +759,7 @@ twice; it is somebody's record.")))
            (false (jobs:start-declared environment root)
                   "a running service was started a second time")
            ;; A file with no command is not a service.
-           (with-open-file (out (merge-pathnames ".vivarium/services/empty" root)
+           (with-open-file (out (merge-pathnames ".viva/services/empty" root)
                                 :direction :output)
              (write-string "   " out))
            (is = 1 (length (jobs:declared environment root))
@@ -816,7 +829,7 @@ CALL-IN-TOOL-CONTEXT, at character ~d: ~a" at
 ;;;
 ;;; Then it was moved into `vivarium check`, on the reasoning that check reads
 ;;; files rather than requiring them -- and that was WRONG in the same way, one
-;;; level up. `bin/vivarium check` quickloads vivarium/cli before COMMAND-CHECK
+;;; level up. `bin/viva check` quickloads vivarium/cli before COMMAND-CHECK
 ;;; runs, so a broken package file kills the load before any check can read
 ;;; anything. Verified the same way: reintroduce the bug, and check dies in the
 ;;; loader rather than reporting.
@@ -830,7 +843,7 @@ CALL-IN-TOOL-CONTEXT, at character ~d: ~a" at
 (define-test "the package-order guard exists, standalone, and is wired in"
   ;; Third home, and the first that can work. The suite cannot guard this --
   ;; a broken package file stops the suite loading. `vivarium check` cannot
-  ;; either -- bin/vivarium quickloads before any command runs. Both were
+  ;; either -- bin/viva quickloads before any command runs. Both were
   ;; tried and both verified dead by reintroducing the bug and looking.
   ;;
   ;; This test does NOT prove the guard works; by construction it cannot, since
@@ -869,7 +882,7 @@ CALL-IN-TOOL-CONTEXT, at character ~d: ~a" at
   ;; worked today and drifted tomorrow.
   (let ((root (format nil "/tmp/vivarium-runskill-~36r/" (random (expt 2 48) (make-random-state t)))))
     (unwind-protect
-         (let ((directory (merge-pathnames ".vivarium/skills/total/" root)))
+         (let ((directory (merge-pathnames ".viva/skills/total/" root)))
            (ensure-directories-exist directory)
            (with-open-file (out (merge-pathnames "SKILL.md" directory) :direction :output)
              (write-string "---
@@ -908,7 +921,7 @@ print(sum([2, 3, 5]))
         (trust:*trust-file* (format nil "/tmp/vivarium-gradtrust-~36r.sexp"
                                     (random (expt 2 48) (make-random-state t)))))
     (unwind-protect
-         (let ((directory (merge-pathnames ".vivarium/skills/total/" root)))
+         (let ((directory (merge-pathnames ".viva/skills/total/" root)))
            (ensure-directories-exist directory)
            (with-open-file (out (merge-pathnames "SKILL.md" directory) :direction :output)
              (write-string "---
@@ -1862,10 +1875,10 @@ print(sum([2, 3, 5]))
       (false (frame-has frame "HASH-TABLE") "the client printed its own internals"))))
 
 (define-test "installing gives the tool both of its names"
-  ;; `viva` is what somebody types twenty times a day and `vivarium` is what
-  ;; the project is called. There is no reason to make a person choose, and the
-  ;; launcher resolves symlinks to find its root -- so a second link behaves
-  ;; identically and costs nothing.
+  ;; `viva` is the command. `vivarium` is what an earlier install put on PATH,
+  ;; so anything written against it goes on working. The launcher resolves
+  ;; symlinks to find its root, so the second link behaves identically and
+  ;; costs nothing.
   (let* ((directory (format nil "/tmp/vivarium-install-~d-~d/"
                             (get-universal-time) (random 100000))))
     (ensure-directories-exist directory)
@@ -1875,25 +1888,49 @@ print(sum([2, 3, 5]))
                            (cli::command-install
                             (cli::parse-arguments (list "--prefix" directory)))))))
            (declare (ignorable output))
-           (let ((full (merge-pathnames "vivarium" directory))
-                 (short (merge-pathnames "viva" directory)))
-             (true (probe-file full) "the full name was not linked")
-             (true (probe-file short) "the short name was not linked")
+           (let ((command (merge-pathnames "viva" directory))
+                 (alias (merge-pathnames "vivarium" directory)))
+             (true (probe-file command) "the command was not linked")
+             (true (probe-file alias) "the compatibility alias was not linked")
              ;; BOTH point at the same launcher, so they cannot drift.
-             (is equal (truename full) (truename short)
+             (is equal (truename command) (truename alias)
                  "the two names resolve to different things")))
       (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
                                                  :validate t)))))
 
-(define-test "a taken short name does not fail the install"
-  ;; Somebody may already have a `viva` of their own. Refusing to install the
-  ;; tool because its nickname is taken would be absurd.
-  (let ((directory (format nil "/tmp/vivarium-taken-~d-~d/"
+(define-test "a link left by the earlier name is repaired, not refused"
+  ;; The launcher was bin/vivarium. Every install made before the rename points
+  ;; at that path, which no longer exists -- so the command dangles, and an
+  ;; installer that calls its own leftover a stranger's file leaves the person
+  ;; with a broken command and instructions to fix it by hand.
+  (let ((directory (format nil "/tmp/viva-stale-~d-~d/"
+                           (get-universal-time) (random 100000))))
+    (ensure-directories-exist directory)
+    (unwind-protect
+         (let ((stale (namestring (merge-pathnames "viva" directory)))
+               (gone (namestring (merge-pathnames "bin/vivarium"
+                                                  (cli::repository-root)))))
+           (sb-posix:symlink gone stale)
+           (false (probe-file gone) "the fixture must point at nothing to be the case")
+           (let ((output (with-output-to-string (out)
+                           (let ((*standard-output* out))
+                             (cli::command-install
+                              (cli::parse-arguments (list "--prefix" directory)))))))
+             (declare (ignorable output))
+             (is equal (cli::launcher-path) (sb-posix:readlink stale)
+                 "the dangling link was not pointed back at the launcher")))
+      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
+                                                 :validate t)))))
+
+(define-test "a taken alias does not fail the install"
+  ;; Somebody may have a `vivarium` of their own. Refusing to install the tool
+  ;; because a compatibility alias is taken would be absurd.
+  (let ((directory (format nil "/tmp/viva-taken-~d-~d/"
                            (get-universal-time) (random 100000))))
     (ensure-directories-exist directory)
     (unwind-protect
          (progn
-           (with-open-file (out (merge-pathnames "viva" directory)
+           (with-open-file (out (merge-pathnames "vivarium" directory)
                                 :direction :output :if-does-not-exist :create)
              (write-string "not ours" out))
            (let ((code (with-output-to-string (captured)
@@ -1901,7 +1938,7 @@ print(sum([2, 3, 5]))
                            (cli::command-install
                             (cli::parse-arguments (list "--prefix" directory)))))))
              (declare (ignorable code))
-             (true (probe-file (merge-pathnames "vivarium" directory))
-                   "a taken short name stopped the real install")))
+             (true (probe-file (merge-pathnames "viva" directory))
+                   "a taken alias stopped the real install")))
       (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
                                                  :validate t)))))

@@ -32,7 +32,7 @@ def cell_stats(cell):
                              and block.get("type") == "tool_call"
                              and block.get("name") == "remember")
     memory_lines = 0
-    memory = cell / "t5-sandbox" / ".vivarium" / "MEMORY.md"
+    memory = cell / "t5-sandbox" / ".viva" / "MEMORY.md"
     if memory.exists():
         memory_lines = sum(1 for l in memory.read_text().splitlines() if l.strip())
     return created, promoted, remembers, memory_lines

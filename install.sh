@@ -9,8 +9,17 @@
 # repository, and links `vivarium` onto PATH. It never touches your keys.
 set -eu
 
-REPO="${VIVARIUM_REPO:-https://github.com/tosinamuda/vivarium}"
-DEST="${VIVARIUM_DEST:-$HOME/.vivarium/src}"
+REPO="${VIVARIUM_REPO:-https://github.com/getlatentic/viva}"
+
+# Where viva keeps its own files. A machine installed before the rename still
+# holds the former directory, and its keys and sessions are in it, so that one
+# is used where it is the only one there.
+VIVA_HOME="$HOME/.viva"
+if [ ! -d "$VIVA_HOME" ] && [ -d "$HOME/.vivarium" ]; then
+  VIVA_HOME="$HOME/.vivarium"
+fi
+
+DEST="${VIVARIUM_DEST:-$VIVA_HOME/src}"
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n== %s\n' "$*"; }
@@ -49,7 +58,7 @@ step "vivarium"
 # A clone this script is being run FROM is the one to use: somebody who cloned
 # and ran `sh install.sh` means that checkout, not a second copy of it.
 here=$(cd "$(dirname "$0")" && pwd)
-if [ -f "$here/bin/vivarium" ] && [ -f "$here/vivarium.asd" ]; then
+if [ -f "$here/bin/viva" ] && [ -f "$here/vivarium.asd" ]; then
   root=$here
   say "  using this clone: $root"
 elif [ -d "$DEST/.git" ]; then
@@ -72,30 +81,30 @@ sbcl --script "$root/tools/check-package-order.lisp" || exit 1
 
 step "compiling, and running the tests"
 say "  the first run fetches dependencies and takes a few minutes"
-"$root/bin/vivarium" test >/tmp/vivarium-install-test.log 2>&1 || {
+"$root/bin/viva" test >/tmp/vivarium-install-test.log 2>&1 || {
   tail -20 /tmp/vivarium-install-test.log >&2
   die "the test suite did not pass. The full log is /tmp/vivarium-install-test.log"
 }
 grep -E "^(Passed|Failed):" /tmp/vivarium-install-test.log | sed 's/^/  /'
 
 step "putting vivarium on your PATH"
-"$root/bin/vivarium" install | sed 's/^/  /'
+"$root/bin/viva" install | sed 's/^/  /'
 
 step "credentials"
-if [ -f "$HOME/.vivarium/.env" ]; then
-  say "  ~/.vivarium/.env is already there; leaving it alone"
+if [ -f "$VIVA_HOME/.env" ]; then
+  say "  $VIVA_HOME/.env is already there; leaving it alone"
 else
-  mkdir -p "$HOME/.vivarium"
-  cp "$root/.env.example" "$HOME/.vivarium/.env"
-  chmod 600 "$HOME/.vivarium/.env"
-  say "  wrote ~/.vivarium/.env from the example -- open it and fill in ONE key"
+  mkdir -p "$VIVA_HOME"
+  cp "$root/.env.example" "$VIVA_HOME/.env"
+  chmod 600 "$VIVA_HOME/.env"
+  say "  wrote $VIVA_HOME/.env from the example -- open it and fill in ONE key"
 fi
 
 cat <<EOF
 
 Done. Next:
 
-  1. put a provider key in ~/.vivarium/.env
+  1. put a provider key in $VIVA_HOME/.env
   2. cd into any project and run:  viva
   3. see what it has learned:      vivarium learned
   4. watch it learn something:     $root/demo/retention

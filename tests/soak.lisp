@@ -4,7 +4,7 @@
 ;;;;
 ;;;;     sbcl --script bin/entry.lisp soak [minutes]
 ;;;;
-;;;; is wired through bin/vivarium's entry so the .env and systems load the
+;;;; is wired through bin/viva's entry so the .env and systems load the
 ;;;; same way as everything else. Continuously starts and stops sessions,
 ;;;; connects and drops clients (some of them deliberately slow), streams
 ;;;; events, replays old history, cancels turns -- while sampling what a

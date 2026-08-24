@@ -13,7 +13,7 @@
 ;;;; usage. It never reads what the agent did, so it cannot become a way of
 ;;;; picking an interesting moment to interrupt.
 ;;;;
-;;;;   ./bin/vivarium eval experiments/b10-eligibility.lisp
+;;;;   ./bin/viva eval experiments/b10-eligibility.lisp
 ;;;;   -- or --
 ;;;;   set -a && . ./.env && set +a
 ;;;;   sbcl --non-interactive --load experiments/b10-eligibility.lisp

@@ -129,7 +129,7 @@ the last one HERE."
 (defun show-skills (agent argument out)
   (declare (ignore argument))
   (if (null (harness:agent-skills agent))
-      (format out "  no skills. Put a SKILL.md under .vivarium/skills/<name>/~%")
+      (format out "  no skills. Put a SKILL.md under .viva/skills/<name>/~%")
       (dolist (each (harness:agent-skills agent))
         (format out "  ~a~20t~a~%" (skill:skill-name each)
                 (one-line (skill:skill-description each) :width 60)))))
@@ -137,7 +137,7 @@ the last one HERE."
 (defun show-extensions (agent argument out)
   (declare (ignore argument))
   (if (null (harness:agent-extensions agent))
-      (format out "  no extensions. Put a .lisp file under .vivarium/extensions/~%")
+      (format out "  no extensions. Put a .lisp file under .viva/extensions/~%")
       (dolist (each (harness:agent-extensions agent))
         (format out "  ~a~20t~a~@[~%~{      tool: ~a~%~}~]~@[~{      /~a~%~}~]"
                 (extension:extension-name each)

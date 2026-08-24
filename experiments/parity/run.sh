@@ -55,7 +55,7 @@ run_one() {
     vivarium)
       # No skills or extensions exist under a fresh fixture, and --root keeps
       # the run inside it, so neither side can wander into the other's output.
-      "$root/bin/vivarium" do "$prompt" --cwd "$sandbox" --root "$sandbox" \
+      "$root/bin/viva" do "$prompt" --cwd "$sandbox" --root "$sandbox" \
         --model "$provider" --limit 25 > "$sandbox/.transcript" 2>&1 || true
       ;;
     pi)

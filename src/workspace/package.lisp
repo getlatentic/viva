@@ -25,6 +25,8 @@
            #:env-cwd #:env-root
            #:absolute-path #:join-path #:relative-path #:parent-path #:base-name
            #:canonical-directory
+           #:data-directory #:home-directory #:home-path #:project-path #:home-file
+           #:+data-directory+ #:+former-data-directory+
            #:read-text #:read-bytes #:write-text #:file-info
            #:info-name #:info-path #:info-kind #:info-size
            #:list-directory #:ensure-directory #:delete-path #:rename-path #:path-exists-p
@@ -169,6 +171,7 @@
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:jzon #:com.inuoe.jzon)
+                    (#:env #:vivarium.env)
                     (#:msg #:vivarium.message))
   (:export #:session #:session-p #:open-session #:reopen-session #:new-id #:session-path #:session-id
            #:session-entries #:session-cwd #:session-leaf #:session-parent

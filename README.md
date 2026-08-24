@@ -134,13 +134,13 @@ Keys inside the full screen client. Press `/` for the commands.
 
 | tier | written to | reaches the model as |
 | --- | --- | --- |
-| note | `MEMORY.md` | prompt text |
-| skill | `.vivarium/skills/<name>/SKILL.md` | prompt text |
-| tool | `.vivarium/tools/<name>/tool.json` | the tool list, and MCP |
+| note | `.viva/MEMORY.md` | prompt text |
+| skill | `.viva/skills/<name>/SKILL.md` | prompt text |
+| tool | `.viva/tools/<name>/tool.json` | the tool list, and MCP |
 
 A fact becomes a note. Code becomes a skill. Code the agent has already wanted
 twice becomes a tool it calls by name. The agent writes these with the ordinary
-`write` tool, and you can author one by hand in the same format. `~/.vivarium/`
+`write` tool, and you can author one by hand in the same format. `~/.viva/`
 applies to every directory, and the project directory wins on a name clash.
 
 ## Self-improvement experiments
@@ -186,7 +186,7 @@ model behind them.
 ## Files
 
 ```
-bin/vivarium         the launcher; `viva` links to it
+bin/viva             the launcher
 src/core/            messages, tools, the agent loop
 src/workspace/       skills, registry, memory, reflection
 src/daemon/          sessions as actors, the socket, the task tree
@@ -223,7 +223,4 @@ passing quietly.
 
 ## Status
 
-A research harness, in use on its own development. The interface is stable
-enough to work in. The experiments are still moving the retention policy.
-
-The code still says `vivarium` inside. Only the command is `viva`.
+Still in development, as a research harness.

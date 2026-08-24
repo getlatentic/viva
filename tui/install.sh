@@ -26,4 +26,4 @@ cargo build --release --manifest-path "$here/Cargo.toml"
 echo "== built"
 echo "  $here/target/release/vivarium-tui"
 echo
-echo "Run it with:  $root/bin/vivarium tui"
+echo "Run it with:  $root/bin/viva tui"

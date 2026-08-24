@@ -85,8 +85,8 @@ vivarium do "the tests are failing, find out why and fix it" --cwd . --quiet
 
 ## Extensions
 
-An extension is a Lisp file under `.vivarium/extensions/` (project) or
-`~/.vivarium/extensions/` (machine). Loading it runs it, and its registrations
+An extension is a Lisp file under `.viva/extensions/` (project) or
+`~/.viva/extensions/` (machine). Loading it runs it, and its registrations
 attribute to it:
 
 ```lisp
@@ -126,7 +126,7 @@ and it has been run:
 › Which skills do you have available right now? Answer from your own context.
   From my context, I have one skill available right now:
   - run-the-tests — for running this project's test suite before committing.
-  It lives at .vivarium/skills/run-the-tests/SKILL.md
+  It lives at .viva/skills/run-the-tests/SKILL.md
 ```
 
 No restart, no human, no edit to the harness.

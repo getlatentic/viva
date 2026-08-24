@@ -5,9 +5,9 @@
 # each in a FRESH conversation and a FRESH copy of the repository. Two arms that
 # differ by exactly one thing:
 #
-#   ACCUMULATE   .vivarium/ carries forward between tasks. Whatever the agent
+#   ACCUMULATE   .viva/ carries forward between tasks. Whatever the agent
 #                chose to write down, and any skill it wrote, is there next time.
-#   RESET        .vivarium/ is wiped between tasks. Same agent, same tasks, same
+#   RESET        .viva/ is wiped between tasks. Same agent, same tasks, same
 #                order, no memory of having been here.
 #   NUDGED       exactly ACCUMULATE, plus one sentence appended to the system
 #                prompt. Added after ACCUMULATE returned mem:0 on all twelve
@@ -125,12 +125,12 @@ run_sequence() {
     python3 "$here/tasks/$task/break.py" "$sandbox"
 
     # The treatment, and the only difference between the arms.
-    if carries_memory "$arm" && [ -d "$carried/.vivarium" ]; then
-      cp -R "$carried/.vivarium" "$sandbox/.vivarium"
+    if carries_memory "$arm" && [ -d "$carried/.viva" ]; then
+      cp -R "$carried/.viva" "$sandbox/.viva"
     fi
     if plants_memory "$arm"; then
-      mkdir -p "$sandbox/.vivarium"
-      cp "$here/planted/MEMORY.md" "$sandbox/.vivarium/MEMORY.md"
+      mkdir -p "$sandbox/.viva"
+      cp "$here/planted/MEMORY.md" "$sandbox/.viva/MEMORY.md"
     fi
 
     transcripts="$sandbox/.transcripts"
@@ -138,7 +138,7 @@ run_sequence() {
     set --
     [ -n "$(append_for "$arm")" ] && set -- "$@" --append "$(append_for "$arm")"
     [ -n "$(extension_for "$arm")" ] && set -- "$@" --extension "$(extension_for "$arm")"
-    "$root/bin/vivarium" do "$(cat "$here/tasks/$task/PROMPT")" \
+    "$root/bin/viva" do "$(cat "$here/tasks/$task/PROMPT")" \
       --cwd "$sandbox" --root "$sandbox" --model "$model" --limit 30 \
       --session-dir "$transcripts" "$@" > "$sandbox/.log" 2>&1 || true
     finished=$(date +%s)
@@ -148,15 +148,15 @@ run_sequence() {
     requests=$1; calls=$2; prompt=$3; completion=$4
 
     remembered=0
-    if [ -f "$sandbox/.vivarium/MEMORY.md" ]; then
-      remembered=$(grep -c '^-' "$sandbox/.vivarium/MEMORY.md" 2>/dev/null || echo 0)
+    if [ -f "$sandbox/.viva/MEMORY.md" ]; then
+      remembered=$(grep -c '^-' "$sandbox/.viva/MEMORY.md" 2>/dev/null || echo 0)
     fi
 
     # Carry forward whatever this task left behind, for the next one.
-    if carries_memory "$arm" && [ -d "$sandbox/.vivarium" ]; then
-      rm -rf "$carried/.vivarium"
-      cp -R "$sandbox/.vivarium" "$carried/.vivarium"
-      rm -rf "$carried/.vivarium/sessions" "$carried/.vivarium/.transcripts"
+    if carries_memory "$arm" && [ -d "$sandbox/.viva" ]; then
+      rm -rf "$carried/.viva"
+      cp -R "$sandbox/.viva" "$carried/.viva"
+      rm -rf "$carried/.viva/sessions" "$carried/.viva/.transcripts"
     fi
 
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$arm" "$sequence" "$position" \

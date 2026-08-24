@@ -28,7 +28,7 @@ systems with dependencies pointing inward:
 | `vivarium/image` | one task domain: a live Lisp image to read, change and undo |
 | `vivarium/tasks` | the benchmark: 17 tasks, their fixtures, and the cases that score them |
 | `vivarium/search` | forked scored trials, an archive, selection over it |
-| `vivarium/cli` | `bin/vivarium` — one entry point for every run |
+| `vivarium/cli` | `bin/viva` — one entry point for every run |
 
 The split is tested, not aspirational: `(ql:quickload :vivarium)` leaves
 `VIVARIUM.IMAGE` and `VIVARIUM.TRIAL` absent from the world.

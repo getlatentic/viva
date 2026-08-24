@@ -94,7 +94,7 @@ jobs:
 
       # The suite drives scripted responders, so it asks no model anything.
       - name: Lisp suite
-        run: ./bin/vivarium test
+        run: ./bin/viva test
 
       # Over a real pty, against a daemon of its own on its own socket and its
       # own journal. It types and reads frames; it never sends a prompt.

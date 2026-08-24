@@ -148,7 +148,7 @@ The script is written first and the manifest last, so a refusal leaves no
 manifest -- a directory with a script and no tool.json is invisible to the
 loader, where a manifest naming a script that was never checked is a tool the
 model will call."
-  (let* ((directory (env:join-path (env:env-cwd environment) ".vivarium" "tools" name))
+  (let* ((directory (env:project-path (env:env-cwd environment) "tools" name))
          (digest (digest-of script)))
     (handler-case
         (progn

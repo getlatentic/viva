@@ -8,7 +8,7 @@
 #
 # Every task is `vivarium do --retain` in one directory: the command a person
 # would type, not a test fixture. What accumulates is that directory's
-# .vivarium/ -- the same place a person's own skills and tools live -- so what
+# .viva/ -- the same place a person's own skills and tools live -- so what
 # the organism writes is readable, editable, deletable, and usable by any other
 # agent that can read a folder.
 set -eu
@@ -51,15 +51,15 @@ set -a; . "$root/.env"; set +a
 rm -rf "$work" "$runs"
 mkdir -p "$work" "$runs"
 
-# A tool the organism writes lands in this directory's .vivarium/tools/, and
+# A tool the organism writes lands in this directory's .viva/tools/, and
 # running a project's own code is a decision a person makes -- so the demo makes
 # it, out loud, for the scratch directory it just created and nothing else.
-"$root/bin/vivarium" trust "$work" | sed 's/^/  /'
+"$root/bin/viva" trust "$work" | sed 's/^/  /'
 echo
 
 for v in v1 v2 v3 v4 v5; do
   # The chore's data changes every time. The only thing that carries over is
-  # whatever the organism chose to keep, in .vivarium/.
+  # whatever the organism chose to keep, in .viva/.
   find "$work" -mindepth 1 -maxdepth 1 ! -name '.vivarium' -exec rm -rf {} +
   cp -R "$jobs/$v/data" "$work/data"
 
@@ -82,7 +82,7 @@ for v in v1 v2 v3 v4 v5; do
 
   printf '  %s  ' "$v"
   start=$(date +%s)
-  "$root/bin/vivarium" do --retain --quiet --model "$model" --cwd "$work" \
+  "$root/bin/viva" do --retain --quiet --model "$model" --cwd "$work" \
       --session-dir "$runs/$v" \
       --file "$jobs/$v/PROMPT" >"$runs/$v.log" 2>&1 || true
   elapsed=$(( $(date +%s) - start ))

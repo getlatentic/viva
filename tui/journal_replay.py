@@ -10,7 +10,7 @@ A journal is not negotiable. It is what the daemon wrote down while a person
 was using it, so replaying one is the only check here that can disagree with
 both sides at once.
 
-    python3 journal_replay.py ~/.vivarium/journal/s6-*.jsonl
+    python3 journal_replay.py ~/.viva/journal/s6-*.jsonl
 """
 import codecs
 import fcntl
@@ -376,13 +376,14 @@ def check(path):
 
 def main():
     paths = sys.argv[1:] or sorted(
-        glob.glob(os.path.expanduser("~/.vivarium/journal/*.jsonl")),
+        glob.glob(os.path.expanduser("~/.viva/journal/*.jsonl"))
+        + glob.glob(os.path.expanduser("~/.vivarium/journal/*.jsonl")),
         key=os.path.getmtime, reverse=True)[:1]
     if not paths:
         # Nothing recorded is not a failure to replay it. A fresh clone and a
         # CI runner both have an empty journal, and a check that cannot run
         # should say so rather than fail a build.
-        print("no journal under ~/.vivarium/journal — nothing to replay")
+        print("no journal under ~/.viva/journal — nothing to replay")
         return
     for path in paths:
         check(path)

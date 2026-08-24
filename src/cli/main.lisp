@@ -52,7 +52,7 @@
 (defparameter +usage+
   "viva                          the full-screen client, on a terminal;
                               the line client when piped or redirected
-viva <command> [options]      `vivarium` is the same command, spelled out
+viva <command> [options]      `vivarium` still works, for an older install
 
 THE ORGANISM
 
@@ -98,7 +98,7 @@ ORDINARY WORK
       --session-dir DIR       record the transcript, for counting the work done
       --extension DIR         load extensions from DIR as well
   config [DIR]                every setting, its value, and where it came from
-                              (~/.vivarium/config, then .vivarium/config, then
+                              (~/.viva/config, then .viva/config, then
                               the environment, then a flag -- later wins)
   learned [DIR]               what the agent has retained here: notes, skills
                               and tools, and where each came from
@@ -118,10 +118,10 @@ ORDINARY WORK
   overall -- less on mechanical recurring work, more on judgement.
   See docs/retention-policy.md and experiments/dogfood/RESULTS.md.
 
-  Skills go in .vivarium/skills/<name>/SKILL.md, prompt templates in
-  .vivarium/prompts/*.md (invoked as /name, with $1..$9 and $ARGUMENTS),
-  extensions in .vivarium/extensions/*.lisp, and what the agent chooses to
-  keep in .vivarium/MEMORY.md. The same four work from ~/.vivarium/ for every
+  Skills go in .viva/skills/<name>/SKILL.md, prompt templates in
+  .viva/prompts/*.md (invoked as /name, with $1..$9 and $ARGUMENTS),
+  extensions in .viva/extensions/*.lisp, and what the agent chooses to
+  keep in .viva/MEMORY.md. The same four work from ~/.viva/ for every
   project. /help in the shell lists what is loaded.
 
 EXPERIMENTS
@@ -149,7 +149,7 @@ EXPERIMENTS
       --file prompt.txt       read the prompt from a file, or pipe it on stdin
   compare <before> <after>    how many cells moved between two sweeps
 
-Credentials are read from .env at the repository root by bin/vivarium, so no
+Credentials are read from .env at the repository root by bin/viva, so no
 run depends on the caller having sourced it.
 ")
 

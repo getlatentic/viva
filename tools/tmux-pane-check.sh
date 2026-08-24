@@ -18,7 +18,7 @@ cleanup() { tmux kill-session -t "$session" 2>/dev/null || true; }
 trap cleanup EXIT
 
 tmux new-session -d -s "$session" -x "$width" -y "$height" \
-     "cd $root && ./bin/vivarium live"
+     "cd $root && ./bin/viva live"
 
 # The first run compiles; wait for a frame rather than guessing a duration.
 tries=0

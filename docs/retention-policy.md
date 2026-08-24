@@ -17,7 +17,7 @@ task turn ends
       -> one bounded reflection turn (model-owned, same conversation)
       -> retention through the EXISTING doors only
          remember          facts and procedures     (text)
-         a script + tool.json under .vivarium/tools/   transformations,
+         a script + tool.json under .viva/tools/   transformations,
                            written with the ordinary file tools, callable
                            by name afterwards through the registry
 ```

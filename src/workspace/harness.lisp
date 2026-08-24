@@ -120,7 +120,7 @@ The promoted tool TAKES NO PARAMETERS. A snippet is a procedure somebody ran,
 not a function with a signature, and inventing arguments for it would be a
 guess dressed as an interface. It runs, and it prints what it printed before."
   (let* ((name (skill:skill-name skill))
-         (directory (env:join-path (env:env-cwd environment) ".vivarium" "tools" name))
+         (directory (env:project-path (env:env-cwd environment) "tools" name))
          (language (string-downcase (skill:skill-language skill)))
          (interpreter (cdr (assoc language skill:+interpreters+ :test #'string=)))
          (extension (if (search "python" language) "py" language)))
@@ -533,12 +533,12 @@ could overturn would make the order of extensions load-bearing and invisible."
 ;;; Construction
 
 (defun machine-resource-directory (leaf)
-  "Where resources shared across every project live: ~/.vivarium/<leaf>."
-  (env:join-path (uiop:native-namestring (user-homedir-pathname)) ".vivarium" leaf))
+  "Where resources shared across every project live: ~/.viva/<leaf>."
+  (env:home-path leaf))
 
 (defun project-resource-directory (environment leaf)
-  "Where THIS project's resources live: <cwd>/.vivarium/<leaf>."
-  (env:join-path (env:env-cwd environment) ".vivarium" leaf))
+  "Where THIS project's resources live: <cwd>/.viva/<leaf>."
+  (env:project-path (env:env-cwd environment) leaf))
 
 (defun resource-directories (environment leaf)
   "The machine's, then the project's. Later wins, because a project that ships a

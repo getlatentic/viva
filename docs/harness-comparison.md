@@ -46,7 +46,7 @@ ships it.**
 |---|---|---|---|---|
 | Codex | **the harness** — background pipeline at root-session start | `MEMORY.md`, `memory_summary.md`, `skills/` with executable `scripts/` | "procedure repeats (more than once)" → skill | yes, git-baselined |
 | Claude Code | **the model**, plus an explicit user command | memory files + an index; skills may carry scripts | none mechanised (observed) | yes, files |
-| vivarium | **the harness** — one bounded turn at task end | memory line, `.vivarium/skills/`, `.vivarium/tools/` | evidence of prior reuse, tier 2 → tier 3 | yes, files |
+| vivarium | **the harness** — one bounded turn at task end | memory line, `.viva/skills/`, `.viva/tools/` | evidence of prior reuse, tier 2 → tier 3 | yes, files |
 | deepseek-harness | nobody — a repo rule the model is told to obey | Agent Notes, CI-gated | n/a | yes, files |
 | opencode | n/a — consumes skills, authors none | — | — | — |
 | pi | none | — | — | — |

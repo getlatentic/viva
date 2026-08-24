@@ -19,12 +19,24 @@ use std::thread;
 
 /// Where the daemon listens. `VIVARIUM_SOCKET` wins, as it does for the Lisp
 /// client, so a test daemon on its own socket is reachable the same way.
+///
+/// RESOLVED THE WAY THE ENGINE RESOLVES IT. A machine installed before the
+/// rename keeps its former directory and, with it, its former socket name.
+/// Guessing the current pair there would report no daemon while one is
+/// running, and then start a second one over the same journal.
 pub fn socket_path() -> PathBuf {
     if let Ok(from_environment) = std::env::var("VIVARIUM_SOCKET") {
         return PathBuf::from(from_environment);
     }
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
-    PathBuf::from(home).join(".vivarium/vivariumd.sock")
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()));
+    let current = home.join(".viva");
+    if !current.is_dir() {
+        let former = home.join(".vivarium");
+        if former.is_dir() {
+            return former.join("vivariumd.sock");
+        }
+    }
+    current.join("viva.sock")
 }
 
 /// One line from the daemon. The distinction matters to the caller: a response
@@ -66,7 +78,7 @@ impl Event {
 /// Looked for in the order a person would expect: what they told us, what is
 /// on their PATH, then the repository this binary was built inside. The last
 /// matters because a freshly built client is usually being run from a checkout
-/// where `vivarium` has not been installed yet.
+/// where `viva` has not been installed yet.
 pub fn launcher() -> Option<PathBuf> {
     if let Ok(named) = std::env::var("VIVARIUM_BIN") {
         let path = PathBuf::from(named);
@@ -75,17 +87,22 @@ pub fn launcher() -> Option<PathBuf> {
         }
     }
     if let Ok(path) = std::env::var("PATH") {
+        // Both names, current one first. An install that predates the rename
+        // has only the old one on PATH, and refusing to start there would be
+        // this client declining to work on the machine it was upgraded on.
         for directory in path.split(':') {
-            let candidate = PathBuf::from(directory).join("vivarium");
-            if candidate.exists() {
-                return Some(candidate);
+            for name in ["viva", "vivarium"] {
+                let candidate = PathBuf::from(directory).join(name);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
             }
         }
     }
-    // tui/target/{debug,release}/vivarium-tui -> ../../../bin/vivarium
+    // tui/target/{debug,release}/vivarium-tui -> ../../../bin/viva
     let exe = std::env::current_exe().ok()?;
     let root = exe.parent()?.parent()?.parent()?.parent()?;
-    let candidate = root.join("bin/vivarium");
+    let candidate = root.join("bin/viva");
     candidate.exists().then_some(candidate)
 }
 
@@ -99,7 +116,7 @@ pub fn ensure_daemon(path: &PathBuf) -> Result<(), String> {
         return Ok(());
     }
     let launcher = launcher().ok_or_else(|| {
-        format!("no daemon on {}, and no `vivarium` to start one with. \
+        format!("no daemon on {}, and no `viva` to start one with. \
 Put it on your PATH or set VIVARIUM_BIN.", path.display())
     })?;
     let started = std::process::Command::new(&launcher)
@@ -118,7 +135,7 @@ Put it on your PATH or set VIVARIUM_BIN.", path.display())
     // The first start of the day compiles the world, so this waits in minutes
     // rather than seconds -- and says what it is waiting for, because a blank
     // terminal for four minutes is indistinguishable from a hang.
-    eprintln!("starting the vivarium daemon…");
+    eprintln!("starting the viva daemon…");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
     while std::time::Instant::now() < deadline {
         if UnixStream::connect(path).is_ok() {

@@ -499,7 +499,7 @@ It printed `listening on ...` and left nothing listening. SERVE's own
 :BACKGROUND is still right for a caller that IS the long-lived process, which
 is how the suite and the soak use it."
   (unless (daemon:running-p)
-    (uiop:launch-program (list (namestring (merge-pathnames "bin/vivarium" (repository-root)))
+    (uiop:launch-program (list (namestring (merge-pathnames "bin/viva" (repository-root)))
                                "daemon" "start")
                          :output nil :error-output nil)
     (loop repeat 100
@@ -728,7 +728,7 @@ prints exactly what it is agreeing to."
         (progn
           (trust:trust (env:make-local-environment :cwd root) root)
           (format t "~&trusted ~a~%~
-Its .vivarium/extensions/*.lisp will be loaded, and its .vivarium/tools/ ~
+Its .viva/extensions/*.lisp will be loaded, and its .viva/tools/ ~
 will be run, as you.~%" root)))
     0))
 

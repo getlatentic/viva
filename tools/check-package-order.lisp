@@ -6,7 +6,7 @@
 ;;;;
 ;;;; Two homes were tried and both are dead: the test suite never runs, because
 ;;;; a broken package file stops the suite loading; and `vivarium check` dies in
-;;;; the loader too, because bin/vivarium quickloads the system before any
+;;;; the loader too, because bin/viva quickloads the system before any
 ;;;; command runs. This file loads nothing. It reads text.
 ;;;;
 ;;;;     sbcl --script tools/check-package-order.lisp

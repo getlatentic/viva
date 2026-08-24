@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """What did the organism keep, and did anything use it?
 
-Reads only what the run left behind: the workspace's .vivarium/, and the
+Reads only what the run left behind: the workspace's .viva/, and the
 transcripts of the five tasks. Nothing is inferred -- a tool counts as reused
 when a transcript shows the model calling it by name, and a note counts as
 carried when it is in the memory file a later task was given.
@@ -66,7 +66,7 @@ def main():
     # both a distraction and -- in a scored setting -- the answer key.
     transcripts = pathlib.Path(sys.argv[3])
     jobs = root / "experiments/dogfood/jobs/spend"
-    germline = work / ".vivarium"
+    germline = work / ".viva"
     variants = [d for d in sorted(transcripts.iterdir()) if d.is_dir()] if transcripts.exists() else []
 
     # ---------------------------------------------------------- what was kept
@@ -127,7 +127,7 @@ def main():
     # is loaded makes no model request.
     if memory.exists():
         loaded = subprocess.run(
-            [str(root / "bin/vivarium"), "shell", "--cwd", str(work)],
+            [str(root / "bin/viva"), "shell", "--cwd", str(work)],
             input="/memory\n/exit\n", capture_output=True, text=True, timeout=180)
         carried = "What I have learned" in loaded.stdout
         print(f"The note above is{'' if carried else ' NOT'} in what the next task here")

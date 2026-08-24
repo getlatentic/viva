@@ -11,8 +11,8 @@ from the machine's registry then the project's, later winning by name — the
 same resolution skills and templates already use.
 
 ```
-~/.vivarium/tools/<name>/       the machine's
-<cwd>/.vivarium/tools/<name>/   the project's, and it wins
+~/.viva/tools/<name>/       the machine's
+<cwd>/.viva/tools/<name>/   the project's, and it wins
     tool.json
     run.py                      any language; the model picks
 ```
@@ -92,7 +92,7 @@ Client configuration is one entry:
 {
   "mcpServers": {
     "vivarium-tools": {
-      "command": "/path/to/vivarium/bin/vivarium",
+      "command": "/path/to/vivarium/bin/viva",
       "args": ["mcp", "--cwd", "/path/to/project"]
     }
   }
@@ -127,12 +127,12 @@ subprocess. If it can be run, it can read what you can read.
 The trust boundary is therefore **who wrote the tool**, and that is the
 control:
 
-- **Only trusted projects.** `.vivarium/tools/` in a cloned repository is
+- **Only trusted projects.** `.viva/tools/` in a cloned repository is
   its author's code. It does not load until that project root is trusted,
-  and the trust record lives in `~/.vivarium/trusted.sexp` — outside every
+  and the trust record lives in `~/.viva/trusted.sexp` — outside every
   project, so a project cannot trust itself. The refusal is a warning rather
   than silence, because a control that looks like "there was nothing there"
-  is not a control. The machine's own `~/.vivarium/tools/` is always
+  is not a control. The machine's own `~/.viva/tools/` is always
   permitted: it is yours, and requiring you to trust yourself would only
   teach the habit of clicking through the question that matters.
 - **Paths are canonicalised on both sides** — symlinks resolved, trailing

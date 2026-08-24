@@ -94,8 +94,10 @@
                    (when carried
                      (uiop:run-program
                       (list "/bin/sh" "-c"
-                            (format nil "[ -d ~a/.vivarium ] && cp -R ~a/.vivarium ~a/ || true"
-                                    carried carried (namestring sandbox)))))
+                            (format nil "[ -d ~a/~a ] && cp -R ~a/~a ~a/ || true"
+                                    carried vivarium.env:+data-directory+
+                                    carried vivarium.env:+data-directory+
+                                    (namestring sandbox)))))
                    (let ((started (get-internal-real-time))
                          (agent (vivarium.console:build-agent
                                  :model "deepseek"

@@ -1,6 +1,6 @@
 ;;;; Prompt templates: a phrasing worth keeping, kept.
 ;;;;
-;;;; A file under .vivarium/prompts/ becomes a command. `/review src/parser.lisp`
+;;;; A file under .viva/prompts/ becomes a command. `/review src/parser.lisp`
 ;;;; runs prompts/review.md with the path substituted, and the model sees an
 ;;;; ordinary user message -- there is no template at the provider boundary,
 ;;;; only expanded text.

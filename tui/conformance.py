@@ -146,7 +146,7 @@ class Client:
             # a worktree ran a client from one tree against a daemon from
             # another: a reconnect check passed on a client that could not
             # reconnect, because a stale tab looks like a surviving one.
-            launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
+            launcher = os.path.join(os.path.dirname(ROOT), "bin", "viva")
             os.execve(launcher, [launcher], environment or os.environ)
         self.rows, self.cols = rows, cols
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
@@ -293,7 +293,7 @@ def own_daemon(cwd):
     socket_path = os.path.join(own, "check.sock")
     environment = dict(os.environ, VIVARIUM_SOCKET=socket_path,
                        VIVARIUM_JOURNAL=os.path.join(own, "journal"))
-    launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
+    launcher = os.path.join(os.path.dirname(ROOT), "bin", "viva")
     process = subprocess.Popen(
         [launcher, "daemon", "start", "--background"],
         cwd=cwd, env=environment,
@@ -312,11 +312,11 @@ def main():
     cwd = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(ROOT)
     # The short name resolves to a launcher. What a person types is `viva`,
     # and the launcher finds its root by following the link -- so the link has
-    # to land on a bin/vivarium, whichever checkout it was installed from.
+    # to land on a bin/viva, whichever checkout it was installed from.
     short = os.path.expanduser("~/.local/bin/viva")
     if os.path.islink(short):
         target = os.path.realpath(short)
-        if os.path.basename(target) == "vivarium" and os.access(target, os.X_OK):
+        if os.path.basename(target) == "viva" and os.access(target, os.X_OK):
             ok(f"`viva` resolves to a launcher ({os.path.dirname(os.path.dirname(target))})")
         else:
             fail(f"`viva` resolves to {target}, which is not a launcher")
@@ -557,7 +557,7 @@ def main():
         # the same tab -- and the client must get there on its own. A client
         # that reported `the daemon closed the connection` and stopped made
         # `survives a restart` mean `if you restart the client too`.
-        launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
+        launcher = os.path.join(os.path.dirname(ROOT), "bin", "viva")
         # THE TAB OF THE SESSION WITH A CONVERSATION. The client starts a
         # session for this directory at launch, and one nothing was said in is
         # correctly NOT brought back -- so the bar legitimately loses a tab,
@@ -757,7 +757,7 @@ def main():
             ok("leaves the alternate screen, the cursor and the mouse as it found them")
     finally:
         client.close()
-        launcher = os.path.join(os.path.dirname(ROOT), "bin", "vivarium")
+        launcher = os.path.join(os.path.dirname(ROOT), "bin", "viva")
         subprocess.run([launcher, "daemon", "stop"], env=environment,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

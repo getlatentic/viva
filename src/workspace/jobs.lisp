@@ -183,10 +183,10 @@ process, so it matters more rather than less."
 ;;;
 ;;; One file per service, holding the command line. Not JSON, not KEY=VALUE:
 ;;; there is exactly one field, and a format with one field is a filename and
-;;; its contents. `cat .vivarium/services/dev` tells you everything.
+;;; its contents. `cat .viva/services/dev` tells you everything.
 
 (defun services-directory (cwd)
-  (env:join-path cwd ".vivarium" "services"))
+  (env:project-path cwd "services"))
 
 (defun declared (environment cwd)
   "Every service this project declares, as (NAME . COMMAND)."

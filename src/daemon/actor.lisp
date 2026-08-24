@@ -151,7 +151,7 @@ instants. Never PUBLISH inside: publishing takes the same lock."
   (let ((given (sb-posix:getenv "VIVARIUM_JOURNAL")))
     (if (and given (plusp (length given)))
         (namestring (uiop:ensure-directory-pathname given))
-        (namestring (merge-pathnames ".vivarium/journal/" (user-homedir-pathname)))))
+        (concatenate 'string (env:home-path "journal") "/")))
   "Where session journals and live markers live. In-process tests point this
 at a temporary directory; they wrote 26MB into the real home before it was
 configurable. VIVARIUM_JOURNAL does the same for a daemon started as a

@@ -21,7 +21,7 @@
 ;;;; existing ledger recovery semantics and must not be enriched, and a task
 ;;;; that finishes before the checkpoint is INELIGIBLE rather than relocated.
 ;;;;
-;;;;   ./bin/vivarium eval experiments/b10-paired-fork.lisp
+;;;;   ./bin/viva eval experiments/b10-paired-fork.lisp
 ;;;;   -- or --
 ;;;;   set -a && . ./.env && set +a
 ;;;;   sbcl --non-interactive --load experiments/b10-paired-fork.lisp

@@ -1,4 +1,4 @@
-;;;; Bootstrap for bin/vivarium. Outside the ASDF system on purpose: it is what
+;;;; Bootstrap for bin/viva. Outside the ASDF system on purpose: it is what
 ;;;; brings the system up, so it cannot be part of it.
 
 (require :sb-posix)

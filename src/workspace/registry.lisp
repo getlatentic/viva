@@ -8,7 +8,7 @@
 ;;;;
 ;;;; A registry tool is a directory: `tool.json` and whatever it runs.
 ;;;;
-;;;;     .vivarium/tools/usage-totals/
+;;;;     .viva/tools/usage-totals/
 ;;;;       tool.json     name, description, parameters, exec, version
 ;;;;       run.py        anything executable; the language is the model's
 ;;;;
@@ -118,7 +118,7 @@ Later directories win by name, matching how skills and templates already
 resolve: a project that ships its own `usage_totals` means its own.
 
 TRUSTED PROJECTS ONLY. A manifest names a script this process will execute,
-so `.vivarium/tools/` in a repository somebody else wrote is their code
+so `.viva/tools/` in a repository somebody else wrote is their code
 running as you the moment vivarium is pointed at it. Extensions already
 refused exactly this; the registry had the same exposure and none of the
 answer. The refusal is a WARNING rather than silence, because a control that

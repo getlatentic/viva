@@ -30,7 +30,7 @@ Route by the SHAPE of the thing, not by how pleased you are with it.
    where something lives. Use remember, one line each. No code.
 
 2. CODE YOU WOULD OTHERWISE WRITE AGAIN -- a parse, a reshape, a conversion.
-   Write it as a skill: a file .vivarium/skills/<name>/SKILL.md holding
+   Write it as a skill: a file .viva/skills/<name>/SKILL.md holding
 
        ---
        name: <name>
@@ -43,7 +43,7 @@ Route by the SHAPE of the thing, not by how pleased you are with it.
    working code you are not yet sure will be wanted often.
 
 3. A TOOL, when the transformation is plainly one you will call by name again
-   and again: a directory .vivarium/tools/<name>/ holding tool.json --
+   and again: a directory .viva/tools/<name>/ holding tool.json --
 
       {\"name\": \"...\", \"description\": \"...\",
        \"exec\": [\"python3\", \"run.py\"],

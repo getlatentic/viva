@@ -43,7 +43,7 @@ exits after each task can only ever pretend to evolve.
           `vivarium`
 ```
 
-`vivarium` finds a running `vivariumd`, starts one if absent, connects, and
+`viva` finds a running daemon, starts one if absent, connects, and
 opens the interactive client. **Closing the client leaves the organism alive.**
 `vivarium attach [session]` comes back to it.
 

@@ -48,7 +48,7 @@ work, which is the quiet way a corpus starts measuring itself."
     (let ((name (if (uiop:directory-pathname-p entry)
                     (car (last (pathname-directory entry)))
                     (file-namestring entry))))
-      (unless (string= name ".vivarium")
+      (unless (string= name ".viva")
         (if (uiop:directory-pathname-p entry)
             (uiop:delete-directory-tree entry :validate (constantly t)
                                               :if-does-not-exist :ignore)
@@ -86,7 +86,7 @@ work, which is the quiet way a corpus starts measuring itself."
                       (shape (car (last (butlast (pathname-directory job)))))
                       (label (format nil "~a-~a" shape variant))
                       ;; ONE directory for every job, not one each. Retention
-                      ;; is project-scoped -- REMEMBER writes .vivarium/MEMORY.md
+                      ;; is project-scoped -- REMEMBER writes .viva/MEMORY.md
                       ;; relative to cwd, and RESOURCE-DIRECTORIES resolves
                       ;; skills and tools the same way -- so a corpus giving
                       ;; each task its own cwd gives each task its own germline
