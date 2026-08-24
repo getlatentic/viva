@@ -379,7 +379,11 @@ def main():
         glob.glob(os.path.expanduser("~/.vivarium/journal/*.jsonl")),
         key=os.path.getmtime, reverse=True)[:1]
     if not paths:
-        sys.exit("no journal given and none found under ~/.vivarium/journal")
+        # Nothing recorded is not a failure to replay it. A fresh clone and a
+        # CI runner both have an empty journal, and a check that cannot run
+        # should say so rather than fail a build.
+        print("no journal under ~/.vivarium/journal — nothing to replay")
+        return
     for path in paths:
         check(path)
     print()

@@ -1,0 +1,115 @@
+# Every check this project has, on every platform it claims to run on.
+#
+# WHAT IS MISSING IS WINDOWS, and deliberately: the client talks to the daemon
+# over a unix socket, so `std::os::unix` is not a detail to paper over with a
+# matrix entry. `cargo check --target x86_64-pc-windows-gnu` reports six errors
+# and every one of them is that. Windows needs a transport -- a named pipe or
+# loopback TCP -- on both sides, and until somebody writes it the honest thing
+# is to say so rather than ship a job that is skipped.
+name: check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # A model is available when its key is set; nothing probes it. No check here
+  # sends a prompt, so a name that cannot work is enough to start a session --
+  # and a real key in CI would be a real bill for a run that asks nothing.
+  DEEPSEEK_API_KEY: ci-nothing-is-sent-to-this
+  DEEPSEEK_MODEL: ci-model
+
+jobs:
+  check:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macos-arm64
+          - os: ubuntu-latest
+            name: linux-x86_64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SBCL and ncurses
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew install sbcl
+          else
+            sudo apt-get update
+            sudo apt-get install -y sbcl libncurses-dev
+          fi
+
+      # Everything Quicklisp fetches, and everything it compiles. The first
+      # build of the dependency tree is minutes; the rest are seconds.
+      - name: Cache Quicklisp
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/quicklisp
+            ~/.cache/common-lisp
+          key: quicklisp-${{ matrix.name }}-${{ hashFiles('vivarium.asd') }}
+          restore-keys: quicklisp-${{ matrix.name }}-
+
+      - name: Install Quicklisp
+        run: |
+          if [ ! -f "$HOME/quicklisp/setup.lisp" ]; then
+            curl -sSLO https://beta.quicklisp.org/quicklisp.lisp
+            sbcl --non-interactive --load quicklisp.lisp \
+                 --eval '(quicklisp-quickstart:install)'
+          fi
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tui/target
+          key: cargo-${{ matrix.name }}-${{ hashFiles('tui/Cargo.lock') }}
+
+      - name: Client tests
+        run: cargo test --manifest-path tui/Cargo.toml
+
+      - name: Client, release
+        run: cargo build --release --manifest-path tui/Cargo.toml
+
+      # The suite drives scripted responders, so it asks no model anything.
+      - name: Lisp suite
+        run: ./bin/vivarium test
+
+      # Over a real pty, against a daemon of its own on its own socket and its
+      # own journal. It types and reads frames; it never sends a prompt.
+      - name: Terminal invariants
+        run: python3 tui/conformance.py
+
+      - name: The client renders what the protocol sends
+        run: python3 tui/wire_check.py
+
+      # TLC, and the witnesses that must still violate. A proof that stops
+      # proving fails the build rather than passing quietly.
+      - name: Specifications
+        run: |
+          curl -sSL -o "$HOME/tla2tools.jar" \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+          ./spec/verify.sh
+
+      # The artifact people actually want: one file that needs neither SBCL nor
+      # Quicklisp. Without it, `the binary` is the client and the daemon is
+      # still source somebody has to build.
+      - name: Build the image
+        run: |
+          ./tools/build-image.sh "viva-${{ matrix.name }}"
+          ./viva-${{ matrix.name }} daemon status
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: viva-${{ matrix.name }}
+          path: |
+            viva-${{ matrix.name }}
+            tui/target/release/vivarium-tui
+          if-no-files-found: error
