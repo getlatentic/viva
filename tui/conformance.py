@@ -562,11 +562,7 @@ def main():
         def tabs_of(row):
             return [part.strip() for part in row.split("+")[0].split("│") if part.strip()]
         tabs_before = tabs_of(client.term.lines()[0])
-        # By PROJECT, not by label. A label carries part of the session id only
-        # while two tabs share a project name, so the surviving tab is spelled
-        # differently once it is the only one -- and comparing labels tested
-        # the disambiguator rather than whether the session came back.
-        project = next((tab.split()[0] for tab in tabs_before if tab != "viva"), "")
+
         transcript_before = client.term.text()
         subprocess.run([launcher, "daemon", "stop"], env=environment, cwd=cwd,
                        capture_output=True, timeout=120)
@@ -584,10 +580,13 @@ def main():
             print("---- frame at failure ----")
             print("\n".join(client.term.lines()))
             fail(f"the client never reconnected: {status!r}")
+        # A TAB, not a particular one. The session with a conversation here is
+        # the one this check resumed from the picker, and that lives in
+        # whichever directory it was recorded in -- so naming the project was
+        # asserting where the picker's newest session happened to be. Which
+        # session came back is checked below, by its conversation.
         elif not any(tab != "viva" for tab in tabs_after):
             fail(f"no tab survived the restart: {tabs_before!r} -> {tabs_after!r}")
-        elif not any(tab.split()[0] == project for tab in tabs_after if tab != "viva"):
-            fail(f"the tab that came back names another project: {tabs_after!r}")
         else:
             ok("the daemon restarts under a live client, and the tab is still there")
         client.send(b"\x1b[H")

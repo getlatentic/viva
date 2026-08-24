@@ -42,6 +42,10 @@ pub struct Hitboxes {
 struct Laid {
     stamp: u64,
     expanded: bool,
+    /// What came before it. A block puts a line of air between itself and
+    /// prose, so its layout depends on what it follows and it has to be laid
+    /// out again when that changes.
+    after: Option<Role>,
     lines: Vec<Line<'static>>,
 }
 
@@ -217,16 +221,22 @@ impl Rendered {
         };
         let expanded = conversation.expanded;
         let mut count = 0;
+        let mut after: Option<Role> = None;
         for entry in conversation.visible_entries() {
             let fresh = match self.blocks.get(count) {
-                Some(block) => block.stamp != entry.stamp || block.expanded != expanded,
+                Some(block) => {
+                    block.stamp != entry.stamp
+                        || block.expanded != expanded
+                        || block.after != after
+                }
                 None => true,
             };
             if fresh {
                 let block = Laid {
                     stamp: entry.stamp,
                     expanded,
-                    lines: wrap_lines(&entry_lines(entry, expanded, width), width),
+                    after,
+                    lines: wrap_lines(&entry_lines(entry, expanded, width, after), width),
                 };
                 match self.blocks.get_mut(count) {
                     Some(slot) => *slot = block,
@@ -234,6 +244,7 @@ impl Rendered {
                 }
             }
             count += 1;
+            after = Some(entry.role);
         }
         self.blocks.truncate(count);
 
@@ -592,12 +603,30 @@ fn state_mark(state: &str) -> (&'static str, Color) {
 /// before this: one streamed token cost 6.5ms at ten turns and 70.8ms at four
 /// hundred, so a long session got slower at exactly the moment somebody was
 /// watching output arrive.
-fn entry_lines(entry: &Entry, expanded: bool, width: u16) -> Vec<Hanging> {
+fn entry_lines(
+    entry: &Entry,
+    expanded: bool,
+    width: u16,
+    after: Option<Role>,
+) -> Vec<Hanging> {
     // How many lines of a tool result to show when it is not expanded. Three
     // is enough to see what a command said and not enough to bury the
     // conversation it belongs to.
     const GLIMPSE: usize = 3;
     let mut lines: Vec<Hanging> = Vec::new();
+    // A LINE OF AIR WHERE WORK MEETS WORDS. A call ran straight on from the
+    // sentence above it and the next sentence ran straight on from its output,
+    // so a block had no edge at either end and the whole page read as one
+    // run. Between two calls there is none: each already opens with a titled
+    // rule, and a blank between every one of five `ls` calls is worse.
+    if let Some(before) = after {
+        // Not around a question: it already opens and closes with a line of
+        // its own, and adding one here gave it two on each side.
+        let asked = before == Role::User || entry.role == Role::User;
+        if !asked && (before == Role::Tool) != (entry.role == Role::Tool) {
+            lines.push(Hanging::plain(Line::from("")));
+        }
+    }
     {
         let text = entry.text.as_str();
         match entry.role {
@@ -658,6 +687,15 @@ fn entry_lines(entry: &Entry, expanded: bool, width: u16) -> Vec<Hanging> {
                 // `(0ms)` there would be a measurement of the replay.
                 if let Some(took) = entry.took.filter(|took| took.as_millis() >= 10) {
                     title.push(Span::styled(format!("  ({})", elapsed(took)),
+                                            Style::default().fg(DIM)));
+                }
+                // YOURS, AND THE MODEL CANNOT SEE IT. A bang line is published
+                // for every attached client and never written to the
+                // conversation, so it looked exactly like a call the agent had
+                // made -- and asking the agent about what it printed got a
+                // blank look.
+                if entry.tool == "!" {
+                    title.push(Span::styled("  not sent to the model",
                                             Style::default().fg(DIM)));
                 }
                 let used: usize = title.iter().map(|span| span.content.chars().count()).sum();
@@ -1528,6 +1566,84 @@ kilo lima mike november oscar papa quebec";
         assert_eq!(before, after,
                    "the view moved while reading back:\nbefore\n{}\nafter\n{}",
                    before.join("\n"), after.join("\n"));
+    }
+
+    #[test]
+    fn a_block_of_work_has_air_where_it_meets_words() {
+        // A call ran straight on from the sentence above it and the next
+        // sentence ran straight on from its output, so a block had no edge at
+        // either end and the whole page read as one run.
+        let mut model = ready(&[]);
+        model.sidebar = false;
+        model.absorb(&event("model.delta", json!({"text": "before the work\n"})));
+        for (id, path) in [("t1", "one"), ("t2", "two")] {
+            model.absorb(&event("tool.started",
+                                json!({"call": {"id": id, "name": "ls",
+                                                "arguments": {"path": path}}})));
+            model.absorb(&event("tool.completed",
+                                json!({"call": {"id": id}, "output": "a-file"})));
+        }
+        model.absorb(&event("model.delta", json!({"text": "after the work\n"})));
+        let rows: Vec<String> = frame_of(&mut model, 100, 20)
+            .iter()
+            .map(|row| row.trim().to_string())
+            .collect();
+        let at = |needle: &str| {
+            rows.iter().position(|row| row.contains(needle))
+                .unwrap_or_else(|| panic!("{needle:?} is not on screen: {rows:?}"))
+        };
+        assert!(rows[at("before the work") + 1].is_empty(), "no air before the work");
+        assert!(rows[at("after the work") - 1].is_empty(), "no air after the work");
+        // BETWEEN two calls there is none: each already opens with a titled
+        // rule, and a blank between every one of five `ls` calls is worse.
+        assert!(rows[at("ls two") - 1].contains("a-file"),
+                "two calls were pushed apart: {rows:?}");
+    }
+
+    #[test]
+    fn a_question_is_not_given_two_lines_of_air() {
+        // It opens and closes with one of its own, so the rule that puts air
+        // where work meets words gave it a second on each side.
+        let mut model = ready(&[]);
+        model.sidebar = false;
+        model.absorb(&event("tool.started",
+                            json!({"call": {"id": "t1", "name": "ls", "arguments": {}}})));
+        model.absorb(&event("tool.completed", json!({"call": {"id": "t1"}, "output": "a-file"})));
+        model.absorb(&event("user.message", json!({"text": "and then what"})));
+        model.absorb(&event("tool.started",
+                            json!({"call": {"id": "t2", "name": "ls", "arguments": {}}})));
+        let rows: Vec<String> = frame_of(&mut model, 100, 20)
+            .iter()
+            .map(|row| row.trim().to_string())
+            .collect();
+        let asked = rows.iter().position(|row| row.contains("and then what")).unwrap();
+        assert!(rows[asked - 1].is_empty() && !rows[asked - 2].is_empty(),
+                "the question has two lines above it: {rows:?}");
+        assert!(rows[asked + 1].is_empty() && !rows[asked + 2].is_empty(),
+                "the question has two lines below it: {rows:?}");
+    }
+
+    #[test]
+    fn a_line_you_ran_yourself_says_the_model_cannot_see_it() {
+        // It is published for every attached client and never written to the
+        // conversation, so it looked exactly like a call the agent had made --
+        // and asking the agent about what it printed got a blank look.
+        let mut model = ready(&[]);
+        model.sidebar = false;
+        model.absorb(&event("tool.started",
+                            json!({"call": {"id": "b1", "name": "!",
+                                            "arguments": {"command": "ls -la"}}})));
+        model.absorb(&event("tool.completed",
+                            json!({"call": {"id": "b1", "name": "!"}, "output": "a-file"})));
+        model.absorb(&event("tool.started",
+                            json!({"call": {"id": "t1", "name": "ls", "arguments": {}}})));
+        model.absorb(&event("tool.completed", json!({"call": {"id": "t1"}, "output": "a-file"})));
+        let rows = frame_of(&mut model, 110, 20);
+        let mine = rows.iter().find(|row| row.contains("! ls -la")).unwrap();
+        assert!(mine.contains("not sent to the model"), "a bang line does not say so: {mine:?}");
+        let agents = rows.iter().find(|row| row.contains("✔ ls ") || row.contains("✔ ls─")
+                                      || (row.contains("✔ ls") && !row.contains("-la"))).unwrap();
+        assert!(!agents.contains("not sent"), "an agent's call claims to be yours: {agents:?}");
     }
 
     #[test]
