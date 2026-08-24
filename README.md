@@ -20,9 +20,9 @@ viva              # opens this directory's session, or starts one
 ```
 
 Or take one file. `viva-macos-arm64` and `viva-linux-x86_64` are built by CI
-and need neither SBCL nor Quicklisp. CI starts a daemon with the file it just
-built, asks it for its sessions, and stops it, so an artifact that cannot serve
-fails the build instead of being uploaded.
+and need neither SBCL nor Quicklisp. CI starts a daemon with the file it built.
+It asks that daemon for its sessions, then stops it. An artifact that cannot
+serve fails the build.
 
 ## Live with it
 
