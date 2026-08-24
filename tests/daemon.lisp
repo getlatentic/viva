@@ -102,6 +102,27 @@ traffic that put two client threads on one descriptor."
     (read-line stream nil nil)
     (apply #'daemon:request stream plist)))
 
+(define-test "what happened is not counted as what went wrong"
+  ;; A resume that loaded eleven messages was filed as a SIMPLE-ERROR under
+  ;; `contained client failures`, because saying what happened either way
+  ;; reused the only channel there was. A daemon that restored seven sessions
+  ;; reported seven faults, and a tally that counts successes cannot be read
+  ;; for faults at all.
+  (let ((before (nth-value 1 (vivarium.daemon::diagnostics))))
+    (vivarium.daemon::note-progress "resume" "loaded 20260824-0900-A1B2 (34 messages)")
+    (is = before (nth-value 1 (vivarium.daemon::diagnostics))
+        "a note counted against the failure tally")
+    (vivarium.daemon::note-failure "resume"
+                                   (make-condition 'simple-error
+                                                   :format-control "no session there"))
+    (is = (1+ before) (nth-value 1 (vivarium.daemon::diagnostics))
+        "a failure did not count")
+    (let* ((recent (vivarium.daemon::diagnostics))
+           (kinds (mapcar (lambda (each) (gethash "kind" each)) (subseq recent 0 2))))
+      ;; Newest first: the failure, then the note.
+      (is equal "SIMPLE-ERROR" (first kinds))
+      (is equal "note" (second kinds) "a note is not marked as one"))))
+
 (define-test "a cell reports how full its context is, measured"
   ;; A client cannot know how full a context is from the transcript it happens
   ;; to hold: it was sent what it was sent, and the agent's context is a

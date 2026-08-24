@@ -422,16 +422,30 @@ it finds nobody home."
                           ;; listing them as failures buries the real ones under
                           ;; ordinary use.
                           (let ((reply (daemon:request stream "type" "diagnostics")))
-                            (a:when-let ((failures (gethash "failures" reply)))
+                            ;; What went wrong, and separately what happened.
+                            ;; Both came out under `contained client failures`,
+                            ;; so seven restored sessions read as seven faults.
+                            (let* ((recent (coerce (or (gethash "recent" reply) #()) 'list))
+                                   (faults (remove "note" recent :test #'equal
+                                                                 :key (lambda (each)
+                                                                        (gethash "kind" each))))
+                                   (notes (remove-if-not (lambda (each)
+                                                           (equal "note" (gethash "kind" each)))
+                                                         recent))
+                                   (failures (or (gethash "failures" reply) 0))
+                                   (hangups (gethash "hangups" reply)))
                               (when (plusp failures)
                                 (format t "~&~%~d contained client failure~:p~@[, ~d hangup~:p~]~%"
-                                        failures
-                                        (let ((hangups (gethash "hangups" reply)))
-                                          (and hangups (plusp hangups) hangups)))
-                                (loop for each across (gethash "recent" reply)
-                                      repeat 5
+                                        failures (and hangups (plusp hangups) hangups))
+                                (loop for each in faults repeat 5
                                       do (format t "~&  ~a in ~a: ~a~%"
-                                                 (gethash "condition" each)
+                                                 (gethash "kind" each)
+                                                 (gethash "where" each)
+                                                 (gethash "detail" each))))
+                              (when notes
+                                (format t "~&~%recently:~%")
+                                (loop for each in notes repeat 5
+                                      do (format t "~&  ~a: ~a~%"
                                                  (gethash "where" each)
                                                  (gethash "detail" each))))))
                           0)))))

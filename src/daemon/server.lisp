@@ -109,17 +109,28 @@ the safe direction. Silently classifying a real failure as a hangup is not."
   (bt:with-lock-held (*diagnostics-lock*) (incf *hangups*))
   nil)
 
-(defun note-failure (where condition)
+(defun remember-note (where kind detail)
+  "Keep one line about what happened. Caller holds nothing."
   (bt:with-lock-held (*diagnostics-lock*)
-    (incf *failures*)
-    (push (object "where" where
-                  "condition" (string (type-of condition))
-                  "detail" (princ-to-string condition)
+    (push (object "where" where "kind" kind "detail" detail
                   "time" (get-universal-time))
           *diagnostics*)
     (when (> (length *diagnostics*) +diagnostics-kept+)
       (setf *diagnostics* (subseq *diagnostics* 0 +diagnostics-kept+))))
   nil)
+
+(defun note-failure (where condition)
+  (bt:with-lock-held (*diagnostics-lock*) (incf *failures*))
+  (remember-note where (string (type-of condition)) (princ-to-string condition)))
+
+(defun note-progress (where detail)
+  "Record something that HAPPENED, not something that went wrong.
+
+A resume that loaded eleven messages was filed as a SIMPLE-ERROR under
+`contained client failures`, because saying what happened either way reused
+the only channel there was. Seven restored sessions read as seven faults, and
+a tally that counts successes cannot be read for faults at all."
+  (remember-note where "note" detail))
 
 (defun diagnostics ()
   (bt:with-lock-held (*diagnostics-lock*)
@@ -388,11 +399,10 @@ cell on the same transcript would be two writers to one file."
                                         :format-arguments (list wanted cwd)))
           (handler-case
               (progn (harness:resume agent (session:summary-path earlier))
-                     (note-failure "resume"
-                                   (make-condition 'simple-error
-                                                   :format-control "loaded ~a (~d message~:p)"
-                                                   :format-arguments (list (session:summary-id earlier)
-                                                                           (session:summary-messages earlier)))))
+                     (note-progress "resume"
+                                    (format nil "loaded ~a (~d message~:p)"
+                                            (session:summary-id earlier)
+                                            (session:summary-messages earlier))))
             (error (condition) (note-failure "resume" condition)))))
     (let ((cell (actor:spawn :label (or (text-of command "label") cwd) :agent agent
                              :id (session:session-id session))))

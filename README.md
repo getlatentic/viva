@@ -19,6 +19,9 @@ sh install.sh     # needs SBCL; installs Quicklisp if it is absent
 viva              # opens this directory's session, or starts one
 ```
 
+Or take one file. `viva-macos-arm64` and `viva-linux-x86_64` are built by CI
+and need neither SBCL nor Quicklisp.
+
 ## Live with it
 
 ```bash
@@ -156,6 +159,7 @@ src/tui/             the Lisp full screen client
 tui/                 the Rust client, and three checks that drive it over a pty
 spec/                TLA+ specifications and their configurations
 experiments/         pre-registrations, runs, and results
+tools/               the image build, and the checks that need a terminal
 docs/                design decisions and comparisons
 ```
 
@@ -165,6 +169,11 @@ This is a research harness. The experiments measure the retention policy.
 Nobody has run the composition experiment yet. See
 [docs/b15-preregistration.md](docs/b15-preregistration.md).
 
-It runs on macOS. Nobody has tested Linux. Windows does not build.
+It runs on macOS and Linux, and CI builds and checks both on every push.
+
+Windows does not build. The client talks to the daemon over a unix socket, so
+`cargo check --target x86_64-pc-windows-gnu` reports six errors and every one
+of them is that. Windows needs a transport on both sides -- a named pipe, or
+TCP on loopback -- and nobody has written it.
 
 The code still says `vivarium` inside. Only the command is `viva`.
