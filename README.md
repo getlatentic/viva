@@ -176,9 +176,24 @@ Nobody has run the composition experiment yet. See
 
 It runs on macOS and Linux, and CI builds and checks both on every push.
 
-Windows does not build. The client talks to the daemon over a unix socket, so
-`cargo check --target x86_64-pc-windows-gnu` reports six errors and every one
-of them is that. Windows needs a transport on both sides -- a named pipe, or
-TCP on loopback -- and nobody has written it.
+Windows does not build. `.github/workflows/windows-probe.yml` measures what is
+there, on a Windows runner:
+
+| | on Windows |
+| --- | --- |
+| the client | 6 compile errors, every one `std::os::unix` |
+| SBCL 2.6.7 | installs |
+| SB-POSIX | loads; 12 of the 20 calls this code makes |
+| missing | `lockf` `kill` `killpg` `fork` `pipe` `waitpid` `tcgetattr` `tcsetattr` |
+| sb-bsd-sockets | loads |
+| unix sockets | absent |
+
+Both sides talk over a unix socket, and Windows has none. `fork` and the
+termios calls belong to the trial runner and the Lisp client, neither of which
+a Windows daemon needs. What it does need is a transport, and TCP on loopback
+is not a drop-in: a unix socket is protected by its file permissions and a
+port is not.
+
+Windows works today under WSL, where the Linux build is what runs.
 
 The code still says `vivarium` inside. Only the command is `viva`.
