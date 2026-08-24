@@ -25,7 +25,7 @@
 ;;;; half-loaded tool is worse than a missing one: the model sees a name,
 ;;;; calls it, and gets a failure it cannot diagnose.
 
-(in-package #:vivarium.registry)
+(in-package #:viva.registry)
 
 (defparameter *timeout* 120
   "Seconds a registry tool may run before it is killed.")
@@ -119,7 +119,7 @@ resolve: a project that ships its own `usage_totals` means its own.
 
 TRUSTED PROJECTS ONLY. A manifest names a script this process will execute,
 so `.viva/tools/` in a repository somebody else wrote is their code
-running as you the moment vivarium is pointed at it. Extensions already
+running as you the moment viva is pointed at it. Extensions already
 refused exactly this; the registry had the same exposure and none of the
 answer. The refusal is a WARNING rather than silence, because a control that
 looks identical to `there was nothing there` is not a control."
@@ -191,7 +191,7 @@ files the task sees and nothing else it was not pointed at."
                    :output output :error output
                    :directory directory
                    :environment (append (clean-environment)
-                                        (list (format nil "VIVARIUM_CWD=~a" directory)))
+                                        (list (format nil "VIVA_CWD=~a" directory)))
                    :wait nil :search t))
          (deadline (+ (get-universal-time) *timeout*)))
     (loop while (eq :running (sb-ext:process-status process))

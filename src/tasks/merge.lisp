@@ -12,11 +12,11 @@
 ;;;; gives it a genuine clean merge -- three defects on three definitions, so two
 ;;;; lineages can specialise and their union is well defined.
 
-(in-package #:vivarium.tasks)
+(in-package #:viva.tasks)
 
 ;;; T11
 
-(deftask :t11 (:family :m-conflict :split :train :package "VIVARIUM.TASK.T11")
+(deftask :t11 (:family :m-conflict :split :train :package "VIVA.TASK.T11")
   "Comped lines carry a price of NIL and ORDER-TOTAL multiplies straight through
 them.
 
@@ -56,7 +56,7 @@ The correct total for *LINES* is 35."
 
 ;;; T12
 
-(deftask :t12 (:family :m-complement :split :held-out :package "VIVARIUM.TASK.T12")
+(deftask :t12 (:family :m-complement :split :held-out :package "VIVA.TASK.T12")
   "Three independent charges are each wrong, and each is wrong for a different
 kind of order:
 

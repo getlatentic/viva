@@ -10,7 +10,7 @@
 ;;;; `git pull` would silently leave you running last week's. A link keeps one
 ;;;; installation and one truth about where it lives.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defparameter +install-candidates+
   '("~/.local/bin" "~/bin" "/usr/local/bin")
@@ -58,16 +58,14 @@ one a package manager will not fight over.")
   "Is LINK one this repository put there, pointing at any name its launcher
 has been called?
 
-A link made before the launcher was renamed points at a path that no longer
-exists, so PROBE-FILE says nothing is installed while the link is still in the
-way. Treating it as a stranger's leaves an upgrade with a dangling command and
-an installer refusing to fix it, which is a worse answer than replacing a link
-this repository wrote itself."
-  (let ((directory (env:parent-path (launcher-path))))
-    (and link
-         (string= directory (env:parent-path link))
-         (member (env:base-name link) '("viva" "vivarium") :test #'string=)
-         t)))
+Judged by the directory the link points INTO, not by the file name at the end
+of it. A link made before the launcher was renamed points at a path that no
+longer exists, so PROBE-FILE reports nothing installed while the link is still
+in the way -- and matching on the name would need this file to carry every name
+the launcher has ever had. The directory is enough, and it does not go stale."
+  (and link
+       (string= (env:parent-path (launcher-path)) (env:parent-path link))
+       t))
 
 (defun describe-existing (target)
   "What is already at TARGET: NIL, :OURS, or a description of somebody else's."
@@ -102,15 +100,6 @@ different answers that must not look alike."
         (error (condition)
           (format *error-output* "~&cannot use ~a: ~a~%" directory condition)
           (return-from command-install 1)))
-      ;; BOTH NAMES. `viva` is the command. `vivarium` is what the code still
-      ;; calls itself and what an earlier install put on PATH, so it is linked
-      ;; too and anything anybody wrote against it goes on working. The
-      ;; launcher resolves symlinks to find its root, so the second link costs
-      ;; nothing and behaves identically.
-      ;;
-      ;; The old name is not allowed to fail the install. Somebody may have a
-      ;; `vivarium` of their own, and refusing to install the tool at all
-      ;; because a compatibility alias is taken would be absurd.
       (let ((target (env:join-path directory "viva")))
         (let ((existing (describe-existing target)))
           (case existing
@@ -129,16 +118,6 @@ different answers that must not look alike."
              (format *error-output* "~&~a already exists and is ~a, not this repository's launcher.~%~
 Move it, or choose somewhere else with --prefix DIR.~%" target existing)
              (return-from command-install 1))))
-        (let* ((alias (env:join-path directory "vivarium"))
-               (existing (describe-existing alias)))
-          (case existing
-            (:ours (if (relink alias launcher)
-                       (format t "  and ~a~%" alias)
-                       (format t "  (could not point ~a at the launcher)~%" alias)))
-            (:none (if (ignore-errors (sb-posix:symlink launcher alias) t)
-                       (format t "  and ~a~%" alias)
-                       (format t "  (could not link ~a; ~a still works)~%" alias target)))
-            (t (format t "  (~a is already ~a, so it was left alone)~%" alias existing))))
         ;; The point of installing is being able to type the name, so a
         ;; directory that is not on PATH is a failed install wearing a success
         ;; message. Say the line that fixes it.

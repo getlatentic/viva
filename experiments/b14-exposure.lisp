@@ -19,7 +19,7 @@
 ;;;; installed is search termination; exposure before it is integration failure.
 ;;;; So commitment is recorded, not just contact.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defparameter *constraint* "NEGOTIATED")
 

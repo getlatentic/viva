@@ -5,7 +5,7 @@
 ;;;; moves. A choice whose credential is absent is simply not offered: a missing
 ;;;; key should be a missing option, never a run that fails at the first request.
 
-(in-package #:vivarium.models)
+(in-package #:viva.models)
 
 (defstruct (choice (:conc-name choice-))
   (label "" :type string)
@@ -44,7 +44,7 @@
     (make-choice :label (getf entry :label)
                  :model (or (from-environment (getf entry :model-var)) (getf entry :model))
                  :effort (getf entry :effort)
-                 :context-limit (or (a:when-let ((given (from-environment "VIVARIUM_CONTEXT_LIMIT")))
+                 :context-limit (or (a:when-let ((given (from-environment "VIVA_CONTEXT_LIMIT")))
                                       (parse-integer given :junk-allowed t))
                                     (getf entry :context-limit 128000))
                  :provider (provider:openai-provider
@@ -56,9 +56,9 @@
   "A llama.cpp server, when one is configured. Not probed here -- probing needs a
 socket library the library layer has no other use for, so a caller that cares
 whether it is up checks before offering it."
-  (a:when-let ((endpoint (from-environment "VIVARIUM_LOCAL_ENDPOINT")))
+  (a:when-let ((endpoint (from-environment "VIVA_LOCAL_ENDPOINT")))
     (make-choice :label "local" :effort "low"
-                 :model (or (from-environment "VIVARIUM_LOCAL_MODEL") "gpt-oss-20b")
+                 :model (or (from-environment "VIVA_LOCAL_MODEL") "gpt-oss-20b")
                  :provider (provider:llama-cpp-provider
                             :endpoint endpoint
                             :output-prefix provider:+harmony-output-prefix+))))

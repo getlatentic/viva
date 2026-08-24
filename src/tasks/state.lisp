@@ -6,7 +6,7 @@
 ;;;; cannot reach them on survival: its only way to apply a fix is to reload, and
 ;;;; the reload is what destroys the thing being counted.
 
-(in-package #:vivarium.tasks)
+(in-package #:viva.tasks)
 
 (defun event-fingerprint (package id)
   (let ((events (service:value-in package '#:*events*)))
@@ -18,7 +18,7 @@
 
 ;;; T1
 
-(deftask :t1 (:family :a-state :split :train :package "VIVARIUM.TASK.T1")
+(deftask :t1 (:family :a-state :split :train :package "VIVA.TASK.T1")
   "TOTAL-REVENUE signals a TYPE-ERROR. The image has been processing events for
 a while and *EVENTS* holds every one of them; the run must not lose them.
 
@@ -48,7 +48,7 @@ Fix TOTAL-REVENUE so it returns the correct figure."
 
 ;;; T2
 
-(deftask :t2 (:family :a-state :split :held-out :package "VIVARIUM.TASK.T2")
+(deftask :t2 (:family :a-state :split :held-out :package "VIVA.TASK.T2")
   "PRICE-OF ignores the standing discount and returns the raw price.
 
 *CACHE* holds two thousand raw prices accumulated from live traffic. They are
@@ -90,7 +90,7 @@ cached price is worth zero."
 
 ;;; T3
 
-(deftask :t3 (:family :a-state :split :held-out :package "VIVARIUM.TASK.T3")
+(deftask :t3 (:family :a-state :split :held-out :package "VIVA.TASK.T3")
   "Three hundred SESSION instances are live in *SESSIONS*, each holding the
 orders it accumulated. They cannot be rebuilt -- nothing on disk records them.
 
@@ -136,7 +136,7 @@ Add the slot and migrate the live instances."
 
 ;;; T13
 
-(deftask :t13 (:family :a-state :split :train :package "VIVARIUM.TASK.T13")
+(deftask :t13 (:family :a-state :split :train :package "VIVA.TASK.T13")
   "A change was installed to ORDER-TOTAL a moment ago and it was wrong: it
 double-counts quantity. The version before it was correct.
 
@@ -165,6 +165,6 @@ correct behaviour."
                     (score (equal good
                                   (ledger:latest-source
                                    (image:image-ledger backend)
-                                   "DEFUN VIVARIUM.TASK.T13::ORDER-TOTAL")))))
+                                   "DEFUN VIVA.TASK.T13::ORDER-TOTAL")))))
             (cons "lines-intact"
                   (lambda () (score (equal lines (service:value-in package '#:*lines*)))))))))

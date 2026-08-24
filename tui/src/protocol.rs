@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 
-/// Where the daemon listens. `VIVARIUM_SOCKET` wins, as it does for the Lisp
+/// Where the daemon listens. `VIVA_SOCKET` wins, as it does for the Lisp
 /// client, so a test daemon on its own socket is reachable the same way.
 ///
 /// RESOLVED THE WAY THE ENGINE RESOLVES IT. A machine installed before the
@@ -25,7 +25,7 @@ use std::thread;
 /// Guessing the current pair there would report no daemon while one is
 /// running, and then start a second one over the same journal.
 pub fn socket_path() -> PathBuf {
-    if let Ok(from_environment) = std::env::var("VIVARIUM_SOCKET") {
+    if let Ok(from_environment) = std::env::var("VIVA_SOCKET") {
         return PathBuf::from(from_environment);
     }
     let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()));
@@ -80,7 +80,7 @@ impl Event {
 /// matters because a freshly built client is usually being run from a checkout
 /// where `viva` has not been installed yet.
 pub fn launcher() -> Option<PathBuf> {
-    if let Ok(named) = std::env::var("VIVARIUM_BIN") {
+    if let Ok(named) = std::env::var("VIVA_BIN") {
         let path = PathBuf::from(named);
         if path.exists() {
             return Some(path);
@@ -91,7 +91,7 @@ pub fn launcher() -> Option<PathBuf> {
         // has only the old one on PATH, and refusing to start there would be
         // this client declining to work on the machine it was upgraded on.
         for directory in path.split(':') {
-            for name in ["viva", "vivarium"] {
+            for name in ["viva", "viva"] {
                 let candidate = PathBuf::from(directory).join(name);
                 if candidate.exists() {
                     return Some(candidate);
@@ -99,7 +99,7 @@ pub fn launcher() -> Option<PathBuf> {
             }
         }
     }
-    // tui/target/{debug,release}/vivarium-tui -> ../../../bin/viva
+    // tui/target/{debug,release}/viva-tui -> ../../../bin/viva
     let exe = std::env::current_exe().ok()?;
     let root = exe.parent()?.parent()?.parent()?.parent()?;
     let candidate = root.join("bin/viva");
@@ -117,7 +117,7 @@ pub fn ensure_daemon(path: &PathBuf) -> Result<(), String> {
     }
     let launcher = launcher().ok_or_else(|| {
         format!("no daemon on {}, and no `viva` to start one with. \
-Put it on your PATH or set VIVARIUM_BIN.", path.display())
+Put it on your PATH or set VIVA_BIN.", path.display())
     })?;
     let started = std::process::Command::new(&launcher)
         .args(["daemon", "start", "--background"])

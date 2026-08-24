@@ -7,7 +7,7 @@
 ;;;;
 ;;;; The tool registry has exactly the same exposure and had none of the
 ;;;; answer. `.viva/tools/` in a cloned repository is a script somebody
-;;;; else wrote, and pointing vivarium at that repository ran it. So the
+;;;; else wrote, and pointing viva at that repository ran it. So the
 ;;;; mechanism moves here, where two consumers can share one answer rather
 ;;;; than one consumer having it and the other forgetting.
 ;;;;
@@ -15,7 +15,7 @@
 ;;;; user's, not a project's, and requiring them to trust themselves would
 ;;;; teach the habit of clicking through the question that matters.
 
-(in-package #:vivarium.trust)
+(in-package #:viva.trust)
 
 (defvar *trust-file* nil
   "Where the trust record lives, or NIL for the user's own. Bound by the

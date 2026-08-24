@@ -11,7 +11,7 @@
 ;;;; called `notes[1].md` both come apart on the way through. Native namestrings
 ;;;; are produced only at the moment a CL function demands one.
 
-(in-package #:vivarium.env)
+(in-package #:viva.env)
 
 (define-condition env-error (error)
   ((code :initarg :code :reader env-error-code :type keyword)

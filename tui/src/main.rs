@@ -1,4 +1,4 @@
-//! vivarium-tui: a full-screen client for the vivarium daemon.
+//! viva-tui: a full-screen client for the viva daemon.
 //!
 //! A separate binary that speaks the socket protocol the daemon already had.
 //! It adds nothing to that protocol -- if this program needed the engine to
@@ -52,7 +52,7 @@ impl Drop for TerminalGuard {
 
 fn main() {
     if let Err(problem) = run() {
-        eprintln!("vivarium-tui: {problem}");
+        eprintln!("viva-tui: {problem}");
         std::process::exit(1);
     }
 }
@@ -63,7 +63,7 @@ fn run() -> std::io::Result<()> {
     // tells a person nothing about what they did.
     if !std::io::IsTerminal::is_terminal(&stdout()) {
         return Err(std::io::Error::other(
-            "vivarium-tui needs a terminal. Use `vivarium attach` when piping or scripting.",
+            "viva-tui needs a terminal. Use `viva attach` when piping or scripting.",
         ));
     }
     let cwd = std::env::current_dir()?.to_string_lossy().into_owned();

@@ -17,7 +17,7 @@
 ;;;; grow a tracing subsystem to answer questions like these, the extension API
 ;;;; would be the wrong shape.
 
-(in-package #:vivarium.extension)
+(in-package #:viva.extension)
 
 (defvar *trace-started* (make-hash-table :test #'equal)
   "Tool call id -> internal real time when it began.")
@@ -29,27 +29,27 @@
 
 (defun trace-tool-start (event)
   (let ((call (getf event :call)))
-    (setf (gethash (vivarium.message:tool-call-id call) *trace-started*) (trace-now))
-    (vivarium.harness:record
+    (setf (gethash (viva.message:tool-call-id call) *trace-started*) (trace-now))
+    (viva.harness:record
      :tool-started
-     "id" (vivarium.message:tool-call-id call)
-     "name" (vivarium.message:tool-call-name call)
-     "arguments" (or (vivarium.message:tool-call-arguments call)
+     "id" (viva.message:tool-call-id call)
+     "name" (viva.message:tool-call-name call)
+     "arguments" (or (viva.message:tool-call-arguments call)
                      (make-hash-table :test #'equal))))
   nil)
 
 (defun trace-tool-end (event)
   (let* ((call (getf event :call))
          (result (getf event :result))
-         (id (vivarium.message:tool-call-id call))
+         (id (viva.message:tool-call-id call))
          (began (gethash id *trace-started*))
-         (output (vivarium.tool:tool-result-output result)))
+         (output (viva.tool:tool-result-output result)))
     (remhash id *trace-started*)
-    (vivarium.harness:record
+    (viva.harness:record
      :tool-finished
      "id" id
-     "name" (vivarium.message:tool-call-name call)
-     "error" (vivarium.tool:tool-result-error-p result)
+     "name" (viva.message:tool-call-name call)
+     "error" (viva.tool:tool-result-error-p result)
      ;; The size, not the text. The output is already in the transcript as a
      ;; tool result, and a record that duplicated it would double the file.
      "output_bytes" (length output)
@@ -62,8 +62,8 @@
 Recorded per turn rather than summed at the end, because a run that is cut off
 by the request limit still has to be costable."
   (let ((message (getf event :message)))
-    (a:when-let ((usage (and message (vivarium.message:assistant-message-usage message))))
-      (vivarium.harness:record
+    (a:when-let ((usage (and message (viva.message:assistant-message-usage message))))
+      (viva.harness:record
        :usage
        "prompt_tokens" (or (gethash "prompt_tokens" usage) 0)
        "completion_tokens" (or (gethash "completion_tokens" usage) 0)
@@ -74,7 +74,7 @@ by the request limit still has to be costable."
   nil)
 
 (defun trace-run-end (event)
-  (vivarium.harness:record
+  (viva.harness:record
    :run-finished
    "messages" (length (or (getf event :messages) #())))
   nil)
@@ -89,10 +89,10 @@ by the request limit still has to be costable."
                     :description "Tokens this session has spent, as the provider counted them."
                     :handler (lambda (agent argument)
                                (declare (ignore argument))
-                               (a:if-let ((session (vivarium.harness:agent-session agent)))
+                               (a:if-let ((session (viva.harness:agent-session agent)))
                                  (multiple-value-bind (prompt completion counted)
-                                     (vivarium.session:usage-of
-                                      (vivarium.session:entries-of session))
+                                     (viva.session:usage-of
+                                      (viva.session:entries-of session))
                                    (format nil "~d prompt + ~d completion tokens over ~d request~:p"
                                            prompt completion counted))
                                  "not recording"))))

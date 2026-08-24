@@ -8,7 +8,7 @@
 ;;;; tool that silently returns a prefix teaches the model that the file ended
 ;;;; there.
 
-(in-package #:vivarium.bound)
+(in-package #:viva.bound)
 
 (defconstant +max-lines+ 2000)
 (defconstant +max-bytes+ (* 50 1024))

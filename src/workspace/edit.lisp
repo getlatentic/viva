@@ -18,7 +18,7 @@
 ;;;; already known exactly -- and a real diff algorithm would re-derive it,
 ;;;; approximately, at more cost.
 
-(in-package #:vivarium.edit)
+(in-package #:viva.edit)
 
 (define-condition edit-failure (error)
   ((detail :initarg :detail :reader edit-failure-detail))

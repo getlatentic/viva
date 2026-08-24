@@ -9,7 +9,7 @@
 ;;;; The default is deliberately the least capable thing: plain chat completions
 ;;;; with no extensions. A provider earns its extras by declaring them.
 
-(in-package #:vivarium.provider)
+(in-package #:viva.provider)
 
 (defclass provider ()
   ((endpoint :initarg :endpoint :accessor provider-endpoint

@@ -3,7 +3,7 @@
 ;;;; Deliberately NOT the KC6 driver: that one serves a family per cell with a
 ;;;; fresh image, which is right for comparing arms and wrong here. The
 ;;;; question is what ACCUMULATES, so everything shares one image, one
-;;;; workspace root, and one growing .vivarium of skills and tools.
+;;;; workspace root, and one growing .viva of skills and tools.
 
 (require :sb-posix)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
@@ -12,9 +12,9 @@
               (uiop:pathname-directory-pathname *load-truename*)))))
   (push root (symbol-value (find-symbol "*LOCAL-PROJECT-DIRECTORIES*" "QL"))))
 (handler-bind ((warning #'muffle-warning))
-  (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/cli :silent t))
+  (funcall (find-symbol "QUICKLOAD" "QL") :viva/cli :silent t))
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defun copy-entries (from to &key exclude)
   "Copy FROM's entries into TO, skipping EXCLUDE. NO SHELL.
@@ -40,7 +40,7 @@ the answer: there is no shell here to lose anything."
                 (sb-posix:chmod (namestring target) #o755))))))))
 
 (defun clear-workspace (workspace)
-  "Remove the last job's files, keeping .vivarium -- which is the whole point.
+  "Remove the last job's files, keeping .viva -- which is the whole point.
 An answer.txt left behind would let a later check pass on an earlier job's
 work, which is the quiet way a corpus starts measuring itself."
   (dolist (entry (append (uiop:directory-files workspace)
@@ -68,14 +68,14 @@ work, which is the quiet way a corpus starts measuring itself."
          (out (uiop:ensure-directory-pathname
                (uiop:ensure-absolute-pathname
                 (uiop:ensure-directory-pathname out-dir) (uiop:getcwd))))
-         ;; ONE workspace for the whole corpus: the accumulated .vivarium is
+         ;; ONE workspace for the whole corpus: the accumulated .viva is
          ;; the thing under measurement.
          (workspace (namestring (ensure-directories-exist (merge-pathnames "workspace/" out)))))
     (ensure-directories-exist out)
-    (setf vivarium.actor:*journal-root*
+    (setf viva.actor:*journal-root*
           (namestring (ensure-directories-exist (merge-pathnames "journal/" out))))
     ;; The workspace is the user's own project here, so its tools are trusted.
-    (vivarium.trust:trust (env:make-local-environment :cwd workspace) workspace)
+    (viva.trust:trust (env:make-local-environment :cwd workspace) workspace)
     (with-open-file (tsv (merge-pathnames "results.tsv" out)
                          :direction :output :if-exists :supersede)
       (format tsv "position~ashape~avariant~asolved~aseconds~arequests~aprompt~acompletion~%"

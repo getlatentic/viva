@@ -13,7 +13,7 @@
 ;;;; size, because "we read the real size" should be checkable rather than
 ;;;; believed.
 
-(in-package #:vivarium.tui)
+(in-package #:viva.tui)
 
 (defconstant +tiocgwinsz+
   #+darwin #x40087468

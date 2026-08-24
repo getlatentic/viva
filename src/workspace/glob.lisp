@@ -9,7 +9,7 @@
 ;;;; translation is small enough to read in one sitting, and the alternative is
 ;;;; reimplementing backtracking for `**`.
 
-(in-package #:vivarium.glob)
+(in-package #:viva.glob)
 
 (defun quoted (character)
   (if (find character "\\^$.|?*+()[]{}")

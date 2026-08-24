@@ -1,7 +1,7 @@
 # The task set
 
 [backlog.toml](../backlog.toml) story S1, the instrument every open experiment
-waits on. **Built.** `vivarium/tasks`, **17 tasks, 51 cases**; 424 assertions
+waits on. **Built.** `viva/tasks`, **17 tasks, 51 cases**; 424 assertions
 green across the suite.
 
 Every task is pinned by two tests that a benchmark is worthless without: each one
@@ -138,7 +138,7 @@ something that actually went wrong while this harness was being used:
   shells out to check is told everything is fine.
 - **T17** — real code arrives by `LOAD`, not through `install`, so the ledger has
   no previous source and `read_definition` falls back to introspection. That path
-  became load-bearing the moment `vivarium run` existed and no other task touches it.
+  became load-bearing the moment `viva run` existed and no other task touches it.
 
 T11 and T12 are the pair [E2](e2-archive-tree.md) claim 1 has never had. Today every
 candidate in `e2-selection.lisp` carries exactly one definition, always the same
@@ -193,8 +193,8 @@ harness being bad at the task. A case that must act now restores from a snapshot
 so it is idempotent and order-independent. The one case that deliberately does not
 restore is the one whose job is to notice the queue was drained away.
 
-`vivarium/tasks` becomes a fourth ASDF system depending on `vivarium/image`.
-`vivarium/search` does **not** depend on it — search takes thunks and does not care
+`viva/tasks` becomes a fourth ASDF system depending on `viva/image`.
+`viva/search` does **not** depend on it — search takes thunks and does not care
 where they came from. Dependencies keep pointing inward.
 
 ## The held-out split
@@ -284,8 +284,8 @@ scratch directory, every shell command is recorded, and reaching commands are
 written into the results file so a row can be discarded later — the judgement has
 to survive the run, since the detector has already been wrong once.
 
-That first detector matched the bare word `vivarium`, which every task package
-name contains (`VIVARIUM.TASK.T11`), so it flagged agents doing exactly what they
+That first detector matched the bare word `viva`, which every task package
+name contains (`VIVA.TASK.T11`), so it flagged agents doing exactly what they
 were asked. Tells are path-shaped now.
 
 **Two consequences worth more than the fix.** Contamination was most of the *cost*:

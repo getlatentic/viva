@@ -1,12 +1,12 @@
 ;;;; queue-policy.lisp -- the two capacities actor.lisp leaves open, closed.
 ;;;;
-;;;; Drop-in replacements for PUBLISH and ACCEPT-PROMPT in vivarium.actor,
+;;;; Drop-in replacements for PUBLISH and ACCEPT-PROMPT in viva.actor,
 ;;;; plus two constants. Everything else in actor.lisp is untouched. The
 ;;;; kernel's law (kernel.lisp): every asynchronous boundary has a declared
 ;;;; capacity and a declared overload action, the way +JOURNAL-HIGH-WATER+
 ;;;; already declares one for the journal. These are the remaining two.
 
-(in-package #:vivarium.actor)
+(in-package #:viva.actor)
 
 (defparameter +queue-limit+ 64
   "Prompts a cell will hold while a turn runs. Overflow is refused, declared.

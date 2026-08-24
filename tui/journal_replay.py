@@ -30,7 +30,7 @@ import threading
 import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-BINARY = os.path.join(ROOT, "target", "debug", "vivarium-tui")
+BINARY = os.path.join(ROOT, "target", "debug", "viva-tui")
 
 if subprocess.run(["cargo", "build"], cwd=ROOT).returncode != 0:
     sys.exit("build failed")
@@ -133,7 +133,7 @@ def draw(events, rows=110, cols=120):
 
     pid, fd = pty.fork()
     if pid == 0:
-        os.environ["VIVARIUM_SOCKET"] = path
+        os.environ["VIVA_SOCKET"] = path
         os.chdir(directory)
         os.execve(BINARY, [BINARY], os.environ)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
@@ -204,7 +204,7 @@ def page_up(events, rows, cols):
     ready.wait(5)
     pid, fd = pty.fork()
     if pid == 0:
-        os.environ["VIVARIUM_SOCKET"] = path
+        os.environ["VIVA_SOCKET"] = path
         os.chdir(directory)
         os.execve(BINARY, [BINARY], os.environ)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))

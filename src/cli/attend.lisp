@@ -9,7 +9,7 @@
 ;;;; threads and can never fork a trial. CHECK-ZYGOTE would refuse. Attending
 ;;;; and searching have to be separate processes.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 ;;; A session is what an agent works on: a package to install into, something to
 ;;; say, and optionally cases that score the result. A registered task is one way
@@ -41,7 +41,7 @@
 (defun ad-hoc-session (prompt &key package load systems jail)
   "Your own prompt against your own code. No cases, so nothing is scored -- the
 ledger is the whole report."
-  (let ((name (or package "VIVARIUM.SCRATCH")))
+  (let ((name (or package "VIVA.SCRATCH")))
     (unless (find-package name)
       (make-package name :use '(#:common-lisp)))
     (dolist (system systems) (asdf:load-system system))
@@ -86,7 +86,7 @@ ledger is the whole report."
                                                                :content (list (msg:make-text
                                                                                (princ-to-string condition)))
                                                                :stop-reason :error)))))))
-                  :name "vivarium-agent")))
+                  :name "viva-agent")))
     (if screen
         (drive-screen screen worker (steer-with agent))
         (steer-from-stdin agent worker))
@@ -101,7 +101,7 @@ ledger is the whole report."
                          do (let ((text (string-trim " " line)))
                               (when (plusp (length text))
                                 (funcall (steer-with agent) text)))))
-                 :name "vivarium-steer")))
+                 :name "viva-steer")))
     (bt:join-thread worker)
     (ignore-errors (bt:destroy-thread reader))))
 
@@ -130,8 +130,8 @@ ledger is the whole report."
 (defun command-attend (parsed)
   (let ((name (first (args-positional parsed))))
     (unless name
-      (format t "~&usage: vivarium attend <task> [--model NAME] [--limit N] [--plain]~%~
-Use `vivarium run` with a prompt of your own for anything else.~%")
+      (format t "~&usage: viva attend <task> [--model NAME] [--limit N] [--plain]~%~
+Use `viva run` with a prompt of your own for anything else.~%")
       (return-from command-attend 1))
     (attend-session (task-session (tasks:find-task (a:make-keyword (string-upcase name))))
                     parsed)))
@@ -140,9 +140,9 @@ Use `vivarium run` with a prompt of your own for anything else.~%")
   "An agent against your own code, with your own prompt."
   (let ((prompt (prompt-from parsed)))
     (when (blank-prompt-p prompt)
-      (format t "~&usage: vivarium run <prompt> [--package NAME] [--system S] [--load F]~%~
-       vivarium run --file prompt.txt --package MYAPP~%~
-       echo <prompt> | vivarium run --system my-app~%")
+      (format t "~&usage: viva run <prompt> [--package NAME] [--system S] [--load F]~%~
+       viva run --file prompt.txt --package MYAPP~%~
+       echo <prompt> | viva run --system my-app~%")
       (return-from command-run 1))
     (attend-session
      (ad-hoc-session prompt

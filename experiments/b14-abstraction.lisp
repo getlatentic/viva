@@ -39,9 +39,9 @@
 ;;;;   A passes on rerun   the original failure was stochastic and this whole
 ;;;;                       diagnostic was reading noise.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
-(tasks:deftask :e24b (:family :e-diagnostic :split :train :package "VIVARIUM.TASK.E24B")
+(tasks:deftask :e24b (:family :e-diagnostic :split :train :package "VIVA.TASK.E24B")
   "Some quotes in *QUOTES* report a shipping cost that disagrees with what
 SHIPPING-COST computes for them today. Not all of those are wrong.
 
@@ -55,7 +55,7 @@ quotes that need correcting and install code that applies that. Patching
 individual quote records one by one is not an acceptable repair."
   (lambda (backend package)
     (declare (ignore package))
-    (vivarium.service:install-all backend (tasks::e24-sources)))
+    (viva.service:install-all backend (tasks::e24-sources)))
   ;; The identical scoring lambda, taken from E24 rather than rewritten. A
   ;; diagnostic scored differently from the task it diagnoses is not a
   ;; diagnostic.

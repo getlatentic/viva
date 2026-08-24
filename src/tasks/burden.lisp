@@ -20,7 +20,7 @@
 ;;;; should acquire a measurement side effect. A wrapper also means the recorded
 ;;;; name is the one the model actually called.
 
-(in-package #:vivarium.burden)
+(in-package #:viva.burden)
 
 (defparameter +read-only-tools+
   '("inspect_value" "read_definition" "find_definitions" "bash")

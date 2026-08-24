@@ -1,6 +1,6 @@
 ;;;; An agent extending itself: registering a tool it wrote, editing its prompt.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
 (defun bare-agent (&rest initargs)
   (apply #'make-instance 'scripted-agent :script '() :tools '() initargs))
@@ -12,7 +12,7 @@
     (image:install-definition backend "(defun tripled (n) \"Triple N.\" (* 3 n))")
     (self:with-self-extension (agent)
       (let ((result (tool:execute self:register-tool
-                                  (arguments "target" "DEFUN VIVARIUM.TESTS.SCRATCH::TRIPLED")
+                                  (arguments "target" "DEFUN VIVA.TESTS.SCRATCH::TRIPLED")
                                   nil)))
         (false (tool:tool-result-error-p result))
         (true (search "tripled" (tool:tool-result-output result)))))
@@ -30,10 +30,10 @@
     (image:install-definition backend "(defun swappable (n) \"First.\" n)")
     (self:with-self-extension (agent)
       (tool:execute self:register-tool
-                    (arguments "target" "DEFUN VIVARIUM.TESTS.SCRATCH::SWAPPABLE") nil)
+                    (arguments "target" "DEFUN VIVA.TESTS.SCRATCH::SWAPPABLE") nil)
       (image:install-definition backend "(defun swappable (n) \"Second.\" (* 10 n))")
       (tool:execute self:register-tool
-                    (arguments "target" "DEFUN VIVARIUM.TESTS.SCRATCH::SWAPPABLE") nil))
+                    (arguments "target" "DEFUN VIVA.TESTS.SCRATCH::SWAPPABLE") nil))
     (is = 1 (length (agent:tools agent)))
     (is string= "Second." (tool:tool-description (first (agent:tools agent))))
     (is string= "50" (tool:tool-result-output
@@ -69,7 +69,7 @@
          (agent (make-agent (list (call-tool "register_tool"
                                              :arguments (arguments
                                                          "target"
-                                                         "DEFUN VIVARIUM.TESTS.SCRATCH::LATE-ARRIVAL"))
+                                                         "DEFUN VIVA.TESTS.SCRATCH::LATE-ARRIVAL"))
                                   (say "registered")))))
     (image:install-definition backend "(defun late-arrival (n) \"Arrives late.\" (1+ n))")
     (setf (agent:tools agent) (list self:register-tool))

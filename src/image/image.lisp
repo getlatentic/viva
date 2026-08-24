@@ -5,7 +5,7 @@
 ;;;; session-aware image, and the forked trial child that must install without
 ;;;; touching its parent.
 
-(in-package #:vivarium.image)
+(in-package #:viva.image)
 
 (defstruct (installation (:conc-name installation-))
   (target "" :type string)

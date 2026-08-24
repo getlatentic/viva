@@ -1,6 +1,6 @@
 # Porting Pi's loop to Lisp
 
-**The harness is now `vivarium` (`~/workspace/vivarium`), not "vivarium".** It began
+**The harness is now `viva` (`~/workspace/viva`), not "viva".** It began
 as a port of Pi's loop and has diverged enough that the name was claiming a
 provenance the code no longer has: streaming with abort-in-flight, schemas derived
 from live functions, an s-expression wire format, a provider abstraction, forked
@@ -10,7 +10,7 @@ diffable against `agent-loop.ts:155`.
 Shared infrastructure for [E3](e3-subturn-steering.md), [E4](e4-self-editing-object.md)
 and [E5](e5-single-tool-rlm.md). Decision: **port, do not drive Pi over RPC.**
 
-**Status: arm A works end to end, and extends itself.** `~/workspace/vivarium`,
+**Status: arm A works end to end, and extends itself.** `~/workspace/viva`,
 3,670 lines (1,991 source / 1,679 tests and experiments), 187 assertions green. Against llama-server + gpt-oss-20b the harness repaired a
 broken definition in a running image — `(order-total *lines*)` went from signalling
 a TYPE-ERROR to returning 35, checked by calling the function in-process rather

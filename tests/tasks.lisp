@@ -9,7 +9,7 @@
 ;;;; The reference fixes below are the answer key, and they live here rather
 ;;;; than in the task set so nothing on the agent's path can reach them.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
 (defparameter +reference-fixes+
   ;; task -> definitions that solve it, in install order.
@@ -142,7 +142,7 @@ closes over the world it will compare against."
 
 (defun apply-reference-fix (id backend)
   (case id
-    (:t13 (image:rollback-definition backend "DEFUN VIVARIUM.TASK.T13::ORDER-TOTAL"))
+    (:t13 (image:rollback-definition backend "DEFUN VIVA.TASK.T13::ORDER-TOTAL"))
     (:t14 nil)
     (t (dolist (source (cdr (assoc id +reference-fixes+)))
          (let ((result (image:install-definition backend source :note "reference")))
@@ -236,7 +236,7 @@ closes over the world it will compare against."
     (declare (ignore task))
     (apply-reference-fix :t13 backend)
     (true (all-passing-p (task-scores cases)))
-    (service:set-value-in "VIVARIUM.TASK.T13" '#:*lines* '())
+    (service:set-value-in "VIVA.TASK.T13" '#:*lines* '())
     (let ((scores (task-scores cases)))
       (is eql 0.0 (cdr (assoc "lines-intact" scores :test #'string=)))
       ;; The repaired definition is still a correct definition.
@@ -251,7 +251,7 @@ closes over the world it will compare against."
     (declare (ignore task))
     (apply-reference-fix :t1 backend)
     (true (all-passing-p (task-scores cases)))
-    (setf (fill-pointer (service:value-in "VIVARIUM.TASK.T1" '#:*events*)) 0)
+    (setf (fill-pointer (service:value-in "VIVA.TASK.T1" '#:*events*)) 0)
     (let ((scores (task-scores cases)))
       (is eql 0.0 (cdr (assoc "events-intact" scores :test #'string=)))
       (is eql 0.0 (cdr (assoc "event-zero-unchanged" scores :test #'string=)))
@@ -269,14 +269,14 @@ closes over the world it will compare against."
 ;;; Contamination detection
 
 (define-test "contamination is path-shaped, not name-shaped"
-  ;; A task's own package is VIVARIUM.TASK.T11, so matching the bare product
+  ;; A task's own package is VIVA.TASK.T11, so matching the bare product
   ;; name flags an agent doing exactly what it was asked. That version of the
   ;; detector fired on correct runs and would have discarded them.
   (let ((root "/Users/dev/workspace/vivarium/"))
     (is equal '() (tasks:contamination-in
-                   (list "sbcl --eval '(vivarium.task.t11::order-total *lines*)'"
+                   (list "sbcl --eval '(viva.task.t11::order-total *lines*)'"
                          "ls -la"
-                         "echo VIVARIUM.TASK.T11")
+                         "echo VIVA.TASK.T11")
                    root))
     (is = 3 (length (tasks:contamination-in
                      (list "cat /Users/dev/workspace/vivarium/tests/tasks.lisp"

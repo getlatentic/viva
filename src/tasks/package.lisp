@@ -4,41 +4,41 @@
 ;;;; deliberately does NOT depend on this -- RUN-TRIAL takes thunks and does not
 ;;;; care where they came from -- so dependencies keep pointing inward.
 
-(defpackage #:vivarium.service
+(defpackage #:viva.service
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
-                    (#:image #:vivarium.image))
+                    (#:image #:viva.image))
   (:export #:fresh-package #:install-all #:seeded
            #:sym #:call-in #:value-in #:set-value-in
            #:+event-substrate+ #:+session-substrate+
            #:build-events #:build-sessions #:build-cache #:build-pending
            #:reference-revenue #:event-count #:refund-ids #:distinct-skus))
 
-(defpackage #:vivarium.burden
+(defpackage #:viva.burden
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
-                    (#:tool #:vivarium.tool))
+                    (#:tool #:viva.tool))
   (:export #:*log* #:start-recording #:record-call #:record-turn-boundary
            #:recording-tool-set #:observation-burden #:burden-report
            #:inspect-calls #:investigation-requests #:turns
            #:gate-2 #:median #:+read-only-tools+
            #:+burden-threshold+ #:+solve-rate-threshold+))
 
-(defpackage #:vivarium.tasks
+(defpackage #:viva.tasks
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
-                    (#:image #:vivarium.image)
-                    (#:ledger #:vivarium.ledger)
-                    (#:derive #:vivarium.derive)
-                    (#:msg #:vivarium.message)
-                    (#:tool #:vivarium.tool)
-                    (#:agent #:vivarium.agent)
-                    (#:loop* #:vivarium.loop)
-                    (#:image-tools #:vivarium.image-tools)
-                    (#:service #:vivarium.service)
-                    (#:inspect #:vivarium.inspect)
-                    (#:burden #:vivarium.burden)
-                    (#:self #:vivarium.self))
+                    (#:image #:viva.image)
+                    (#:ledger #:viva.ledger)
+                    (#:derive #:viva.derive)
+                    (#:msg #:viva.message)
+                    (#:tool #:viva.tool)
+                    (#:agent #:viva.agent)
+                    (#:loop* #:viva.loop)
+                    (#:image-tools #:viva.image-tools)
+                    (#:service #:viva.service)
+                    (#:inspect #:viva.inspect)
+                    (#:burden #:viva.burden)
+                    (#:self #:viva.self))
   (:export #:task #:task-p #:make-task #:deftask
            #:task-id #:task-family #:task-split #:task-package
            #:task-prompt #:task-setup #:task-cases #:task-file-form

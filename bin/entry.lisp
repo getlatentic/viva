@@ -11,7 +11,7 @@
 ;; the sentence instead.
 (let ((setup (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname))))
   (unless (probe-file setup)
-    (format *error-output* "~&vivarium needs Quicklisp, and ~a does not exist.
+    (format *error-output* "~&viva needs Quicklisp, and ~a does not exist.
 
 Install it once:
 
@@ -28,10 +28,10 @@ fetches the rest, and takes a few minutes.~%" (namestring setup))
 (let ((root (uiop:pathname-parent-directory-pathname
              (uiop:pathname-directory-pathname *load-truename*))))
   (push root (symbol-value (find-symbol "*LOCAL-PROJECT-DIRECTORIES*" "QL")))
-  (sb-posix:setenv "VIVARIUM_ROOT" (namestring root) 1))
+  (sb-posix:setenv "VIVA_ROOT" (namestring root) 1))
 
 (handler-bind ((warning #'muffle-warning))
-  (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/cli :silent t))
+  (funcall (find-symbol "QUICKLOAD" "QL") :viva/cli :silent t))
 
 ;; Ctrl-C should stop a long run, not print two hundred frames of backtrace --
 ;; frames that include the Authorization header, so a crash leaks the API key
@@ -44,5 +44,5 @@ fetches the rest, and takes a few minutes.~%" (namestring setup))
    (finish-output *error-output*)
    (sb-ext:exit :code 130 :abort t)))
 
-(sb-ext:exit :code (funcall (find-symbol "MAIN" "VIVARIUM.CLI")
+(sb-ext:exit :code (funcall (find-symbol "MAIN" "VIVA.CLI")
                             (rest sb-ext:*posix-argv*)))

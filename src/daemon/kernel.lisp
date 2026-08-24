@@ -33,7 +33,7 @@
 ;;;; the stale/mismatch case), the same way COMPLETE-TURN checks the current
 ;;;; turn before declaring a completion stale.
 
-(defpackage #:vivarium.kernel
+(defpackage #:viva.kernel
   (:use #:cl)
   ;; => is API: DEFINE-OWNER's clause assertion compares the arrow by EQ, so
   ;; an owner defined in another package -- which is exactly what Phase 1.5's
@@ -47,7 +47,7 @@
            #:+queue-limit+ #:+subscriber-capacity+
            #:run-self-test))
 
-(in-package #:vivarium.kernel)
+(in-package #:viva.kernel)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Matcher

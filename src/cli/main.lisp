@@ -1,6 +1,6 @@
 ;;;; Dispatch.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defparameter +commands+
   (list (list "daemon" #'command-daemon
@@ -27,7 +27,7 @@
         (list "learned" #'command-learned
               "What this project's agent has retained: notes, skills, tools.")
         (list "install" #'command-install
-              "Link vivarium into a directory on your PATH.")
+              "Link viva into a directory on your PATH.")
         (list "trust" #'command-trust
               "Allow a project's own extensions and tools to run.")
         (list "sessions" #'command-sessions
@@ -52,7 +52,7 @@
 (defparameter +usage+
   "viva                          the full-screen client, on a terminal;
                               the line client when piped or redirected
-viva <command> [options]      `vivarium` still works, for an older install
+viva <command> [options]
 
 THE ORGANISM
 
@@ -102,7 +102,7 @@ ORDINARY WORK
                               the environment, then a flag -- later wins)
   learned [DIR]               what the agent has retained here: notes, skills
                               and tools, and where each came from
-  install [--prefix DIR]      link `vivarium` onto your PATH, so the commands
+  install [--prefix DIR]      link `viva` onto your PATH, so the commands
                               above are the ones you actually type
   trust [DIR]                 allow DIR's own extensions and tools to run
                               (needed before a tool the organism wrote in a
@@ -162,7 +162,7 @@ run depends on the caller having sourced it.
          (name (first (args-positional parsed)))
          (entry (find name +commands+ :key #'first :test #'equal)))
     (cond
-      ;; Bare `vivarium` opens the organism. Starting work was `daemon start
+      ;; Bare `viva` opens the organism. Starting work was `daemon start
       ;; --background` and then `attach` -- two commands and one concept
       ;; before anything happened, for the case that is almost always what
       ;; somebody wants. ATTACH is called, not reimplemented, so there is one

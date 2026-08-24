@@ -1,6 +1,6 @@
-# Vivarium: a manifesto
+# Viva: a manifesto
 
-Vivarium is a living organism for doing work. It runs as one long-lived
+Viva is a living organism for doing work. It runs as one long-lived
 Common Lisp image that never needs to be turned off, does normal tasks,
 learns from them, and modifies how it operates through one proven door,
 keeping what earns its place and shedding what does not.
@@ -56,7 +56,7 @@ because the project once drifted into perfecting a benchmark while the
 harness could not edit a file, and the rule that came out of that is
 permanent: the mission says apply it to real work.
 
-## What Vivarium is not
+## What Viva is not
 
 It began Pi-like: a harness around a model, a loop, some tools. It is past
 that now, and two boundaries keep it honest in the other direction.
@@ -82,7 +82,7 @@ architecture question is reopened by the organism's own rule.
 The engine is a daemon holding a live SBCL image. Interfaces are subscribers,
 never owners: clients attach — the CLI, the IPC, whatever speaks the protocol
 next — and each sees the same sessions, the same event streams, the same task
-tree. **Vivarium builds no client of its own beyond the CLI, ratified:** the
+tree. **Viva builds no client of its own beyond the CLI, ratified:** the
 durable-session shell is arriving from outside (terminal multiplexers with
 native and web clients), and the organism's job is to be the payload in that
 pipe, not to re-render terminals. It reaches those surfaces through what
@@ -215,7 +215,7 @@ available(gen) -> restarting(gen+1) -> available(gen+1)
 Its law: a predecessor's late death touches nothing, because cleanup names
 the generation it cleans.
 
-**The component**, the Cordis clause. From Cordis, Vivarium adopts the
+**The component**, the Cordis clause. From Cordis, Viva adopts the
 contract and rejects the comfort: every effect a component installs is paired
 with its co-effect, the inverse that removes it, and unloading means running
 the co-effects. The library itself was probed and declined, because it

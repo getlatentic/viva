@@ -10,7 +10,7 @@
 ;;;; the runs that differ. The comparison is the entire feature; everything
 ;;;; else here is bookkeeping around it.
 
-(in-package #:vivarium.tui)
+(in-package #:viva.tui)
 
 (defstruct (style (:conc-name style-))
   (foreground nil)   ; a keyword like :cyan, or 0-255, or NIL for the default

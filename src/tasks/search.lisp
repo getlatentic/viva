@@ -32,7 +32,7 @@
 ;;;; only, possibly, made to pay again. That is the line family D's header draws,
 ;;;; and these sit deliberately on the permitted side of it.
 
-(in-package #:vivarium.tasks)
+(in-package #:viva.tasks)
 
 ;;; T22 -- the defect is in the COMPOSITION, not in any of the parts
 ;;;
@@ -42,7 +42,7 @@
 ;;; base * 6/5 - d for any non-zero d, which is why only discounted invoices are
 ;;; wrong and most invoices look fine.
 
-(deftask :t22 (:family :d-depth :split :train :package "VIVARIUM.TASK.T22")
+(deftask :t22 (:family :d-depth :split :train :package "VIVA.TASK.T22")
   "INVOICE-TOTAL is wrong for some invoices and right for most.
 
 The pipeline is LINE-SUBTOTAL, APPLY-DISCOUNT, APPLY-TAX, ROUND-CENTS,
@@ -123,7 +123,7 @@ Find why, and fix it."
 ;;; eliminations has to be accumulated and nothing valuable is held outside the
 ;;; ledger. Recovery should cost about the same here as continuing does.
 
-(deftask :t23 (:family :d-depth :split :train :package "VIVARIUM.TASK.T23")
+(deftask :t23 (:family :d-depth :split :train :package "VIVA.TASK.T23")
   "SHIPMENT-TOTAL is wrong for some shipments and right for most.
 
 The pipeline is PARCEL-WEIGHT, BAND-FOR, RATE-FOR, SURCHARGE-FOR, ROUND-UNITS

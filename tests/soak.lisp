@@ -15,7 +15,7 @@
 ;;;; A leak shows as monotonic growth across samples; health shows as a
 ;;;; plateau. Ten green suite runs cannot answer that question; this can.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
 (defun soak-descriptors ()
   "Open descriptors for this process, or NIL where lsof is unavailable."
@@ -32,9 +32,9 @@
         :fds (soak-descriptors)
         ;; A growing depth here is the journal owner falling behind or dead --
         ;; the exact unbounded-queue failure the acknowledged design guards.
-        :journal-depth (alexandria:when-let ((service vivarium.actor::*journal-service*))
+        :journal-depth (alexandria:when-let ((service viva.actor::*journal-service*))
                          (sb-concurrency:mailbox-count
-                          (vivarium.actor::journal-mailbox service)))))
+                          (viva.actor::journal-mailbox service)))))
 
 (defun soak-rotate-journals ()
   "Completed sessions' journals are rotated out, as a long-lived organism
@@ -66,8 +66,8 @@ multi-hour soak from writing hundreds of thousands of files into /tmp."
       (actor:tell cell :cancel)
       (actor:await-shutdown cell :timeout 30))))
 
-(defun soak (&key (minutes 10) (path (format nil "/tmp/vivarium-soak-~d.sock" (sb-posix:getpid))))
-  (setf actor:*journal-root* (format nil "/tmp/vivarium-soak-journal-~d/" (sb-posix:getpid)))
+(defun soak (&key (minutes 10) (path (format nil "/tmp/viva-soak-~d.sock" (sb-posix:getpid))))
+  (setf actor:*journal-root* (format nil "/tmp/viva-soak-journal-~d/" (sb-posix:getpid)))
   (daemon:serve :path path :background t)
   (unwind-protect
        (let ((deadline (+ (get-universal-time) (* 60 minutes)))

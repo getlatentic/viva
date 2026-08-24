@@ -5,7 +5,7 @@
 ;;;; which means anything that guards it must not itself require the load.
 ;;;;
 ;;;; Two homes were tried and both are dead: the test suite never runs, because
-;;;; a broken package file stops the suite loading; and `vivarium check` dies in
+;;;; a broken package file stops the suite loading; and `viva check` dies in
 ;;;; the loader too, because bin/viva quickloads the system before any
 ;;;; command runs. This file loads nothing. It reads text.
 ;;;;
@@ -22,9 +22,9 @@
     (string-upcase (string-right-trim ")" body))))
 
 (defun nickname-target (line)
-  "The vivarium package a `(#:nick #:vivarium.x)` line points at, or NIL."
+  "The viva package a `(#:nick #:viva.x)` line points at, or NIL."
   (let* ((text (trimmed line))
-         (at (search "#:vivarium." text)))
+         (at (search "#:viva." text)))
     (when (and at (>= (length text) 3) (string= "(#:" (subseq text 0 3)))
       (let ((rest (subseq text (+ at 2))))
         (string-upcase

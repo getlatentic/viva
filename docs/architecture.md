@@ -1,4 +1,4 @@
-# Vivarium — the frozen architecture
+# Viva — the frozen architecture
 
 Decided 2026-08-15. **Not to be revisited.** Everything below is the shape to
 build against; the parts not yet built are named as such rather than argued
@@ -7,17 +7,17 @@ about again.
 The rule the whole design turns on:
 
 ```
-terminal lifetime  !=  vivarium lifetime
-task lifetime      !=  vivarium lifetime
-RPC lifetime       !=  vivarium lifetime
+terminal lifetime  !=  viva lifetime
+task lifetime      !=  viva lifetime
+RPC lifetime       !=  viva lifetime
 ```
 
-Vivarium is a **long-lived organism**, and self-modification is a property of
+Viva is a **long-lived organism**, and self-modification is a property of
 that process rather than something bolted onto a short-lived CLI. A harness that
 exits after each task can only ever pretend to evolve.
 
 ```
-                         VIVARIUMD
+                         VIVAD
                persistent Common Lisp / SBCL
                          organism
                             |
@@ -30,7 +30,7 @@ exits after each task can only ever pretend to evolve.
         |                   |                    |
         +-------------------+--------------------+
                             |
-                    VIVARIUM PROTOCOL
+                    VIVA PROTOCOL
                     JSON-RPC + events
                             |
               +-------------+-------------+
@@ -40,12 +40,12 @@ exits after each task can only ever pretend to evolve.
        + Crossterm                         |
               |                    CLI / IDE / CI /
               |                    Python / agents
-          `vivarium`
+          `viva`
 ```
 
 `viva` finds a running daemon, starts one if absent, connects, and
 opens the interactive client. **Closing the client leaves the organism alive.**
-`vivarium attach [session]` comes back to it.
+`viva attach [session]` comes back to it.
 
 ## Frozen decisions
 
@@ -479,7 +479,7 @@ evolving object shape      CLOS redefinition     not a migration framework
 self-description           Lisp introspection    not a metadata registry
 ```
 
-The failure mode this guards against is Vivarium becoming a TypeScript
+The failure mode this guards against is Viva becoming a TypeScript
 architecture written in parentheses.
 
 ## Deferred and suspended operations
@@ -487,7 +487,7 @@ architecture written in parentheses.
 The distinction that a previous note got wrong, recorded so it is not got wrong
 again:
 
-- **Harness-level** defer, suspend, resume and await are *native Vivarium
+- **Harness-level** defer, suspend, resume and await are *native Viva
   functionality*. Threads, semaphores and mailboxes; the provider does not enter
   into it. Built — see `src/workspace/operation.lisp`.
 - **Durable provider-side** jobs mean submitting work, losing the process
@@ -497,7 +497,7 @@ again:
 
 ## Conditions and restarts as a runtime feature
 
-Where Vivarium should be better for being Lisp rather than merely written in it.
+Where Viva should be better for being Lisp rather than merely written in it.
 Not every exceptional state collapses to "caught, returned failed":
 
 ```
@@ -518,7 +518,7 @@ LIVE CONTINUITY     the SBCL process stays running, definitions evolve in place
 DURABILITY          important state survives process or machine failure
 ```
 
-Vivarium wants both. The live image is the organism; the event log, persistent
+Viva wants both. The live image is the organism; the event log, persistent
 improvements, provenance and periodic checkpoints are its inheritance and
 recovery record. One concrete session store, and **no storage abstraction until
 a second real backend exists** — then extract the protocol from two
@@ -728,8 +728,8 @@ lambda list would teach the model a second calling convention it will get
 wrong, and the experiment would measure that lesson instead of the machinery.
 The frictions the battery is built from are string to string anyway.
 
-The tools live daemon-side, because `vivarium/daemon` depends on
-`vivarium/workspace` and not the reverse, and they reach an agent through the
+The tools live daemon-side, because `viva/daemon` depends on
+`viva/workspace` and not the reverse, and they reach an agent through the
 `:extra-tools` seam `make-workspace-agent` already had. Nothing in the
 workspace layer learns about evolution. Arm B falls out of the proven table
 rather than out of the tool file: create stays open, activate and promote are

@@ -2,7 +2,7 @@
 ;;;;
 ;;;; Two directions through the same file format.
 ;;;;
-;;;;   READ    project instructions the humans wrote -- VIVARIUM.md, AGENTS.md,
+;;;;   READ    project instructions the humans wrote -- VIVA.md, AGENTS.md,
 ;;;;           CLAUDE.md -- gathered from the home directory down to the working
 ;;;;           directory, nearest last so the most specific wins.
 ;;;;
@@ -15,9 +15,9 @@
 ;;;; persist prose can still persist a procedure, and a procedure that survives
 ;;;; a restart is the smallest honest instance of improvement there is.
 
-(in-package #:vivarium.memory)
+(in-package #:viva.memory)
 
-(defparameter +context-names+ '("VIVARIUM.md" "AGENTS.md" "CLAUDE.md")
+(defparameter +context-names+ '("VIVA.md" "AGENTS.md" "CLAUDE.md")
   "Checked in order; the first that exists in a directory is that directory's
 instructions. AGENTS.md and CLAUDE.md are honoured because a repository that
 already has one meant it for exactly this.")

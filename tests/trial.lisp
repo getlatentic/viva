@@ -5,12 +5,12 @@
 ;;;; this file starts failing with NOT-A-ZYGOTE, something in the test harness
 ;;;; has begun spawning threads and the production path would fail the same way.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
-(defpackage #:vivarium.tests.trial (:use #:cl))
+(defpackage #:viva.tests.trial (:use #:cl))
 
 (defun trial-image ()
-  (make-instance 'image:sbcl-image :package "VIVARIUM.TESTS.TRIAL"))
+  (make-instance 'image:sbcl-image :package "VIVA.TESTS.TRIAL"))
 
 (defun definitions (&rest sources)
   (mapcar (lambda (source) (cons "ignored" source)) sources))
@@ -28,22 +28,22 @@
          (result (trial:run-trial
                   backend candidate
                   (cases "value" (lambda ()
-                                   (funcall (find-symbol "ANSWER" '#:vivarium.tests.trial)))))))
+                                   (funcall (find-symbol "ANSWER" '#:viva.tests.trial)))))))
     (is eq :ok (trial:result-status result))
     (is = 42 (cdr (assoc "value" (trial:result-scores result) :test #'equal)))
     ;; The definition the child installed must not exist here.
-    (false (fboundp (find-symbol "ANSWER" '#:vivarium.tests.trial)))))
+    (false (fboundp (find-symbol "ANSWER" '#:viva.tests.trial)))))
 
 (define-test "two trials do not see each other's definitions"
   (let ((backend (trial-image)))
     (let ((first (trial:run-trial
                   backend
                   (trial:make-candidate :id :a :definitions (definitions "(defun shared () 1)"))
-                  (cases "v" (lambda () (funcall (find-symbol "SHARED" '#:vivarium.tests.trial))))))
+                  (cases "v" (lambda () (funcall (find-symbol "SHARED" '#:viva.tests.trial))))))
           (second (trial:run-trial
                    backend
                    (trial:make-candidate :id :b :definitions (definitions "(defun shared () 2)"))
-                   (cases "v" (lambda () (funcall (find-symbol "SHARED" '#:vivarium.tests.trial)))))))
+                   (cases "v" (lambda () (funcall (find-symbol "SHARED" '#:viva.tests.trial)))))))
       (is = 1 (cdr (assoc "v" (trial:result-scores first) :test #'equal)))
       (is = 2 (cdr (assoc "v" (trial:result-scores second) :test #'equal))))))
 
@@ -77,7 +77,7 @@
     (is eq :timeout (trial:result-status result))))
 
 (define-test "a candidate is a set of ledger entries, replayable anywhere"
-  (let ((source (make-instance 'image:sbcl-image :package "VIVARIUM.TESTS.TRIAL")))
+  (let ((source (make-instance 'image:sbcl-image :package "VIVA.TESTS.TRIAL")))
     (image:install-definition source "(defun replayed () :original)")
     (let* ((candidate (trial:candidate-from-entries
                        (ledger:entries (image:image-ledger source)) :id :replay))
@@ -85,7 +85,7 @@
                                     (cases "v" (lambda ()
                                                  (if (eq :original
                                                          (funcall (find-symbol "REPLAYED"
-                                                                               '#:vivarium.tests.trial)))
+                                                                               '#:viva.tests.trial)))
                                                      1 0))))))
       (is eq :ok (trial:result-status result))
       (is = 1 (cdr (assoc "v" (trial:result-scores result) :test #'equal))))))
@@ -173,7 +173,7 @@
                   (trial:run-trial backend candidate
                                    (cases "v" (lambda ()
                                                 (funcall (find-symbol "TICK"
-                                                                      '#:vivarium.tests.trial))))))))
+                                                                      '#:viva.tests.trial))))))))
     (funcall probe)
     (let ((before (open-descriptors)))
       (dotimes (i 20) (funcall probe))

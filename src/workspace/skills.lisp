@@ -10,7 +10,7 @@
 ;;;; so a directory of forty skills costs forty lines of context rather than
 ;;;; forty files of it.
 
-(in-package #:vivarium.skill)
+(in-package #:viva.skill)
 
 (defstruct (skill (:conc-name skill-))
   (name "" :type string)

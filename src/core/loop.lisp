@@ -5,7 +5,7 @@
 ;;;; that quietly diverges is worse than no control arm. The deviations are
 ;;;; listed in ~/workspace/research/live-image-harness/pi-port.md.
 
-(in-package #:vivarium.loop)
+(in-package #:viva.loop)
 
 (defstruct (context (:conc-name context-))
   (messages '() :type list))
@@ -201,9 +201,9 @@ wrongly."
         ;; resume. Unwinding first, as HANDLER-CASE does, destroys the only
         ;; thing worth having here.
         ;;
-        ;; Bound to VIVARIUM-CONDITION, not ERROR: an ordinary bug must reach the
+        ;; Bound to VIVA-CONDITION, not ERROR: an ordinary bug must reach the
         ;; containment boundary rather than be retried into a silent loop.
-        (handler-bind ((fault:vivarium-condition
+        (handler-bind ((fault:viva-condition
                          (lambda (condition) (agent:recover agent condition))))
           (block finished
           (inject agent context collected initial-messages)

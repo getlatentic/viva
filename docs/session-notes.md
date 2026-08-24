@@ -60,12 +60,12 @@ is `packages/agent` (~1,500–2,300 lines: `agent-loop.ts` runLoop + 4 tools +
 reducer), NOT `packages/coding-agent` (58,702 lines of TUI/extensions). Model runtime
 = llama-server, not ollama (seeds, GBNF, `-np` slots, cache visibility).
 
-**HARNESS = `vivarium` at `~/workspace/vivarium`** (renamed from "pi-lisp" 2026-08-08;
+**HARNESS = `viva` at `~/workspace/viva`** (renamed from "pi-lisp" 2026-08-08;
 the name claimed a provenance the code outgrew). **Three ASDF systems, dependencies
-inward — do not collapse them:** `vivarium` (core harness, task-agnostic),
-`vivarium/image` (the live-image task domain), `vivarium/search` (forked trials +
-archive). Layering is tested: `(ql:quickload :vivarium)` leaves VIVARIUM.IMAGE and
-VIVARIUM.TRIAL absent. **242 assertions green, 2,283 source lines.**
+inward — do not collapse them:** `viva` (core harness, task-agnostic),
+`viva/image` (the live-image task domain), `viva/search` (forked trials +
+archive). Layering is tested: `(ql:quickload :viva)` leaves VIVA.IMAGE and
+VIVA.TRIAL absent. **242 assertions green, 2,283 source lines.**
 
 **Providers are an abstraction, NOT llama.cpp everywhere** (`src/core/provider.lisp`):
 core sends a plain OpenAI-compatible completion; `llama-cpp` adds grammar +
@@ -200,7 +200,7 @@ is harness-test's, not upstream's — only `pi` has its own git. **opencode stil
 unread**; it is the one source that could still move the baseline.
 
 **THE TASK SET EXISTS 2026-08-08 — S1, the root the whole backlog waited on.**
-`vivarium/tasks` (4th ASDF system, depends on `vivarium/image`; search does NOT depend
+`viva/tasks` (4th ASDF system, depends on `viva/image`; search does NOT depend
 on it, since `run-trial` takes thunks). 913 lines, 14 tasks, 42 cases. **357 assertions
 green** (was 272). Design record: `docs/task-set.md`. Order of work: `backlog.toml`.
 
@@ -301,8 +301,8 @@ verify, and the benchmark was the nearest thing to verify against.
   refuses any command naming a path outside its scratch dir, records every command,
   and writes reaching commands into the results JSON so a row can be discarded later.
   The judgement must survive the run: the detector has already been wrong once.
-- **First detector matched the bare word "vivarium"**, which every task package name
-  contains (VIVARIUM.TASK.T11), so it flagged correct behaviour. Tells are path-shaped
+- **First detector matched the bare word "viva"**, which every task package name
+  contains (VIVA.TASK.T11), so it flagged correct behaviour. Tells are path-shaped
   now. A contamination flag that fires on good runs is worse than none.
 - **Contamination was most of the COST too**: T13 286s/12req -> 8s/4req once the shell
   stopped paying off. T11 now solves in 4 requests using only image tools.
@@ -315,7 +315,7 @@ verify, and the benchmark was the nearest thing to verify against.
   The verdict that the set DISCRIMINATES survives -- visible in both sweeps, not
   dependent on those rows.
 
-**`vivarium attend` built** (`src/cli/attend.lisp`): watch one task run and steer it
+**`viva attend` built** (`src/cli/attend.lisp`): watch one task run and steer it
 live. Line-oriented ANSI, NOT ncurses -- croatoan/cl-charms/cl-tui are all in the dist
 and none earns its place, because the transcript IS the deliverable (E5's auditability
 criterion) and a full-screen app costs scrollback, copy-paste and piping. Rendering was
@@ -325,7 +325,7 @@ this process can never fork a trial** -- attending and searching must be separat
 processes. Shows the ledger as was/now per definition plus the per-case scores, which is
 "the modification and then the improvement" in one view.
 
-**Also fixed:** an arm was offered for `VIVARIUM_LOCAL_ENDPOINT` with nothing listening,
+**Also fixed:** an arm was offered for `VIVA_LOCAL_ENDPOINT` with nothing listening,
 producing a whole column of `err` -- arms now TCP-probe first. `inject` emits `:message`
 for messages going INTO the loop, so `attend` printed the prompt twice; assistant
 messages only. `check` used `uiop:tmpize-pathname`, which COPIES the source beside the

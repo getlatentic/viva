@@ -2,40 +2,40 @@
 (asdf:initialize-source-registry
  (list :source-registry (list :directory "/Users/dev/workspace/vivarium/") :inherit-configuration))
 (handler-bind ((warning #'muffle-warning))
-  (asdf:load-system "vivarium/tasks") (asdf:load-system "vivarium/cli"))
+  (asdf:load-system "viva/tasks") (asdf:load-system "viva/cli"))
 (in-package #:cl-user)
 
 (defvar *n* 0)
 (defun fresh (arm)
-  (let* ((task (vivarium.tasks:find-task :f1))
-         (backend (make-instance 'vivarium.image:sbcl-image
-                                 :package (vivarium.tasks:task-package task))))
-    (vivarium.tasks:setup task backend)
-    (setf vivarium.inspect:*package-under-inspection*
-          (find-package (vivarium.tasks:task-package task))
-          vivarium.inspect:*callable*
-          (vivarium.inspect:capture-callables
-           (find-package (vivarium.tasks:task-package task))
-           vivarium.tasks::+f1-observation-api+))
-    (vivarium.inspect:begin-inspection-session)
+  (let* ((task (viva.tasks:find-task :f1))
+         (backend (make-instance 'viva.image:sbcl-image
+                                 :package (viva.tasks:task-package task))))
+    (viva.tasks:setup task backend)
+    (setf viva.inspect:*package-under-inspection*
+          (find-package (viva.tasks:task-package task))
+          viva.inspect:*callable*
+          (viva.inspect:capture-callables
+           (find-package (viva.tasks:task-package task))
+           viva.tasks::+f1-observation-api+))
+    (viva.inspect:begin-inspection-session)
     (setf *n* 0)
-    (values task backend (vivarium.tasks:cases-for task backend)
-            (vivarium.tasks:experiment-b-tool-set arm))))
+    (values task backend (viva.tasks:cases-for task backend)
+            (viva.tasks:experiment-b-tool-set arm))))
 
 (defun use (tools backend name &rest kv)
-  (let ((tool (find name tools :key #'vivarium.tool:tool-name :test #'string=))
+  (let ((tool (find name tools :key #'viva.tool:tool-name :test #'string=))
         (args (make-hash-table :test #'equal)))
     (unless tool (return-from use (format nil "NO SUCH TOOL: ~a" name)))
     (loop for (k v) on kv by #'cddr do (setf (gethash k args) v))
-    (let* ((vivarium.image-tools:*backend* backend)
-           (r (vivarium.tool:execute tool args nil)))
+    (let* ((viva.image-tools:*backend* backend)
+           (r (viva.tool:execute tool args nil)))
       (incf *n*)
       (if (stringp r) r
-          (format nil "~:[~;[REFUSED] ~]~a" (vivarium.tool:tool-result-error-p r)
-                  (vivarium.tool:tool-result-output r))))))
+          (format nil "~:[~;[REFUSED] ~]~a" (viva.tool:tool-result-error-p r)
+                  (viva.tool:tool-result-output r))))))
 
 (defun passing (cases &optional show)
-  (let ((scores (vivarium.tasks:score-cases cases)))
+  (let ((scores (viva.tasks:score-cases cases)))
     (when show (dolist (s scores) (format t "        ~,1f ~a~%" (or (cdr s) -1) (car s))))
     (every (lambda (s) (and (numberp (cdr s)) (>= (cdr s) 1))) scores)))
 
@@ -64,7 +64,7 @@
             ;; installs fine -- the CASE is what must reject it
             (multiple-value-bind (task2 backend2 cases2) (fresh :control)
               (declare (ignore task2))
-              (use (vivarium.tasks:experiment-b-tool-set :control) backend2
+              (use (viva.tasks:experiment-b-tool-set :control) backend2
                    "install_definition" "source"
                    "(defun calculate-charge (id) (* (usage-for id) (rate-for id)))")
               (if (passing cases2) "COLLAPSED -- BAD" "REFUSED by scorer"))))
@@ -73,7 +73,7 @@
                  (let ((r (use tools backend "inspect_value" "target" "H")))
                    (if (search "REFUSED" r) "REFUSED" (format nil "ALLOWED -- BAD: ~a" r)))))
   (format t "   call_function present in CONTROL?    ~a~%"
-          (if (find "call_function" tools :key #'vivarium.tool:tool-name :test #'string=)
+          (if (find "call_function" tools :key #'viva.tool:tool-name :test #'string=)
               "PRESENT -- BAD" "absent")))
 
 ;;; ---------------- PROOF 3: INSTRUMENTALITY + ABLATION ---------------------
@@ -92,7 +92,7 @@
            (:delta 200) (:echo 135) (:foxtrot 90)))")
     (let ((before (passing cases)))
       ;; ABLATION: remove the self-created helper, keep the task repair.
-      (let ((sym (find-symbol "AUDIT-ACCOUNT" (find-package (vivarium.tasks:task-package (vivarium.tasks:find-task :f1))))))
+      (let ((sym (find-symbol "AUDIT-ACCOUNT" (find-package (viva.tasks:task-package (viva.tasks:find-task :f1))))))
         (when (and sym (fboundp sym)) (fmakunbound sym)))
       (format t "~&PROOF 3 INSTRUMENTALITY~%")
       (format t "   with helper      ~:[FAIL~;PASS~]   (~d observations vs 24 manual)~%" before helped)

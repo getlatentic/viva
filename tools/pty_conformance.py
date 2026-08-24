@@ -116,7 +116,7 @@ class Terminal:
 def live_session_ids():
     """The daemon's session ids for this repository, newest last."""
     import subprocess
-    out = subprocess.run([os.path.join(ROOT, "bin", "vivarium"), "daemon", "status"],
+    out = subprocess.run([os.path.join(ROOT, "bin", "viva"), "daemon", "status"],
                          capture_output=True, text=True, cwd=ROOT).stdout
     return [line.split()[0] for line in out.splitlines()
             if line.startswith("  s") and ROOT in line]
@@ -126,11 +126,11 @@ class Session:
     def __init__(self, rows=30, cols=100, target=None, fresh=False):
         """A client. TARGET attaches to one named session, FRESH makes a new one.
 
-        Without either, `vivarium live` picks whichever live session belongs to
+        Without either, `viva live` picks whichever live session belongs to
         this directory -- and with several open that is not the one the last
         client used. A reattach check that does not name its session is
         checking that SOME session has the text, which is not the property."""
-        binary = os.path.join(ROOT, "bin", "vivarium")
+        binary = os.path.join(ROOT, "bin", "viva")
         argv = [binary, "live"]
         if target:
             argv.append(target)
@@ -265,7 +265,7 @@ def main():
     before = set(live_session_ids())
     session = Session(fresh=True)
     try:
-        session.wait_for("vivarium", 300, "the first frame")
+        session.wait_for("viva", 300, "the first frame")
 
         # 2, 3, 4 -- resize in both directions and in a storm.
         for rows, cols in ((30, 60), (30, 120), (20, 60), (34, 100), (12, 40), (30, 100)):
@@ -326,7 +326,7 @@ def main():
         session.pump(3.0)
         again = Session(target=target)
         try:
-            again.wait_for("vivarium", 300, "the reattached frame")
+            again.wait_for("viva", 300, "the reattached frame")
             again.pump(4.0)
             found = again.body().count("> " + marker)
             if found == 0:

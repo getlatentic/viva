@@ -4,7 +4,7 @@
 ;;;; compared, never redefined at runtime. The things an agent mutates while it
 ;;;; runs -- its prompt, its tool set -- live in AGENT.LISP as CLOS objects.
 
-(in-package #:vivarium.message)
+(in-package #:viva.message)
 
 (defstruct (text (:constructor make-text (value)))
   (value "" :type string))

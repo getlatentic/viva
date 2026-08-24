@@ -14,18 +14,18 @@
 
 (require :sb-introspect)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
-(funcall (find-symbol "QUICKLOAD" "QL") :vivarium :silent t)
+(funcall (find-symbol "QUICKLOAD" "QL") :viva :silent t)
 
-(defpackage #:vivarium.e5
+(defpackage #:viva.e5
   (:use #:cl)
-  (:local-nicknames (#:msg #:vivarium.message)
-                    (#:tool #:vivarium.tool)
-                    (#:agent #:vivarium.agent)
-                    (#:client #:vivarium.client)
-                    (#:provider #:vivarium.provider)
-                    (#:sexp #:vivarium.sexp)))
+  (:local-nicknames (#:msg #:viva.message)
+                    (#:tool #:viva.tool)
+                    (#:agent #:viva.agent)
+                    (#:client #:viva.client)
+                    (#:provider #:viva.provider)
+                    (#:sexp #:viva.sexp)))
 
-(in-package #:vivarium.e5)
+(in-package #:viva.e5)
 
 (defparameter *provider*
   (provider:llama-cpp-provider :endpoint "http://localhost:8099/v1/chat/completions"
@@ -114,7 +114,7 @@ The definition is written as a form, not as a string.")
             (format t "  source is: ~a~%"
                     (if (consp source) "a form, read directly" "not a form"))
             (when (consp source)
-              (format t "  ~a~%" (let ((*package* (find-package :vivarium.sexp.sandbox)))
+              (format t "  ~a~%" (let ((*package* (find-package :viva.sexp.sandbox)))
                                    (write-to-string source :length 12 :level 4))))))
       (error (condition) (format t "  UNPARSEABLE: ~a~%" condition)))))
 

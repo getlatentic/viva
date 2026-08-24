@@ -9,7 +9,7 @@
 ;;;; the world it will later compare against, and once the agent has run there is
 ;;;; nowhere left to capture that from.
 
-(in-package #:vivarium.tasks)
+(in-package #:viva.tasks)
 
 (defclass bench-agent (agent:queued-agent)
   ((limit :initarg :limit :accessor bench-limit :initform 12
@@ -57,8 +57,8 @@ paid endpoint is an unbounded bill.")
   '("tests/tasks" "tasks.lisp" "backlog.toml" "task-set.md" "/workspace/" "cd ..")
   "Shell fragments that mean a command reached for the benchmark itself.
 
-Path-shaped on purpose. A first version matched the bare word \"vivarium\",
-which every task's own package name contains -- VIVARIUM.TASK.T11 -- so an agent
+Path-shaped on purpose. A first version matched the bare word \"viva\",
+which every task's own package name contains -- VIVA.TASK.T11 -- so an agent
 doing exactly what it was asked tripped the detector. A contamination flag that
 fires on correct behaviour is worse than none, because it discards good runs.")
 
@@ -205,13 +205,13 @@ separate."
                                         (namestring (repository-root)))))))))
 
 (defun repository-root ()
-  (or (a:when-let ((override (sb-posix:getenv "VIVARIUM_ROOT")))
+  (or (a:when-let ((override (sb-posix:getenv "VIVA_ROOT")))
         (and (plusp (length override)) override))
-      (namestring (asdf:system-source-directory "vivarium"))))
+      (namestring (asdf:system-source-directory "viva"))))
 
 (defun jail-directory (task)
   "A fresh empty directory per attempt, so the shell starts nowhere useful."
-  (let ((path (merge-pathnames (format nil "vivarium-~(~a~)-~36r/"
+  (let ((path (merge-pathnames (format nil "viva-~(~a~)-~36r/"
                                        (task-id task) (random (expt 36 8)))
                                (uiop:temporary-directory))))
     (ensure-directories-exist path)

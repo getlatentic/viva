@@ -7,7 +7,7 @@
 # meant to be committed, and a key in a committed file is a published key.
 # A credential-shaped name is refused by name, with the line number.
 #
-# `vivarium config` prints every setting, its value, and which of these files
+# `viva config` prints every setting, its value, and which of these files
 # decided it.
 
 # Which model, by catalogue name: deepseek, openai, openrouter, bedrock, local.

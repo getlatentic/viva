@@ -1,5 +1,5 @@
 #!/bin/sh
-# Does vivarium on task 6 work better than vivarium on task 1?
+# Does viva on task 6 work better than viva on task 1?
 #
 # Six ordinary maintenance tasks in one small Python project, done in sequence,
 # each in a FRESH conversation and a FRESH copy of the repository. Two arms that
@@ -41,7 +41,7 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 model=${ADAPT_MODEL:-deepseek}
-work=${ADAPT_WORK:-/tmp/vivarium-adaptation}
+work=${ADAPT_WORK:-/tmp/viva-adaptation}
 arms="accumulate reset"
 repeats=1
 

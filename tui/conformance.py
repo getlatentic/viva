@@ -1,4 +1,4 @@
-"""Terminal invariants for vivarium-tui, over a real pty against a real daemon.
+"""Terminal invariants for viva-tui, over a real pty against a real daemon.
 
 The same invariants the Lisp client is held to, because they are properties of
 a full-screen client rather than of a language. The model below implements only
@@ -30,7 +30,7 @@ import termios
 import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-BINARY = os.path.join(ROOT, "target", "debug", "vivarium-tui")
+BINARY = os.path.join(ROOT, "target", "debug", "viva-tui")
 
 
 def build():
@@ -137,9 +137,9 @@ class Client:
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.chdir(cwd)
-            # BARE `vivarium`, which is what a person types. Driving the
+            # BARE `viva`, which is what a person types. Driving the
             # binary directly leaves the routing untested, and driving
-            # `vivarium tui` leaves the bare-name default untested -- and the
+            # `viva tui` leaves the bare-name default untested -- and the
             # default is the path almost everybody takes.
             # THIS TREE'S launcher, never the one on PATH. `~/.local/bin/viva`
             # points at whichever checkout was installed, and driving it from
@@ -281,7 +281,7 @@ def own_daemon(cwd):
 
     NOT the one a person is using. An earlier version of this check drove the
     default socket, and its probe prompts went into a real session in a real
-    workspace -- because `vivarium live` with no argument attaches to whatever
+    workspace -- because `viva live` with no argument attaches to whatever
     is live for that directory. A test that writes into somebody's work is a
     test that has to be apologised for.
     """
@@ -291,8 +291,8 @@ def own_daemon(cwd):
     # the person's own daemon.
     own = tempfile.mkdtemp()
     socket_path = os.path.join(own, "check.sock")
-    environment = dict(os.environ, VIVARIUM_SOCKET=socket_path,
-                       VIVARIUM_JOURNAL=os.path.join(own, "journal"))
+    environment = dict(os.environ, VIVA_SOCKET=socket_path,
+                       VIVA_JOURNAL=os.path.join(own, "journal"))
     launcher = os.path.join(os.path.dirname(ROOT), "bin", "viva")
     process = subprocess.Popen(
         [launcher, "daemon", "start", "--background"],

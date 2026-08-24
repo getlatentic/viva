@@ -14,7 +14,7 @@
 ;;;; Pareto frontier impossible and silently collapses the search back into
 ;;;; greedy hill-climbing.
 
-(in-package #:vivarium.trial)
+(in-package #:viva.trial)
 
 (defun obj (&rest plist)
   (let ((table (make-hash-table :test #'equal)))

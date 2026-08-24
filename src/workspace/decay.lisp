@@ -16,7 +16,7 @@
 ;;;; repository. Deleting would make a wrong retirement unrecoverable and
 ;;;; silent at once.
 
-(in-package #:vivarium.decay)
+(in-package #:viva.decay)
 
 (defparameter *window-days* 30
   "Days a retention may go unused before it is retired. Codex's pipeline calls

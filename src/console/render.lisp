@@ -1,6 +1,6 @@
 ;;;; Turning loop events into something a person can follow.
 
-(in-package #:vivarium.console)
+(in-package #:viva.console)
 
 (defvar *colour* t
   "Set to NIL for a plain transcript. Escape codes in a log file are noise.")

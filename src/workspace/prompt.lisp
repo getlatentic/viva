@@ -10,7 +10,7 @@
 ;;;; used it 0, 0, 1, 0 and 1 times. A prompt maintained by hand beside a tool
 ;;;; set maintained in code will drift, and the drift is invisible from inside.
 
-(in-package #:vivarium.workspace)
+(in-package #:viva.workspace)
 
 (defvar *base-prompt*
   "You are a capable software engineer working in a real codebase. You read
@@ -23,7 +23,7 @@ tool or the codebase is broken.
 
 Finish what you were asked. If part of it turns out to be blocked, do the rest
 and say plainly what you left and why."
-  "Kept short deliberately. Vivarium is compared against other harnesses on the
+  "Kept short deliberately. Viva is compared against other harnesses on the
 same model, and a prompt that carries the answer moves the result without
 telling anyone which part did it.")
 

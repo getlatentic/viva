@@ -6,7 +6,7 @@
 ;;;; says so rather than leaving the model to find out one 40,000-line result at
 ;;;; a time.
 
-(in-package #:vivarium.workspace)
+(in-package #:viva.workspace)
 
 (defvar *bash-timeout* 120)
 

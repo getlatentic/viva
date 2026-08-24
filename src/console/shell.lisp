@@ -2,11 +2,11 @@
 ;;;;
 ;;;; Plain line-oriented terminal, not a full-screen TUI. A full-screen UI is
 ;;;; the harder thing to build and the easier thing to be trapped by: it cannot
-;;;; be piped, cannot be scripted, and cannot be diffed. `vivarium shell < script`
+;;;; be piped, cannot be scripted, and cannot be diffed. `viva shell < script`
 ;;;; works here, which is what makes an interactive session and a scored run the
 ;;;; same code path.
 
-(in-package #:vivarium.console)
+(in-package #:viva.console)
 
 (defparameter +runner-options+ '(:in :out :listener)
   "Keywords a runner consumes itself. Everything else in its argument list
@@ -211,7 +211,7 @@ the last one HERE."
    (make-verb :name "retain" :blurb "decide now what this session should keep"
               :handler (lambda (agent argument out)
                          (declare (ignore argument))
-                         ;; The retention policy, on demand. `vivarium do
+                         ;; The retention policy, on demand. `viva do
                          ;; --retain` runs it after every task; interactively
                          ;; the right moment is a judgement, and the person at
                          ;; the keyboard is holding it.
@@ -304,7 +304,7 @@ the last one HERE."
 ;;; The loop
 
 (defun banner (agent choice complaints out)
-  (format out "~a~%" (paint "vivarium" :bold))
+  (format out "~a~%" (paint "viva" :bold))
   (format out "  ~a via ~a~%" (models:choice-model choice) (models:choice-label choice))
   (format out "  ~a~%" (env:env-cwd (harness:agent-environment agent)))
   (format out "  ~d tools, ~d skills, ~d prompts, ~d extensions~%"
@@ -323,7 +323,7 @@ the last one HERE."
   "Read prompts from IN, run them, paint the result on OUT. Returns an exit code.
 
 Everything else is BUILD-AGENT's and is passed through untouched. Re-listing
-its keywords here is what broke `vivarium shell` outright: `extra-tools` was
+its keywords here is what broke `viva shell` outright: `extra-tools` was
 added to BUILD-AGENT, this lambda list was not updated, and the CLI -- which
 always passes it -- died at startup with `Unknown &KEY argument`. That is the
 third time a hand-copied keyword list has dropped that one argument, so the

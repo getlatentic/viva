@@ -13,15 +13,15 @@
 ;;;;   sbcl --non-interactive --load experiments/e2-merge.lisp
 
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
-(funcall (find-symbol "QUICKLOAD" "QL") :vivarium/search :silent t)
+(funcall (find-symbol "QUICKLOAD" "QL") :viva/search :silent t)
 
-(defpackage #:vivarium.e2merge
+(defpackage #:viva.e2merge
   (:use #:cl)
-  (:local-nicknames (#:image #:vivarium.image)
-                    (#:trial #:vivarium.trial)
-                    (#:arena #:vivarium.arena)))
+  (:local-nicknames (#:image #:viva.image)
+                    (#:trial #:viva.trial)
+                    (#:arena #:viva.arena)))
 
-(in-package #:vivarium.e2merge)
+(in-package #:viva.e2merge)
 
 (defpackage #:dials (:use #:cl))
 

@@ -4,7 +4,7 @@
 Lisp benchmark while the harness still could not edit a file. This is the file
 that stopped being true.
 
-Vivarium now has a second world alongside the live image: a **directory**. It
+Viva now has a second world alongside the live image: a **directory**. It
 reads, writes and edits files, searches a repository, runs commands, loads
 skills, keeps memory, and takes extensions. It runs as a library, as an
 interactive shell, and as an IPC server.
@@ -20,25 +20,25 @@ harnesses is a comparison of harnesses and not of context budgets.
 
 What is deliberately **not** copied is Pi's TUI, its session tree with branch
 summarisation, its provider catalogue, and the parts of its extension API that
-exist to paint widgets. Those are Pi being a finished product. Vivarium needs
+exist to paint widgets. Those are Pi being a finished product. Viva needs
 the capability, not the surface.
 
 ## What exists
 
 ```
-vivarium/workspace          the library
+viva/workspace          the library
   env          files and processes, and nothing else: the capability boundary
   glob bound   glob matching, ignore rules, output truncation. No I/O.
   edit         exact replacement, uniqueness and overlap checks, unified diff
   workspace    read write edit ls find grep bash, written against ENV only
   skill        SKILL.md discovery, frontmatter, the system-prompt block
-  memory       VIVARIUM.md / AGENTS.md / CLAUDE.md in, MEMORY.md out
+  memory       VIVA.md / AGENTS.md / CLAUDE.md in, MEMORY.md out
   extension    hooks, tool and command registration, per-project trust
   session      the transcript as JSONL, resumable with tool calls intact
   models       one table of endpoints, keys and model ids
   harness      the wiring, and the only file that knows about all of them
 
-vivarium/console            the two run modes, ~350 lines between them
+viva/console            the two run modes, ~350 lines between them
   shell        a line-oriented terminal. Reads stdin, so it also runs a script.
   ipc          JSON objects in, JSON objects out, one per line
 ```
@@ -60,7 +60,7 @@ which is the test of whether it is actually reusable.
 **As a shell.**
 
 ```bash
-vivarium shell --cwd ~/work/thing
+viva shell --cwd ~/work/thing
 ```
 
 `/help` lists the commands. `!cmd` runs a shell command directly. Because it
@@ -70,7 +70,7 @@ line-oriented rather than full-screen.
 **Over IPC.**
 
 ```bash
-echo '{"type":"prompt","message":"what does this repo do?"}' | vivarium ipc --cwd .
+echo '{"type":"prompt","message":"what does this repo do?"}' | viva ipc --cwd .
 ```
 
 A prompt runs on its own thread, so `steer` and `abort` mean something: a steer
@@ -80,7 +80,7 @@ Pi and Codex both deliver a steer no earlier than the next request.
 **One-shot**, for a script or a CI job:
 
 ```bash
-vivarium do "the tests are failing, find out why and fix it" --cwd . --quiet
+viva do "the tests are failing, find out why and fix it" --cwd . --quiet
 ```
 
 ## Extensions
@@ -131,7 +131,7 @@ and it has been run:
 
 No restart, no human, no edit to the harness.
 
-## Vivarium against Pi
+## Viva against Pi
 
 Four fixtures, each a repository whose `run_tests.py` fails on arrival. Judged
 by whether that test passes afterwards — not by what the agent said it did,
@@ -150,9 +150,9 @@ experiments/parity/run.sh --repeats 3
 | `feature`  | implement a function against an existing spec           |
 | `two-bugs` | three functions wrong in one file; all must be fixed    |
 
-Both harnesses solve all four, every repeat, on `deepseek-v4-flash`. Vivarium is
+Both harnesses solve all four, every repeat, on `deepseek-v4-flash`. Viva is
 consistently two to three seconds slower per task, which is SBCL booting and
-loading the system on every `vivarium do` — a startup cost, not a harness one,
+loading the system on every `viva do` — a startup cost, not a harness one,
 and it disappears in `shell` and `ipc` where the image is booted once.
 
 **The result is parity, and parity is the whole point.** Beating Pi on four
@@ -215,5 +215,5 @@ the image: `skillsmith` is create-and-use with the *skill* as the artifact, in a
 world where the artifact outlives the process by construction.
 
 Level 3 is now the honest next question, and it is the one the roadmap named:
-give vivarium a repository and a run of ordinary tasks, and ask whether task 20
+give viva a repository and a run of ordinary tasks, and ask whether task 20
 goes better than task 1.

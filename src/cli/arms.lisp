@@ -6,7 +6,7 @@
 ;;;; should be a missing column, never a row of zeros that reads as a model
 ;;;; failing the task.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defstruct (arm (:conc-name arm-))
   (label "" :type string)
@@ -48,14 +48,14 @@ sweeps stop being comparable.")
 (defun available-arms ()
   "The catalogue, minus a local server that is configured but not answering.
 
-Endpoints and keys live in VIVARIUM.MODELS so the shell, the IPC server and a
+Endpoints and keys live in VIVA.MODELS so the shell, the IPC server and a
 scored sweep cannot drift apart on which endpoint `deepseek` means. The liveness
 probe stays here: a configured endpoint with nothing behind it produced a whole
 column of `err` in one sweep, which costs an attempt per cell and reads like a
 model failing rather than a missing one."
   (remove nil (mapcar (lambda (choice)
                         (if (and (string= "local" (models:choice-label choice))
-                                 (not (listening-p (env "VIVARIUM_LOCAL_ENDPOINT"))))
+                                 (not (listening-p (env "VIVA_LOCAL_ENDPOINT"))))
                             nil
                             (arm-for choice)))
                       (models:available-models))))

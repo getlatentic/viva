@@ -1,4 +1,4 @@
-"""Drive vivarium-tui against a scripted daemon.
+"""Drive viva-tui against a scripted daemon.
 
 WHY A FAKE ONE. The real daemon answers with whatever a model happens to say,
 so a check written against it can only assert vaguely and cannot produce a
@@ -28,7 +28,7 @@ import threading
 import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-BINARY = os.path.join(ROOT, "target", "debug", "vivarium-tui")
+BINARY = os.path.join(ROOT, "target", "debug", "viva-tui")
 
 
 def build():
@@ -73,7 +73,7 @@ LIVE = [
     ("tool.completed", {}),
     ("task.started", {"task": "t1", "text": "run the suite"}),
     ("task.started", {"task": "t2", "text": "compile the crate", "parent": "t1"}),
-    ("tool.output", {"text": "compiling vivarium-tui\n"}),
+    ("tool.output", {"text": "compiling viva-tui\n"}),
     ("tool.output", {"text": "running 18 tests\n"}),
     ("task.completed", {"task": "t2"}),
     ("model.delta", {"text": "18 passed\n"}),
@@ -168,7 +168,7 @@ def main():
     rows, cols = 34, 120
     pid, fd = pty.fork()
     if pid == 0:
-        os.environ["VIVARIUM_SOCKET"] = path
+        os.environ["VIVA_SOCKET"] = path
         os.chdir(directory)
         os.execve(BINARY, [BINARY], os.environ)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))

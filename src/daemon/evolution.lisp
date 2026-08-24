@@ -39,13 +39,13 @@
 ;;;; slot -- law 9 doing visible work -- and by a LET in any test that wants
 ;;;; the other arm.
 
-(defpackage #:vivarium.evolution
-  (:use #:cl #:vivarium.kernel)
+(defpackage #:viva.evolution
+  (:use #:cl #:viva.kernel)
   (:export #:evolution-transition #:empty-registry #:resolve
            #:registry-minted #:version-status #:current-promoted #:pins-of
            #:*door* #:door-open-p #:run-evolution-self-test))
 
-(in-package #:vivarium.evolution)
+(in-package #:viva.evolution)
 
 ;;; ---------------------------------------------------------------------------
 ;;; The registry: pure operations, prose names

@@ -11,7 +11,7 @@
 ;;;; memory or loads an extension take effect on its own next request rather
 ;;;; than on the next process.
 
-(in-package #:vivarium.harness)
+(in-package #:viva.harness)
 
 (defvar *default-model* "gpt-4.1-mini")
 (defvar *default-provider-name* "openai")
@@ -190,7 +190,7 @@ Reach for this instead of retyping the same transformation."
                            (gethash "name" arguments) (skill:skill-language found))
            :error-p t))
          (t
-          (let ((script (format nil "/tmp/vivarium-skill-~36r"
+          (let ((script (format nil "/tmp/viva-skill-~36r"
                                 (random (expt 2 48) (make-random-state t)))))
             (unwind-protect
                  (progn

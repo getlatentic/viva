@@ -1,4 +1,4 @@
-(defpackage #:vivarium.tui
+(defpackage #:viva.tui
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria))
   (:export #:supported-p #:with-kitty-keyboard

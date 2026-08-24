@@ -21,9 +21,9 @@
   (push root (symbol-value (find-symbol "*LOCAL-PROJECT-DIRECTORIES*" "QL"))))
 
 (handler-bind ((warning #'muffle-warning))
-  (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/daemon :silent t))
+  (funcall (find-symbol "QUICKLOAD" "QL") :viva/daemon :silent t))
 
-(in-package #:vivarium.actor)
+(in-package #:viva.actor)
 
 (defparameter *component* "kc6-preflight")
 
@@ -97,7 +97,7 @@ on this thread would be testing something no worker ever does."
           (when condition (fail "third create refused: ~a" condition))
           (promote-candidate v3)
           (revert-component *component*)
-          (unless (eql v2 (vivarium.evolution:current-promoted (evolution-registry) *component*))
+          (unless (eql v2 (viva.evolution:current-promoted (evolution-registry) *component*))
             (fail "revert did not step the lineage back"))
           (say "promote, revert                ~a -> ~a" v3 v2)
 

@@ -33,7 +33,7 @@ Stated at the width the evidence actually supports: **for the checkpoint semanti
 tested here, Smalltalk matches SBCL's low-pause fork-and-save while additionally
 preserving control flow.** Not "forked Smalltalk VMs are safe" — see M4's own
 limits. The narrow primitive, *fork and immediately checkpoint*, is what was
-measured, and it is the only one vivarium would need.
+measured, and it is the only one viva would need.
 
 That removes the runtime objection. What is left against switching is M3 — the
 derived schema — and the fact that nothing currently open needs what Smalltalk
@@ -165,7 +165,7 @@ But note what the ms/MB column in the summary says. Squeak writes its heap at
 4.0 ms/MB; SBCL's child manages 6.2–11.6 ms/MB. **Smalltalk is not slower at
 checkpointing — it is slower at staying available while it checkpoints**, because
 it does the work in the process that is serving. That is one technique apart, not
-one architecture apart, and the technique is the one vivarium already uses.
+one architecture apart, and the technique is the one viva already uses.
 
 Whether Squeak or Pharo could fork the same way is the obvious follow-up and was
 not tested. Smalltalk `Process`es are green, so the Smalltalk side is safe; but
@@ -239,7 +239,7 @@ own world is a genuine cost.
 
 ## M3 — Tool schema derived from a live method
 
-vivarium's load-bearing claim: a tool's schema is read off the running function —
+viva's load-bearing claim: a tool's schema is read off the running function —
 argument names from the lambda list, arity kinds from its structure, types from
 the compiler, description from the docstring. Subject is a method **compiled at
 runtime**, because that is the case that matters: an agent that defines a method
@@ -302,7 +302,7 @@ Nothing should be designed that way. Source identity belongs in the agent's
 durable state, and installation should run **ledger → source/AST → compile →
 method**, never **method → reverse-engineer source**.
 
-vivarium already has that ledger. So the honest statement is not "Smalltalk cannot
+viva already has that ledger. So the honest statement is not "Smalltalk cannot
 carry a derived schema" but:
 
 > **A Smalltalk image is not self-sufficient as source-level memory.**
@@ -338,10 +338,10 @@ candidate, validate, evaluate, install, record promotion — after which a direc
 database's storage files is forbidden. Technically possible, never done.
 
 That unifies this with M5's silent-semantic class under one heading, **mutation
-observability**, and it is a constraint vivarium can enforce rather than a defect
+observability**, and it is a constraint viva can enforce rather than a defect
 it would have to live with.
 
-**One correction to vivarium's own claim, found while building the control.**
+**One correction to viva's own claim, found while building the control.**
 `derive.lisp`'s header said SBCL yields `(FUNCTION (LIST &KEY (:TAX SINGLE-FLOAT) …))`
 "with no help". Measured on 2.6.7, on both the `eval` and `compile-file` paths, it
 yields `(FUNCTION (T &KEY (:TAX T)) (VALUES NUMBER &OPTIONAL))` — return type
@@ -436,7 +436,7 @@ The child does not try to live. It writes an image and dies. So the claim is:
 > **fork-and-immediately-checkpoint appears viable.**
 
 Not: *forked Pharo processes are safe general-purpose runtime clones.* The narrow
-primitive is all vivarium would need, and it is the only one measured.
+primitive is all viva would need, and it is the only one measured.
 
 Two limits stand. This is Pharo-only, because base Squeak cannot reach `fork`.
 And the child originally returned through `quitPrimitive`, letting the VM's normal
@@ -643,7 +643,7 @@ metric this probe did not set out to produce and should have —
 which is arguably more important than headless autonomy, and which neither
 substrate has been measured on. Note what it does *not* imply: better live
 mutation mechanics do not remove the need for validation, provenance, rollback,
-evaluation and selection. vivarium's evaluator earns its place on either
+evaluation and selection. viva's evaluator earns its place on either
 substrate; Smalltalk changes how mutations are *applied*, not whether they need
 to be *judged*.
 
@@ -697,7 +697,7 @@ apply to both substrates and neither has been measured on.
 
 **So: stay on SBCL, and stop citing the runtime as the reason.** Items 2 and 3
 are reasons to wait rather than reasons Smalltalk is wrong, and item 1 is
-answered by machinery vivarium already has. The decision now hangs on item 4,
+answered by machinery viva already has. The decision now hangs on item 4,
 which is an experiment rather than an argument.
 
 The whole investigation, in one paragraph:
@@ -706,7 +706,7 @@ The whole investigation, in one paragraph:
 > disqualify it.** Native ARM64 works. Continuation-preserving snapshots work.
 > Fork-and-immediately-checkpoint appears viable. Serving continues through it.
 > Restored checkpoints are executable. Headless hazards are manageable. The
-> remaining question is not whether Smalltalk *can* support vivarium, but whether
+> remaining question is not whether Smalltalk *can* support viva, but whether
 > preserving implicit computational state improves agent outcomes enough to
 > justify abandoning an already-measured SBCL instrument.
 
@@ -734,7 +734,7 @@ Three things this sends back:
   `.changes`. That makes the per-definition ledger load-bearing on Smalltalk
   rather than optional — but it is machinery this project already built, which is
   why M3 is a constraint to design around rather than a disqualification.
-- **The fork technique is substrate-independent** and vivarium already owns it.
+- **The fork technique is substrate-independent** and viva already owns it.
   That is the transferable result of this probe regardless of which substrate wins.
 - **Mutation observability outgrew this probe** and is now [B9](../backlog.toml).
   M3 and M5 found the same defect in two places, and it is not a Smalltalk
@@ -819,7 +819,7 @@ objection goes with it. Worth checking before assuming: the finding here is abou
 `.changes` and `sourcePointer`, not about what a package format could do. If both
 this and E5 land, there is no technical argument left against Smalltalk.
 
-**What would close the question permanently in vivarium's favour:** SBCL gaining
+**What would close the question permanently in viva's favour:** SBCL gaining
 control-flow resume by representing in-flight work as *data* rather than as a
 stack — which B6 already gestures at ("the no-threads constraint forced in-flight
 work to be represented as DATA"). If that lands, Smalltalk's one genuine advantage

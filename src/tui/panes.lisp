@@ -14,7 +14,7 @@
 ;;;; mutates in place cannot be tested by comparing before and after, and
 ;;;; splitting a pane is exactly the operation you want to read as a value.
 
-(in-package #:vivarium.tui)
+(in-package #:viva.tui)
 
 (defstruct (pane (:conc-name pane-))
   (kind :session :type keyword)

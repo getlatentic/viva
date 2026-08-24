@@ -10,20 +10,20 @@
 
 (require :sb-introspect)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
-(funcall (find-symbol "QUICKLOAD" "QL") :vivarium/image :silent t)
+(funcall (find-symbol "QUICKLOAD" "QL") :viva/image :silent t)
 
-(defpackage #:vivarium.repair
+(defpackage #:viva.repair
   (:use #:cl)
-  (:local-nicknames (#:msg #:vivarium.message)
-                    (#:tool #:vivarium.tool)
-                    (#:agent #:vivarium.agent)
-                    (#:client #:vivarium.client)
-                    (#:provider #:vivarium.provider)
-                    (#:image #:vivarium.image)
-                    (#:image-tools #:vivarium.image-tools)
-                    (#:loop* #:vivarium.loop)))
+  (:local-nicknames (#:msg #:viva.message)
+                    (#:tool #:viva.tool)
+                    (#:agent #:viva.agent)
+                    (#:client #:viva.client)
+                    (#:provider #:viva.provider)
+                    (#:image #:viva.image)
+                    (#:image-tools #:viva.image-tools)
+                    (#:loop* #:viva.loop)))
 
-(in-package #:vivarium.repair)
+(in-package #:viva.repair)
 
 (defparameter *provider*
   (provider:llama-cpp-provider :endpoint "http://localhost:8099/v1/chat/completions"
@@ -126,8 +126,8 @@ is right." "DEFUN SHOP::ORDER-TOTAL" *lines* *expected*))
               (t
                (format t "  NOT REPAIRED -- expected ~d, got ~a~%" *expected* (or total "an error"))
                (format t "  installed versions: ~{~a~^, ~}~%"
-                       (mapcar #'vivarium.ledger:entry-note
-                               (vivarium.ledger:entries (image:image-ledger backend))))
+                       (mapcar #'viva.ledger:entry-note
+                               (viva.ledger:entries (image:image-ledger backend))))
                (sb-ext:exit :code 1)))))
   (error (condition)
     (format t "~&RUN FAILED: ~a~%" condition)

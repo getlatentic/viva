@@ -9,7 +9,7 @@
 ;;;; set of entries, so promoting a winner is replaying them rather than merging
 ;;;; text.
 
-(in-package #:vivarium.ledger)
+(in-package #:viva.ledger)
 
 (defstruct (entry (:conc-name entry-))
   (id 0 :type integer)
@@ -21,7 +21,7 @@
   (outcome nil))
 
 (defclass ledger ()
-  ((lock :initform (bt:make-lock "vivarium.ledger") :reader ledger-lock)
+  ((lock :initform (bt:make-lock "viva.ledger") :reader ledger-lock)
    (entries :initform (make-array 0 :adjustable t :fill-pointer t) :reader %entries)
    (counter :initform 0 :accessor %counter)
    (path :initarg :path :initform nil :accessor ledger-path

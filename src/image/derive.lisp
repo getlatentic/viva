@@ -17,7 +17,7 @@
 ;;;; &OPTIONAL)) -- the return type is derived, the argument types are not, and
 ;;;; JSON-TYPE reports "any" rather than guessing. Measured in [B7].
 
-(in-package #:vivarium.derive)
+(in-package #:viva.derive)
 
 (defun json-type (cl-type)
   "Map a Common Lisp type specifier to a schema type, or NIL for \"any\".

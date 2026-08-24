@@ -14,7 +14,7 @@
 ;;;; fabricated REPL transcript as evidence of a fix -- the fix was real, the
 ;;;; evidence invented -- so self-reported success is not an input.
 
-(in-package #:vivarium.arena)
+(in-package #:viva.arena)
 
 (defclass archive ()
   ((results :initform '() :accessor archive-results)

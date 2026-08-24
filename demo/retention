@@ -6,7 +6,7 @@
 # it gets one turn to decide what should outlive the work, and this script
 # reports what it decided and whether anything it kept was used again.
 #
-# Every task is `vivarium do --retain` in one directory: the command a person
+# Every task is `viva do --retain` in one directory: the command a person
 # would type, not a test fixture. What accumulates is that directory's
 # .viva/ -- the same place a person's own skills and tools live -- so what
 # the organism writes is readable, editable, deletable, and usable by any other
@@ -16,16 +16,16 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 jobs="$root/experiments/dogfood/jobs/spend"
-work="${VIVARIUM_DEMO_DIR:-$root/tmp/demo}"
+work="${VIVA_DEMO_DIR:-$root/tmp/demo}"
 runs="$work-transcripts"
-cap="${VIVARIUM_DEMO_CAP:-0.25}"
+cap="${VIVA_DEMO_CAP:-0.25}"
 # NAMED, never defaulted. The catalogue offers the first provider configured,
 # so on a machine with several keys the demo would quietly run against whichever
 # came first -- and the $0.02 it quotes was measured on this one.
-model="${VIVARIUM_DEMO_MODEL:-deepseek}"
+model="${VIVA_DEMO_MODEL:-deepseek}"
 
 cat <<'INTRO'
-vivarium: does it learn?
+viva: does it learn?
 
 Five times over, the same chore with different data -- a folder of JSONL
 transcripts, and a request for the token totals inside them. Tedious to do by

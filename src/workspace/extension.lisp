@@ -19,7 +19,7 @@
 ;;;; directory is only loaded once its root has been trusted. The trust record
 ;;;; is per-root and lives outside the project, where the project cannot edit it.
 
-(in-package #:vivarium.extension)
+(in-package #:viva.extension)
 
 (defstruct (command (:conc-name command-))
   (name "" :type string)
@@ -158,7 +158,7 @@ extension must not take the run with it."
 
 ;;; Loading
 
-;;; Trust moved to vivarium.trust when the tool registry turned out to need
+;;; Trust moved to viva.trust when the tool registry turned out to need
 ;;; the same answer. These stay as the names this package already exported.
 
 (defun trust-file () (trust:trust-file))

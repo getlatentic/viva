@@ -1,7 +1,7 @@
 # Backlog — governance residue
 
 **Workable items moved to GitHub issues, which are now the single source of
-truth**: https://github.com/tosinamuda/vivarium/issues — five sprint
+truth**: https://github.com/tosinamuda/viva/issues — five sprint
 milestones (walking-skeleton router → external tool registry → graduation
 by reuse → MCP export → the harder-family eval) plus a triaged backlog.
 See CONTRIBUTING.md for the rules.
@@ -136,7 +136,7 @@ what makes them cheap to author honestly and hard to rig.
 - **Tools as components** — subsumed: with tier 3 external, the organism's
   own tools becoming versioned artifacts is the same registry, not a
   special door.
-- **Multiplexer frontend** — a surface over vivarium's typed streams,
+- **Multiplexer frontend** — a surface over viva's typed streams,
   steering, and retention: the behaviors a PTY multiplexer cannot offer.
   Product-rank; revisit when the ecosystem ships its session layer.
 

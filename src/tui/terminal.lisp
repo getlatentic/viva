@@ -10,7 +10,7 @@
 ;;;; shell with no echo and no line editing, which looks like the machine has
 ;;;; broken, and the fix a person reaches for is closing the window.
 
-(in-package #:vivarium.tui)
+(in-package #:viva.tui)
 
 (defun terminal-p (&optional (stream *standard-input*))
   (and (interactive-stream-p stream)

@@ -1,13 +1,13 @@
 ;;;; Core packages: the harness, with no knowledge of any particular task.
 
-(defpackage #:vivarium.fault
+(defpackage #:viva.fault
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria))
-  (:export #:vivarium-condition #:model-unavailable #:tool-unusable
+  (:export #:viva-condition #:model-unavailable #:tool-unusable
            #:faulted-model #:faulted-tool #:fault-attempt #:fault-cause
            #:retry #:use-model #:use-result #:abort-turn))
 
-(defpackage #:vivarium.message
+(defpackage #:viva.message
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria))
   (:export #:text #:make-text #:text-p #:text-value
@@ -23,38 +23,38 @@
            #:tool-result-message-error-p
            #:tool-calls-in #:text-of))
 
-(defpackage #:vivarium.wire
+(defpackage #:viva.wire
   (:use #:cl)
   (:export #:present #:field #:text-field #:reasoning-field #:+reasoning-keys+))
 
-(defpackage #:vivarium.schema
+(defpackage #:viva.schema
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria))
   (:export #:parameter-schema #:validate #:type-label #:parameter-label #:obj))
 
-(defpackage #:vivarium.sexp
+(defpackage #:viva.sexp
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria))
   (:export #:read-form #:call-arguments #:unreadable #:unreadable-detail #:*limit*
            #:grammar-for #:grammar-for-tools #:form-grammar #:tool-rule
            #:*channel-prefix* #:grammar-prefix-for))
 
-(defpackage #:vivarium.tool
+(defpackage #:viva.tool
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
-                    (#:schema #:vivarium.schema)
-                    (#:fault #:vivarium.fault)
-                    (#:msg #:vivarium.message))
+                    (#:schema #:viva.schema)
+                    (#:fault #:viva.fault)
+                    (#:msg #:viva.message))
   (:export #:tool #:tool-name #:tool-description #:tool-parameters
            #:execute #:tool-result #:make-tool-result
            #:tool-result-output #:tool-result-error-p #:tool-result-terminate-p
            #:define-tool #:function-tool #:tool-body))
 
-(defpackage #:vivarium.agent
+(defpackage #:viva.agent
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
-                    (#:msg #:vivarium.message)
-                    (#:tool #:vivarium.tool))
+                    (#:msg #:viva.message)
+                    (#:tool #:viva.tool))
   (:export #:agent #:agent-model #:agent-temperature #:agent-seed
            #:agent-max-tokens #:agent-parallel-tools-p #:agent-reasoning-effort
            #:agent-stream-p #:agent-abort-on-steer-p #:should-abort-p #:agent-grammar
@@ -65,46 +65,46 @@
            #:call-in-tool-context #:checkpoint #:cancelled #:cancelled-p #:recover
            #:queued-agent #:queue-steering #:queue-follow-up))
 
-(defpackage #:vivarium.stream
+(defpackage #:viva.stream
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:jzon #:com.inuoe.jzon)
-                    (#:wire #:vivarium.wire)
-                    (#:msg #:vivarium.message))
+                    (#:wire #:viva.wire)
+                    (#:msg #:viva.message))
   (:export #:collect #:consume #:absorb #:payload-of
            #:accumulator #:make-accumulator #:assistant-message #:acc-usage))
 
-(defpackage #:vivarium.provider
+(defpackage #:viva.provider
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
-                    (#:agent #:vivarium.agent))
+                    (#:agent #:viva.agent))
   (:export #:provider #:provider-endpoint #:provider-api-key #:provider-name
            #:make-default-provider
            #:headers #:supports-grammar-p #:constrained-output-prefix #:augment-payload
            #:llama-cpp #:llama-cpp-provider #:+harmony-output-prefix+
            #:openai #:openai-provider))
 
-(defpackage #:vivarium.client
+(defpackage #:viva.client
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:jzon #:com.inuoe.jzon)
                     (#:dex #:dexador)
-                    (#:wire #:vivarium.wire)
-                    (#:msg #:vivarium.message)
-                    (#:schema #:vivarium.schema)
-                    (#:tool #:vivarium.tool)
-                    (#:stream #:vivarium.stream)
-                    (#:provider #:vivarium.provider)
-                    (#:agent #:vivarium.agent))
+                    (#:wire #:viva.wire)
+                    (#:msg #:viva.message)
+                    (#:schema #:viva.schema)
+                    (#:tool #:viva.tool)
+                    (#:stream #:viva.stream)
+                    (#:provider #:viva.provider)
+                    (#:agent #:viva.agent))
   (:export #:*on-request* #:complete #:request-payload #:client-error #:client-error-detail))
 
-(defpackage #:vivarium.loop
+(defpackage #:viva.loop
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
-                    (#:msg #:vivarium.message)
-                    (#:tool #:vivarium.tool)
-                    (#:agent #:vivarium.agent)
-                    (#:fault #:vivarium.fault)
-                    (#:client #:vivarium.client))
+                    (#:msg #:viva.message)
+                    (#:tool #:viva.tool)
+                    (#:agent #:viva.agent)
+                    (#:fault #:viva.fault)
+                    (#:client #:viva.client))
   (:export #:run #:context #:make-context #:context-messages #:*request-deadline*))
 

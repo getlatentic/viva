@@ -6,7 +6,7 @@
 ;;;;
 ;;;; Cases are built AFTER setup, so a case can close over state the setup made.
 
-(in-package #:vivarium.tasks)
+(in-package #:viva.tasks)
 
 (defstruct (task (:conc-name task-))
   (id nil :type symbol)

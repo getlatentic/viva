@@ -47,7 +47,7 @@ somebody else's traceback, in a later task.
 
 **Second receipt, and it is mine.** Five times on 2026-08-21 I called functions
 that did not exist — `make-instance-tool`, `harness-skill-directories`,
-`copy-termios`, `rename-path`, `read-records` — and `vivarium check` reported
+`copy-termios`, `rename-path`, `read-records` — and `viva check` reported
 none of them, because an undefined function is a *style warning*. Two were
 caught only by a failing test; one by a read error that happened to be package
 qualified. A declaration that disagrees with its implementation and still

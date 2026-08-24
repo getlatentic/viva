@@ -17,7 +17,7 @@
 ;;;; "the model found a clever shortcut on these three runs" -- and A SHORTCUT IS
 ;;;; EVIDENCE THAT THE TASK FAILED THE GATE, not an excuse for the number.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defparameter *b14-task* :e24)
 (defparameter *b14-attempts* 5
@@ -58,7 +58,7 @@ budget effect.")
 budget, so a difference is attributable to reasoning effort and nothing else.
 Gate 1 has failed four times at the arm default of \"low\", and this separates
 'the task is too hard' from 'the model is too weak AT THIS EFFORT'."
-  (let ((arm (or (find arm-label (available-arms) :key #'vivarium.cli:arm-label :test #'string=)
+  (let ((arm (or (find arm-label (available-arms) :key #'viva.cli:arm-label :test #'string=)
                  (error "~a arm unavailable -- is its API key set?" arm-label)))
         (task (tasks:find-task *b14-task*))
         (rows '()))
@@ -96,7 +96,7 @@ Gate 1 has failed four times at the arm default of \"low\", and this separates
 
 (defun b14-report (rows &key (label "CONTROL"))
   (let* ((operational (remove-if (lambda (r) (or (getf r :error) (getf r :contamination))) rows))
-         (verdict (vivarium.burden:gate-2 (mapcar (lambda (r) (list :solved (getf r :solved)
+         (verdict (viva.burden:gate-2 (mapcar (lambda (r) (list :solved (getf r :solved)
                                                            :burden (getf r :burden)))
                                          operational))))
     (format t "~2&==== ~a ====~%" label)
@@ -110,10 +110,10 @@ Gate 1 has failed four times at the arm default of \"low\", and this separates
     (format t "~&2. GATE 1 -- solve rate~%")
     (format t "     ~,2f  (~a of ~a solved; frozen floor ~,2f)~%"
             (getf verdict :solve-rate) (getf verdict :solved) (getf verdict :attempts)
-            (float vivarium.burden:+solve-rate-threshold+))
+            (float viva.burden:+solve-rate-threshold+))
     (format t "~&3. GATE 2 -- observation burden, over solved attempts only~%")
     (format t "     median ~a  (frozen threshold ~a)~%"
-            (getf verdict :median-burden) vivarium.burden:+burden-threshold+)
+            (getf verdict :median-burden) viva.burden:+burden-threshold+)
     (format t "     burdens ~a~%" (getf verdict :burdens))
     (format t "     inspect calls / investigation requests per solved attempt:~%")
     (dolist (row operational)

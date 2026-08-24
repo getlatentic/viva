@@ -1,4 +1,4 @@
-# vivarium-tui
+# viva-tui
 
 The full screen client for the viva daemon, in Rust, on ratatui.
 
@@ -16,14 +16,14 @@ client makes sure rather than asking.
 
 ## The protocol is the daemon's
 
-It speaks line-delimited JSON on `~/.vivarium/vivariumd.sock`, or on
-`VIVARIUM_SOCKET`. `viva attach` and `viva live` speak the same protocol.
+It speaks line-delimited JSON on `~/.viva/viva.sock`, or on
+`VIVA_SOCKET`. `viva attach` and `viva live` speak the same protocol.
 
 ```
         engine (SBCL)
              |  JSON over a unix socket
     +--------+--------+
-  attach    live    vivarium-tui
+  attach    live    viva-tui
   (line)   (Lisp)     (Rust)
 ```
 

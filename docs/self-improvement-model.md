@@ -1,4 +1,4 @@
-# What vivarium is actually about
+# What viva is actually about
 
 The project spent a long time asking which substrate best supports self-modification,
 then a long time building an instrument that turned out to measure something else.
@@ -267,6 +267,6 @@ request 8  solves the task
 > an alias, extract a helper, update a checklist, add a test, or change its
 > workflow, when experience shows that doing so makes future work better.
 
-The difference from an ordinary agent is not that vivarium can modify code. It is
+The difference from an ordinary agent is not that viva can modify code. It is
 that it can recognise **when the way it works should itself become an artifact of
 what it has learned.**

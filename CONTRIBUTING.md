@@ -9,14 +9,14 @@ Emergent work goes to the **backlog** (label `backlog`, no milestone), never
 into the running sprint unless it blocks the sprint goal. Sprint planning at
 each boundary triages the backlog into the next sprint.
 
-Board: https://github.com/tosinamuda/vivarium/issues
+Board: https://github.com/tosinamuda/viva/issues
 
 **The road to v0.1**, four sprints, each demoable:
 
 ```
-Sprint 1  tools that leave the building — a tool vivarium wrote, called
+Sprint 1  tools that leave the building — a tool viva wrote, called
           from Claude Code; and the prompt stops naming the parked door
-Sprint 2  does it pay, on real work — dogfood a week of vivarium's own
+Sprint 2  does it pay, on real work — dogfood a week of viva's own
           development with the policy on
 Sprint 3  v0.1 — README around what survived, a clean-machine install,
           the demo, the tag

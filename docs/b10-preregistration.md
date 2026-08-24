@@ -295,7 +295,7 @@ checkpoint is attributable to the resume mechanism and to nothing else.
 **What the checkpoint destroys is the agent's context, not the image.** That is
 the honest analogue of the thing under test: the agent's process dies, the world
 it was working on persists, and the question is what resuming costs. Destroying
-the image instead would measure something vivarium never does.
+the image instead would measure something viva never does.
 
 ### A1 — naive reconstruction
 
@@ -309,7 +309,7 @@ Rebuilt from what the harness already has, with no cooperation from the agent:
 That is all. Notably the ledger already carries what was *done*; A1 tests whether
 that is sufficient without what was *thought*.
 
-**A1 is exactly vivarium's existing ledger recovery semantics, and must not move
+**A1 is exactly viva's existing ledger recovery semantics, and must not move
 in either direction during implementation.** Not weakened into a strawman, and —
 the likelier failure — not quietly enriched because B10 turns out to want some
 field. The moment a field is added for B10's benefit, A1 stops being the baseline
@@ -318,7 +318,7 @@ point the A1 → A2 delta measures nothing. Deliberate externalisation belongs i
 A2, which is what A2 is for.
 
 ```
-A1  =  current vivarium recovery semantics        (fixed)
+A1  =  current viva recovery semantics        (fixed)
 A2  =  A1 + authored cognition                    (the treatment)
 ```
 
@@ -754,7 +754,7 @@ path-dependence either, because the interaction is written down.
 
 ### The structural problem this exposes
 
-**vivarium's agent can read every definition in the image.** So any defect
+**viva's agent can read every definition in the image.** So any defect
 expressible in source is discoverable by reading, and reading does not accumulate
 search state worth losing. For elimination to be forced, the answer must not be
 legible in code at all — the search has to be over **data**:

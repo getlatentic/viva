@@ -15,7 +15,7 @@
 ;;;; a description matches. A template is invoked by a person, by name, and its
 ;;;; content is the prompt rather than a reference the model may follow.
 
-(in-package #:vivarium.template)
+(in-package #:viva.template)
 
 (defstruct (template (:conc-name template-))
   (name "" :type string)

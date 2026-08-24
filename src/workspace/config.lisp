@@ -1,8 +1,8 @@
 ;;;; Settings, so they are not trapped in the clone.
 ;;;;
 ;;;; `bin/viva` resolves its root to the REPOSITORY and sources that
-;;;; `.env`, which was fine while the only way to run vivarium was from inside
-;;;; the repository. Once `vivarium install` puts the command on PATH, a
+;;;; `.env`, which was fine while the only way to run viva was from inside
+;;;; the repository. Once `viva install` puts the command on PATH, a
 ;;;; person's configuration lived in a directory they might never open again,
 ;;;; and there was no way to say "this project uses deepseek, that one uses the
 ;;;; local server".
@@ -19,7 +19,7 @@
 ;;;; gitignored; `.viva/config` is a file people commit, so a key in one is
 ;;;; a key published. A credential-shaped name is refused by name.
 
-(in-package #:vivarium.config)
+(in-package #:viva.config)
 
 (defparameter +settings+
   '(("model" . "Which model to use, by catalogue name: deepseek, openai, openrouter, bedrock, local.")
@@ -31,7 +31,7 @@
     ("retire-after-days" . "Days a retained skill may go unused before it is retired.")
     ("retire-keep-above" . "Uses above which a retention is kept however long it lies quiet."))
   "Every setting, and what it is for. A table rather than scattered lookups so
-`vivarium config` cannot drift out of step with what is actually read.")
+`viva config` cannot drift out of step with what is actually read.")
 
 (defparameter +credential-marks+ '("KEY" "TOKEN" "SECRET" "PASSWORD" "CREDENTIAL")
   "Name fragments that mean a value nobody should commit.")
@@ -88,21 +88,21 @@ gitignored -- this file is not, and a key committed is a key published."
 (defun project-config-path (cwd)
   (env:project-path cwd "config"))
 
-(defparameter +reserved-variables+ '("VIVARIUM_ROOT" "VIVARIUM_SOCKET" "VIVARIUM_CWD" "VIVARIUM_JOURNAL")
-  "Variables vivarium sets for its own machinery. A setting must never map onto
-one of these: VIVARIUM_ROOT is the REPOSITORY, set by the launcher on every
+(defparameter +reserved-variables+ '("VIVA_ROOT" "VIVA_SOCKET" "VIVA_CWD" "VIVA_JOURNAL")
+  "Variables viva sets for its own machinery. A setting must never map onto
+one of these: VIVA_ROOT is the REPOSITORY, set by the launcher on every
 run, and the `root` setting is the workspace jail. The mechanical mapping put
 them on the same name, so every run in every project silently took the
 repository as its jail and the agent could not touch the work it was pointed
 at.")
 
-(defparameter +environment-names+ '(("root" . "VIVARIUM_WORKSPACE_ROOT"))
+(defparameter +environment-names+ '(("root" . "VIVA_WORKSPACE_ROOT"))
   "Settings whose variable is not the mechanical one, and why: see
 +RESERVED-VARIABLES+.")
 
 (defun environment-name (setting)
   (or (cdr (assoc setting +environment-names+ :test #'string=))
-      (format nil "VIVARIUM_~a" (substitute #\_ #\- (string-upcase setting)))))
+      (format nil "VIVA_~a" (substitute #\_ #\- (string-upcase setting)))))
 
 (defun load-settings (cwd)
   "Every setting resolved, each remembering which layer decided it.
@@ -111,7 +111,7 @@ Order, weakest first: machine config, project config, environment. A flag beats
 all of them and is applied by the caller, which is the only layer this cannot
 see. The environment sits above the files because that is what every other tool
 means by an exported variable -- and because the repository's `.env` is sourced
-into it by the launcher, so a person who has always configured vivarium that
+into it by the launcher, so a person who has always configured viva that
 way keeps working unchanged.
 
 Returns (values TABLE COMPLAINTS)."

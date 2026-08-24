@@ -17,7 +17,7 @@
 ;;;; machine's, carried into every project; .viva/ is this project's. A
 ;;;; reader who cannot tell which is which cannot tell what travels.
 
-(in-package #:vivarium.germline)
+(in-package #:viva.germline)
 
 (defstruct (item (:conc-name item-))
   (name "" :type string)

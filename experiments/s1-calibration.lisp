@@ -17,13 +17,13 @@
 (require :sb-introspect)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 (push (truename ".") ql:*local-project-directories*)
-(funcall (find-symbol "QUICKLOAD" "QL") :vivarium/tasks :silent t)
+(funcall (find-symbol "QUICKLOAD" "QL") :viva/tasks :silent t)
 
-(defpackage #:vivarium.calibration
+(defpackage #:viva.calibration
   (:use #:cl)
-  (:local-nicknames (#:tasks #:vivarium.tasks)
-                    (#:provider #:vivarium.provider)))
-(in-package #:vivarium.calibration)
+  (:local-nicknames (#:tasks #:viva.tasks)
+                    (#:provider #:viva.provider)))
+(in-package #:viva.calibration)
 
 (defun env (name) (sb-posix:getenv name))
 

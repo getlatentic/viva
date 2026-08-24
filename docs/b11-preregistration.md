@@ -167,7 +167,7 @@ exists, and the raw trajectory is the wrong representation of it.* That is a muc
 - **B8 / BEAM** — explicit state becomes more plausible.
 - **B12 / Cordis** — component-local state could be externalised into a
   longer-lived cognitive dependency, which is exactly the escape hatch §7.3 names.
-- **vivarium** — the ledger stays authoritative while distilled cognition becomes
+- **viva** — the ledger stays authoritative while distilled cognition becomes
   a separate, explicitly **non-authoritative** working-memory layer.
 
 Recorded in advance so that finding it later is a prediction confirmed rather

@@ -7,7 +7,7 @@
 ;;;; thread can change what the agent is while it is mid-run, and the next
 ;;;; request already carries it.
 
-(in-package #:vivarium.agent)
+(in-package #:viva.agent)
 
 (defclass agent ()
   ((model :initarg :model :accessor agent-model :initform "local"
@@ -176,7 +176,7 @@ steering should not pay for the machinery.")
 ;;; queues an outside thread can push to.
 
 (defclass queued-agent (agent)
-  ((lock :initform (bt:make-lock "vivarium.agent") :reader agent-lock)
+  ((lock :initform (bt:make-lock "viva.agent") :reader agent-lock)
    (abort-on-steer-p :initarg :abort-on-steer :accessor agent-abort-on-steer-p
                      :initform nil :type boolean)
    (steering :initform '() :accessor %steering)

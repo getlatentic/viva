@@ -145,7 +145,7 @@ propose -> representation -> parse -> transform -> compile -> load ->
 locate the affected process -> activate -> inspect
 ```
 
-Scored separately for the two workloads, because vivarium does both and one
+Scored separately for the two workloads, because viva does both and one
 averaged number would hide the effect.
 
 ## Generation — the story's outcome (a), confirmed
@@ -193,7 +193,7 @@ both sides now have measured semantics:
 
 ```
 OTP                MigrateState      old state -> code_change/3 -> new state
-vivarium/Cordis    RevertAndReapply  state lives outside the replaceable thing
+viva/Cordis    RevertAndReapply  state lives outside the replaceable thing
 ```
 
 **The agent drives every upgrade.** Module source is generated as text at
@@ -236,7 +236,7 @@ a bespoke transformation function the agent must write correctly for every shape
 change, whereas the externalised store needs the replacement only to read the
 keys it wants.
 
-For vivarium the externalised arm is also the one already implied by the
+For viva the externalised arm is also the one already implied by the
 [B11 + B12 rule](../backlog.toml): state that must cross a version boundary is
 named as a dependency rather than held. Axis 3 says taking that route costs one
 extra step and no correctness.
@@ -259,7 +259,7 @@ extra step and no correctness.
    and shares its blind spot.
 
 **What to take anyway**, because two of these are genuinely better than what
-vivarium has:
+viva has:
 
 - **Reduction counting.** A runaway loop that cannot starve the system is a real
   property, and SBCL has no equivalent — a non-yielding Lisp loop in the serving
@@ -272,13 +272,13 @@ vivarium has:
 
 **What is now settled across three probes:** effect containment (B12) does not
 subsume execution containment, and execution containment as BEAM supplies it is
-**partial**. Neither runtime gives vivarium a boundary it can rely on for
+**partial**. Neither runtime gives viva a boundary it can rely on for
 arbitrary generated code. The boundary that does hold for every fault class is
-the one E1 measured and vivarium already uses: **a separate OS process**.
+the one E1 measured and viva already uses: **a separate OS process**.
 
 ## The trigger
 
-**What would make BEAM the right substrate:** if vivarium's workload became many
+**What would make BEAM the right substrate:** if viva's workload became many
 long-lived concurrent agents whose failures are ordinary crashes rather than
 generated-code pathologies — supervision, hot upgrade and reduction counting are
 then all on the hot path and fork's per-trial cost is paid continuously instead
@@ -291,7 +291,7 @@ alive-at-half-rate — so the only thing standing between BEAM and a defensible
 NIF story is that the flag is declared by the code being contained. A VM-level
 option, a load-time rewrite of the `ErlNifFunc` table, or a review gate that
 refuses NIFs without the flag would each close it. The first two do not exist
-today; the third is vivarium's to build and is the cheap one.
+today; the third is viva's to build and is the cheap one.
 
 **What is not open:** whether "let it crash" is containment for this workload. It
 is a restart policy layered on intra-VM isolation, and the gradient shows exactly

@@ -16,9 +16,9 @@
 ;;;; hierarchy. The shapes have not repeated yet, and a taxonomy invented before
 ;;;; the second real case is a seam with nothing behind it.
 
-(in-package #:vivarium.fault)
+(in-package #:viva.fault)
 
-(define-condition vivarium-condition (condition) ()
+(define-condition viva-condition (condition) ()
   (:documentation "Something the organism may be able to recover from.
 
 Policy binds this, not ERROR: an ordinary bug should reach the containment
@@ -31,7 +31,7 @@ carries on. Making them both errors put TOOL-UNUSABLE in reach of every outer
 HANDLER-CASE for ERROR -- the test suite's included -- which turned a signal
 whose point is that execution continues into a failure."))
 
-(define-condition model-unavailable (vivarium-condition error)
+(define-condition model-unavailable (viva-condition error)
   ((model :initarg :model :initform nil :reader faulted-model)
    (attempt :initarg :attempt :initform 1 :reader fault-attempt)
    (cause :initarg :cause :initform nil :reader fault-cause))
@@ -41,7 +41,7 @@ whose point is that execution continues into a failure."))
                      (fault-cause condition)))))
 
 ;;; Not an ERROR: the default is to carry on with the failure as the result.
-(define-condition tool-unusable (vivarium-condition)
+(define-condition tool-unusable (viva-condition)
   ((tool :initarg :tool :initform nil :reader faulted-tool)
    (cause :initarg :cause :initform nil :reader fault-cause))
   (:report (lambda (condition stream)

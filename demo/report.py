@@ -122,7 +122,7 @@ def main():
         print("pay -- the cost was paid and the saving never arrived.")
 
     # A note cannot be observed being "used" the way a tool call can. What CAN
-    # be shown is that it is there: this asks vivarium what the NEXT task in
+    # be shown is that it is there: this asks viva what the NEXT task in
     # this directory would be handed, live, and costs nothing -- listing what
     # is loaded makes no model request.
     if memory.exists():
@@ -131,7 +131,7 @@ def main():
             input="/memory\n/exit\n", capture_output=True, text=True, timeout=180)
         carried = "What I have learned" in loaded.stdout
         print(f"The note above is{'' if carried else ' NOT'} in what the next task here")
-        print("would be given -- asked of vivarium just now, not inferred.")
+        print("would be given -- asked of viva just now, not inferred.")
         if carried:
             print(f"Every task after the one that wrote it ran with it in hand.")
             print("Unlike a tool call, a note's use cannot be counted directly:")

@@ -14,7 +14,7 @@
 ;;;;
 ;;;; THE SEAM IS A DECLARED CALLING CONVENTION, not a probe with real
 ;;;; arguments. A script that receives parameters MUST answer a describe
-;;;; request -- `{"vivarium":"describe"}` on stdin -- with its own parameter
+;;;; request -- `{"viva":"describe"}` on stdin -- with its own parameter
 ;;;; list, and must do nothing else when asked. Then the script is the
 ;;;; authority on its own interface and the manifest is a cache of it, so
 ;;;; there is no second copy free to drift. Probing with invented real
@@ -29,7 +29,7 @@
 ;;;; the model that wrote both files is still there to fix them. Loading is too
 ;;;; late to be useful and too expensive to run a script for.
 
-(in-package #:vivarium.registry)
+(in-package #:viva.registry)
 
 (defvar *on-register* nil
   "Called with a tool's name after it is registered, or NIL.
@@ -38,9 +38,9 @@ A HOOK rather than a call, because the evolution ledger lives in the daemon and
 the daemon loads after this file. A registry that reached upward for it would
 invert the dependency and make the workspace unusable without a daemon. Nil by
 default: the ledger is the daemon's, so registering without one is registering
-without a ledger, which is what a plain `vivarium run` should do.")
+without a ledger, which is what a plain `viva run` should do.")
 
-(defparameter *describe-request* "{\"vivarium\":\"describe\"}"
+(defparameter *describe-request* "{\"viva\":\"describe\"}"
   "What a script is sent to make it state its own interface.")
 
 (defparameter *describe-timeout* 20

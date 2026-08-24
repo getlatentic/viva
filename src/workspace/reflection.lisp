@@ -15,7 +15,7 @@
 ;;;; own request budget on top of whatever the task consumed, so it can
 ;;;; neither starve nor be starved by the work that preceded it.
 
-(in-package #:vivarium.harness)
+(in-package #:viva.harness)
 
 (defparameter *reflection-budget* 6
   "Requests a reflection turn may spend beyond what the task consumed.")
@@ -55,7 +55,7 @@ Route by the SHAPE of the thing, not by how pleased you are with it.
 
    IF YOU DECLARE ANY PARAMETERS, the script must also answer a describe
    request, or the tool is refused and nothing is registered. When the JSON on
-   stdin is exactly {\"vivarium\": \"describe\"}, print your own parameter list
+   stdin is exactly {\"viva\": \"describe\"}, print your own parameter list
    and exit, doing nothing else:
 
        {\"parameters\": [{\"name\": \"path\", \"type\": \"string\",

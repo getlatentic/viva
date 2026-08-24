@@ -22,7 +22,7 @@
 ;;;; thread mid-write to a file it holds open, and the resumed program would be
 ;;;; correct only by luck.
 
-(in-package #:vivarium.operation)
+(in-package #:viva.operation)
 
 (defstruct (operation (:conc-name operation-))
   (id "" :type string)
@@ -33,7 +33,7 @@
   (result nil)
   (error nil)
   (thread nil)
-  (lock (bt:make-lock "vivarium.operation"))
+  (lock (bt:make-lock "viva.operation"))
   ;; Signalled once, when the operation reaches a terminal state. A semaphore
   ;; rather than a condition variable because the wakeup must survive being sent
   ;; before anyone waits -- a waiter that arrives late on a condition variable
@@ -43,7 +43,7 @@
   (cancelled nil :type boolean))
 
 (defvar *operations* (make-hash-table :test #'equal))
-(defvar *registry-lock* (bt:make-lock "vivarium.operations"))
+(defvar *registry-lock* (bt:make-lock "viva.operations"))
 (defvar *counter* 0)
 
 (defvar *operation* nil
@@ -105,7 +105,7 @@ the global value unless the caller says otherwise."
                  ;; indistinguishable from one still running, and AWAIT would
                  ;; block until the timeout.
                  (error (condition) (settle operation :failed :error condition)))))
-           :name (format nil "vivarium-~a" (operation-id operation))))
+           :name (format nil "viva-~a" (operation-id operation))))
     operation))
 
 (defun status (operation)

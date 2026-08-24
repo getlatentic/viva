@@ -1,6 +1,6 @@
 ;;;; The organism's front door.
 ;;;;
-;;;; These encode a bug that shipped and very nearly hid. `vivarium daemon
+;;;; These encode a bug that shipped and very nearly hid. `viva daemon
 ;;;; status` opened three connections for one answer, two of them dropped the
 ;;;; instant they were made, and four invocations killed the daemon outright.
 ;;;; The cause was one line: LOOP's iteration variable is a single binding
@@ -18,12 +18,12 @@
 ;;;; precisely in the arrangement of threads and descriptors, and nothing that
 ;;;; stands in for those would have shown it.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
 ;; Before any cell spawns: the journal must never write into the real home.
 ;; Test runs left 462 files and 26MB in ~/.viva/journal before this.
 (setf actor:*journal-root*
-      (format nil "/tmp/vivarium-test-journal-~36r/"
+      (format nil "/tmp/viva-test-journal-~36r/"
               (random (expt 2 40) (make-random-state t))))
 
 (defvar *suite-watchdog* nil)
@@ -64,7 +64,7 @@ fork a multithreaded image."
            :name "suite-watchdog"))))
 
 (defun daemon-test-path ()
-  (format nil "/tmp/vivarium-daemond-~36r.sock" (random (expt 2 48) (make-random-state t))))
+  (format nil "/tmp/viva-daemond-~36r.sock" (random (expt 2 48) (make-random-state t))))
 
 (defmacro with-daemon ((path) &body body)
   "A daemon of our own, on its own socket, stopped afterwards whatever happens."
@@ -108,16 +108,16 @@ traffic that put two client threads on one descriptor."
   ;; reused the only channel there was. A daemon that restored seven sessions
   ;; reported seven faults, and a tally that counts successes cannot be read
   ;; for faults at all.
-  (let ((before (nth-value 1 (vivarium.daemon::diagnostics))))
-    (vivarium.daemon::note-progress "resume" "loaded 20260824-0900-A1B2 (34 messages)")
-    (is = before (nth-value 1 (vivarium.daemon::diagnostics))
+  (let ((before (nth-value 1 (viva.daemon::diagnostics))))
+    (viva.daemon::note-progress "resume" "loaded 20260824-0900-A1B2 (34 messages)")
+    (is = before (nth-value 1 (viva.daemon::diagnostics))
         "a note counted against the failure tally")
-    (vivarium.daemon::note-failure "resume"
+    (viva.daemon::note-failure "resume"
                                    (make-condition 'simple-error
                                                    :format-control "no session there"))
-    (is = (1+ before) (nth-value 1 (vivarium.daemon::diagnostics))
+    (is = (1+ before) (nth-value 1 (viva.daemon::diagnostics))
         "a failure did not count")
-    (let* ((recent (vivarium.daemon::diagnostics))
+    (let* ((recent (viva.daemon::diagnostics))
            (kinds (mapcar (lambda (each) (gethash "kind" each)) (subseq recent 0 2))))
       ;; Newest first: the failure, then the note.
       (is equal "SIMPLE-ERROR" (first kinds))
@@ -138,11 +138,11 @@ traffic that put two client threads on one descriptor."
                                                    :resource-environment environment
                                                    :provider nil :model "none"))))
       (unwind-protect
-           (let ((agent (vivarium.actor::cell-agent cell)))
+           (let ((agent (viva.actor::cell-agent cell)))
              (is = 0 (getf (actor:snapshot cell) :tokens)
                  "a session that has not asked anything reported a count")
              (setf (harness:agent-last-tokens agent) 32000)
-             (setf (vivarium.compaction:settings-context-limit
+             (setf (viva.compaction:settings-context-limit
                     (harness:agent-compaction agent))
                    128000)
              (let ((now (actor:snapshot cell)))
@@ -183,7 +183,7 @@ traffic that put two client threads on one descriptor."
     ;; The session's own lane is not a worker, and says so by saying nothing.
     (multiple-value-bind (name data)
         (event:from-loop (list :type :tool-start :call call
-                               :lane vivarium.session:+main-lane+))
+                               :lane viva.session:+main-lane+))
       (declare (ignore name))
       (false (gethash "lane" data)
              "the session's own lane was reported as a worker"))))
@@ -245,22 +245,22 @@ traffic that put two client threads on one descriptor."
 (define-test "stopping unlinks the socket it bound, not the default one"
   ;; STOP deleted (SOCKET-PATH) whatever it had actually been told to listen on,
   ;; so a daemon on a second socket deleted the first one's file on its way out
-  ;; and left its own behind. VIVARIUM_SOCKET is what SOCKET-PATH reads, which
+  ;; and left its own behind. VIVA_SOCKET is what SOCKET-PATH reads, which
   ;; makes the wrong file nameable from here.
   (let ((decoy (daemon-test-path))
-        (before (sb-posix:getenv "VIVARIUM_SOCKET")))
+        (before (sb-posix:getenv "VIVA_SOCKET")))
     (unwind-protect
          (progn
            (with-open-file (out decoy :direction :output :if-does-not-exist :create))
-           (sb-posix:setenv "VIVARIUM_SOCKET" decoy 1)
+           (sb-posix:setenv "VIVA_SOCKET" decoy 1)
            (with-daemon (path)
              (true (probe-file path))
              (daemon:stop)
              (false (probe-file path)))
            (true (probe-file decoy)))
       (if before
-          (sb-posix:setenv "VIVARIUM_SOCKET" before 1)
-          (sb-posix:unsetenv "VIVARIUM_SOCKET"))
+          (sb-posix:setenv "VIVA_SOCKET" before 1)
+          (sb-posix:unsetenv "VIVA_SOCKET"))
       (ignore-errors (delete-file decoy)))))
 
 ;;; The control plane
@@ -316,7 +316,7 @@ traffic that put two client threads on one descriptor."
   `(with-repository (environment)
      (ensure-suite-watchdog)
      (let* ((,cell (paced-cell environment ,@options))
-            (,agent (vivarium.actor::cell-agent ,cell)))
+            (,agent (viva.actor::cell-agent ,cell)))
        (declare (ignorable ,agent))
        (unwind-protect (progn ,@body)
          (harness:cancel-agent ,agent)
@@ -325,21 +325,21 @@ traffic that put two client threads on one descriptor."
 (define-test "the coordinator keeps receiving while a turn is running"
   (with-paced-cell (cell agent :pause 0.05 :limit 20)
     (actor:submit cell "go")
-    (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
+    (true (daemon-wait (lambda () (viva.actor::busy-p cell))))
     ;; If the session's own thread were inside HARNESS:ASK, this message would
     ;; sit in the mailbox until the turn it was meant to interrupt had ended.
     (actor:tell cell :suspend)
-    (true (daemon-wait (lambda () (eq :suspended (vivarium.actor::cell-state cell)))))
-    (true (vivarium.actor::busy-p cell) "the turn ended instead of being held")
+    (true (daemon-wait (lambda () (eq :suspended (viva.actor::cell-state cell)))))
+    (true (viva.actor::busy-p cell) "the turn ended instead of being held")
     (actor:tell cell :resume)
-    (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 30))))
+    (true (daemon-wait (lambda () (not (viva.actor::busy-p cell))) :timeout 30))))
 
 (define-test "suspend holds the work, not merely the state field"
   (with-paced-cell (cell agent :pause 0.02 :limit 500)
     (actor:submit cell "go")
     (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
     (actor:tell cell :suspend)
-    (true (daemon-wait (lambda () (eq :suspended (vivarium.actor::cell-state cell)))))
+    (true (daemon-wait (lambda () (eq :suspended (viva.actor::cell-state cell)))))
     (let ((at-suspend (paced-requests agent)))
       (sleep 0.5)
       ;; At most one more. SUSPEND can land mid-step and the step it lands in
@@ -356,7 +356,7 @@ traffic that put two client threads on one descriptor."
     (actor:submit cell "go")
     (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
     (actor:tell cell :cancel)
-    (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 15)
+    (true (daemon-wait (lambda () (not (viva.actor::busy-p cell))) :timeout 15)
           "the turn ran on after being cancelled")
     (true (< (paced-requests agent) 100) "made ~d requests" (paced-requests agent))
     (let ((names (cell-event-names cell)))
@@ -372,7 +372,7 @@ traffic that put two client threads on one descriptor."
     (actor:submit cell "go")
     (true (daemon-wait (lambda () (> (paced-requests agent) 1))))
     (actor:tell cell :steer :text "STEERED")
-    (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 30))
+    (true (daemon-wait (lambda () (not (viva.actor::busy-p cell))) :timeout 30))
     (let ((seen (reverse (paced-saw-steer agent))))
       (true (find t seen) "no request in the turn ever saw the steer: ~a" seen)
       ;; And it was not merely the last thing to happen, which is exactly what
@@ -383,14 +383,14 @@ traffic that put two client threads on one descriptor."
 (define-test "a prompt arriving mid-turn waits rather than running beside it"
   (with-paced-cell (cell agent :pause 0.03 :limit 6)
     (actor:submit cell "first")
-    (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
+    (true (daemon-wait (lambda () (viva.actor::busy-p cell))))
     (actor:submit cell "second")
-    (true (daemon-wait (lambda () (= 1 (length (vivarium.actor::cell-queued cell))))))
+    (true (daemon-wait (lambda () (= 1 (length (viva.actor::cell-queued cell))))))
     (true (daemon-wait (lambda () (= 2 (count "turn.started" (cell-event-names cell)
                                               :test #'string=)))
                        :timeout 30)
           "the queued prompt never ran")
-    (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 30))))
+    (true (daemon-wait (lambda () (not (viva.actor::busy-p cell))) :timeout 30))))
 
 (defclass abortable-agent (paced-agent) ()
   (:documentation "A request that notices the abort while it is in flight.
@@ -420,13 +420,13 @@ checkpoint."))
                                                     :environment environment
                                                     :resource-environment environment
                                                     :limit 500 :request-limit 500)))
-           (agent (vivarium.actor::cell-agent cell)))
+           (agent (viva.actor::cell-agent cell)))
       (unwind-protect
            (progn
              (actor:submit cell "go")
-             (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
+             (true (daemon-wait (lambda () (viva.actor::busy-p cell))))
              (actor:tell cell :cancel)
-             (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 15))
+             (true (daemon-wait (lambda () (not (viva.actor::busy-p cell))) :timeout 15))
              (let ((names (cell-event-names cell)))
                (is = 1 (count "turn.cancelled" names :test #'string=))
                (is = 1 (terminal-count names))))
@@ -468,7 +468,7 @@ checkpoint."))
                                               :pause 0.02
                                               :limit (if (eq case :cancelled) 500 3)
                                               :request-limit 500))))
-             (agent (vivarium.actor::cell-agent cell)))
+             (agent (viva.actor::cell-agent cell)))
         (unwind-protect
              (progn
                (actor:submit cell "go")
@@ -491,7 +491,7 @@ checkpoint."))
   (with-repository (environment)
     (let ((cell (paced-cell environment :pause 0.02 :limit 500)))
       (actor:submit cell "go")
-      (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
+      (true (daemon-wait (lambda () (viva.actor::busy-p cell))))
       ;; Shut down mid-turn: the case where the two could disagree.
       (actor:shutdown cell)
       (true (daemon-wait (lambda () (member "session.completed" (cell-event-names cell)
@@ -509,20 +509,20 @@ checkpoint."))
         (true (< (position-if (lambda (n) (member n actor:+terminal-events+ :test #'string=))
                               names)
                  (position "session.completed" names :test #'string=))))
-      (false (vivarium.actor::busy-p cell)))))
+      (false (viva.actor::busy-p cell)))))
 
 (define-test "a session is findable until its work has stopped"
   (with-repository (environment)
     (let* ((cell (paced-cell environment :pause 0.02 :limit 500))
            (id (actor:cell-id cell)))
       (actor:submit cell "go")
-      (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
+      (true (daemon-wait (lambda () (viva.actor::busy-p cell))))
       (actor:shutdown cell)
       ;; Deregistering on the POST left a session unreachable and still
       ;; working, which is worse than either state on its own.
       (true (daemon-wait (lambda () (null (actor:find-cell id))) :timeout 30)
             "the session never deregistered")
-      (false (vivarium.actor::busy-p cell)
+      (false (viva.actor::busy-p cell)
              "deregistered while its worker was still running"))))
 
 ;;; Identity, ownership, linearization
@@ -540,16 +540,16 @@ checkpoint."))
   ;; identity and published a terminal event for work that was still running.
   (with-paced-cell (cell agent :pause 0.05 :limit 12)
     (let ((turn (actor:submit cell "go")))
-      (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
+      (true (daemon-wait (lambda () (viva.actor::busy-p cell))))
       (actor:tell cell :finished :turn "s0-t999" :outcome :completed)
       (sleep 0.2)
-      (true (vivarium.actor::busy-p cell) "a stale completion ended the running turn")
-      (is equal turn (vivarium.actor::cell-turn cell))
+      (true (viva.actor::busy-p cell) "a stale completion ended the running turn")
+      (is equal turn (viva.actor::cell-turn cell))
       (is = 0 (terminal-count (cell-event-names cell)))
       ;; Ignored, but not silently: an unexplained message is a symptom.
       (is = 1 (count "session.error" (cell-event-names cell) :test #'string=))
       (actor:tell cell :cancel)
-      (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 15)))))
+      (true (daemon-wait (lambda () (not (viva.actor::busy-p cell))) :timeout 15)))))
 
 (define-test "control aimed at a finished turn does not hit its successor"
   (with-paced-cell (cell agent :pause 0.02 :limit 4)
@@ -566,7 +566,7 @@ checkpoint."))
   ;; queued behind running work returned before its own turn had begun.
   (with-paced-cell (cell agent :pause 0.03 :limit 4)
     (actor:submit cell "first")
-    (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
+    (true (daemon-wait (lambda () (viva.actor::busy-p cell))))
     (let* ((second (actor:submit cell "second"))
            (outcome (actor:await-turn cell second :timeout 30))
            (names (cell-event-names cell)))
@@ -583,7 +583,7 @@ checkpoint."))
   (with-repository (environment)
     (let ((cell (paced-cell environment :pause 0.02 :limit 500)))
       (actor:submit cell "go")
-      (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
+      (true (daemon-wait (lambda () (viva.actor::busy-p cell))))
       (true (actor:await-shutdown cell :timeout 30) "the session never ended")
       (let ((names (cell-event-names cell)))
         (is = 1 (terminal-count names) "the last turn reported ~a terminal events"
@@ -611,7 +611,7 @@ checkpoint."))
            (publisher (bt:make-thread
                        (lambda ()
                          (dotimes (i 300)
-                           (vivarium.actor::publish cell "model.delta" nil)
+                           (viva.actor::publish cell "model.delta" nil)
                            (sleep 0.001))))))
       (unwind-protect
            (progn
@@ -638,9 +638,9 @@ checkpoint."))
   ;; rare; this is the guard that makes it impossible, checked directly.
   (with-daemon (path)
     ;; A generation that was never current: retiring it must change nothing.
-    (let ((stranger (vivarium.daemon::make-daemon-instance
+    (let ((stranger (viva.daemon::make-daemon-instance
                      :socket nil :path "/tmp/nowhere.sock" :fd nil)))
-      (vivarium.daemon::retire stranger)
+      (viva.daemon::retire stranger)
       (true (daemon:running-p path) "retiring a stranger's generation stopped the daemon")
       (true (probe-file path) "retiring a stranger's generation deleted the file")
       (true (gethash "success" (daemon-ask path "type" "ping"))))))
@@ -676,7 +676,7 @@ checkpoint."))
                                                     :environment environment
                                                     :resource-environment environment
                                                     :failures 2 :request-limit 500)))
-           (agent (vivarium.actor::cell-agent cell)))
+           (agent (viva.actor::cell-agent cell)))
       (unwind-protect
            (let ((turn (actor:submit cell "go")))
              ;; The conversation was intact the whole time. Ending the run
@@ -695,7 +695,7 @@ checkpoint."))
                                                     :environment environment
                                                     :resource-environment environment
                                                     :failures 1000 :request-limit 500)))
-           (agent (vivarium.actor::cell-agent cell)))
+           (agent (viva.actor::cell-agent cell)))
       (unwind-protect
            (let ((turn (actor:submit cell "go")))
              (is string= "turn.failed" (actor:await-turn cell turn :timeout 60))
@@ -774,7 +774,7 @@ checkpoint."))
                                                              :environment environment
                                                              :resource-environment environment
                                                              :stalls 1 :request-limit 500)))
-                    (agent (vivarium.actor::cell-agent cell)))
+                    (agent (viva.actor::cell-agent cell)))
                (unwind-protect
                     (let ((turn (actor:submit cell "go")))
                       (is string= "turn.completed" (actor:await-turn cell turn :timeout 25))
@@ -804,8 +804,8 @@ checkpoint."))
                      (payload (make-string 4000 :initial-element #\x)))
                  ;; Far more than any socket buffer will hold.
                  (dotimes (i 400)
-                   (vivarium.actor::publish cell "model.delta"
-                                            (vivarium.event::object "text" payload)))
+                   (viva.actor::publish cell "model.delta"
+                                            (viva.event::object "text" payload)))
                  (let ((seconds (/ (- (get-internal-real-time) start)
                                    internal-time-units-per-second)))
                    (true (< seconds 10) "publishing took ~,1fs behind a deaf client" seconds)
@@ -825,10 +825,10 @@ checkpoint."))
   ;; The grace period was passed to each RECEIVE-MESSAGE, so every arriving
   ;; message bought another full period. Any traffic at all -- and with child
   ;; tasks there will be plenty -- held a broken worker in :STOPPING forever.
-  (let ((previous vivarium.actor::+stopping-grace+))
+  (let ((previous viva.actor::+stopping-grace+))
     (unwind-protect
          (progn
-           (setf vivarium.actor::+stopping-grace+ 2)
+           (setf viva.actor::+stopping-grace+ 2)
            (with-repository (environment)
              (let ((cell (actor:spawn :label "wedged"
                                       :agent (make-instance 'wedged-agent
@@ -836,21 +836,21 @@ checkpoint."))
                                                             :resource-environment environment
                                                             :request-limit 500))))
                (actor:submit cell "go")
-               (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
+               (true (daemon-wait (lambda () (viva.actor::busy-p cell))))
                (actor:shutdown cell)
                ;; Traffic throughout the whole grace period.
                (let ((chatter (bt:make-thread
                                (lambda () (dotimes (i 30)
                                             (actor:tell cell :resume)
                                             (sleep 0.2))))))
-                 (true (daemon-wait (lambda () (eq :stuck (vivarium.actor::cell-state cell))) :timeout 8)
-                       "still ~a after the grace period" (vivarium.actor::cell-state cell))
+                 (true (daemon-wait (lambda () (eq :stuck (viva.actor::cell-state cell))) :timeout 8)
+                       "still ~a after the grace period" (viva.actor::cell-state cell))
                  (ignore-errors (bt:join-thread chatter :timeout 10)))
                ;; And it did not claim to have completed.
                (let ((names (cell-event-names cell)))
                  (is = 0 (count "session.completed" names :test #'string=))
                  (true (member "session.error" names :test #'string=))))))
-      (setf vivarium.actor::+stopping-grace+ previous))))
+      (setf viva.actor::+stopping-grace+ previous))))
 
 (define-test "two threads in one process cannot both start serving"
   ;; The OS lock is held by the process and grants itself the same lock twice,
@@ -901,7 +901,7 @@ checkpoint."))
                                                              :environment environment
                                                              :resource-environment environment
                                                              :request-limit 500)))
-                    (agent (vivarium.actor::cell-agent cell)))
+                    (agent (viva.actor::cell-agent cell)))
                (unwind-protect
                     (let ((turn (actor:submit cell "go")))
                       (is string= "turn.completed" (actor:await-turn cell turn :timeout 25))
@@ -989,15 +989,15 @@ checkpoint."))
 (define-test "events evicted from memory are still replayable, and in order"
   (with-paced-cell (cell agent :pause 0.01 :limit 1)
     ;; Push far past the ring: everything early must come back from disk.
-    (dotimes (i (+ vivarium.actor::+tail-limit+ 500))
-      (vivarium.actor::publish cell "model.delta" nil))
+    (dotimes (i (+ viva.actor::+tail-limit+ 500))
+      (viva.actor::publish cell "model.delta" nil))
     ;; Wait for the journal to commit the lot.
     (true (daemon-wait (lambda ()
-                         (>= (vivarium.actor::cell-committed cell)
-                             (+ vivarium.actor::+tail-limit+ 500 1)))
+                         (>= (viva.actor::cell-committed cell)
+                             (+ viva.actor::+tail-limit+ 500 1)))
                        :timeout 30)
           "journal never committed: at ~d"
-          (vivarium.actor::cell-committed cell))
+          (viva.actor::cell-committed cell))
     ;; The invariant is CONTIGUITY, not an exact count: session.started is
     ;; sequence 1, and if the burst genuinely outran the disk for a moment the
     ;; session announced the risk with a session.error -- one more event, and
@@ -1005,9 +1005,9 @@ checkpoint."))
     ;; sequence with a hole in it.
     (let* ((events (actor:since cell 0))
            (numbers (mapcar #'event:event-sequence events)))
-      (true (>= (length numbers) (+ vivarium.actor::+tail-limit+ 500 1))
+      (true (>= (length numbers) (+ viva.actor::+tail-limit+ 500 1))
             "replay lost events: ~d of at least ~d"
-            (length numbers) (+ vivarium.actor::+tail-limit+ 500 1))
+            (length numbers) (+ viva.actor::+tail-limit+ 500 1))
       (is equal numbers (alexandria:iota (length numbers) :start 1)
           "the replayed sequence has holes or disorder"))))
 
@@ -1026,10 +1026,10 @@ checkpoint."))
              ;; the test began failing, correctly -- it had been asserting a
              ;; timing accident.
              (let ((closed (bt:make-semaphore :count 0)))
-               (vivarium.actor::journal-post (list :close cell closed))
+               (viva.actor::journal-post (list :close cell closed))
                (bt:wait-on-semaphore closed :timeout 15))
-             (setf (vivarium.actor::cell-journal-path cell) "/nonexistent/nowhere/x.jsonl")
-             (vivarium.actor::publish cell "model.delta" nil)
+             (setf (viva.actor::cell-journal-path cell) "/nonexistent/nowhere/x.jsonl")
+             (viva.actor::publish cell "model.delta" nil)
              (true (daemon-wait
                     (lambda ()
                       (find-if (lambda (event)
@@ -1042,7 +1042,7 @@ checkpoint."))
         (actor:shutdown cell)))))
 
 (defun owning-events (cell)
-  (vivarium.actor::remembered-since
+  (viva.actor::remembered-since
    cell 0))
 
 (define-test "thread count returns to baseline after session and client churn"
@@ -1086,7 +1086,7 @@ checkpoint."))
 
 ;;; Ordinary use must not look like trouble
 ;;;
-;;; A person hosting vivarium in a multiplexer closes panes, and vivarium's own
+;;; A person hosting viva in a multiplexer closes panes, and viva's own
 ;;; startup probes the socket. Both hang a client up mid-write. Reporting those
 ;;; as contained failures buries the real ones under normal operation -- and the
 ;;; probe was manufacturing the failures it then reported.
@@ -1137,10 +1137,10 @@ checkpoint."))
   ;; ring -- and whatever crossed from ring to disk DURING the read was in
   ;; neither half. With a small ring and a publisher running flat out, that
   ;; gap opens on nearly every subscription.
-  (let ((previous vivarium.actor::+tail-limit+))
+  (let ((previous viva.actor::+tail-limit+))
     (unwind-protect
          (progn
-           (setf vivarium.actor::+tail-limit+ 64)
+           (setf viva.actor::+tail-limit+ 64)
            (with-repository (environment)
              (let* ((cell (paced-cell environment :pause 0.01 :limit 1))
                     (stop nil)
@@ -1153,7 +1153,7 @@ checkpoint."))
                                 (lambda ()
                                   (loop until stop
                                         do (dotimes (i 20)
-                                             (vivarium.actor::publish cell "model.delta" nil))
+                                             (viva.actor::publish cell "model.delta" nil))
                                            (sleep 0.001))))))
                (unwind-protect
                     (progn
@@ -1164,7 +1164,7 @@ checkpoint."))
                       ;; the first version of this test passed against the
                       ;; broken composition for exactly that reason.
                       (true (daemon-wait (lambda ()
-                                           (> (vivarium.actor::cell-sequence cell) 20000))
+                                           (> (viva.actor::cell-sequence cell) 20000))
                                          :timeout 60))
                       (dotimes (round 3)
                         (let* ((mailbox (sb-concurrency:make-mailbox))
@@ -1190,65 +1190,65 @@ checkpoint."))
                  ;; restored 4096 limit would send it off the end of the
                  ;; vector.
                  (actor:await-shutdown cell :timeout 30)))))
-      (setf vivarium.actor::+tail-limit+ previous))))
+      (setf viva.actor::+tail-limit+ previous))))
 
 (define-test "a dead journal owner is restarted as a new generation, and heals"
   (with-paced-cell (cell agent :pause 0.01 :limit 1)
-    (dotimes (i 50) (vivarium.actor::publish cell "model.delta" nil))
-    (let ((before (vivarium.actor::journal-id vivarium.actor::*journal-service*)))
+    (dotimes (i 50) (viva.actor::publish cell "model.delta" nil))
+    (let ((before (viva.actor::journal-id viva.actor::*journal-service*)))
       ;; A message the owner's ECASE cannot answer: the thread dies, and the
       ;; exit boundary -- not any caller's THREAD-ALIVE-P -- must notice.
       (sb-concurrency:send-message
-       (vivarium.actor::journal-mailbox vivarium.actor::*journal-service*)
+       (viva.actor::journal-mailbox viva.actor::*journal-service*)
        (list :no-such-verb nil))
       (true (daemon-wait (lambda ()
-                           (alexandria:when-let ((service vivarium.actor::*journal-service*))
-                             (> (vivarium.actor::journal-id service) before)))
+                           (alexandria:when-let ((service viva.actor::*journal-service*))
+                             (> (viva.actor::journal-id service) before)))
                          :timeout 15)
             "no successor generation appeared")
       ;; Publishing keeps working, and the successor commits what the corpse
       ;; left uncommitted: the watermark catches all the way up.
-      (dotimes (i 50) (vivarium.actor::publish cell "model.delta" nil))
+      (dotimes (i 50) (viva.actor::publish cell "model.delta" nil))
       (true (daemon-wait (lambda ()
                            (owning-committed-p cell))
                          :timeout 20)
             "committed ~d of ~d after restart"
-            (vivarium.actor::cell-committed cell)
-            (vivarium.actor::cell-sequence cell)))))
+            (viva.actor::cell-committed cell)
+            (viva.actor::cell-sequence cell)))))
 
 (defun owning-committed-p (cell)
-  (vivarium.actor::owning (cell)
-    (>= (vivarium.actor::cell-committed cell)
-        (vivarium.actor::cell-sequence cell))))
+  (viva.actor::owning (cell)
+    (>= (viva.actor::cell-committed cell)
+        (viva.actor::cell-sequence cell))))
 
 (define-test "a session stays inspectable until its journal confirms the close"
   ;; Deregistering first meant AWAIT-SHUTDOWN reported success while the
   ;; terminal record was unresolved -- externally complete, durably unknown,
   ;; inspectable by nobody, with the truth on stderr.
-  (let ((grace vivarium.actor::*flush-grace*)
-        (service vivarium.actor::*journal-service*))
+  (let ((grace viva.actor::*flush-grace*)
+        (service viva.actor::*journal-service*))
     (unwind-protect
          (with-repository (environment)
-           (setf vivarium.actor::*flush-grace* 1)
+           (setf viva.actor::*flush-grace* 1)
            (let* ((cell (paced-cell environment :pause 0.01 :limit 1))
                   (id (actor:cell-id cell)))
              (actor:await-turn cell (actor:submit cell "go") :timeout 20)
              ;; The journal refuses everything: unavailable, not merely slow.
-             (setf (vivarium.actor::journal-state vivarium.actor::*journal-service*) :failed)
+             (setf (viva.actor::journal-state viva.actor::*journal-service*) :failed)
              (false (actor:await-shutdown cell :timeout 5)
                     "shutdown claimed success with the close unconfirmed")
              (true (actor:find-cell id) "the session left the registry anyway")
-             (true (find "session.error" (vivarium.actor::remembered-since cell 0)
+             (true (find "session.error" (viva.actor::remembered-since cell 0)
                          :key #'event:event-name :test #'string=)
                    "the retention was never announced")
              ;; Heal, and the shutdown completes late rather than never.
-             (setf (vivarium.actor::journal-state vivarium.actor::*journal-service*) :available)
+             (setf (viva.actor::journal-state viva.actor::*journal-service*) :available)
              (true (daemon-wait (lambda () (null (actor:find-cell id))) :timeout 20)
                    "the healed journal did not release the session")))
-      (setf vivarium.actor::*flush-grace* grace)
-      (alexandria:when-let ((current vivarium.actor::*journal-service*))
+      (setf viva.actor::*flush-grace* grace)
+      (alexandria:when-let ((current viva.actor::*journal-service*))
         (when (eq current service)
-          (setf (vivarium.actor::journal-state current) :available))))))
+          (setf (viva.actor::journal-state current) :available))))))
 
 (defun daemon-descriptors ()
   (ignore-errors
@@ -1266,7 +1266,7 @@ checkpoint."))
   ;; first two triggers tried did not trigger: a nonexistent parent directory
   ;; is politely created by SERVE itself, and an over-long path is silently
   ;; truncated by the kernel and binds.
-  (let* ((impossible (format nil "/tmp/vivarium-bind-blocker-~36r/sock"
+  (let* ((impossible (format nil "/tmp/viva-bind-blocker-~36r/sock"
                              (random (expt 2 40) (make-random-state t))))
          (baseline (daemon-descriptors)))
     (ensure-directories-exist (format nil "~a/" impossible))
@@ -1299,7 +1299,7 @@ checkpoint."))
 ;;; The kernel: one checked table, and the coordinator merely performs it
 
 (define-test "the kernel self-test replays its incident traces"
-  (true (vivarium.kernel:run-self-test)))
+  (true (viva.kernel:run-self-test)))
 
 (define-test "a lifecycle hole is a published diagnostic, not a silence or a death"
   ;; :FLUSH-CONFIRMED in :IDLE is a state/message pair the table does not
@@ -1312,7 +1312,7 @@ checkpoint."))
                                     (and (string= "session.error" (event:event-name event))
                                          (search "unhandled"
                                                  (gethash "detail" (event:event-data event)))))
-                                  (vivarium.actor::remembered-since cell 0)))
+                                  (viva.actor::remembered-since cell 0)))
                        :timeout 10)
           "the hole was silent")
     (let ((turn (actor:submit cell "still alive?")))
@@ -1321,8 +1321,8 @@ checkpoint."))
 (define-test "a prompt past the queue limit is refused with its turn named"
   (with-paced-cell (cell agent :pause 0.2 :limit 500)
     (actor:submit cell "running")
-    (true (daemon-wait (lambda () (vivarium.actor::busy-p cell))))
-    (dotimes (i vivarium.kernel:+queue-limit+)
+    (true (daemon-wait (lambda () (viva.actor::busy-p cell))))
+    (dotimes (i viva.kernel:+queue-limit+)
       (actor:tell cell :user-message :text "queued" :turn (format nil "q~d" i)))
     (let ((refused (actor:submit cell "one too many")))
       (true (daemon-wait
@@ -1330,7 +1330,7 @@ checkpoint."))
                (find-if (lambda (event)
                           (and (string= "session.error" (event:event-name event))
                                (equal refused (gethash "turn" (event:event-data event)))))
-                        (vivarium.actor::remembered-since cell 0)))
+                        (viva.actor::remembered-since cell 0)))
              :timeout 10)
             "the overflow was absorbed rather than refused"))
     (actor:tell cell :cancel)))
@@ -1340,19 +1340,19 @@ checkpoint."))
     (let ((deaf (sb-concurrency:make-mailbox))
           (key (gensym "DEAF")))
       (actor:subscribe cell key deaf)
-      (dotimes (i (+ vivarium.kernel:+subscriber-capacity+ 50))
-        (vivarium.actor::publish cell "model.delta" nil))
+      (dotimes (i (+ viva.kernel:+subscriber-capacity+ 50))
+        (viva.actor::publish cell "model.delta" nil))
       (true (daemon-wait
              (lambda ()
                (find-if (lambda (event)
                           (and (string= "session.error" (event:event-name event))
                                (search "dropped" (gethash "detail" (event:event-data event)))))
-                        (vivarium.actor::remembered-since cell 0)))
+                        (viva.actor::remembered-since cell 0)))
              :timeout 10)
             "the overload was never announced")
       ;; And the mailbox stopped growing: the drop is the bound.
       (true (<= (sb-concurrency:mailbox-count deaf)
-                (+ vivarium.kernel:+subscriber-capacity+ 2))
+                (+ viva.kernel:+subscriber-capacity+ 2))
             "~d messages accumulated past capacity"
             (sb-concurrency:mailbox-count deaf)))))
 
@@ -1385,7 +1385,7 @@ class, and the class overrides the pacing initforms."))
         :state))
 
 (define-test "the tasktree self-test replays its invariant traces"
-  (true (vivarium.tasktree:run-tasktree-self-test)))
+  (true (viva.tasktree:run-tasktree-self-test)))
 
 (define-test "a root task runs a real worker to completion on the session stream"
   (with-paced-cell (cell agent :pause 0.01 :limit 2)
@@ -1396,14 +1396,14 @@ class, and the class overrides the pacing initforms."))
         (true (member "task.started" names :test #'string=))
         (true (member "task.completed" names :test #'string=)))
       ;; Late completion for a finished task is a diagnostic, not a rewrite.
-      (vivarium.actor::task-tell :task-finished id :failed)
+      (viva.actor::task-tell :task-finished id :failed)
       (true (daemon-wait
              (lambda ()
                (find-if (lambda (event)
                           (and (string= "task.error" (event:event-name event))
                                (search "late-task-completion"
                                        (gethash "detail" (event:event-data event)))))
-                        (vivarium.actor::remembered-since cell 0)))
+                        (viva.actor::remembered-since cell 0)))
              :timeout 10))
       (is eq :completed (task-state-now id)))))
 
@@ -1427,8 +1427,8 @@ class, and the class overrides the pacing initforms."))
              ;; The witness, live: past its parent's terminal state, the
              ;; detached child is running and was never told to stop.
              (is eq :running (task-state-now detached))
-             (let ((task (vivarium.tasktree:task
-                          (vivarium.actor::supervisor-tree (actor:ensure-supervisor))
+             (let ((task (viva.tasktree:task
+                          (viva.actor::supervisor-tree (actor:ensure-supervisor))
                           detached)))
                (false (getf task :cancelled) "the cancel leaked across a detached edge"))
              (actor:cancel-task detached)
@@ -1447,21 +1447,21 @@ class, and the class overrides the pacing initforms."))
                                 :timeout 15))
              ;; The parent's own outcome arrives while the child is live: the
              ;; tree must PARK it, and say so.
-             (vivarium.actor::task-tell :task-finished root :completed)
+             (viva.actor::task-tell :task-finished root :completed)
              (true (daemon-wait (lambda () (eq :draining (task-state-now root))) :timeout 10)
                    "root is ~a, not draining" (task-state-now root))
              (true (daemon-wait
-                    (lambda () (find "task.draining" (vivarium.actor::remembered-since cell 0)
+                    (lambda () (find "task.draining" (viva.actor::remembered-since cell 0)
                                      :key #'event:event-name :test #'string=))
                     :timeout 10))
-             (vivarium.actor::task-tell :task-finished scoped :completed)
+             (viva.actor::task-tell :task-finished scoped :completed)
              (true (daemon-wait (lambda () (eq :completed (task-state-now root))) :timeout 10)
                    "the parked outcome never landed: root is ~a" (task-state-now root))
              (is eq :completed (task-state-now scoped)))
         ;; The real workers are still out there; their late reports are
         ;; consumed as diagnostics. Stop them.
         (dolist (task (actor:task-tree-snapshot))
-          (alexandria:when-let ((rig (vivarium.actor::rig (actor:ensure-supervisor)
+          (alexandria:when-let ((rig (viva.actor::rig (actor:ensure-supervisor)
                                                           (getf task :id))))
             (harness:cancel-agent (getf rig :agent))))
         (actor:shutdown cell)))))
@@ -1472,13 +1472,13 @@ class, and the class overrides the pacing initforms."))
       (unwind-protect
            (let ((root (actor:spawn-task cell "root work")))
              (true (daemon-wait (lambda () (eq :running (task-state-now root))) :timeout 15))
-             (dotimes (i vivarium.tasktree:+child-limit+)
+             (dotimes (i viva.tasktree:+child-limit+)
                (actor:spawn-task cell "child" :parent root :scoped t))
              (true (daemon-wait
                     (lambda ()
-                      (= vivarium.tasktree:+child-limit+
-                         (length (vivarium.tasktree:live-scoped-children
-                                  (vivarium.actor::supervisor-tree (actor:ensure-supervisor))
+                      (= viva.tasktree:+child-limit+
+                         (length (viva.tasktree:live-scoped-children
+                                  (viva.actor::supervisor-tree (actor:ensure-supervisor))
                                   root))))
                     :timeout 20))
              (false (actor:spawn-task cell "one too many" :parent root :scoped t)
@@ -1489,7 +1489,7 @@ class, and the class overrides the pacing initforms."))
                                  (and (string= "task.error" (event:event-name event))
                                       (search "spawn-refused"
                                               (gethash "detail" (event:event-data event)))))
-                               (vivarium.actor::remembered-since cell 0)))
+                               (viva.actor::remembered-since cell 0)))
                     :timeout 10)
                    "the overflow was never refused")
              (actor:cancel-task root)
@@ -1526,7 +1526,7 @@ class, and the class overrides the pacing initforms."))
   ;; before any wiring exists. DEACTIVATED ends one task's pin with its
   ;; lifetime; REVERTED moves the promoted lineage back for everyone; an
   ;; unpromoted candidate reaches a task only through that task's own pin.
-  (true (vivarium.evolution:run-evolution-self-test)))
+  (true (viva.evolution:run-evolution-self-test)))
 
 ;;; Evolution wired: the registry's laws driving real boxes, ledgers, tasks
 
@@ -1545,8 +1545,8 @@ class, and the class overrides the pacing initforms."))
       (multiple-value-bind (candidate c2)
           (actor:create-candidate "greet" '(lambda (name) (format nil "HELLO, ~a" name)))
         (true (null c2))
-        (let ((box (vivarium.actor::task-context-box "test-task" cell)))
-          (let ((vivarium.actor:*activation-box* box))
+        (let ((box (viva.actor::task-context-box "test-task" cell)))
+          (let ((viva.actor:*activation-box* box))
             (is string= "hello, world" (actor:call-component "greet" "world"))
             (actor:activate-candidate "test-task" candidate :cell cell)
             (is string= "HELLO, world" (actor:call-component "greet" "world"))))
@@ -1555,7 +1555,7 @@ class, and the class overrides the pacing initforms."))
         ;; Discard refused while pinned; after the task ends, it proceeds.
         (true (member :refused (alexandria:ensure-list
                                 (actor:discard-candidate candidate))))
-        (vivarium.actor::evolution-tell :task-ended "test-task")
+        (viva.actor::evolution-tell :task-ended "test-task")
         (true (daemon-wait
                (lambda () (eql candidate (actor:discard-candidate candidate)))
                :timeout 10)
@@ -1596,12 +1596,12 @@ class, and the class overrides the pacing initforms."))
                  ;; `the reply implies the inheritance ran` from luck into the
                  ;; property under test.
                  (dotimes (i 50)
-                   (vivarium.actor::evolution-tell
+                   (viva.actor::evolution-tell
                     :task-ended (format nil "noise-~d-~d" round i)))
                  (let ((child (actor:spawn-task cell "scoped help" :parent root :scoped t)))
                    (true (integerp child) "round ~d: spawn refused" round)
                    (when (integerp child)
-                     (let ((box (vivarium.actor::task-context-box child nil)))
+                     (let ((box (viva.actor::task-context-box child nil)))
                        (true (assoc "search" (car box) :test #'equal)
                              "round ~d: the child's box is empty" round))
                      (actor:cancel-task child)
@@ -1664,11 +1664,11 @@ class, and the class overrides the pacing initforms."))
         (actor:promote-candidate v1)
         (actor:promote-candidate v2)
         (actor:revert-component "durable")
-        (true (vivarium.actor::journal-sync) "the ledger never confirmed")
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
         (let ((lineages (actor:reconstruct-lineage)))
           (is eql v1 (first (cdr (assoc "durable" lineages :test #'equal)))
               "reconstruction disagrees with the registry: ~s" lineages)
-          (is eql v1 (vivarium.evolution:current-promoted
+          (is eql v1 (viva.evolution:current-promoted
                       (actor:evolution-registry) "durable")))))))
 
 (define-test "a predecessor's late death restarts nothing, by the table"
@@ -1677,25 +1677,25 @@ class, and the class overrides the pacing initforms."))
   ;; identity law. A dead generation reporting twice -- or reporting after its
   ;; successor is up -- is diagnosed, not restarted over the living.
   (with-paced-cell (cell agent :pause 0.01 :limit 1)
-    (vivarium.actor::ensure-journal)
-    (let ((corpse vivarium.actor::*journal-service*))
-      (sb-concurrency:send-message (vivarium.actor::journal-mailbox corpse)
+    (viva.actor::ensure-journal)
+    (let ((corpse viva.actor::*journal-service*))
+      (sb-concurrency:send-message (viva.actor::journal-mailbox corpse)
                                    (list :no-such-verb nil))
       (true (daemon-wait (lambda ()
-                           (alexandria:when-let ((service vivarium.actor::*journal-service*))
-                             (> (vivarium.actor::journal-id service)
-                                (vivarium.actor::journal-id corpse))))
+                           (alexandria:when-let ((service viva.actor::*journal-service*))
+                             (> (viva.actor::journal-id service)
+                                (viva.actor::journal-id corpse))))
                          :timeout 15))
-      (let ((survivor vivarium.actor::*journal-service*))
+      (let ((survivor viva.actor::*journal-service*))
         ;; The corpse reports its death AGAIN: the stale clause absorbs it.
         ;; Identity, not arithmetic: the bypass attack spawned a fresh service
         ;; carrying the SAME generation number, and a number comparison
         ;; blessed it. The service OBJECT must be untouched.
-        (vivarium.actor::journal-owner-exited corpse)
+        (viva.actor::journal-owner-exited corpse)
         (sleep 0.5)
-        (true (eq survivor vivarium.actor::*journal-service*)
+        (true (eq survivor viva.actor::*journal-service*)
               "a stale exit replaced the living generation")
-        (dotimes (i 5) (vivarium.actor::publish cell "model.delta" nil))
+        (dotimes (i 5) (viva.actor::publish cell "model.delta" nil))
         (true (daemon-wait (lambda () (owning-committed-p cell)) :timeout 15)
               "the surviving generation stopped committing")))))
 
@@ -1708,7 +1708,7 @@ class, and the class overrides the pacing initforms."))
 ;;; mirror's evidence.
 ;;; ---------------------------------------------------------------------------
 
-(defun ledger-event-names (&optional (path (vivarium.actor::evolution-ledger-path)))
+(defun ledger-event-names (&optional (path (viva.actor::evolution-ledger-path)))
   "Event names from the durable ledger, in the order they were committed. The
 ORDER is load-bearing: KC6 joins an activation to the resolutions that follow
 it, and a resolution recorded before its activation would score as a use of
@@ -1724,20 +1724,20 @@ something not yet activated."
   "Run BODY against an owner born into DOOR, then put the suite's own owner
 back. The displaced owner is RESTORED rather than discarded: its registry is
 every candidate the rest of the suite created."
-  `(let ((displaced vivarium.actor::*evolver*)
-         (previous vivarium.actor::*default-door*))
+  `(let ((displaced viva.actor::*evolver*)
+         (previous viva.actor::*default-door*))
      (unwind-protect
           (progn
-            (setf vivarium.actor::*evolver* nil
-                  vivarium.actor::*default-door* ,door)
-            (vivarium.actor::ensure-evolver)
+            (setf viva.actor::*evolver* nil
+                  viva.actor::*default-door* ,door)
+            (viva.actor::ensure-evolver)
             ,@body)
-       (alexandria:when-let ((mine vivarium.actor::*evolver*))
+       (alexandria:when-let ((mine viva.actor::*evolver*))
          (unless (eq mine displaced)
-           (sb-concurrency:send-message (vivarium.actor::evolver-mailbox mine)
+           (sb-concurrency:send-message (viva.actor::evolver-mailbox mine)
                                         (list :shutdown))))
-       (setf vivarium.actor::*evolver* displaced
-             vivarium.actor::*default-door* previous))))
+       (setf viva.actor::*evolver* displaced
+             viva.actor::*default-door* previous))))
 
 (define-test "the door decides the arm, and the open arm proves this can lose"
   ;; ONE body, both arms, opposite expectations. Written this way on purpose:
@@ -1765,10 +1765,10 @@ every candidate the rest of the suite created."
                         "closed: activation was not refused by the door")))
               ;; ClosedDoorIsInert, in Lisp: with the door shut nothing this
               ;; run produced resolves for anybody, through either channel.
-              (let ((box (vivarium.actor::task-context-box task nil)))
-                (let ((vivarium.actor::*activation-box* box)
-                      (vivarium.actor::*resolution-task* task)
-                      (vivarium.actor::*resolutions-seen* (make-hash-table :test #'equal)))
+              (let ((box (viva.actor::task-context-box task nil)))
+                (let ((viva.actor::*activation-box* box)
+                      (viva.actor::*resolution-task* task)
+                      (viva.actor::*resolutions-seen* (make-hash-table :test #'equal)))
                   (if expect-effect
                       (is eq :evolved (actor:call-component component))
                       (false (actor:resolve-component component)
@@ -1779,9 +1779,9 @@ every candidate the rest of the suite created."
                     (is equal '(:refused :door) answer
                         "closed: promotion was not refused by the door")))
               (if expect-effect
-                  (is eql id (vivarium.evolution:current-promoted
+                  (is eql id (viva.evolution:current-promoted
                               (actor:evolution-registry) component))
-                  (false (vivarium.evolution:current-promoted
+                  (false (viva.evolution:current-promoted
                           (actor:evolution-registry) component)
                          "closed: a promoted default appeared"))
               ;; The refusal is DATA. An analysis counting what arm B tried to
@@ -1810,14 +1810,14 @@ every candidate the rest of the suite created."
         ;; what the supervisor does: a first version of this test rigged the
         ;; task with NIL, sent the event to the ledger alone, and reported a
         ;; broken instrument as a broken product.
-        (let ((box (vivarium.actor::task-context-box task cell))
+        (let ((box (viva.actor::task-context-box task cell))
               (results '()))
           (bt:join-thread
            (bt:make-thread
             (lambda ()
-              (let ((vivarium.actor::*activation-box* box)
-                    (vivarium.actor::*resolution-task* task)
-                    (vivarium.actor::*resolutions-seen* (make-hash-table :test #'equal)))
+              (let ((viva.actor::*activation-box* box)
+                    (viva.actor::*resolution-task* task)
+                    (viva.actor::*resolutions-seen* (make-hash-table :test #'equal)))
                 (dotimes (i 25) (push (actor:call-component component) results))))
             :name "kc6-resolution-worker"))
           (is = 25 (count :used results) "the worker did not resolve the pin"))
@@ -1828,7 +1828,7 @@ every candidate the rest of the suite created."
               "twenty-five uses and the ledger heard about none of them")
         (is = 1 (count "improvement.resolved" (cell-event-names cell) :test #'string=)
             "use is reported per call rather than per version")
-        (true (vivarium.actor::journal-sync) "the ledger never confirmed")
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
         ;; THE ORDERING CLAIM, at the ledger the analysis will actually read.
         ;; A worker journalling its own use would race the owner's activation
         ;; publish -- the reply is sent before it -- and the join would see a
@@ -1851,7 +1851,7 @@ every candidate the rest of the suite created."
   (with-paced-cell (cell agent :pause 0.01 :limit 1)
     (let ((before (actor:evolution-registry)))
       (dotimes (i 10)
-        (vivarium.actor::evolution-tell :resolved "ghost-task" "ghost" 999))
+        (viva.actor::evolution-tell :resolved "ghost-task" "ghost" 999))
       (sleep 0.3)
       (is eq before (actor:evolution-registry)
           "a telemetry message rewrote the registry")
@@ -1888,14 +1888,14 @@ every candidate the rest of the suite created."
             ;; No sleep, no wait: the answer to ACTIVATE is the only thing
             ;; standing between here and the resolution, which is precisely
             ;; the claim under test.
-            (let ((box (vivarium.actor::task-context-box task cell))
+            (let ((box (viva.actor::task-context-box task cell))
                   (seen nil))
               (bt:join-thread
                (bt:make-thread
                 (lambda ()
-                  (let ((vivarium.actor::*activation-box* box)
-                        (vivarium.actor::*resolution-task* task)
-                        (vivarium.actor::*resolutions-seen*
+                  (let ((viva.actor::*activation-box* box)
+                        (viva.actor::*resolution-task* task)
+                        (viva.actor::*resolutions-seen*
                           (make-hash-table :test #'equal)))
                     (setf seen (ignore-errors (actor:call-component component)))))
                 :name "kc6-visibility-worker"))
@@ -1932,7 +1932,7 @@ middle of that sentence, and the first version of this test parsed the word
 (defmacro with-capability-agent ((agent) &body body)
   "A tool reaches its caller through HARNESS:*AGENT*, so a test that does not
 bind it is testing nothing the agent loop does."
-  `(let ((vivarium.harness:*agent* ,agent)) ,@body))
+  `(let ((viva.harness:*agent* ,agent)) ,@body))
 
 (define-test "an agent mints a capability, puts it in force, and runs it"
   (with-paced-cell (cell agent :pause 0.01 :limit 1)
@@ -2034,9 +2034,9 @@ bind it is testing nothing the agent loop does."
   ;; templates, listener and active-tools while silently dropping extra-tools.
   ;; A parent could self-modify and its workers could not.
   (with-paced-cell (cell agent :pause 0.01 :limit 1)
-    (setf (vivarium.harness::agent-extra-tools agent) (actor:capability-tools))
+    (setf (viva.harness::agent-extra-tools agent) (actor:capability-tools))
     (let* ((child (harness:sub-agent agent "kc6-inherit-lane"))
-           (names (mapcar #'tool:tool-name (vivarium.agent:tools child))))
+           (names (mapcar #'tool:tool-name (viva.agent:tools child))))
       (dolist (verb '("create_capability" "activate_capability" "call_capability"))
         (true (member verb names :test #'string=)
               "a worker cannot ~a; its parent can" verb)))))
@@ -2051,7 +2051,7 @@ bind it is testing nothing the agent loop does."
   ;; lineage has to survive the image, which is the only thing here that is
   ;; mortal.
   (with-paced-cell (cell agent :pause 0.01 :limit 1)
-    (let ((root (format nil "/tmp/vivarium-lifecycle-~36r/"
+    (let ((root (format nil "/tmp/viva-lifecycle-~36r/"
                         (random (expt 2 48) (make-random-state t)))))
       (unwind-protect
            (let ((environment (env:make-local-environment :cwd root))
@@ -2070,7 +2070,7 @@ bind it is testing nothing the agent loop does."
                                     :script (format nil "print('kept')~%")
                                     :script-name "run.py")
                (is string= "summarise" name "registration failed: ~a" reason))
-             (true (vivarium.actor::journal-sync) "the ledger never confirmed")
+             (true (viva.actor::journal-sync) "the ledger never confirmed")
              ;; Reconstructed from the ledger alone, which is the acceptance
              ;; criterion: rebuild registry state after a restart.
              (let* ((lineages (actor:reconstruct-lineage))
@@ -2078,7 +2078,7 @@ bind it is testing nothing the agent loop does."
                (true versions "the ledger has no lineage for the registered tool: ~s"
                      lineages)
                (is eql (first versions)
-                   (vivarium.evolution:current-promoted
+                   (viva.evolution:current-promoted
                     (actor:evolution-registry) "summarise")
                    "the reconstruction disagrees with the live registry")))
         (setf registry:*on-register* nil)
@@ -2090,7 +2090,7 @@ bind it is testing nothing the agent loop does."
   ;; still ledgered would put a promoted version in the lineage for a tool that
   ;; does not exist -- and reconstruction after a restart would insist on it.
   (with-paced-cell (cell agent :pause 0.01 :limit 1)
-    (let ((root (format nil "/tmp/vivarium-lifecycle-~36r/"
+    (let ((root (format nil "/tmp/viva-lifecycle-~36r/"
                         (random (expt 2 48) (make-random-state t)))))
       (unwind-protect
            (let ((environment (env:make-local-environment :cwd root)))
@@ -2107,7 +2107,7 @@ bind it is testing nothing the agent loop does."
                                     :script-name "run.py")
                (false name "a lying manifest was registered")
                (true (search "describe" reason) "~a" reason))
-             (true (vivarium.actor::journal-sync))
+             (true (viva.actor::journal-sync))
              (false (assoc "liar" (actor:reconstruct-lineage) :test #'equal)
                     "a refused registration reached the ledger"))
         (setf registry:*on-register* nil)
@@ -2123,7 +2123,7 @@ bind it is testing nothing the agent loop does."
       (true (integerp id) "no version was minted for a file-backed tool")
       ;; A NIL function against the version is correct: resolution for these
       ;; goes through the file registry, never through the image.
-      (false (gethash id (vivarium.actor::evolver-functions (actor:ensure-evolver)))
+      (false (gethash id (viva.actor::evolver-functions (actor:ensure-evolver)))
              "a file-backed tool put a function in the image registry"))))
 
 ;;; ---------------------------------------------------------------------------
@@ -2187,7 +2187,7 @@ it reports nothing, and the suite has to be killed to find out why."
   (with-daemon (path)
     (with-paced-cell (cell agent :pause 0.01 :limit 6)
       (actor:submit cell "go")
-      (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 30))
+      (true (daemon-wait (lambda () (not (viva.actor::busy-p cell))) :timeout 30))
       (let ((before (length (actor:since cell 0))))
         (true (plusp before) "the session produced no events to replay")
         (let ((stream (daemon:connect path)))
@@ -2215,7 +2215,7 @@ it reports nothing, and the suite has to be killed to find out why."
       ;; Attach only once the session is genuinely mid-flight, so the barrier
       ;; is exercised rather than stepped around.
       (true (daemon-wait (lambda () (> (length (actor:since cell 0)) 3))))
-      (true (vivarium.actor::busy-p cell) "the turn finished before the attach")
+      (true (viva.actor::busy-p cell) "the turn finished before the attach")
       (let ((stream (daemon:connect path)))
         (unwind-protect
              (progn
@@ -2261,7 +2261,7 @@ it reports nothing, and the suite has to be killed to find out why."
   (let ((unregistered '()))
     (dolist (file (list "src/daemon/actor.lisp" "src/daemon/server.lisp"
                         "src/daemon/supervisor.lisp" "src/daemon/evolver.lisp"))
-      (let ((path (merge-pathnames file (asdf:system-source-directory :vivarium))))
+      (let ((path (merge-pathnames file (asdf:system-source-directory :viva))))
         (when (probe-file path)
           (with-open-file (in path)
             (loop for line = (read-line in nil nil)
@@ -2284,7 +2284,7 @@ it reports nothing, and the suite has to be killed to find out why."
   (with-daemon (path)
     (with-paced-cell (cell agent :pause 0.01 :limit 3)
       (actor:submit cell "the question")
-      (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 30))
+      (true (daemon-wait (lambda () (not (viva.actor::busy-p cell))) :timeout 30))
       (let ((stream (daemon:connect path)))
         (unwind-protect
              (progn
@@ -2309,7 +2309,7 @@ it reports nothing, and the suite has to be killed to find out why."
   ;; operator had typed them.
   (with-paced-cell (cell agent :pause 0.01 :limit 3)
     (actor:submit-retention cell)
-    (true (daemon-wait (lambda () (not (vivarium.actor::busy-p cell))) :timeout 30))
+    (true (daemon-wait (lambda () (not (viva.actor::busy-p cell))) :timeout 30))
     (let ((spoken (remove-if-not (lambda (event)
                                    (equal "user.message" (event:event-name event)))
                                  (actor:since cell 0))))
@@ -2438,7 +2438,7 @@ it reports nothing, and the suite has to be killed to find out why."
                    (is equal id (gethash "id" (gethash "session" reply))
                        "the cell was not named after the transcript it continues")
                    (let* ((cell (actor:find-cell id))
-                          (agent (vivarium.actor::cell-agent cell))
+                          (agent (viva.actor::cell-agent cell))
                           (session (harness:agent-session agent)))
                      ;; The SAME file, and what follows hangs off its leaf.
                      (is equal (session:session-path session)
@@ -2484,22 +2484,22 @@ it reports nothing, and the suite has to be killed to find out why."
                (progn
                  (read-line stream nil nil)
                  (daemon:request stream "type" "session.start" "cwd" root "resume" id)
-                 (true (probe-file (vivarium.actor::live-path id)) "no marker was written")
+                 (true (probe-file (viva.actor::live-path id)) "no marker was written")
                  ;; A session with nothing in it is an accident of attaching.
-                 (with-open-file (out (vivarium.actor::live-path empty-id)
+                 (with-open-file (out (viva.actor::live-path empty-id)
                                       :direction :output :if-exists :supersede)
                    (format out "{\"id\":~s,\"cwd\":~s}" empty-id root))
                  ;; The daemon dies without ending anything: the cell is simply
                  ;; dropped from the registry, as a dead process drops it.
                  (let ((cell (actor:find-cell id)))
-                   (bt:with-lock-held (vivarium.actor::*registry-lock*)
-                     (remhash id vivarium.actor::*cells*))
-                   (ignore-errors (harness:cancel-agent (vivarium.actor::cell-agent cell))))
-                 (is = 1 (vivarium.daemon::rehydrate-sessions)
+                   (bt:with-lock-held (viva.actor::*registry-lock*)
+                     (remhash id viva.actor::*cells*))
+                   (ignore-errors (harness:cancel-agent (viva.actor::cell-agent cell))))
+                 (is = 1 (viva.daemon::rehydrate-sessions)
                      "the session that was running did not come back")
                  (true (actor:find-cell id) "it came back under a different id, or not at all")
                  (false (actor:find-cell empty-id) "an empty transcript was brought back")
-                 (false (probe-file (vivarium.actor::live-path empty-id))
+                 (false (probe-file (viva.actor::live-path empty-id))
                         "the empty session's marker was kept")
                  (actor:shutdown (actor:find-cell id)))
             (ignore-errors (close stream))))))))
@@ -2531,10 +2531,10 @@ it reports nothing, and the suite has to be killed to find out why."
                (progn
                  (read-line stream nil nil)
                  (dolist (id (list cut-id whole-id))
-                   (with-open-file (out (vivarium.actor::live-path id)
+                   (with-open-file (out (viva.actor::live-path id)
                                         :direction :output :if-exists :supersede)
                      (format out "{\"id\":~s,\"cwd\":~s}" id root)))
-                 (is = 2 (vivarium.daemon::rehydrate-sessions))
+                 (is = 2 (viva.daemon::rehydrate-sessions))
                  (flet ((notes (id)
                           (remove-if-not (lambda (event)
                                            (equal "session.error" (event:event-name event)))
@@ -2645,7 +2645,7 @@ it reports nothing, and the suite has to be killed to find out why."
         (let ((command (make-hash-table :test #'equal)))
           (setf (gethash "cwd" command) root
                 (gethash "resume" command) "true")
-          (let* ((cell (vivarium.daemon::start-session command))
+          (let* ((cell (viva.daemon::start-session command))
                  (names (mapcar #'event:event-name (actor:since cell 0))))
             (unwind-protect
                  (progn

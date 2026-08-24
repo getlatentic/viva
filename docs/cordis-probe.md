@@ -2,7 +2,7 @@
 
 **Status: done. Recommendation — take the contract, not the framework, and pair
 it with reconciliation, because Cordis reports a clean unload for every failure
-mode vivarium actually has.**
+mode viva actually has.**
 
 One complete mutation lifecycle, run four times through the real runtime:
 
@@ -11,7 +11,7 @@ PROPOSE -> ISOLATE -> EVALUATE -> PROMOTE -> ACTIVATE -> OPERATE
         -> RETRACT -> DEACTIVATE -> RECONCILE
 ```
 
-Vivarium already owns everything left of PROMOTE. Nothing right of ACTIVATE
+Viva already owns everything left of PROMOTE. Nothing right of ACTIVATE
 existed before this probe, which is what B12 was filed to fix.
 
 ## What was run
@@ -37,8 +37,8 @@ exclusive-binding / broker split (p68), and the coeffect-projection boundary
 
 ## The order was load-bearing, not presentational
 
-Stage 1 measures Cordis alone. Stage 2 layers vivarium's reconciliation on top.
-Reversing them would have produced a finding about vivarium's checker rather than
+Stage 1 measures Cordis alone. Stage 2 layers viva's reconciliation on top.
+Reversing them would have produced a finding about viva's checker rather than
 about the composition: a checker run against a runtime whose own guarantees have
 not been characterised has no baseline to be stronger *than*.
 
@@ -88,7 +88,7 @@ The component installs three of its contributions and then throws. L-Raise
 | the failure is recorded **per fiber**, so siblings keep running | sibling `ACTIVE`, alive |
 | the lifecycle is **not re-entered** from an error outcome | still `FAILED` after poking the context; one activation attempt, not two |
 
-That last row is the one vivarium has no equivalent for and would not have
+That last row is the one viva has no equivalent for and would not have
 thought to build. A failed component is **withheld**, not retried against an
 unchanged environment — the runtime declines to loop on something that has shown
 itself unsound in the state it ran against.
@@ -104,7 +104,7 @@ that *"absorbs this perturbation"*. Both measured, and the difference is exact:
 | exclusive binding | **2** | 1 | `[1, 2]` |
 | service broker | **1** | 0 | `[1]` — while v2 serves |
 
-One forced consumer reload versus zero. For vivarium this is a design choice it
+One forced consumer reload versus zero. For viva this is a design choice it
 would have to make too, and it is not free either way: the broker costs the
 consumer any ability to observe that its provider changed.
 
@@ -132,7 +132,7 @@ long before any consumer tore down. The trace is **byte-identical** in both
 arms. So the ordering came from the guard, not from a disposer stack. This is
 the case that answers "is this more than LIFO", and the answer is yes.
 
-Two further behaviours, neither of which vivarium has:
+Two further behaviours, neither of which viva has:
 
 - the consumer lands in **`PENDING`, not `DISPOSED`** — a standing declaration
   awaiting re-satisfaction rather than a corpse;
@@ -156,7 +156,7 @@ child teardown; parent resource open=false      <- the ordering the guard gives 
 
 **The guarantee is conditional on expressing the dependency as a coeffect.** An
 agent writing its own components will reach for whichever is convenient, and only
-one of the two is protected. For vivarium that is a constraint on what a
+one of the two is protected. For viva that is a constraint on what a
 generated component is *allowed* to look like, not a property it inherits.
 
 ## H — what accumulated state costs at replacement
@@ -222,13 +222,13 @@ reconciliation         catches all three
 
 This is not a Cordis defect — Cordis never claims `getEffects()` witnesses
 anything. It bounds what a pre-unload check can be worth, which is a thing
-vivarium needed to know before building one.
+viva needed to know before building one.
 
 **So the composition is stronger than either layer, and now measurably so:**
 
 ```
 Cordis layer     structural rollback     "I executed every registered inverse."
-vivarium layer   empirical verification  "Does the world MATCH the ledger?"
+viva layer   empirical verification  "Does the world MATCH the ledger?"
 
 revert(component);  expected = projection(ledger)
                     actual   = introspection(runtime)
@@ -270,10 +270,10 @@ needs an undo"* is not a sufficient model for an autonomous agent.
 |---|---|---|---|
 | **Revertible** | tool, listener, policy, handle, service | the inverse restores observational state | the runtime, given a correct inverse |
 | **Compensatable** | the audit line in `emitted` | history stands, semantics restored by a *further* action | the author — Cordis has no machinery for it |
-| **Irreversible** | — none reachable in-process | needs approval or a commit barrier | must be vivarium, before promotion |
+| **Irreversible** | — none reachable in-process | needs approval or a commit barrier | must be viva, before promotion |
 
 §6.1 supplies the acquisition/emission boundary and discusses inversion,
-withholding and compensation; **the three-way classification is vivarium's, not
+withholding and compensation; **the three-way classification is viva's, not
 the paper's**, and should not be cited to it. What the paper does say about
 compensation is a warning worth carrying: compensating actions compose in the
 same LIFO order as inverses, but *"the metatheory does not: the commutation of
@@ -282,10 +282,10 @@ coarser one"* (p68). Compensation is not a drop-in extension of the guarantee.
 
 # G — reconciliation, and one gift from the paper
 
-Measured in stage 2 above. §6.3 also supplies something vivarium should take
+Measured in stage 2 above. §6.3 also supplies something viva should take
 outright: because dependencies are **declared**, *"the complete set of
 proxy-mediated capabilities a component requires is known before it runs"* — a
-stronger pre-install review surface than vivarium currently has. An
+stronger pre-install review surface than viva currently has. An
 agent-proposed component can be refused for what it *asks for* before anything is
 installed, which is cheaper than detecting it afterwards.
 
@@ -313,7 +313,7 @@ plus four behaviours the probe showed are worth more than the data structure:
 
 **Do not take:** the calculus, the coeffect algebra, isolation realms,
 interception, the configuration loader, the HMR engine, or the broker. Each is
-load-bearing for a general-purpose plugin host and none of them is what vivarium
+load-bearing for a general-purpose plugin host and none of them is what viva
 is short of. Reproducing them turns a harness into a framework rewrite.
 
 **Do not take the parent/child relationship as an ordering primitive.** It is the
@@ -323,7 +323,7 @@ one shape that looks protected and is not.
 
 **Adopt the contract, keep reconciliation, and do not adopt Cordis.**
 
-The gap B12 named is real and Cordis closes most of it. Vivarium had
+The gap B12 named is real and Cordis closes most of it. Viva had
 `propose → isolate → evaluate → reject/promote` and nothing for a promoted
 component leaving. The four behaviours above are that missing lifecycle, and they
 are small enough to implement against the ledger without importing a runtime.
@@ -332,12 +332,12 @@ But the probe also found the reason not to hand the whole problem over: **Cordis
 reports a clean unload for every failure mode an agent-authored component
 actually exhibits**, and its own introspection surface can be satisfied by a
 component that registers a label without the deed. The layer that catches those
-is the one vivarium already has. Neither is sufficient alone; the pair is
+is the one viva already has. Neither is sufficient alone; the pair is
 strictly better than either, and that is now measured rather than argued.
 
 ## The trigger
 
-**What would make adopting Cordis itself correct:** if vivarium's components ever
+**What would make adopting Cordis itself correct:** if viva's components ever
 become genuinely third-party — proposed by something other than this agent
 against this ledger — then declared dependencies, realms, interception and the
 broker stop being surplus and start being the review surface. At that point the
@@ -347,7 +347,7 @@ pre-install capability check of §6.3 is worth more than everything above it.
 cannot reliably express its dependencies as coeffect keys — if the convenient
 thing keeps being the parent-held resource — then the guard never engages, the
 ordering guarantee is not inherited, and what remains is a disposer stack with
-extra machinery. Watch for that in the first component vivarium generates under
+extra machinery. Watch for that in the first component viva generates under
 this contract rather than assuming it.
 
 **What is settled either way:** effect containment does not subsume execution

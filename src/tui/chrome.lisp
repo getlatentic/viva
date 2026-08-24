@@ -11,7 +11,7 @@
 ;;;; machine with a proof in spec/CellLifecycle.tla. Drawing a dot from that is
 ;;;; the cheapest possible demonstration of the difference.
 
-(in-package #:vivarium.tui)
+(in-package #:viva.tui)
 
 (defparameter *border-style* (make-style :foreground 240)
   "Grey. A border is furniture: it should bound the eye without catching it.")

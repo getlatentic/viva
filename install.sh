@@ -1,15 +1,15 @@
 #!/bin/sh
-# Install vivarium on a machine that has never seen it.
+# Install viva on a machine that has never seen it.
 #
 #     sh install.sh                     from a clone
 #     curl -fsSL <raw-url> | sh         from nothing
 #
 # Does four things, says each one, and stops at the first that fails:
 # checks for SBCL, installs Quicklisp if it is missing, clones or updates the
-# repository, and links `vivarium` onto PATH. It never touches your keys.
+# repository, and links `viva` onto PATH. It never touches your keys.
 set -eu
 
-REPO="${VIVARIUM_REPO:-https://github.com/getlatentic/viva}"
+REPO="${VIVA_REPO:-https://github.com/getlatentic/viva}"
 
 # Where viva keeps its own files. A machine installed before the rename still
 # holds the former directory, and its keys and sessions are in it, so that one
@@ -19,7 +19,7 @@ if [ ! -d "$VIVA_HOME" ] && [ -d "$HOME/.vivarium" ]; then
   VIVA_HOME="$HOME/.vivarium"
 fi
 
-DEST="${VIVARIUM_DEST:-$VIVA_HOME/src}"
+DEST="${VIVA_DEST:-$VIVA_HOME/src}"
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n== %s\n' "$*"; }
@@ -27,7 +27,7 @@ die()  { printf '\n%s\n' "$*" >&2; exit 1; }
 
 step "SBCL"
 if ! command -v sbcl >/dev/null 2>&1; then
-  die "vivarium needs SBCL, and there is none on your PATH.
+  die "viva needs SBCL, and there is none on your PATH.
 
   macOS          brew install sbcl
   Debian/Ubuntu  sudo apt install sbcl
@@ -54,11 +54,11 @@ else
   say "  done"
 fi
 
-step "vivarium"
+step "viva"
 # A clone this script is being run FROM is the one to use: somebody who cloned
 # and ran `sh install.sh` means that checkout, not a second copy of it.
 here=$(cd "$(dirname "$0")" && pwd)
-if [ -f "$here/bin/viva" ] && [ -f "$here/vivarium.asd" ]; then
+if [ -f "$here/bin/viva" ] && [ -f "$here/viva.asd" ]; then
   root=$here
   say "  using this clone: $root"
 elif [ -d "$DEST/.git" ]; then
@@ -76,18 +76,18 @@ step "package ordering"
 # Before anything is loaded, because this is the one class of fault that stops
 # the load: a local nickname pointing at a package defined below it. Both
 # obvious homes for this check are dead -- the suite never runs, and
-# `vivarium check` dies in the loader -- so it is a script that reads text.
+# `viva check` dies in the loader -- so it is a script that reads text.
 sbcl --script "$root/tools/check-package-order.lisp" || exit 1
 
 step "compiling, and running the tests"
 say "  the first run fetches dependencies and takes a few minutes"
-"$root/bin/viva" test >/tmp/vivarium-install-test.log 2>&1 || {
-  tail -20 /tmp/vivarium-install-test.log >&2
-  die "the test suite did not pass. The full log is /tmp/vivarium-install-test.log"
+"$root/bin/viva" test >/tmp/viva-install-test.log 2>&1 || {
+  tail -20 /tmp/viva-install-test.log >&2
+  die "the test suite did not pass. The full log is /tmp/viva-install-test.log"
 }
-grep -E "^(Passed|Failed):" /tmp/vivarium-install-test.log | sed 's/^/  /'
+grep -E "^(Passed|Failed):" /tmp/viva-install-test.log | sed 's/^/  /'
 
-step "putting vivarium on your PATH"
+step "putting viva on your PATH"
 "$root/bin/viva" install | sed 's/^/  /'
 
 step "credentials"
@@ -106,8 +106,8 @@ Done. Next:
 
   1. put a provider key in $VIVA_HOME/.env
   2. cd into any project and run:  viva
-  3. see what it has learned:      vivarium learned
+  3. see what it has learned:      viva learned
   4. watch it learn something:     $root/demo/retention
 
-\`vivarium config\` shows every setting and which file decided it.
+\`viva config\` shows every setting and which file decided it.
 EOF

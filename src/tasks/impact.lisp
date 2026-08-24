@@ -27,7 +27,7 @@
 ;;;;                                 know which ones are stale, and cannot fix
 ;;;;                                 any of them
 
-(in-package #:vivarium.tasks)
+(in-package #:viva.tasks)
 
 ;;; E24 -- a cache holding values from a formula that has already been replaced
 ;;;
@@ -107,7 +107,7 @@
       "(defun quote-cost (quote) (getf quote :cost))"
       "(defun quote-total () (reduce #'+ *quotes* :key #'quote-cost :initial-value 0))"))
 
-(deftask :e24 (:family :e-impact :split :train :package "VIVARIUM.TASK.E24")
+(deftask :e24 (:family :e-impact :split :train :package "VIVA.TASK.E24")
   "QUOTE-TOTAL is reporting more than it should.
 
 Some stored quote costs were computed by a version of the shipping formula that

@@ -11,14 +11,14 @@
 ;;;; the same backend so the comparison isolates tool cardinality rather than
 ;;;; tool semantics.
 
-(in-package #:vivarium.image-tools)
+(in-package #:viva.image-tools)
 
 (defvar *backend* nil
   "The image these tools act on. Bound per run rather than per tool so a forked
 trial child can rebind it without rebuilding the tool set.")
 
 (defun backend ()
-  (or *backend* (error "No image backend bound. Bind VIVARIUM.IMAGE-TOOLS:*BACKEND*.")))
+  (or *backend* (error "No image backend bound. Bind VIVA.IMAGE-TOOLS:*BACKEND*.")))
 
 (defun report-installation (result)
   (cond ((image:installation-error result)

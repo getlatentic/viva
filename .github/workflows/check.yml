@@ -58,7 +58,7 @@ jobs:
           path: |
             ~/quicklisp
             ~/.cache/common-lisp
-          key: quicklisp-${{ matrix.name }}-${{ hashFiles('vivarium.asd') }}
+          key: quicklisp-${{ matrix.name }}-${{ hashFiles('viva.asd') }}
           restore-keys: quicklisp-${{ matrix.name }}-
 
       - name: Install Quicklisp
@@ -117,8 +117,8 @@ jobs:
       # still source somebody has to build.
       - name: Build the image
         env:
-          VIVARIUM_SOCKET: ${{ runner.temp }}/smoke.sock
-          VIVARIUM_JOURNAL: ${{ runner.temp }}/smoke-journal
+          VIVA_SOCKET: ${{ runner.temp }}/smoke.sock
+          VIVA_JOURNAL: ${{ runner.temp }}/smoke-journal
         run: |
           ./tools/build-image.sh "viva-${{ matrix.name }}"
           # IT HAS TO SERVE, not merely start. `daemon status` was the whole
@@ -134,5 +134,5 @@ jobs:
           name: viva-${{ matrix.name }}
           path: |
             viva-${{ matrix.name }}
-            tui/target/release/vivarium-tui
+            tui/target/release/viva-tui
           if-no-files-found: error

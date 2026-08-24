@@ -14,7 +14,7 @@
 ;;;; the process it was meant to be watching -- a dev server wedged by its own
 ;;;; logs would be a fine bug to ship on top of the one this fixes.
 
-(in-package #:vivarium.jobs)
+(in-package #:viva.jobs)
 
 (defstruct (job (:conc-name job-))
   (name "" :type string)
@@ -29,17 +29,17 @@
   (state :starting :type keyword)
   ;; Held for the whole of a state change, so two clients stopping the same job
   ;; serialise instead of both deciding it is theirs to kill.
-  (lock (bt:make-lock "vivarium.job") :read-only t))
+  (lock (bt:make-lock "viva.job") :read-only t))
 
 (defvar *jobs* (make-hash-table :test #'equal)
   "Running jobs by name. The daemon is long-lived, so these outlive the turn
 that started them -- which is the entire point.")
 
-(defvar *lock* (bt:make-lock "vivarium.jobs"))
+(defvar *lock* (bt:make-lock "viva.jobs"))
 
 (defun log-path (name)
   (env:join-path (uiop:native-namestring (uiop:temporary-directory))
-                 (format nil "vivarium-job-~a.log" name)))
+                 (format nil "viva-job-~a.log" name)))
 
 (defun mint-name (wanted)
   (bt:with-lock-held (*lock*)
@@ -72,7 +72,7 @@ writing to a file avoided."
                    (force-output log)
                    (when on-output
                      (ignore-errors (funcall on-output (string character)))))))))
-   :name (format nil "vivarium-job-~a" (job-name job))))
+   :name (format nil "viva-job-~a" (job-name job))))
 
 (defun start (command &key name directory on-output)
   "Start COMMAND and return its JOB, without waiting for it.

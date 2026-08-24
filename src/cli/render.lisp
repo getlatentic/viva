@@ -12,7 +12,7 @@
 ;;;; is strictly worse. Everything below that computes what a pane should say is
 ;;;; a pure function of the run, so it can be tested without a terminal.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defun one-line (text limit)
   (let ((flat (substitute #\Space #\Newline (or text ""))))

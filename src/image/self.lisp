@@ -10,13 +10,13 @@
 ;;;; The base prompt and the base tools are deliberately out of reach. A floor
 ;;;; the agent cannot edit is what makes a bad self-edit recoverable.
 
-(in-package #:vivarium.self)
+(in-package #:viva.self)
 
 (defvar *agent* nil
   "The agent currently running, bound by WITH-SELF-EXTENSION.")
 
 (defun current-agent ()
-  (or *agent* (error "No agent bound. Wrap the run in VIVARIUM.SELF:WITH-SELF-EXTENSION.")))
+  (or *agent* (error "No agent bound. Wrap the run in VIVA.SELF:WITH-SELF-EXTENSION.")))
 
 (defmacro with-self-extension ((agent) &body body)
   "Let the tools in this file act on AGENT for the duration of BODY."

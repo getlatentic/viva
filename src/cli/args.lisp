@@ -4,7 +4,7 @@
 ;;;; No abbreviations and no clustering: a research run is reproduced from its
 ;;;; command line months later, and a clever parser makes that harder to read.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defstruct (arguments (:conc-name args-))
   (positional '() :type list)
@@ -62,11 +62,11 @@
   "The prompt: an argument, a file, or standard input.
 
 One answer for every command that takes one. `do` had its own -- positional
-arguments only -- so `echo \"...\" | vivarium do` printed usage with a prompt
+arguments only -- so `echo \"...\" | viva do` printed usage with a prompt
 sitting unread on stdin, which is the first thing anyone tries. Meanwhile
 `run` read stdin and `do` did not, from the same binary.
 
-Positionals are JOINED, so an unquoted `vivarium do the tests fail` still
+Positionals are JOINED, so an unquoted `viva do the tests fail` still
 works. `--file -` means stdin, which is the convention every other tool uses
 and costs one line to honour."
   (let ((positional (args-positional parsed))

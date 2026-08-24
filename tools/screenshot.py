@@ -22,7 +22,7 @@ import threading
 import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-CLIENT = os.path.join(os.path.dirname(ROOT), "tui", "target", "release", "vivarium-tui")
+CLIENT = os.path.join(os.path.dirname(ROOT), "tui", "target", "release", "viva-tui")
 
 # The transcript the picture shows: a question, work with its results, a
 # worker, and an answer. Written here rather than captured from a real session,
@@ -157,7 +157,7 @@ def main():
     sys.stdout.write("\033[8;32;124t")
     sys.stdout.flush()
     time.sleep(0.4)
-    environment = dict(os.environ, VIVARIUM_SOCKET=path, TERM="xterm-256color")
+    environment = dict(os.environ, VIVA_SOCKET=path, TERM="xterm-256color")
     subprocess.call([CLIENT], cwd=directory, env=environment)
 
 

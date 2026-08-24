@@ -22,7 +22,7 @@
 
 (push *root* (symbol-value (find-symbol "*LOCAL-PROJECT-DIRECTORIES*" "QL")))
 (handler-bind ((warning #'muffle-warning))
-  (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/cli :silent t))
+  (funcall (find-symbol "QUICKLOAD" "QL") :viva/cli :silent t))
 
 (destructuring-bind (family-dir arm out-dir) (rest sb-ext:*posix-argv*)
   ;; Absolute from the first line: a relative out-dir once survived Lisp-side
@@ -45,9 +45,9 @@
     (ensure-directories-exist out)
 
     ;; The arm, before any owner exists.
-    (setf vivarium.actor:*journal-root*
+    (setf viva.actor:*journal-root*
           (namestring (ensure-directories-exist (merge-pathnames "journal/" out))))
-    (setf vivarium.actor:*default-door* (if (string= arm "B") :closed :open))
+    (setf viva.actor:*default-door* (if (string= arm "B") :closed :open))
 
     (let ((tasks (sort (remove-if-not
                         (lambda (path)
@@ -95,11 +95,11 @@
                      (uiop:run-program
                       (list "/bin/sh" "-c"
                             (format nil "[ -d ~a/~a ] && cp -R ~a/~a ~a/ || true"
-                                    carried vivarium.env:+data-directory+
-                                    carried vivarium.env:+data-directory+
+                                    carried viva.env:+data-directory+
+                                    carried viva.env:+data-directory+
                                     (namestring sandbox)))))
                    (let ((started (get-internal-real-time))
-                         (agent (vivarium.console:build-agent
+                         (agent (viva.console:build-agent
                                  :model "deepseek"
                                  :cwd (namestring sandbox)
                                  :root (namestring sandbox)
@@ -109,9 +109,9 @@
                                  :extra-prompt (when (string= arm "AN")
                                                  "Policy for this run: never create, activate, or promote capabilities. Solve every task with the ordinary tools only.")
                                  :extra-tools (when capabilities
-                                                (vivarium.actor:capability-tools)))))
+                                                (viva.actor:capability-tools)))))
                      (handler-case
-                         (vivarium.harness:ask
+                         (viva.harness:ask
                           agent
                           ;; Amendment 15: recurrence, named once, identically
                           ;; in every arm -- count and kind, never mechanism.
@@ -147,11 +147,11 @@
                      ;; reflection turn in the task's own conversation, after
                      ;; the grade is banked.
                      (when (uiop:getenv "KC6_REFLECT")
-                       (handler-case (vivarium.harness:reflect agent)
+                       (handler-case (viva.harness:reflect agent)
                          (error (condition)
                            (format *error-output* "~&~a reflection errored: ~a~%"
                                    task condition))))
-                     (alexandria:when-let ((session (vivarium.harness:agent-session agent)))
-                       (vivarium.session:close-session session)))
+                     (alexandria:when-let ((session (viva.harness:agent-session agent)))
+                       (viva.session:close-session session)))
                    (setf carried (namestring sandbox))))))
     (format t "~&cell done: ~a ~a~%" (car (last (pathname-directory family))) arm)))

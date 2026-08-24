@@ -1,4 +1,4 @@
-# Vivarium — four capability levels
+# Viva — four capability levels
 
 > **The architecture is frozen.** See [architecture.md](architecture.md): one
 > long-lived SBCL organism, sessions as mailbox actors, a structured event model,
@@ -38,7 +38,7 @@ while the harness still could not edit a file.
 
 ## Level 1 — a capable ordinary harness. **Built.** See [level-1.md](level-1.md).
 
-Vivarium had to first be useful the way Pi is useful: point it at real work and
+Viva had to first be useful the way Pi is useful: point it at real work and
 it does the work.
 
 ```
@@ -57,7 +57,7 @@ afterwards, three repeats, same model, same starting tree:
 
 ```
 pi         12/12      8s/task
-vivarium   12/12     10s/task     (the 2s is SBCL booting per `vivarium do`)
+viva   12/12     10s/task     (the 2s is SBCL booting per `viva do`)
 ```
 
 Parity is the whole point. Beating Pi on four fixtures would prove nothing;
@@ -222,7 +222,7 @@ which change caused it? can I remove only that one? what depended on it?
 Then every self-modification has to be a component with identity, code, state,
 dependencies, owned effects, provenance, evaluation history and an inverse. This
 is where [B12's Cordis findings](cordis-probe.md), Smalltalk's live replacement
-and vivarium's own selection and provenance fit together — **and it is later.**
+and viva's own selection and provenance fit together — **and it is later.**
 
 ## The object that replaces "skill vs tool vs prompt vs harness"
 
@@ -263,7 +263,7 @@ Three narrow checks are enough to exercise the architecture:
 3. **Extract a procedural lesson from a task where nothing was built.** —
    level 3, distillation.
 
-Then validation moves to **real work**: give vivarium a repository and a run of
+Then validation moves to **real work**: give viva a repository and a run of
 tasks — debug failing tests, implement a feature, investigate a performance
 problem, refactor a subsystem, debug another failure — and watch whether it
 organically grows scripts, repo-specific helpers, inspection functions, search
@@ -271,8 +271,8 @@ utilities, skills, procedures, memory, tests and instrumentation.
 
 The question that actually matters:
 
-> **Is vivarium on task 20 measurably better adapted to this environment than
-> vivarium on task 1?**
+> **Is viva on task 20 measurably better adapted to this environment than
+> viva on task 1?**
 
 No synthetic Lisp puzzle answers that, and no amount of adversarial polish on one
 makes it closer.
