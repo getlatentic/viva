@@ -35,7 +35,7 @@ Inside the full screen client:
 | --- | --- |
 | `Ctrl-P` | find any session, running or not; type to narrow |
 | `Ctrl-N` | start a session in a new tab |
-| `Ctrl-B` | show the running sessions beside the page, or hide them |
+| `Ctrl-B` | put the sessions column away, or bring it back |
 | `Ctrl-W` | close the tab; the session keeps running |
 | `Ctrl-O` | show all of a tool's output, or the first three lines again |
 | `Ctrl-L` | what this session has learned |
@@ -50,10 +50,10 @@ The page is the transcript, the full width of the screen.
 | part | shows |
 | --- | --- |
 | tab bar | the name, the sessions you opened, each with its state, and a count of the rest |
-| sessions | what each running session is about, by the first thing asked in it |
+| sessions | the conversations you have had here, running and recorded, each by what it is about |
 | page | your questions, marked; replies rendered from markdown; each tool call as a titled rule with its result and its time under it |
 | workers | a delegate reads as a `worker`, and the calls it makes are drawn inside it |
-| welcome | on a session nothing has been said in: the model, what this directory has retained, the earlier sessions here, and the keys |
+| welcome | on a session nothing has been said in: the model, what this directory has retained, and the keys |
 | running | subagents and delegates, in a column that exists while one runs |
 | input edge | model, effort, project, branch, and the share of the context the last request used |
 
@@ -97,7 +97,7 @@ Run each command yourself. The numbers come from these runs.
 | what | number | command |
 | --- | --- | --- |
 | Lisp tests | 1,925 pass | `viva test` |
-| Rust tests | 78 pass | `cargo test --manifest-path tui/Cargo.toml` |
+| Rust tests | 80 pass | `cargo test --manifest-path tui/Cargo.toml` |
 | TLA+ configurations | 23 agree | `./spec/verify.sh` |
 | terminal invariants | 33 hold | `python3 tui/conformance.py` |
 | recorded sessions replayed through the client | clean | `python3 tui/journal_replay.py` |
