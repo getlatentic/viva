@@ -495,6 +495,19 @@ impl Model {
         let text = event.text("text").to_string();
         let name = event.name.clone();
         let seq = event.seq;
+        // A SESSION IS NAMED BY WHAT WAS FIRST ASKED IN IT, and the list this
+        // name came from was fetched before that prompt existed. Waiting for
+        // the next `session.list` left the sidebar calling the conversation
+        // you are having `folder.id`, while every older one beside it had a
+        // subject -- so the one session a person could name was the only one
+        // that stayed nameless.
+        if name == "user.message" && !text.trim().is_empty() {
+            if let Some(info) = self.sessions.iter_mut().find(|known| known.id == session) {
+                if info.opening.trim().is_empty() {
+                    info.opening = text.clone();
+                }
+            }
+        }
         let conversation = self.conversation(&session);
         if seq > 0 {
             if conversation.last_seq > 0 && seq > conversation.last_seq + 1 {
@@ -1372,6 +1385,29 @@ mod tests {
         let mut model = model_with("s1");
         model.absorb(&event("something.invented.later", "s1", json!({"text": "?"})));
         assert!(model.conversations["s1"].entries.is_empty());
+    }
+
+    #[test]
+    fn the_first_prompt_names_the_session_it_was_asked_in() {
+        // The list is fetched before the prompt exists, so a session that has
+        // just been started carries no opening and falls back to `folder.id`.
+        // Every older session beside it shows a subject, which made the one
+        // conversation a person could name the only nameless row.
+        let mut model = Model::new("/Users/you/work/compose".into());
+        model.sessions = vec![SessionInfo {
+            id: "s1".into(),
+            cwd: "/Users/you/work/compose".into(),
+            ..Default::default()
+        }];
+        assert_eq!(model.sessions[0].subject(), "compose.s1");
+
+        model.absorb(&event("user.message", "s1", json!({"text": "what is this app about?"})));
+        assert_eq!(model.sessions[0].subject(), "what is this app about?");
+
+        // The FIRST one only. A conversation is named by what it set out to
+        // do, not by whatever was said in it most recently.
+        model.absorb(&event("user.message", "s1", json!({"text": "and now something else"})));
+        assert_eq!(model.sessions[0].subject(), "what is this app about?");
     }
 
     #[test]

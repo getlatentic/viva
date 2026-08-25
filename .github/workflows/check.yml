@@ -23,8 +23,7 @@ env:
   # A model is available when its key is set; nothing probes it. No check here
   # sends a prompt, so a name that cannot work is enough to start a session --
   # and a real key in CI would be a real bill for a run that asks nothing.
-  DEEPSEEK_API_KEY: ci-nothing-is-sent-to-this
-  DEEPSEEK_MODEL: ci-model
+  OPENROUTER_API_KEY: ci-nothing-is-sent-to-this
 
 jobs:
   check:

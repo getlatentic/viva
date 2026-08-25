@@ -11,13 +11,8 @@ set -eu
 
 REPO="${VIVA_REPO:-https://github.com/getlatentic/viva}"
 
-# Where viva keeps its own files. A machine installed before the rename still
-# holds the former directory, and its keys and sessions are in it, so that one
-# is used where it is the only one there.
-VIVA_HOME="$HOME/.viva"
-if [ ! -d "$VIVA_HOME" ] && [ -d "$HOME/.vivarium" ]; then
-  VIVA_HOME="$HOME/.vivarium"
-fi
+# Where viva keeps its own files. VIVA_HOME names it outright.
+VIVA_HOME="${VIVA_HOME:-$HOME/.viva}"
 
 DEST="${VIVA_DEST:-$VIVA_HOME/src}"
 

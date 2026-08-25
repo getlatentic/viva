@@ -45,6 +45,7 @@
                 :serial t
                 :components ((:file "package")
                              (:file "env")
+                             (:file "auth")
                              (:file "config")
                              (:file "glob")
                              (:file "bound")
@@ -178,6 +179,7 @@
                              (:file "render")
                              (:file "screen")
                              (:file "settings")
+                             (:file "credentials")
                              (:file "attached")
                              (:file "commands")
                              (:file "install")

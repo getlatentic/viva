@@ -399,13 +399,22 @@ struct Reconnect {
     next: Option<Instant>,
     wait: Duration,
     attempts: u32,
+    /// Daemon starts spent since the connection was last good.
+    starts: u32,
 }
 
 impl Reconnect {
+    /// How many times to pay for a daemon start before only listening. Three
+    /// covers a daemon that is slow to come up; past that it is not coming up,
+    /// and paying an SBCL image every few seconds to learn so is the cost that
+    /// gets noticed a day later.
+    const STARTS_ALLOWED: u32 = 3;
+
     fn lost(&mut self) {
         if self.next.is_none() {
             self.wait = Duration::from_millis(500);
             self.attempts = 0;
+            self.starts = 0;
             self.next = Some(Instant::now() + self.wait);
         }
     }
@@ -417,18 +426,37 @@ impl Reconnect {
     /// One try. Starts a daemon if none is listening, the same way the first
     /// connection does -- a person who closed the lid on a daemon that was
     /// then killed should open it to a working client, not to instructions.
+    ///
+    /// CONNECTING IS CHEAP AND STARTING IS NOT. A daemon start loads an SBCL
+    /// image: 1.3 seconds of CPU, measured. Running one on every retry against
+    /// a backoff that tops out at five seconds is a quarter of a core, forever,
+    /// on a client nobody is touching -- which is what two of them were found
+    /// doing, a day after the daemon they wanted had gone. So the socket is
+    /// tried first every time, and a start is attempted only while there is
+    /// budget for one.
     fn attempt(&mut self, path: &PathBuf) -> Option<Connection> {
         self.attempts += 1;
-        let fresh = protocol::ensure_daemon(path)
-            .ok()
-            .and_then(|()| Connection::open(path).ok());
+        let fresh = Connection::open(path).ok().or_else(|| {
+            if self.starts < Self::STARTS_ALLOWED {
+                self.starts += 1;
+                protocol::ensure_daemon(path)
+                    .ok()
+                    .and_then(|()| Connection::open(path).ok())
+            } else {
+                None
+            }
+        });
         match fresh {
             Some(connection) => {
                 self.next = None;
+                self.starts = 0;
                 Some(connection)
             }
             None => {
-                self.wait = (self.wait * 2).min(Duration::from_secs(5));
+                // Far enough apart that a client waiting on a daemon that is
+                // never coming back costs nothing worth measuring, and near
+                // enough that one that does come back is found within a minute.
+                self.wait = (self.wait * 2).min(Duration::from_secs(30));
                 self.next = Some(Instant::now() + self.wait);
                 None
             }

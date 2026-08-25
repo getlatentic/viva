@@ -23,9 +23,10 @@ suite so tests neither read nor pollute a real person's trusted projects --
 the same isolation the journal root already takes.")
 
 (defun trust-file ()
-  (or *trust-file*
-      (env:join-path (uiop:native-namestring (user-homedir-pathname))
-                     env:+data-directory+ "trusted.sexp")))
+  ;; Through the resolver, not the constant. Spelling the directory name here
+  ;; skipped the fallback, so a machine still on the former directory kept its
+  ;; sessions and its keys and lost track of what it had trusted.
+  (or *trust-file* (env:trust-file)))
 
 (defun home-directory ()
   (env:home-directory))

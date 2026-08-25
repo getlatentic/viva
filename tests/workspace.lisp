@@ -68,36 +68,71 @@ rather than leaving it to be rediscovered a third time."
     (ensure-directories-exist path)
     (string-right-trim "/" path)))
 
-(define-test "a fresh directory gets the current name"
+(define-test "one directory, derived in one place"
   (let ((parent (throwaway-directory)))
-    (multiple-value-bind (resolved former) (env:data-directory parent)
-      (is equal (format nil "~a/.viva" parent) resolved)
-      (false former))))
+    (is equal (format nil "~a/.viva" parent) (env:data-directory parent))))
 
-(define-test "an install that predates the rename keeps its own directory"
-  ;; Sessions, journal, config and keys are all under it. Resolving to the new
-  ;; name because the new name is newer would leave every one of them behind.
-  (let ((parent (throwaway-directory)))
-    (ensure-directories-exist (format nil "~a/.vivarium/" parent))
-    (multiple-value-bind (resolved former) (env:data-directory parent)
-      (is equal (format nil "~a/.vivarium" parent) resolved)
-      (true former "the caller has to know, because the socket name follows"))))
+(define-test "VIVA_HOME names the machine directory outright"
+  ;; What gives a test a directory of its own, and what lets somebody keep
+  ;; their keys and sessions somewhere other than home.
+  (let ((elsewhere (throwaway-directory))
+        (before (sb-posix:getenv "VIVA_HOME")))
+    (unwind-protect
+         (progn
+           (sb-posix:setenv "VIVA_HOME" elsewhere 1)
+           (is equal elsewhere (env:home-directory))
+           (is equal (format nil "~a/auth.json" elsewhere) (env:auth-path))
+           (is equal (format nil "~a/sessions" elsewhere) (env:sessions-directory))
+           (is equal (format nil "~a/journal" elsewhere) (env:journal-directory))
+           (is equal (format nil "~a/trusted.sexp" elsewhere) (env:trust-file)))
+      (if before (sb-posix:setenv "VIVA_HOME" before 1) (sb-posix:unsetenv "VIVA_HOME")))))
 
-(define-test "the current name wins once it exists"
-  ;; Both present means the move has happened. Reading the former one then
-  ;; would be reading whatever was left behind.
-  (let ((parent (throwaway-directory)))
-    (ensure-directories-exist (format nil "~a/.vivarium/" parent))
-    (ensure-directories-exist (format nil "~a/.viva/" parent))
-    (multiple-value-bind (resolved former) (env:data-directory parent)
-      (is equal (format nil "~a/.viva" parent) resolved)
-      (false former))))
+(define-test "every kept thing is named once, and they all agree on the root"
+  ;; The point of the accessors: no caller spells a path, so no two callers can
+  ;; disagree about where a thing lives. TRUST-FILE built its own and looked in
+  ;; a different directory from everything else.
+  (let ((elsewhere (throwaway-directory))
+        (before (sb-posix:getenv "VIVA_HOME")))
+    (unwind-protect
+         (progn
+           (sb-posix:setenv "VIVA_HOME" elsewhere 1)
+           (dolist (path (list (env:auth-path) (env:machine-config-file)
+                               (env:machine-memory-file) (env:sessions-directory)
+                               (env:journal-directory) (env:trust-file)))
+             (is eql 0 (search elsewhere path)
+                 (format nil "~a is outside the machine directory" path)))
+           ;; TRUST asks the same question and used to answer it itself, which
+           ;; is how it ended up reading a different directory from everything
+           ;; above. An explicit override still wins; nothing else does.
+           (let ((trust:*trust-file* nil))
+             (is equal (env:trust-file) (trust:trust-file))))
+      (if before (sb-posix:setenv "VIVA_HOME" before 1) (sb-posix:unsetenv "VIVA_HOME")))))
 
-(define-test "the recursive walk skips both spellings"
-  ;; A machine on the former name still has its state under it, and a walk
-  ;; that wanders in returns the transcript of its own search.
-  (true (member ".viva/" glob:+default-ignores+ :test #'equal))
-  (true (member ".vivarium/" glob:+default-ignores+ :test #'equal)))
+(define-test "the recursive walk skips the harness's own directory"
+  (true (member ".viva/" glob:+default-ignores+ :test #'equal)))
+
+(define-test "read takes a line range whichever way a model asks for one"
+  ;; Observed on the wire: a model asked for line_start 1 / line_end 200, viva
+  ;; dropped both, handed back the whole file, and the model -- unable to tell
+  ;; its range had been ignored -- asked seven more times and then reached for
+  ;; sed. Accepting the range is four lines; every model learning ours is not.
+  (flet ((window (&rest pairs)
+           (let ((args (make-hash-table :test #'equal)))
+             (loop for (name value) on pairs by #'cddr
+                   do (setf (gethash name args) value))
+             (multiple-value-list (workspace::read-window args)))))
+    (is equal '(10 5) (window "offset" 10 "limit" 5))
+    (is equal '(1 200) (window "line_start" 1 "line_end" 200))
+    (is equal '(1 200) (window "start_line" 1 "end_line" 200))
+    (is equal '(10 6) (window "line_start" 10 "line_end" 15))
+    ;; A range with no start is a range from the beginning.
+    (is equal '(nil 20) (window "line_end" 20))
+    ;; Nothing asked for is the whole file, as before.
+    (is equal '(nil nil) (window "path" "README.md"))
+    ;; What our own parameters say still wins over an alias for the same thing.
+    (is equal '(3 4) (window "offset" 3 "limit" 4 "line_start" 99 "line_end" 200))
+    ;; A backwards range asks for nothing, and must not become a negative limit.
+    (is equal '(20 nil) (window "line_start" 20 "line_end" 5))))
 
 (define-test "read returns a file and reports where to continue"
   (with-repository (environment)

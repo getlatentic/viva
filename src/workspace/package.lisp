@@ -25,13 +25,24 @@
            #:env-cwd #:env-root
            #:absolute-path #:join-path #:relative-path #:parent-path #:base-name
            #:canonical-directory
-           #:data-directory #:home-directory #:home-path #:project-path #:home-file
-           #:+data-directory+ #:+former-data-directory+
+           #:data-directory #:home-directory #:home-path #:project-path
+           #:+data-directory+
+           #:auth-path #:machine-config-file #:machine-memory-file
+           #:sessions-directory #:journal-directory #:trust-file
+           #:project-config-file #:project-memory-file
+           #:services-directory #:retired-directory
            #:read-text #:read-bytes #:write-text #:file-info
            #:info-name #:info-path #:info-kind #:info-size
            #:list-directory #:ensure-directory #:delete-path #:rename-path #:path-exists-p
            #:exec #:exec-status #:exec-output
            #:env-error #:env-error-code #:env-error-path #:complain))
+
+(defpackage #:viva.auth
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:jzon #:com.inuoe.jzon)
+                    (#:env #:viva.env))
+  (:export #:key-for #:key-from-file #:read-auth #:configured-providers #:*file-shape*))
 
 (defpackage #:viva.glob
   (:use #:cl)
@@ -210,6 +221,7 @@
 (defpackage #:viva.models
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
+                    (#:auth #:viva.auth)
                     (#:provider #:viva.provider))
   (:export #:choice #:choice-label #:choice-provider #:choice-model #:choice-effort
            #:available-models #:resolve-model #:+catalogue+ #:choice-context-limit))

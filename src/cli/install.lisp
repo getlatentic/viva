@@ -54,17 +54,29 @@ one a package manager will not fight over.")
 (defun launcher-path ()
   (namestring (merge-pathnames "bin/viva" (repository-root))))
 
-(defun ours-p (link)
-  "Is LINK one this repository put there, pointing at any name its launcher
-has been called?
+(defun launcher-shaped-p (path)
+  "Does PATH look like a checkout's launcher: <something>/bin/<our name>?"
+  (and (string= (env:base-name (launcher-path)) (env:base-name path))
+       (string= "bin" (env:base-name (env:parent-path path)))))
 
-Judged by the directory the link points INTO, not by the file name at the end
-of it. A link made before the launcher was renamed points at a path that no
-longer exists, so PROBE-FILE reports nothing installed while the link is still
-in the way -- and matching on the name would need this file to carry every name
-the launcher has ever had. The directory is enough, and it does not go stale."
+(defun ours-p (link)
+  "Is LINK one this repository put there, or one left over from a checkout
+that has since moved or gone?
+
+Two ways to be ours, and neither matches on the launcher's past names.
+
+It points into THIS checkout's bin. That covers a link made before the
+launcher file was renamed: it points at a path that no longer exists, so
+PROBE-FILE reports nothing installed while the link is still in the way.
+
+Or it DANGLES and is shaped like a launcher. Renaming or moving a checkout
+leaves exactly this, pointing into a directory that is not ours because it is
+not anybody's any more. A live link belonging to somebody else is still
+refused -- only a link that resolves to nothing can be taken over, and a
+dangling link nothing can run is not a thing worth protecting."
   (and link
-       (string= (env:parent-path (launcher-path)) (env:parent-path link))
+       (or (string= (env:parent-path (launcher-path)) (env:parent-path link))
+           (and (null (probe-file link)) (launcher-shaped-p link)))
        t))
 
 (defun describe-existing (target)

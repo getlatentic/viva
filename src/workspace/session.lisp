@@ -93,7 +93,7 @@ and `latest for this project` is a glob rather than a scan of every file."
 (defun session-directory (&optional cwd)
   "Where sessions live. Namespaced by working directory when one is given, so
 resuming asks for the last session HERE rather than the last session anywhere."
-  (let ((root (pathname (concatenate 'string (env:home-path "sessions") "/"))))
+  (let ((root (pathname (concatenate 'string (env:sessions-directory) "/"))))
     (if cwd (merge-pathnames (format nil "~a/" (slug cwd)) root) root)))
 
 (defun new-id ()

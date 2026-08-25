@@ -7,13 +7,14 @@
               "Start, stop or inspect the long-lived organism.")
         (list "attach" #'command-attach
               "Open a session inside the organism; closing leaves it running.")
-        ;; The LAUNCHER intercepts these and runs the Rust client when it has
-        ;; been built. Reaching here means it has not, so these are the Lisp
-        ;; full-screen client -- which is why both names land on it.
-        (list "tui" #'command-live
+        ;; The LAUNCHER intercepts these when it is a checkout being run, and
+        ;; execs the Rust client itself. A standalone build has no launcher, so
+        ;; `tui` looks for that client too and falls back the same way. `live`
+        ;; names the Lisp one and always gets it.
+        (list "tui" #'command-tui
               "Full screen: sessions, the running turn and tasks at once.")
         (list "live" #'command-live
-              "The same as `tui`; the older name for it.")
+              "The Lisp full-screen client, named explicitly.")
         (list "shell" #'command-shell
               "Work in a directory, interactively.")
         (list "ipc" #'command-ipc
@@ -158,6 +159,11 @@ run depends on the caller having sourced it.
   (or name (flag parsed "help") (flag parsed "h")))
 
 (defun main (tokens)
+  ;; BEFORE ANYTHING READS A KEY. A standalone build has no launcher to source
+  ;; the file for it, and a provider that finds no key fails at the first
+  ;; request rather than at startup, which reads as a broken model.
+  (handler-case (load-every-credential)
+    (error (condition) (format *error-output* "~&! credentials: ~a~%" condition)))
   (let* ((parsed (parse-arguments tokens))
          (name (first (args-positional parsed)))
          (entry (find name +commands+ :key #'first :test #'equal)))

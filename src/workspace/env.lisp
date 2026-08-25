@@ -79,28 +79,22 @@
 ;;; Where viva keeps its own files
 ;;;
 ;;; One place, because the name is a product decision and it was spelled into
-;;; twenty modules. A machine that already holds the former directory goes on
-;;; using it, so an upgrade does not strand the sessions, journal and config
-;;; somebody already has.
+;;; twenty modules. Everything below derives from HOME-DIRECTORY, so moving any
+;;; of it is one edit and no two callers can disagree about where a thing is.
 
 (defparameter +data-directory+ ".viva")
-(defparameter +former-data-directory+ ".vivarium")
 
 (defun data-directory (parent)
-  "PARENT's viva directory, and true when that is the former name.
-
-The former name wins only where it exists and the current one does not. So a
-fresh install never creates it, and an existing one never loses its files."
-  (let ((current (join-path parent +data-directory+))
-        (former (join-path parent +former-data-directory+)))
-    (if (and (uiop:directory-exists-p former)
-             (not (uiop:directory-exists-p current)))
-        (values former t)
-        (values current nil))))
+  "PARENT's viva directory."
+  (join-path parent +data-directory+))
 
 (defun home-directory ()
-  "The machine-level viva directory."
-  (data-directory (uiop:native-namestring (user-homedir-pathname))))
+  "The machine-level viva directory.
+
+VIVA_HOME names it outright, which is how a test gets a directory of its own
+and how somebody keeps their keys and sessions somewhere other than home."
+  (or (sb-posix:getenv "VIVA_HOME")
+      (data-directory (uiop:native-namestring (user-homedir-pathname)))))
 
 (defun home-path (&rest leaves)
   (apply #'join-path (home-directory) leaves))
@@ -108,15 +102,24 @@ fresh install never creates it, and an existing one never loses its files."
 (defun project-path (cwd &rest leaves)
   (apply #'join-path (data-directory cwd) leaves))
 
-(defun home-file (name former-name)
-  "NAME inside the machine-level directory, under FORMER-NAME on an install
-that predates the rename.
+;;; One name per thing kept, so no caller spells a path itself
 
-The socket and its lock are named this way on purpose. A daemon already running
-holds the former socket, and giving the new build a different name in the same
-directory would put two daemons on one journal."
-  (multiple-value-bind (directory former) (home-directory)
-    (join-path directory (if former former-name name))))
+(defun auth-path () (home-path "auth.json"))
+(defun machine-config-file () (home-path "config"))
+(defun machine-memory-file () (home-path "MEMORY.md"))
+(defun sessions-directory () (home-path "sessions"))
+(defun journal-directory () (home-path "journal"))
+(defun trust-file () (home-path "trusted.sexp"))
+
+(defun project-config-file (cwd) (project-path cwd "config"))
+(defun project-memory-file (cwd) (project-path cwd "MEMORY.md"))
+(defun services-directory (cwd) (project-path cwd "services"))
+(defun retired-directory (cwd) (project-path cwd "retired"))
+
+;;; Skills, tools, prompts and extensions are NOT here. Each exists at both
+;;; levels and the machine's is merged with the project's, which HARNESS
+;;; already does. A second name for one of the two halves would be a name that
+;;; answers half the question.
 
 ;;; The environment
 

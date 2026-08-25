@@ -20,23 +20,18 @@ use std::thread;
 /// Where the daemon listens. `VIVA_SOCKET` wins, as it does for the Lisp
 /// client, so a test daemon on its own socket is reachable the same way.
 ///
-/// RESOLVED THE WAY THE ENGINE RESOLVES IT. A machine installed before the
-/// rename keeps its former directory and, with it, its former socket name.
-/// Guessing the current pair there would report no daemon while one is
-/// running, and then start a second one over the same journal.
+/// RESOLVED THE WAY THE ENGINE RESOLVES IT, VIVA_HOME included -- a client that
+/// guessed a different directory would report no daemon while one was running,
+/// and then start a second one over the same journal.
 pub fn socket_path() -> PathBuf {
     if let Ok(from_environment) = std::env::var("VIVA_SOCKET") {
         return PathBuf::from(from_environment);
     }
-    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()));
-    let current = home.join(".viva");
-    if !current.is_dir() {
-        let former = home.join(".vivarium");
-        if former.is_dir() {
-            return former.join("vivariumd.sock");
-        }
-    }
-    current.join("viva.sock")
+    let home = match std::env::var("VIVA_HOME") {
+        Ok(named) => PathBuf::from(named),
+        Err(_) => PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into())).join(".viva"),
+    };
+    home.join("viva.sock")
 }
 
 /// One line from the daemon. The distinction matters to the caller: a response
@@ -87,15 +82,10 @@ pub fn launcher() -> Option<PathBuf> {
         }
     }
     if let Ok(path) = std::env::var("PATH") {
-        // Both names, current one first. An install that predates the rename
-        // has only the old one on PATH, and refusing to start there would be
-        // this client declining to work on the machine it was upgraded on.
         for directory in path.split(':') {
-            for name in ["viva", "viva"] {
-                let candidate = PathBuf::from(directory).join(name);
-                if candidate.exists() {
-                    return Some(candidate);
-                }
+            let candidate = PathBuf::from(directory).join("viva");
+            if candidate.exists() {
+                return Some(candidate);
             }
         }
     }
@@ -150,6 +140,8 @@ pub struct Connection {
     writer: UnixStream,
     incoming: Receiver<Incoming>,
     next_id: u64,
+    /// Whether the loss of the daemon has already been reported.
+    closed: bool,
 }
 
 impl Connection {
@@ -176,7 +168,7 @@ impl Connection {
             }
             let _ = sender.send(Incoming::Closed);
         });
-        Ok(Connection { writer, incoming, next_id: 1 })
+        Ok(Connection { writer, incoming, next_id: 1, closed: false })
     }
 
     /// Write a request without waiting. The caller's loop reads the reply out
@@ -204,7 +196,16 @@ impl Connection {
                 Ok(message) => batch.push(message),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
-                    batch.push(Incoming::Closed);
+                    // ONCE PER CONNECTION, not once per call. TRY_RECV answers
+                    // Disconnected on a dead channel every time it is asked,
+                    // so a caller that repaints on every message repainted the
+                    // whole transcript on every pass of its loop -- for as
+                    // long as the daemon stayed away. Measured at 85% of a
+                    // core for a day, on a client nobody was touching.
+                    if !self.closed {
+                        self.closed = true;
+                        batch.push(Incoming::Closed);
+                    }
                     break;
                 }
             }
@@ -417,6 +418,35 @@ impl SessionInfo {
         match trimmed.rsplit_once('/') {
             Some((_, last)) if !last.is_empty() => last,
             _ => trimmed,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_lost_daemon_is_reported_once_not_on_every_pass() {
+        // TRY_RECV answers Disconnected every time it is asked, so a drain that
+        // reported it every time handed the caller a reason to repaint on every
+        // pass of its loop. The caller does exactly that, and the whole
+        // transcript is what gets laid out -- 85% of a core on a client nobody
+        // was touching, for as long as the daemon stayed away.
+        let (writer, _theirs) = UnixStream::pair().expect("a socket pair");
+        let (sender, incoming) = mpsc::channel::<Incoming>();
+        drop(sender); // what the reader thread ending looks like from here
+        let mut connection = Connection { writer, incoming, next_id: 1, closed: false };
+
+        assert!(
+            matches!(connection.drain().as_slice(), [Incoming::Closed]),
+            "the daemon going away was not reported at all"
+        );
+        for pass in 0..3 {
+            assert!(
+                connection.drain().is_empty(),
+                "pass {pass} reported the same loss again, which is the spin"
+            );
         }
     }
 }

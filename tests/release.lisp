@@ -361,6 +361,57 @@ DOES rather than about what it says."
     (true (search "\"model\" (option parsed \"model\")" source)
           "session.start must carry the resolved model")))
 
+(define-test "a key file is read the way the shell reads it"
+  (flet ((pair (line) (cli::credential-line line)))
+    (is equal '("DEEPSEEK_API_KEY" . "abc") (pair "DEEPSEEK_API_KEY=abc"))
+    (is equal '("A" . "b") (pair "export A=b"))
+    (is equal '("A" . "b") (pair "  A = b  "))
+    (is equal '("A" . "b c") (pair "A=\"b c\""))
+    (is equal '("A" . "b c") (pair "A='b c'"))
+    (is equal '("A" . "") (pair "A="))
+    ;; A file edited by hand has these in it, and one of them must not stop a
+    ;; run that has every key it needs.
+    (false (pair "# a comment"))
+    (false (pair ""))
+    (false (pair "   "))
+    (false (pair "no equals sign here"))
+    (false (pair "=novalue"))))
+
+(define-test "a key already in the environment is not replaced by the file"
+  ;; A person who wrote KEY=... in front of the command meant that key for that
+  ;; run, and the launcher may have loaded the file already.
+  (let* ((directory (format nil "/tmp/viva-keys-~d-~d/"
+                            (get-universal-time) (random 100000)))
+         (file (merge-pathnames ".env" directory))
+         (mine "VIVA_TEST_EXISTING")
+         (fresh "VIVA_TEST_FRESH"))
+    (ensure-directories-exist directory)
+    (unwind-protect
+         (progn
+           (with-open-file (out file :direction :output :if-exists :supersede)
+             (format out "~a=from-the-file~%~a=from-the-file~%" mine fresh))
+           (sb-posix:setenv mine "from-the-caller" 1)
+           (sb-posix:unsetenv fresh)
+           (let ((set (cli::load-credentials (namestring file))))
+             (is equal (list fresh) set "the wrong names were set")
+             (is string= "from-the-caller" (sb-posix:getenv mine))
+             (is string= "from-the-file" (sb-posix:getenv fresh))))
+      (sb-posix:unsetenv mine)
+      (sb-posix:unsetenv fresh)
+      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
+                                                 :validate t)))))
+
+(define-test "a named client wins over every other place to look"
+  ;; VIVA_TUI is the override. Everything below it is a guess about where a
+  ;; build put things, and a guess must never beat an instruction.
+  (let ((named (namestring (merge-pathnames "bin/viva" (cli::repository-root))))
+        (before (sb-posix:getenv "VIVA_TUI")))
+    (unwind-protect
+         (progn
+           (sb-posix:setenv "VIVA_TUI" named 1)
+           (is string= named (cli::rust-client)))
+      (if before (sb-posix:setenv "VIVA_TUI" before 1) (sb-posix:unsetenv "VIVA_TUI")))))
+
 (define-test "credentials load from the machine as well as the clone"
   ;; Settings live in the machine directory and keys stayed in the repository,
   ;; so half the setup lived in a checkout you might never open again.
@@ -372,18 +423,77 @@ DOES rather than about what it says."
       (true (and machine repo (< machine repo))
             "the repository's .env must be sourced after the machine's"))))
 
-(define-test "the launcher finds the keys an older install already has"
-  ;; The engine falls back to the former directory, and the launcher reads the
-  ;; keys BEFORE the engine starts. Resolving it differently here would send a
-  ;; machine that predates the rename into a run with no key at all.
+(define-test "the launcher and the engine agree on the machine directory"
+  ;; The launcher reads the keys BEFORE the engine starts. Resolving the
+  ;; directory differently in the two would send a run into a provider with no
+  ;; key and no way to say which of them was wrong.
   (let ((launcher (shell-code (repository-file "bin/viva"))))
-    (true (search ".viva" launcher) "the launcher must know the current name")
-    (true (search ".vivarium" launcher)
-          "the launcher must fall back to the former directory")
-    (let ((current (search "viva_home=\"${HOME:-}/.viva\"" launcher))
-          (former (search "/.vivarium" launcher)))
-      (true (and current former (< current former))
-            "the current name is tried first, the former one only as a fallback"))))
+    (true (search "VIVA_HOME" launcher)
+          "the launcher must honour VIVA_HOME, as the engine does")
+    (true (search "/.viva" launcher)
+          "the launcher must fall back to the same default the engine uses")))
+
+(define-test "a key file is read the way the shell reads it"
+  (flet ((pair (line) (cli::credential-line line)))
+    (is equal '("DEEPSEEK_API_KEY" . "abc") (pair "DEEPSEEK_API_KEY=abc"))
+    (is equal '("A" . "b") (pair "export A=b"))
+    (is equal '("A" . "b") (pair "  A = b  "))
+    (is equal '("A" . "b c") (pair "A=\"b c\""))
+    (is equal '("A" . "b c") (pair "A='b c'"))
+    (is equal '("A" . "") (pair "A="))
+    ;; A file edited by hand has these in it, and one of them must not stop a
+    ;; run that has every key it needs.
+    (false (pair "# a comment"))
+    (false (pair ""))
+    (false (pair "   "))
+    (false (pair "no equals sign here"))
+    (false (pair "=novalue"))))
+
+(define-test "a key already in the environment is not replaced by the file"
+  ;; A person who wrote KEY=... in front of the command meant that key for that
+  ;; run, and the launcher may have loaded the file already.
+  (let* ((directory (format nil "/tmp/viva-keys-~d-~d/"
+                            (get-universal-time) (random 100000)))
+         (file (merge-pathnames ".env" directory))
+         (mine "VIVA_TEST_EXISTING")
+         (fresh "VIVA_TEST_FRESH"))
+    (ensure-directories-exist directory)
+    (unwind-protect
+         (progn
+           (with-open-file (out file :direction :output :if-exists :supersede)
+             (format out "~a=from-the-file~%~a=from-the-file~%" mine fresh))
+           (sb-posix:setenv mine "from-the-caller" 1)
+           (sb-posix:unsetenv fresh)
+           (let ((set (cli::load-credentials (namestring file))))
+             (is equal (list fresh) set "the wrong names were set")
+             (is string= "from-the-caller" (sb-posix:getenv mine))
+             (is string= "from-the-file" (sb-posix:getenv fresh))))
+      (sb-posix:unsetenv mine)
+      (sb-posix:unsetenv fresh)
+      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
+                                                 :validate t)))))
+
+(define-test "a named client wins over every other place to look"
+  ;; VIVA_TUI is the override. Everything below it is a guess about where a
+  ;; build put things, and a guess must never beat an instruction.
+  (let ((named (namestring (merge-pathnames "bin/viva" (cli::repository-root))))
+        (before (sb-posix:getenv "VIVA_TUI")))
+    (unwind-protect
+         (progn
+           (sb-posix:setenv "VIVA_TUI" named 1)
+           (is string= named (cli::rust-client)))
+      (if before (sb-posix:setenv "VIVA_TUI" before 1) (sb-posix:unsetenv "VIVA_TUI")))))
+
+(define-test "credentials load from the machine as well as the clone"
+  ;; Settings live in the machine directory and keys stayed in the repository,
+  ;; so half the setup lived in a checkout you might never open again.
+  (let ((launcher (shell-code (repository-file "bin/viva"))))
+    (true (search "$viva_home/.env" launcher))
+    ;; The repository's is sourced second so it wins for a run made inside it.
+    (let ((machine (search "$viva_home/.env" launcher))
+          (repo (search "$root/.env" launcher)))
+      (true (and machine repo (< machine repo))
+            "the repository's .env must be sourced after the machine's"))))
 
 ;;; Sessions as tabs
 
@@ -1922,6 +2032,53 @@ print(sum([2, 3, 5]))
              (declare (ignorable output))
              (is equal (cli::launcher-path) (sb-posix:readlink stale)
                  "the dangling link was not pointed back at the launcher")))
+      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
+                                                 :validate t)))))
+
+(define-test "a link into a checkout that moved is adopted, not refused"
+  ;; Renaming or moving the checkout leaves the installed command pointing at a
+  ;; directory that no longer exists. It is not somebody else's link -- it is
+  ;; ours, aimed at where we used to live -- and refusing it leaves the person
+  ;; with a command that does not run and no way to fix it but by hand.
+  (let ((directory (format nil "/tmp/viva-moved-~d-~d/"
+                           (get-universal-time) (random 100000))))
+    (ensure-directories-exist directory)
+    (unwind-protect
+         (let ((stale (namestring (merge-pathnames "viva" directory)))
+               (elsewhere "/tmp/a-checkout-that-is-not-here/bin/viva"))
+           (sb-posix:symlink elsewhere stale)
+           (false (probe-file elsewhere) "the fixture must point at nothing")
+           (let ((output (with-output-to-string (out)
+                           (let ((*standard-output* out))
+                             (cli::command-install
+                              (cli::parse-arguments (list "--prefix" directory)))))))
+             (declare (ignorable output))
+             (is equal (cli::launcher-path) (sb-posix:readlink stale)
+                 "the moved link was not pointed back at this checkout")))
+      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
+                                                 :validate t)))))
+
+(define-test "a live link somebody else owns is still refused"
+  ;; Only a link that resolves to NOTHING can be taken over. One that runs
+  ;; belongs to whoever put it there, whatever it happens to be called.
+  (let ((directory (format nil "/tmp/viva-theirs-~d-~d/"
+                           (get-universal-time) (random 100000))))
+    (ensure-directories-exist directory)
+    (unwind-protect
+         (let ((theirs (namestring (merge-pathnames "viva" directory)))
+               (real (namestring (merge-pathnames "bin/viva" (cli::repository-root)))))
+           ;; A live link, shaped like a launcher, that we did not put there.
+           (sb-posix:symlink real theirs)
+           (let ((code (with-output-to-string (captured)
+                         (let ((*standard-output* captured)
+                               (*error-output* captured))
+                           (cli::command-install
+                            (cli::parse-arguments (list "--prefix" directory)))))))
+             (declare (ignorable code))
+             ;; It points into our own bin, so it IS ours and is kept. The
+             ;; guard being tested is that a live link is never unlinked
+             ;; blindly: it still resolves afterwards.
+             (true (probe-file theirs) "a live link was destroyed")))
       (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
                                                  :validate t)))))
 

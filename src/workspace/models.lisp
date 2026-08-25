@@ -39,8 +39,13 @@
   (let ((value (sb-posix:getenv name)))
     (and value (plusp (length value)) value)))
 
-(defun entry-choice (entry)
-  (a:when-let ((key (from-environment (getf entry :key))))
+(defun entry-choice (entry &key (auth (auth:read-auth)))
+  "ENTRY as a usable choice, or NIL where it has no key.
+
+The auth file is read once by the caller and passed down. Reading it per
+provider would open and parse the same file for every entry in the catalogue,
+on every call that asks what is available."
+  (a:when-let ((key (auth:key-for (getf entry :label) (getf entry :key) :auth auth)))
     (make-choice :label (getf entry :label)
                  :model (or (from-environment (getf entry :model-var)) (getf entry :model))
                  :effort (getf entry :effort)
@@ -64,7 +69,12 @@ whether it is up checks before offering it."
                             :output-prefix provider:+harmony-output-prefix+))))
 
 (defun available-models ()
-  (remove nil (append (mapcar #'entry-choice +catalogue+) (list (local-choice)))))
+  ;; The auth file, read once for the whole catalogue rather than once per
+  ;; provider in it.
+  (let ((auth (auth:read-auth)))
+    (remove nil (append (mapcar (lambda (entry) (entry-choice entry :auth auth))
+                                +catalogue+)
+                        (list (local-choice))))))
 
 (defun resolve-model (&optional label)
   "The named choice, or the first available one. Signals when there is none, and

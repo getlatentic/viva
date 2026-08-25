@@ -62,7 +62,7 @@ Deliberately NOT MEMORY:CONTEXT-FILES, which also gathers the instruction files
 a PERSON wrote in this directory and its ancestors. Those matter to a run and
 are not what the organism retained, and showing them here would credit the
 agent with everything it was told."
-  (list (env:home-path "MEMORY.md")
+  (list (env:machine-memory-file)
         (env:project-path (env:env-cwd environment) memory:*memory-file*)))
 
 (defun notes-for (environment)
