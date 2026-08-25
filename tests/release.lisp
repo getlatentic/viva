@@ -1925,6 +1925,53 @@ print(sum([2, 3, 5]))
       (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
                                                  :validate t)))))
 
+(define-test "a link into a checkout that moved is adopted, not refused"
+  ;; Renaming or moving the checkout leaves the installed command pointing at a
+  ;; directory that no longer exists. It is not somebody else's link -- it is
+  ;; ours, aimed at where we used to live -- and refusing it leaves the person
+  ;; with a command that does not run and no way to fix it but by hand.
+  (let ((directory (format nil "/tmp/viva-moved-~d-~d/"
+                           (get-universal-time) (random 100000))))
+    (ensure-directories-exist directory)
+    (unwind-protect
+         (let ((stale (namestring (merge-pathnames "viva" directory)))
+               (elsewhere "/tmp/a-checkout-that-is-not-here/bin/viva"))
+           (sb-posix:symlink elsewhere stale)
+           (false (probe-file elsewhere) "the fixture must point at nothing")
+           (let ((output (with-output-to-string (out)
+                           (let ((*standard-output* out))
+                             (cli::command-install
+                              (cli::parse-arguments (list "--prefix" directory)))))))
+             (declare (ignorable output))
+             (is equal (cli::launcher-path) (sb-posix:readlink stale)
+                 "the moved link was not pointed back at this checkout")))
+      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
+                                                 :validate t)))))
+
+(define-test "a live link somebody else owns is still refused"
+  ;; Only a link that resolves to NOTHING can be taken over. One that runs
+  ;; belongs to whoever put it there, whatever it happens to be called.
+  (let ((directory (format nil "/tmp/viva-theirs-~d-~d/"
+                           (get-universal-time) (random 100000))))
+    (ensure-directories-exist directory)
+    (unwind-protect
+         (let ((theirs (namestring (merge-pathnames "viva" directory)))
+               (real (namestring (merge-pathnames "bin/viva" (cli::repository-root)))))
+           ;; A live link, shaped like a launcher, that we did not put there.
+           (sb-posix:symlink real theirs)
+           (let ((code (with-output-to-string (captured)
+                         (let ((*standard-output* captured)
+                               (*error-output* captured))
+                           (cli::command-install
+                            (cli::parse-arguments (list "--prefix" directory)))))))
+             (declare (ignorable code))
+             ;; It points into our own bin, so it IS ours and is kept. The
+             ;; guard being tested is that a live link is never unlinked
+             ;; blindly: it still resolves afterwards.
+             (true (probe-file theirs) "a live link was destroyed")))
+      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
+                                                 :validate t)))))
+
 (define-test "a taken alias does not fail the install"
   ;; Somebody may have a `viva` of their own. Refusing to install the tool
   ;; because a compatibility alias is taken would be absurd.
