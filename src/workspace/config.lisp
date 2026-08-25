@@ -83,10 +83,10 @@ gitignored -- this file is not, and a key committed is a key published."
     (values (nreverse settings) (nreverse complaints))))
 
 (defun machine-config-path ()
-  (env:home-path "config"))
+  (env:machine-config-file))
 
 (defun project-config-path (cwd)
-  (env:project-path cwd "config"))
+  (env:project-config-file cwd))
 
 (defparameter +reserved-variables+ '("VIVA_ROOT" "VIVA_SOCKET" "VIVA_CWD" "VIVA_JOURNAL")
   "Variables viva sets for its own machinery. A setting must never map onto

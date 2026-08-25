@@ -186,7 +186,7 @@ process, so it matters more rather than less."
 ;;; its contents. `cat .viva/services/dev` tells you everything.
 
 (defun services-directory (cwd)
-  (env:project-path cwd "services"))
+  (env:services-directory cwd))
 
 (defun declared (environment cwd)
   "Every service this project declares, as (NAME . COMMAND)."

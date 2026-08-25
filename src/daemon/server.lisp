@@ -60,13 +60,9 @@ to release beyond the claim itself."
       (setf *starting* nil *state* :stopped))))
 
 (defun socket-path ()
-  "Where the daemon listens.
-
-The name follows the directory. An install that predates the rename keeps both
-its former directory and its former socket, so a running daemon stays reachable
-and a new build never opens a second one over the same journal."
+  "Where the daemon listens."
   (or (sb-posix:getenv "VIVA_SOCKET")
-      (env:home-file "viva.sock" "vivariumd.sock")))
+      (env:home-path "viva.sock")))
 
 (defun object (&rest plist)
   (let ((table (make-hash-table :test #'equal)))

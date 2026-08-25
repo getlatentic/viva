@@ -45,6 +45,7 @@
                 :serial t
                 :components ((:file "package")
                              (:file "env")
+                             (:file "auth")
                              (:file "config")
                              (:file "glob")
                              (:file "bound")

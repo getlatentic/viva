@@ -20,23 +20,18 @@ use std::thread;
 /// Where the daemon listens. `VIVA_SOCKET` wins, as it does for the Lisp
 /// client, so a test daemon on its own socket is reachable the same way.
 ///
-/// RESOLVED THE WAY THE ENGINE RESOLVES IT. A machine installed before the
-/// rename keeps its former directory and, with it, its former socket name.
-/// Guessing the current pair there would report no daemon while one is
-/// running, and then start a second one over the same journal.
+/// RESOLVED THE WAY THE ENGINE RESOLVES IT, VIVA_HOME included -- a client that
+/// guessed a different directory would report no daemon while one was running,
+/// and then start a second one over the same journal.
 pub fn socket_path() -> PathBuf {
     if let Ok(from_environment) = std::env::var("VIVA_SOCKET") {
         return PathBuf::from(from_environment);
     }
-    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()));
-    let current = home.join(".viva");
-    if !current.is_dir() {
-        let former = home.join(".vivarium");
-        if former.is_dir() {
-            return former.join("vivariumd.sock");
-        }
-    }
-    current.join("viva.sock")
+    let home = match std::env::var("VIVA_HOME") {
+        Ok(named) => PathBuf::from(named),
+        Err(_) => PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into())).join(".viva"),
+    };
+    home.join("viva.sock")
 }
 
 /// One line from the daemon. The distinction matters to the caller: a response
@@ -87,15 +82,10 @@ pub fn launcher() -> Option<PathBuf> {
         }
     }
     if let Ok(path) = std::env::var("PATH") {
-        // Both names, current one first. An install that predates the rename
-        // has only the old one on PATH, and refusing to start there would be
-        // this client declining to work on the machine it was upgraded on.
         for directory in path.split(':') {
-            for name in ["viva", "viva"] {
-                let candidate = PathBuf::from(directory).join(name);
-                if candidate.exists() {
-                    return Some(candidate);
-                }
+            let candidate = PathBuf::from(directory).join("viva");
+            if candidate.exists() {
+                return Some(candidate);
             }
         }
     }

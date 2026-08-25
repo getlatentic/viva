@@ -54,7 +54,7 @@ who upgraded rather than the retentions that stopped paying."
        (>= (idle-days last-used now) window)))
 
 (defun retired-directory (environment kind)
-  (env:project-path (env:env-cwd environment) "retired"
+  (env:join-path (env:retired-directory (env:env-cwd environment))
                  (string-downcase (symbol-name kind))))
 
 (defun retire (environment kind name from &key uses idle-days)

@@ -88,13 +88,33 @@ viva              # opens this directory's session, or starts one
 
 Or take the binaries. CI builds `viva-macos-arm64` and `viva-linux-x86_64`,
 which need neither SBCL nor Quicklisp nor a checkout. Put `viva` and `viva-tui`
-in the same directory on your `PATH`: `viva` reads `~/.viva/.env` for a
-provider key itself, and finds the full-screen client beside it.
+in one directory on your `PATH`: `viva` finds the full-screen client beside it.
 
 ```bash
 install -m 755 viva-macos-arm64 ~/.local/bin/viva
 install -m 755 viva-tui ~/.local/bin/viva-tui
 ```
+
+### A provider key
+
+```bash
+mkdir -p ~/.viva && cat > ~/.viva/auth.json <<'JSON'
+{ "deepseek": { "apiKey": "sk-..." } }
+JSON
+```
+
+Three places, tried in this order. A flag names one key for one run. The file
+is where somebody put a key on purpose, and the environment is whatever a shell
+happened to export.
+
+| | |
+| --- | --- |
+| `--api-key` | this run only |
+| `~/.viva/auth.json` | `deepseek`, `openai`, `openrouter`, `bedrock` |
+| `DEEPSEEK_API_KEY` and friends | the environment |
+
+Keys are not settings: `config` is a file people copy into projects and commit,
+and `auth.json` is not.
 
 ### Windows
 
@@ -144,6 +164,10 @@ Keys inside the full screen client. Press `/` for the commands.
 | note | `.viva/MEMORY.md` | prompt text |
 | skill | `.viva/skills/<name>/SKILL.md` | prompt text |
 | tool | `.viva/tools/<name>/tool.json` | the tool list, and MCP |
+
+Everything viva keeps for itself is under `~/.viva/`: `auth.json`, `config`,
+`sessions/`, `journal/`, `trusted.sexp`. `VIVA_HOME` names that directory
+outright.
 
 A fact becomes a note. Code becomes a skill. Code the agent has already wanted
 twice becomes a tool it calls by name. The agent writes these with the ordinary

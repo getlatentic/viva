@@ -376,8 +376,7 @@ def check(path):
 
 def main():
     paths = sys.argv[1:] or sorted(
-        glob.glob(os.path.expanduser("~/.viva/journal/*.jsonl"))
-        + glob.glob(os.path.expanduser("~/.vivarium/journal/*.jsonl")),
+        glob.glob(os.path.expanduser("~/.viva/journal/*.jsonl")),
         key=os.path.getmtime, reverse=True)[:1]
     if not paths:
         # Nothing recorded is not a failure to replay it. A fresh clone and a

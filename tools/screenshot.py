@@ -57,7 +57,7 @@ TRANSCRIPT = [
 ]
 
 SESSIONS = [{"id": "20260824-0914-A1B2", "label": "/Users/you/work/atlas", "state": "working",
-             "cwd": None, "model": "deepseek-4-flash", "effort": "high",
+             "cwd": None, "model": "openai/gpt-oss-120b", "effort": "high",
              "opening": "why is the picker losing its filter", "tokens": 18400, "limit": 128000}]
 RECORDED = [
     {"id": "20260824-0820-7C41", "cwd": None, "time": 3996480000, "messages": 34,
