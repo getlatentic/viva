@@ -111,6 +111,29 @@ rather than leaving it to be rediscovered a third time."
 (define-test "the recursive walk skips the harness's own directory"
   (true (member ".viva/" glob:+default-ignores+ :test #'equal)))
 
+(define-test "read takes a line range whichever way a model asks for one"
+  ;; Observed on the wire: a model asked for line_start 1 / line_end 200, viva
+  ;; dropped both, handed back the whole file, and the model -- unable to tell
+  ;; its range had been ignored -- asked seven more times and then reached for
+  ;; sed. Accepting the range is four lines; every model learning ours is not.
+  (flet ((window (&rest pairs)
+           (let ((args (make-hash-table :test #'equal)))
+             (loop for (name value) on pairs by #'cddr
+                   do (setf (gethash name args) value))
+             (multiple-value-list (workspace::read-window args)))))
+    (is equal '(10 5) (window "offset" 10 "limit" 5))
+    (is equal '(1 200) (window "line_start" 1 "line_end" 200))
+    (is equal '(1 200) (window "start_line" 1 "end_line" 200))
+    (is equal '(10 6) (window "line_start" 10 "line_end" 15))
+    ;; A range with no start is a range from the beginning.
+    (is equal '(nil 20) (window "line_end" 20))
+    ;; Nothing asked for is the whole file, as before.
+    (is equal '(nil nil) (window "path" "README.md"))
+    ;; What our own parameters say still wins over an alias for the same thing.
+    (is equal '(3 4) (window "offset" 3 "limit" 4 "line_start" 99 "line_end" 200))
+    ;; A backwards range asks for nothing, and must not become a negative limit.
+    (is equal '(20 nil) (window "line_start" 20 "line_end" 5))))
+
 (define-test "read returns a file and reports where to continue"
   (with-repository (environment)
     (declare (ignore environment))

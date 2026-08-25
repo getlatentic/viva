@@ -60,6 +60,25 @@ sed -n '~dp' ~a | head -c ~d]"
                      (continuation start (length selected) total t)))
             (t (bound:truncation-text cut))))))
 
+(defun read-window (args)
+  "OFFSET and LIMIT, in any of the shapes models actually send them.
+
+A model that has read a hundred other tool descriptions asks for a line RANGE:
+`line_start` and `line_end`, or `start_line` and `end_line`. Ignoring those
+silently is the worst of the three options -- the file comes back whole, the
+model cannot tell its range was dropped, and one session here spent eight reads
+and three shell commands on a file it had already been given. Accepting the
+range costs four lines; explaining it to every model costs every run."
+  (flet ((given (&rest names)
+           (loop for name in names
+                 for value = (gethash name args)
+                 when (integerp value) return value)))
+    (let* ((offset (given "offset" "line_start" "start_line"))
+           (last-line (given "line_end" "end_line"))
+           (limit (or (given "limit" "count")
+                      (when last-line (1+ (- last-line (or offset 1)))))))
+      (values offset (when (and limit (plusp limit)) limit)))))
+
 (tool:define-tool read-tool (args context)
   :name "read"
   :description "Read the contents of a file. Output is truncated to 2000 lines
@@ -68,9 +87,8 @@ going with offset until you have what you need."
   :parameters (("path" :string "Path to the file, relative or absolute" :required-p t)
                ("offset" :integer "Line to start from, 1-indexed" :required-p nil)
                ("limit" :integer "How many lines to read" :required-p nil))
-  (read-file (gethash "path" args)
-             :offset (gethash "offset" args)
-             :limit (gethash "limit" args)))
+  (multiple-value-bind (offset limit) (read-window args)
+    (read-file (gethash "path" args) :offset offset :limit limit)))
 
 ;;; write
 
