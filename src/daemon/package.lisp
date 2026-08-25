@@ -2,9 +2,9 @@
 ;;;;
 ;;;; The rule the whole design turns on, and the reason this package exists:
 ;;;;
-;;;;   terminal lifetime  /=  vivarium lifetime
-;;;;   task lifetime      /=  vivarium lifetime
-;;;;   RPC lifetime       /=  vivarium lifetime
+;;;;   terminal lifetime  /=  viva lifetime
+;;;;   task lifetime      /=  viva lifetime
+;;;;   RPC lifetime       /=  viva lifetime
 ;;;;
 ;;;; A harness that exits after each task can only pretend to evolve. Closing a
 ;;;; client leaves the organism running, and self-modification becomes a
@@ -13,34 +13,34 @@
 ;;;;
 ;;;; See docs/architecture.md, which is frozen.
 
-(defpackage #:vivarium.event
+(defpackage #:viva.event
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:jzon #:com.inuoe.jzon)
-                    (#:msg #:vivarium.message)
-                    (#:session #:vivarium.session)
-                    (#:tool #:vivarium.tool))
+                    (#:msg #:viva.message)
+                    (#:session #:viva.session)
+                    (#:tool #:viva.tool))
   (:export #:event #:make-event #:event-p #:event-name #:event-session
            #:event-sequence #:event-time #:event-data #:as-json #:from-json
            #:from-loop #:+names+ #:name-valid-p #:call-json))
 
-(defpackage #:vivarium.actor
+(defpackage #:viva.actor
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:bt #:bordeaux-threads)
                     (#:mailbox #:sb-concurrency)
                     (#:jzon #:com.inuoe.jzon)
-                    (#:msg #:vivarium.message)
-                    (#:agent #:vivarium.agent)
-                    (#:env #:vivarium.env)
-                    (#:harness #:vivarium.harness)
-                    (#:operation #:vivarium.operation)
-                    (#:session #:vivarium.session)
-                    (#:kernel #:vivarium.kernel)
-                    (#:tasktree #:vivarium.tasktree)
-                    (#:tool #:vivarium.tool)
-                    (#:registry #:vivarium.registry)
-                    (#:event #:vivarium.event))
+                    (#:msg #:viva.message)
+                    (#:agent #:viva.agent)
+                    (#:env #:viva.env)
+                    (#:harness #:viva.harness)
+                    (#:operation #:viva.operation)
+                    (#:session #:viva.session)
+                    (#:kernel #:viva.kernel)
+                    (#:tasktree #:viva.tasktree)
+                    (#:tool #:viva.tool)
+                    (#:registry #:viva.registry)
+                    (#:event #:viva.event))
   ;; Sealed. A cell is an ownership boundary, not an object with a mailbox
   ;; attached: CELL-AGENT, CELL-STATE, CELL-EVENTS and CELL-QUEUED were
   ;; exported, which let anything read or hold actor-owned state directly --
@@ -60,26 +60,26 @@
            #:evolution-registry #:*activation-box* #:*default-door*
            #:capability-tools))
 
-(defpackage #:vivarium.daemon
+(defpackage #:viva.daemon
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
-                    (#:germline #:vivarium.germline)
-                    (#:jobs #:vivarium.jobs)
+                    (#:germline #:viva.germline)
+                    (#:jobs #:viva.jobs)
                     (#:bt #:bordeaux-threads)
                     (#:mailbox #:sb-concurrency)
                     (#:jzon #:com.inuoe.jzon)
                     (#:sockets #:sb-bsd-sockets)
-                    (#:msg #:vivarium.message)
-                    (#:tool #:vivarium.tool)
-                    (#:agent #:vivarium.agent)
-                    (#:env #:vivarium.env)
-                    (#:session #:vivarium.session)
-                    (#:harness #:vivarium.harness)
-                    (#:models #:vivarium.models)
-                    (#:operation #:vivarium.operation)
-                    (#:event #:vivarium.event)
-                    (#:loop* #:vivarium.loop)
-                    (#:workspace #:vivarium.workspace)
-                    (#:actor #:vivarium.actor))
+                    (#:msg #:viva.message)
+                    (#:tool #:viva.tool)
+                    (#:agent #:viva.agent)
+                    (#:env #:viva.env)
+                    (#:session #:viva.session)
+                    (#:harness #:viva.harness)
+                    (#:models #:viva.models)
+                    (#:operation #:viva.operation)
+                    (#:event #:viva.event)
+                    (#:loop* #:viva.loop)
+                    (#:workspace #:viva.workspace)
+                    (#:actor #:viva.actor))
   (:export #:serve #:stop #:running-p #:socket-path #:connect
            #:daemon-error #:with-connection #:request #:diagnostics))

@@ -24,14 +24,14 @@
 ;;;; scoped children only, one delivery per message, so the interleavings TLC
 ;;;; explored are the interleavings the runtime will produce.
 
-(defpackage #:vivarium.tasktree
-  (:use #:cl #:vivarium.kernel)
+(defpackage #:viva.tasktree
+  (:use #:cl #:viva.kernel)
   (:export #:tasktree-transition #:empty-tree #:task #:live-p #:terminal-p
            #:live-scoped-children #:live-children #:+child-limit+
            #:tree-minted #:tree-tasks
            #:run-tasktree-self-test))
 
-(in-package #:vivarium.tasktree)
+(in-package #:viva.tasktree)
 
 (defparameter +child-limit+ 16
   "Live children a parent may own at once. Overflow is refused with its

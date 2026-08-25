@@ -11,12 +11,12 @@
 ;;;;
 ;;;; RETIRED, NOT DELETED. A retirement is a judgement made by a threshold, and
 ;;;; thresholds are wrong sometimes. Moving the directory into
-;;;; `.vivarium/retired/` stops it loading, leaves it readable, and makes the
+;;;; `.viva/retired/` stops it loading, leaves it readable, and makes the
 ;;;; undo `mv` -- or `git checkout`, since these are files in somebody's
 ;;;; repository. Deleting would make a wrong retirement unrecoverable and
 ;;;; silent at once.
 
-(in-package #:vivarium.decay)
+(in-package #:viva.decay)
 
 (defparameter *window-days* 30
   "Days a retention may go unused before it is retired. Codex's pipeline calls
@@ -54,7 +54,7 @@ who upgraded rather than the retentions that stopped paying."
        (>= (idle-days last-used now) window)))
 
 (defun retired-directory (environment kind)
-  (env:join-path (env:env-cwd environment) ".vivarium" "retired"
+  (env:project-path (env:env-cwd environment) "retired"
                  (string-downcase (symbol-name kind))))
 
 (defun retire (environment kind name from &key uses idle-days)

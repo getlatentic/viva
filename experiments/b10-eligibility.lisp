@@ -13,7 +13,7 @@
 ;;;; usage. It never reads what the agent did, so it cannot become a way of
 ;;;; picking an interesting moment to interrupt.
 ;;;;
-;;;;   ./bin/vivarium eval experiments/b10-eligibility.lisp
+;;;;   ./bin/viva eval experiments/b10-eligibility.lisp
 ;;;;   -- or --
 ;;;;   set -a && . ./.env && set +a
 ;;;;   sbcl --non-interactive --load experiments/b10-eligibility.lisp
@@ -23,9 +23,9 @@
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 (push (truename ".") ql:*local-project-directories*)
 (handler-bind ((warning #'muffle-warning))
-  (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/cli :silent t))
+  (funcall (find-symbol "QUICKLOAD" "QL") :viva/cli :silent t))
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defparameter *train* '(:t1 :t4 :t5 :t7 :t9 :t11 :t13 :t14 :t15 :t17
                         :t18 :t19 :t20)

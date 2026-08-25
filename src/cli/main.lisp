@@ -1,6 +1,6 @@
 ;;;; Dispatch.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defparameter +commands+
   (list (list "daemon" #'command-daemon
@@ -27,7 +27,7 @@
         (list "learned" #'command-learned
               "What this project's agent has retained: notes, skills, tools.")
         (list "install" #'command-install
-              "Link vivarium into a directory on your PATH.")
+              "Link viva into a directory on your PATH.")
         (list "trust" #'command-trust
               "Allow a project's own extensions and tools to run.")
         (list "sessions" #'command-sessions
@@ -52,7 +52,7 @@
 (defparameter +usage+
   "viva                          the full-screen client, on a terminal;
                               the line client when piped or redirected
-viva <command> [options]      `vivarium` is the same command, spelled out
+viva <command> [options]
 
 THE ORGANISM
 
@@ -85,6 +85,8 @@ ORDINARY WORK
       --limit N               model requests per prompt (default 60)
       --colour false          plain output, for a log
       --resume [ID]           continue the last session here, or one by id
+      --capabilities on       let the agent compile new code into this image
+                              and call it (off by default; see the README)
   ipc [options]               serve one agent over stdin/stdout as JSON lines
       (same options; --limit defaults to 200)
       --append TEXT           add one line to the system prompt
@@ -96,11 +98,11 @@ ORDINARY WORK
       --session-dir DIR       record the transcript, for counting the work done
       --extension DIR         load extensions from DIR as well
   config [DIR]                every setting, its value, and where it came from
-                              (~/.vivarium/config, then .vivarium/config, then
+                              (~/.viva/config, then .viva/config, then
                               the environment, then a flag -- later wins)
   learned [DIR]               what the agent has retained here: notes, skills
                               and tools, and where each came from
-  install [--prefix DIR]      link `vivarium` onto your PATH, so the commands
+  install [--prefix DIR]      link `viva` onto your PATH, so the commands
                               above are the ones you actually type
   trust [DIR]                 allow DIR's own extensions and tools to run
                               (needed before a tool the organism wrote in a
@@ -116,10 +118,10 @@ ORDINARY WORK
   overall -- less on mechanical recurring work, more on judgement.
   See docs/retention-policy.md and experiments/dogfood/RESULTS.md.
 
-  Skills go in .vivarium/skills/<name>/SKILL.md, prompt templates in
-  .vivarium/prompts/*.md (invoked as /name, with $1..$9 and $ARGUMENTS),
-  extensions in .vivarium/extensions/*.lisp, and what the agent chooses to
-  keep in .vivarium/MEMORY.md. The same four work from ~/.vivarium/ for every
+  Skills go in .viva/skills/<name>/SKILL.md, prompt templates in
+  .viva/prompts/*.md (invoked as /name, with $1..$9 and $ARGUMENTS),
+  extensions in .viva/extensions/*.lisp, and what the agent chooses to
+  keep in .viva/MEMORY.md. The same four work from ~/.viva/ for every
   project. /help in the shell lists what is loaded.
 
 EXPERIMENTS
@@ -147,7 +149,7 @@ EXPERIMENTS
       --file prompt.txt       read the prompt from a file, or pipe it on stdin
   compare <before> <after>    how many cells moved between two sweeps
 
-Credentials are read from .env at the repository root by bin/vivarium, so no
+Credentials are read from .env at the repository root by bin/viva, so no
 run depends on the caller having sourced it.
 ")
 
@@ -160,7 +162,7 @@ run depends on the caller having sourced it.
          (name (first (args-positional parsed)))
          (entry (find name +commands+ :key #'first :test #'equal)))
     (cond
-      ;; Bare `vivarium` opens the organism. Starting work was `daemon start
+      ;; Bare `viva` opens the organism. Starting work was `daemon start
       ;; --background` and then `attach` -- two commands and one concept
       ;; before anything happened, for the case that is almost always what
       ;; somebody wants. ATTACH is called, not reimplemented, so there is one

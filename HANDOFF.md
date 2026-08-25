@@ -19,19 +19,19 @@ say so.
 
 ## What is real, and what it does
 
-`~/workspace/vivarium` — 424 tests green, SBCL 2.6.7 / macOS ARM64. Five ASDF
+`~/workspace/viva` — 424 tests green, SBCL 2.6.7 / macOS ARM64. Five ASDF
 systems with dependencies pointing inward:
 
 | system | what it is |
 |---|---|
-| `vivarium` | the harness: messages, tools, schemas, agent, loop, providers |
-| `vivarium/image` | one task domain: a live Lisp image to read, change and undo |
-| `vivarium/tasks` | the benchmark: 17 tasks, their fixtures, and the cases that score them |
-| `vivarium/search` | forked scored trials, an archive, selection over it |
-| `vivarium/cli` | `bin/vivarium` — one entry point for every run |
+| `viva` | the harness: messages, tools, schemas, agent, loop, providers |
+| `viva/image` | one task domain: a live Lisp image to read, change and undo |
+| `viva/tasks` | the benchmark: 17 tasks, their fixtures, and the cases that score them |
+| `viva/search` | forked scored trials, an archive, selection over it |
+| `viva/cli` | `bin/viva` — one entry point for every run |
 
-The split is tested, not aspirational: `(ql:quickload :vivarium)` leaves
-`VIVARIUM.IMAGE` and `VIVARIUM.TRIAL` absent from the world.
+The split is tested, not aspirational: `(ql:quickload :viva)` leaves
+`VIVA.IMAGE` and `VIVA.TRIAL` absent from the world.
 
 Two things it does end to end against a local model, both verified by behaviour
 rather than by what the agent claimed:

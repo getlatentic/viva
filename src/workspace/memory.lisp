@@ -2,7 +2,7 @@
 ;;;;
 ;;;; Two directions through the same file format.
 ;;;;
-;;;;   READ    project instructions the humans wrote -- VIVARIUM.md, AGENTS.md,
+;;;;   READ    project instructions the humans wrote -- VIVA.md, AGENTS.md,
 ;;;;           CLAUDE.md -- gathered from the home directory down to the working
 ;;;;           directory, nearest last so the most specific wins.
 ;;;;
@@ -15,15 +15,15 @@
 ;;;; persist prose can still persist a procedure, and a procedure that survives
 ;;;; a restart is the smallest honest instance of improvement there is.
 
-(in-package #:vivarium.memory)
+(in-package #:viva.memory)
 
-(defparameter +context-names+ '("VIVARIUM.md" "AGENTS.md" "CLAUDE.md")
+(defparameter +context-names+ '("VIVA.md" "AGENTS.md" "CLAUDE.md")
   "Checked in order; the first that exists in a directory is that directory's
 instructions. AGENTS.md and CLAUDE.md are honoured because a repository that
 already has one meant it for exactly this.")
 
-(defvar *memory-file* ".vivarium/MEMORY.md"
-  "Where REMEMBER appends, relative to the working directory.")
+(defvar *memory-file* "MEMORY.md"
+  "Where REMEMBER appends, inside the project's viva directory.")
 
 (defun directory-context (environment directory)
   (loop for name in +context-names+
@@ -43,7 +43,7 @@ already has one meant it for exactly this.")
     chain))
 
 (defun memory-path (environment)
-  (env:join-path (env:env-cwd environment) *memory-file*))
+  (env:project-path (env:env-cwd environment) *memory-file*))
 
 (defun context-files (environment &key (home (uiop:native-namestring (user-homedir-pathname))))
   "Every instruction file in scope, outermost first so the nearest one wins.
@@ -51,7 +51,7 @@ already has one meant it for exactly this.")
 The agent's own memory comes last of all: something it worked out here should
 override a general instruction it was given, not be overridden by one."
   (remove nil
-          (append (list (directory-context environment (env:join-path home ".vivarium")))
+          (append (list (directory-context environment (env:data-directory home)))
                   (mapcar (lambda (directory) (directory-context environment directory))
                           (ancestors (env:env-cwd environment)))
                   (let ((path (memory-path environment)))
@@ -65,7 +65,7 @@ override a general instruction it was given, not be overridden by one."
       (with-output-to-string (out)
         ;; Saying it is already here matters: measured across 54 runs, agents
         ;; carrying memory spent 0.28-0.56 tool calls each re-opening the very
-        ;; file whose contents are printed below, because `ls` shows .vivarium/
+        ;; file whose contents are printed below, because `ls` shows .viva/
         ;; and an unexplained directory invites a look.
         (format out "<project_instructions>~%Instructions for this project and this ~
 machine. Later blocks are more specific and take precedence. Their full contents ~

@@ -17,7 +17,7 @@ task turn ends
       -> one bounded reflection turn (model-owned, same conversation)
       -> retention through the EXISTING doors only
          remember          facts and procedures     (text)
-         a script + tool.json under .vivarium/tools/   transformations,
+         a script + tool.json under .viva/tools/   transformations,
                            written with the ordinary file tools, callable
                            by name afterwards through the registry
 ```
@@ -153,11 +153,11 @@ five cheap tasks.
 
 The germline is files so that a person can read it and another agent can use
 it. The same applies in reverse to what the organism is *told*: instructions
-come from `VIVARIUM.md`, `AGENTS.md` or `CLAUDE.md`, checked in that order in
+come from `VIVA.md`, `AGENTS.md` or `CLAUDE.md`, checked in that order in
 every directory from the repository root down.
 
 **One file per directory, by precedence, not a merge.** A directory carrying
-both a `VIVARIUM.md` and an `AGENTS.md` contributes only the first. That is
+both a `VIVA.md` and an `AGENTS.md` contributes only the first. That is
 deliberate — two instruction files in one directory usually means two
 half-maintained sets of rules, and silently concatenating them makes the
 contradiction the model's problem. It is also the surprising half, so the

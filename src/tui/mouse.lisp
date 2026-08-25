@@ -15,7 +15,7 @@
 ;;;; clicks instead of consuming them when it has. Speaking the protocol is
 ;;;; what makes a multiplexer hand the mouse over.
 
-(in-package #:vivarium.tui)
+(in-package #:viva.tui)
 
 (defparameter *enable-mouse*
   (format nil "~c[?1000h~c[?1002h~c[?1006h" #\Escape #\Escape #\Escape)

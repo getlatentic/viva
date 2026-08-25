@@ -7,7 +7,7 @@
 ;;;; thought. Both the blocking parser and the streaming accumulator read the
 ;;;; same wire, so neither owns this vocabulary and it lives on its own.
 
-(in-package #:vivarium.wire)
+(in-package #:viva.wire)
 
 (defun present (value)
   "NIL for a missing key or a JSON null, however the parser spells it.

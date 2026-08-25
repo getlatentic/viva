@@ -23,7 +23,7 @@
 ;;;; reads back only as prose cannot be resumed: the tool call ids stop matching
 ;;;; their results and the provider rejects the conversation.
 
-(in-package #:vivarium.session)
+(in-package #:viva.session)
 
 (defparameter +format-version+ 2)
 
@@ -93,7 +93,7 @@ and `latest for this project` is a glob rather than a scan of every file."
 (defun session-directory (&optional cwd)
   "Where sessions live. Namespaced by working directory when one is given, so
 resuming asks for the last session HERE rather than the last session anywhere."
-  (let ((root (merge-pathnames ".vivarium/sessions/" (user-homedir-pathname))))
+  (let ((root (pathname (concatenate 'string (env:home-path "sessions") "/"))))
     (if cwd (merge-pathnames (format nil "~a/" (slug cwd)) root) root)))
 
 (defun new-id ()
@@ -211,7 +211,7 @@ the tree silently: the index keeps one entry under a name that now means two."
 
 A session with no messages is not a session, it is an accident of attaching:
 somebody opened the organism in a directory, looked at it, and left. Keeping
-those files makes `vivarium sessions` a list of mostly nothing, and any future
+those files makes `viva sessions` a list of mostly nothing, and any future
 `continue the last conversation` would keep landing on an empty one.
 
 CONSERVATIVE ON PURPOSE. Only a transcript with NO message entries at all is

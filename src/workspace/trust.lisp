@@ -6,16 +6,16 @@
 ;;;; OUTSIDE the project, where the project cannot edit itself into it.
 ;;;;
 ;;;; The tool registry has exactly the same exposure and had none of the
-;;;; answer. `.vivarium/tools/` in a cloned repository is a script somebody
-;;;; else wrote, and pointing vivarium at that repository ran it. So the
+;;;; answer. `.viva/tools/` in a cloned repository is a script somebody
+;;;; else wrote, and pointing viva at that repository ran it. So the
 ;;;; mechanism moves here, where two consumers can share one answer rather
 ;;;; than one consumer having it and the other forgetting.
 ;;;;
-;;;; The machine's own directory (~/.vivarium) is always trusted: it is the
+;;;; The machine's own directory (~/.viva) is always trusted: it is the
 ;;;; user's, not a project's, and requiring them to trust themselves would
 ;;;; teach the habit of clicking through the question that matters.
 
-(in-package #:vivarium.trust)
+(in-package #:viva.trust)
 
 (defvar *trust-file* nil
   "Where the trust record lives, or NIL for the user's own. Bound by the
@@ -25,10 +25,10 @@ the same isolation the journal root already takes.")
 (defun trust-file ()
   (or *trust-file*
       (env:join-path (uiop:native-namestring (user-homedir-pathname))
-                     ".vivarium" "trusted.sexp")))
+                     env:+data-directory+ "trusted.sexp")))
 
 (defun home-directory ()
-  (env:join-path (uiop:native-namestring (user-homedir-pathname)) ".vivarium"))
+  (env:home-directory))
 
 (defun canonical (environment path)
   "PATH in the one form both sides must agree on: symlinks resolved, no
@@ -77,7 +77,7 @@ decides what may execute is not a rounding error."
     roots))
 
 (defun machine-directory-p (environment directory)
-  "Is DIRECTORY inside the user's own ~/.vivarium rather than a project's?"
+  "Is DIRECTORY inside the user's own ~/.viva rather than a project's?"
   (within-p (canonical environment (home-directory))
             (canonical environment directory)))
 

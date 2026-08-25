@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """What did the organism keep, and did anything use it?
 
-Reads only what the run left behind: the workspace's .vivarium/, and the
+Reads only what the run left behind: the workspace's .viva/, and the
 transcripts of the five tasks. Nothing is inferred -- a tool counts as reused
 when a transcript shows the model calling it by name, and a note counts as
 carried when it is in the memory file a later task was given.
@@ -66,7 +66,7 @@ def main():
     # both a distraction and -- in a scored setting -- the answer key.
     transcripts = pathlib.Path(sys.argv[3])
     jobs = root / "experiments/dogfood/jobs/spend"
-    germline = work / ".vivarium"
+    germline = work / ".viva"
     variants = [d for d in sorted(transcripts.iterdir()) if d.is_dir()] if transcripts.exists() else []
 
     # ---------------------------------------------------------- what was kept
@@ -122,16 +122,16 @@ def main():
         print("pay -- the cost was paid and the saving never arrived.")
 
     # A note cannot be observed being "used" the way a tool call can. What CAN
-    # be shown is that it is there: this asks vivarium what the NEXT task in
+    # be shown is that it is there: this asks viva what the NEXT task in
     # this directory would be handed, live, and costs nothing -- listing what
     # is loaded makes no model request.
     if memory.exists():
         loaded = subprocess.run(
-            [str(root / "bin/vivarium"), "shell", "--cwd", str(work)],
+            [str(root / "bin/viva"), "shell", "--cwd", str(work)],
             input="/memory\n/exit\n", capture_output=True, text=True, timeout=180)
         carried = "What I have learned" in loaded.stdout
         print(f"The note above is{'' if carried else ' NOT'} in what the next task here")
-        print("would be given -- asked of vivarium just now, not inferred.")
+        print("would be given -- asked of viva just now, not inferred.")
         if carried:
             print(f"Every task after the one that wrote it ran with it in hand.")
             print("Unlike a tool call, a note's use cannot be counted directly:")

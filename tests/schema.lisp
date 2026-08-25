@@ -1,8 +1,8 @@
 ;;;; Schemas advertised to the model, and validation of what comes back.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
-(defpackage #:vivarium.tests.derived (:use #:cl))
+(defpackage #:viva.tests.derived (:use #:cl))
 
 (defun args (&rest plist)
   (let ((table (make-hash-table :test #'equal)))
@@ -75,11 +75,11 @@
 ;;; Derived tools
 
 (defun scratch-derived (name)
-  (find-symbol (string-upcase name) '#:vivarium.tests.derived))
+  (find-symbol (string-upcase name) '#:viva.tests.derived))
 
 (define-test "a tool derived from a live function carries its docstring and types"
   (eval (read-from-string
-         "(defun vivarium.tests.derived::shipping-cost (weight &key (express nil))
+         "(defun viva.tests.derived::shipping-cost (weight &key (express nil))
             \"Cost to ship WEIGHT kilograms.\"
             (declare (type integer weight))
             (if express (* weight 3) weight))"))
@@ -96,13 +96,13 @@
 
 (define-test "a derived tool actually calls the function it was derived from"
   (eval (read-from-string
-         "(defun vivarium.tests.derived::doubled (n) \"Double N.\" (* 2 n))"))
+         "(defun viva.tests.derived::doubled (n) \"Double N.\" (* 2 n))"))
   (let ((tool (derive:derive-tool (scratch-derived "doubled"))))
     (is string= "16" (tool:tool-result-output (tool:execute tool (args "n" 8) nil)))))
 
 (define-test "a derived tool passes keyword arguments through"
   (eval (read-from-string
-         "(defun vivarium.tests.derived::greet (name &key (loud nil))
+         "(defun viva.tests.derived::greet (name &key (loud nil))
             \"Greet NAME.\"
             (if loud (string-upcase name) name))"))
   (let ((tool (derive:derive-tool (scratch-derived "greet"))))
@@ -112,11 +112,11 @@
 
 (define-test "redefining the function redefines the tool's schema"
   (eval (read-from-string
-         "(defun vivarium.tests.derived::drifting (a) \"One argument.\" a)"))
+         "(defun viva.tests.derived::drifting (a) \"One argument.\" a)"))
   (let ((before (length (tool:tool-parameters
                          (derive:derive-tool (scratch-derived "drifting"))))))
     (eval (read-from-string
-           "(defun vivarium.tests.derived::drifting (a b) \"Two arguments.\" (list a b))"))
+           "(defun viva.tests.derived::drifting (a b) \"Two arguments.\" (list a b))"))
     (let ((after (derive:derive-tool (scratch-derived "drifting"))))
       (is = 1 before)
       (is = 2 (length (tool:tool-parameters after)))

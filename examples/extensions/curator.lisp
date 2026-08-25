@@ -21,7 +21,7 @@
 ;;;; It runs on :RUN-END -- everything the agent did has happened, nothing is
 ;;;; waiting on the answer -- and costs one extra model request per run.
 
-(in-package #:vivarium.extension)
+(in-package #:viva.extension)
 
 (defparameter +curator-threshold+ 3
   "Notes required before consolidating. Below this there is nothing to compare:
@@ -56,24 +56,24 @@ one per line, each beginning with \"- \", and nothing else.")
 Deliberately a bare agent rather than the working one: the consolidator must see
 the notes and nothing else. Handed the run's conversation it would have the very
 anchor this exists to remove."
-  (let ((scribe (make-instance 'vivarium.agent:queued-agent
-                               :provider (vivarium.agent:agent-provider agent)
-                               :model (vivarium.agent:agent-model agent)
+  (let ((scribe (make-instance 'viva.agent:queued-agent
+                               :provider (viva.agent:agent-provider agent)
+                               :model (viva.agent:agent-model agent)
                                :max-tokens 1024
                                :system-prompt +curator-instruction+
                                :tools '())))
-    (vivarium.message:text-of
-     (vivarium.client:complete
+    (viva.message:text-of
+     (viva.client:complete
       scribe
-      (list (vivarium.message:make-user-message
-             :content (list (vivarium.message:make-text prompt))))))))
+      (list (viva.message:make-user-message
+             :content (list (viva.message:make-text prompt))))))))
 
 (defun curator-consolidate (event)
   (declare (ignore event))
-  (let ((agent vivarium.harness:*agent*))
+  (let ((agent viva.harness:*agent*))
     (unless agent (return-from curator-consolidate nil))
-    (let* ((environment (vivarium.harness:agent-environment agent))
-           (existing (vivarium.memory:read-memory environment))
+    (let* ((environment (viva.harness:agent-environment agent))
+           (existing (viva.memory:read-memory environment))
            (notes (curator-notes existing)))
       (when (< (length notes) +curator-threshold+)
         (return-from curator-consolidate nil))
@@ -82,23 +82,23 @@ anchor this exists to remove."
                           ;; A failed consolidation must lose nothing. The
                           ;; original notes are the only copy.
                           (error (condition)
-                            (vivarium.harness:record :curator-failed
+                            (viva.harness:record :curator-failed
                                                      "detail" (princ-to-string condition))
                             nil))))
         ;; Recorded because it was invisible. This request is made by a bare
         ;; agent, so it passes through no listener and reaches no transcript:
         ;; every token and request figure reported for the curator arm was
         ;; understated by exactly this call, and nothing in the data said so.
-        (vivarium.harness:record
+        (viva.harness:record
          :curator-consolidated
          "notes_in" (length notes)
          "notes_out" (length (curator-notes (or rewritten "")))
          "ms" (round (* 1000 (- (get-internal-real-time) began))
                      internal-time-units-per-second))
         (when (and rewritten (plusp (length (curator-notes rewritten))))
-          (vivarium.env:write-text
+          (viva.env:write-text
            environment
-           (vivarium.memory:memory-path environment)
+           (viva.memory:memory-path environment)
            (format nil "# What I have learned working here~%~%~{~a~%~}"
                    (curator-notes rewritten))))))
     nil))
@@ -110,7 +110,7 @@ anchor this exists to remove."
                     :description "Consolidate memory now."
                     :handler (lambda (agent argument)
                                (declare (ignore argument))
-                               (let ((vivarium.harness:*agent* agent))
+                               (let ((viva.harness:*agent* agent))
                                  (curator-consolidate nil)
-                                 (vivarium.memory:read-memory
-                                  (vivarium.harness:agent-environment agent))))))
+                                 (viva.memory:read-memory
+                                  (viva.harness:agent-environment agent))))))

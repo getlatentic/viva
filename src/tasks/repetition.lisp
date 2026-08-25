@@ -27,7 +27,7 @@
 ;;;; shell-script move, not a shortcut. What source must not permit is writing
 ;;;; the repair without runtime evidence.
 
-(in-package #:vivarium.tasks)
+(in-package #:viva.tasks)
 
 ;;; F1 -- six accounts, four observations each, one repair
 ;;;
@@ -88,7 +88,7 @@ here appears in any source READ-DEFINITION can show."
         ;; and uses a rate that has since changed.
         (setf (gethash id charge) (* u (max 1 (1- r))))))))
 
-(deftask :f1 (:family :f-repetition :split :train :package "VIVARIUM.TASK.F1")
+(deftask :f1 (:family :f-repetition :split :train :package "VIVA.TASK.F1")
   "CALCULATE-CHARGE returns the stored charge for an account, and the stored
 charges are stale.
 

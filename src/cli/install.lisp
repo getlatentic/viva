@@ -1,7 +1,7 @@
-;;;; Getting `vivarium` onto PATH, so the documented commands are the real ones.
+;;;; Getting `viva` onto PATH, so the documented commands are the real ones.
 ;;;;
-;;;; Every example in the README says `vivarium do ...`; the real invocation was
-;;;; `./bin/vivarium` from the repository root, so anyone following the front
+;;;; Every example in the README says `viva do ...`; the real invocation was
+;;;; `./bin/viva` from the repository root, so anyone following the front
 ;;;; page was one step from `command not found` -- and the organism is meant to
 ;;;; be used in YOUR projects, which means being a command rather than a path.
 ;;;;
@@ -10,7 +10,7 @@
 ;;;; `git pull` would silently leave you running last week's. A link keeps one
 ;;;; installation and one truth about where it lives.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defparameter +install-candidates+
   '("~/.local/bin" "~/bin" "/usr/local/bin")
@@ -52,23 +52,47 @@ one a package manager will not fight over.")
             (values (expand-home "~/.local/bin") "nothing suitable was on your PATH")))))
 
 (defun launcher-path ()
-  (namestring (merge-pathnames "bin/vivarium" (repository-root))))
+  (namestring (merge-pathnames "bin/viva" (repository-root))))
+
+(defun ours-p (link)
+  "Is LINK one this repository put there, pointing at any name its launcher
+has been called?
+
+Judged by the directory the link points INTO, not by the file name at the end
+of it. A link made before the launcher was renamed points at a path that no
+longer exists, so PROBE-FILE reports nothing installed while the link is still
+in the way -- and matching on the name would need this file to carry every name
+the launcher has ever had. The directory is enough, and it does not go stale."
+  (and link
+       (string= (env:parent-path (launcher-path)) (env:parent-path link))
+       t))
 
 (defun describe-existing (target)
   "What is already at TARGET: NIL, :OURS, or a description of somebody else's."
   (let ((link (ignore-errors (sb-posix:readlink target))))
-    (cond ((null (probe-file target))
+    (cond ((ours-p link) :ours)
+          ((null (probe-file target))
            (unless link :none))
-          ((and link (string= link (launcher-path))) :ours)
           (link (format nil "a link to ~a" link))
           (t "a file"))))
 
+(defun relink (target launcher)
+  "Point TARGET at LAUNCHER, replacing a link this repository already owns.
+
+Returns true when TARGET now points at LAUNCHER. A link left over from an
+earlier name is stale rather than installed, and reporting `already installed`
+over a dangling one is how an upgrade ends with a command that does not run."
+  (let ((link (ignore-errors (sb-posix:readlink target))))
+    (cond ((and link (string= link launcher)) t)
+          (t (ignore-errors (sb-posix:unlink target))
+             (ignore-errors (sb-posix:symlink launcher target) t)))))
+
 (defun command-install (parsed)
-  "Link bin/vivarium into a directory on PATH.
+  "Link bin/viva into a directory on PATH.
 
 Refuses to replace anything it did not put there. Overwriting a stranger's
 binary because it happens to share a name is not a thing an installer gets to
-decide, and `already installed` and `something else is called vivarium` are
+decide, and `already installed` and `something else is called viva` are
 different answers that must not look alike."
   (let ((launcher (launcher-path)))
     (multiple-value-bind (directory why) (install-directory (flag parsed "prefix"))
@@ -76,18 +100,14 @@ different answers that must not look alike."
         (error (condition)
           (format *error-output* "~&cannot use ~a: ~a~%" directory condition)
           (return-from command-install 1)))
-      ;; BOTH NAMES. `viva` is what somebody types twenty times a day and
-      ;; `vivarium` is what the project is called; there is no reason to make a
-      ;; person choose. The launcher resolves symlinks to find its root, so a
-      ;; second link costs nothing and behaves identically.
-      ;;
-      ;; The short one is not allowed to fail the install. Somebody may already
-      ;; have a `viva` of their own, and refusing to install the tool at all
-      ;; because its nickname is taken would be absurd.
-      (let ((target (env:join-path directory "vivarium")))
+      (let ((target (env:join-path directory "viva")))
         (let ((existing (describe-existing target)))
           (case existing
-            (:ours (format t "~&already installed: ~a -> ~a~%" target launcher))
+            (:ours
+             (if (relink target launcher)
+                 (format t "~&already installed: ~a -> ~a~%" target launcher)
+                 (progn (format *error-output* "~&could not point ~a at ~a~%" target launcher)
+                        (return-from command-install 1))))
             (:none
              (handler-case (sb-posix:symlink launcher target)
                (error (condition)
@@ -98,14 +118,6 @@ different answers that must not look alike."
              (format *error-output* "~&~a already exists and is ~a, not this repository's launcher.~%~
 Move it, or choose somewhere else with --prefix DIR.~%" target existing)
              (return-from command-install 1))))
-        (let* ((short (env:join-path directory "viva"))
-               (existing (describe-existing short)))
-          (case existing
-            (:ours (format t "  and ~a~%" short))
-            (:none (if (ignore-errors (sb-posix:symlink launcher short) t)
-                       (format t "  and ~a~%" short)
-                       (format t "  (could not link ~a; ~a still works)~%" short target)))
-            (t (format t "  (~a is already ~a, so it was left alone)~%" short existing))))
         ;; The point of installing is being able to type the name, so a
         ;; directory that is not on PATH is a failed install wearing a success
         ;; message. Say the line that fixes it.

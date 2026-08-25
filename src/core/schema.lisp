@@ -9,7 +9,7 @@
 ;;;; again; naming what was missing and what was expected is what breaks the
 ;;;; loop. See the target-resolution finding in the port notes.
 
-(in-package #:vivarium.schema)
+(in-package #:viva.schema)
 
 (defun obj (&rest plist)
   (let ((table (make-hash-table :test #'equal)))

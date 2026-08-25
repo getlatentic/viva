@@ -284,7 +284,7 @@ pub fn draw(frame: &mut Frame, model: &mut Model, rendered: &mut Rendered) -> Hi
     let show_tasks = model.has_active_tasks() && area.width >= 90;
     let mut constraints = Vec::new();
     if show_sessions {
-        constraints.push(Constraint::Length(26));
+        constraints.push(Constraint::Length(30));
     }
     constraints.push(Constraint::Min(0));
     if show_tasks {
@@ -555,7 +555,10 @@ fn draw_sessions(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitbox
             Span::styled(format!("{mark} "), Style::default().fg(colour)),
             // WHAT IT IS ABOUT, and where it is only when nothing was asked
             // yet. Four sessions in one directory were four identical rows.
-            Span::styled(row.subject(), name),
+            // CUT WITH A MARK. A subject sliced by the pane edge reads as a
+            // subject that happens to end there, and the column is narrow
+            // enough that most of them are.
+            Span::styled(clip(&row.subject(), inner.width.saturating_sub(4) as usize), name),
         ]));
         if let Listed::Live(session) = row {
             if session.state != "idle" && !session.state.is_empty() {
@@ -831,6 +834,15 @@ fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
         all.extend(right);
         frame.render_widget(Paragraph::new(all).wrap(Wrap { trim: false }), inner);
     }
+}
+
+/// TEXT within WIDTH, saying so when it did not fit.
+fn clip(text: &str, width: usize) -> String {
+    if text.chars().count() <= width {
+        return text.to_string();
+    }
+    let kept: String = text.chars().take(width.saturating_sub(1)).collect();
+    format!("{}…", kept.trim_end())
 }
 
 /// A duration as a person reads one: `838ms`, `2.3s`, `1m04s`.
@@ -1487,7 +1499,7 @@ kilo lima mike november oscar papa quebec";
             opening: "why does the picker lose its filter".into(),
             ..Default::default()
         }];
-        let frame = frame_of(&mut model, 120, 22).join("\n");
+        let frame = frame_of(&mut model, 130, 26).join("\n");
         assert!(frame.contains("this session"), "the welcome names nothing");
         // The earlier ones live in the sessions column, where they stay once
         // the page fills up -- not in the welcome, which is gone by then.

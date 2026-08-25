@@ -4,9 +4,9 @@
 ;;;; shapes of the three servers this harness talks to, trimmed but not
 ;;;; normalised: where they disagree is the whole point of the file.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
-(defun parsed (body) (vivarium.client::parse-response body))
+(defun parsed (body) (viva.client::parse-response body))
 
 (defun thinking-of (message)
   (let ((blocks (remove-if-not #'msg:thinking-p (msg:message-content message))))

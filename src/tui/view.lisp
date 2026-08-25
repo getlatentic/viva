@@ -9,7 +9,7 @@
 ;;;; So: ABSORB folds one event into a view and returns nothing but a changed
 ;;;; view. No socket, no terminal, no clock.
 
-(in-package #:vivarium.tui)
+(in-package #:viva.tui)
 
 (defparameter *scrollback* 2000
   "Output lines kept. A long-running session would otherwise grow without

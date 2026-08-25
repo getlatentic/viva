@@ -16,7 +16,7 @@
 ;;;;     CSI ? <flags> u  the reply, from a terminal that understands
 ;;;;     CSI > <flags> u  push our flags   CSI < u   pop them back
 
-(in-package #:vivarium.tui)
+(in-package #:viva.tui)
 
 (defparameter *query* (format nil "~c[?u" #\Escape))
 (defparameter *push-flags* (format nil "~c[>1u" #\Escape)

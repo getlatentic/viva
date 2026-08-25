@@ -32,9 +32,9 @@
   (push root (symbol-value (find-symbol "*LOCAL-PROJECT-DIRECTORIES*" "QL"))))
 
 (handler-bind ((warning #'muffle-warning))
-  (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/daemon :silent t))
+  (funcall (find-symbol "QUICKLOAD" "QL") :viva/daemon :silent t))
 
-(in-package #:vivarium.actor)
+(in-package #:viva.actor)
 
 (let ((rounds (or (ignore-errors (parse-integer (second sb-ext:*posix-argv*))) 200))
       (missed 0))

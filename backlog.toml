@@ -1,9 +1,9 @@
 #  SUPERSEDED as of v0.1. Workable items live on the board:
-#  https://github.com/tosinamuda/vivarium/issues -- see CONTRIBUTING.md.
+#  https://github.com/tosinamuda/viva/issues -- see CONTRIBUTING.md.
 #  This file is kept as the record of how the work was ordered while it was
 #  the plan, and is cited by the experiment write-ups. Nothing here is current.
 #
-#  vivarium backlog
+#  viva backlog
 #
 #  Ordered by dependency, not by cost. The list is short at the top on purpose:
 #  one story unblocks five, and nothing below it can start.
@@ -20,7 +20,7 @@
 #  start. B10 is the first.
 
 [meta]
-project   = "vivarium"
+project   = "viva"
 question  = "Can a general-purpose agent harness do normal work, learn from it, modify how it operates, retain what helps, and safely undo the rest?"
 roadmap   = "docs/roadmap.md is the spine: four capability levels. Experiments prove a capability; they are not the project. Level 1 is built -- docs/level-1.md."
 updated   = "2026-08-15"
@@ -85,7 +85,7 @@ sizing    = "size, not due dates: an experiment's length is unknown until its in
 # and build a helper (F1, done); keep it and benefit next task; distil a lesson
 # from a task that produced nothing. Then validation moves to REAL WORK -- a
 # repository and a run of ordinary tasks -- and the question becomes whether
-# vivarium on task 20 is measurably better adapted than on task 1.
+# viva on task 20 is measurably better adapted than on task 1.
 
 # The spine. Sprints are slices of this, in order.
 journey = [
@@ -126,7 +126,7 @@ result = "DONE -- all four harnesses read. opencode re-reads prompt AND tools pe
 
 [[settled]]
 ref   = "B7 / substrate"
-claim = "The ledger is a fourth architectural primitive, not vivarium plumbing -- and it survives whichever runtime wins."
+claim = "The ledger is a fourth architectural primitive, not viva plumbing -- and it survives whichever runtime wins."
 result = """Four primitives, not three runtimes: SBCL makes CODE BECOME DATA, Smalltalk makes CAPTURED COMPUTATION BECOME DURABLE, BEAM makes PROCESSES BECOME DISPOSABLE, and the LEDGER makes HISTORY BECOME AUTHORITATIVE.
 
 CAPTURED computation, not computation: the durable unit is the image and the process state inside it. External resources are NOT carried and have their own restoration semantics, which B7 measured -- a registered ZnServer's listener is re-created on resume, an unregistered one comes back reporting isRunning TRUE and isListening FALSE, and a file stream held open across a snapshot returns closed. Read "durable" as "the captured heap and stacks", never as "sockets, handles and external services survive".
@@ -146,11 +146,11 @@ All three runtime models still need provenance, candidate history, evaluation ev
 ref   = "B12 / architecture"
 claim = "The substrate stories are converging on one architecture, not competing for one slot."
 result = """Recorded because it emerged from reading rather than from measuring, and
-because it changes what the remaining stories are FOR. Vivarium's identity is
+because it changes what the remaining stories are FOR. Viva's identity is
 propose -> isolate -> evaluate -> select -> promote -> provenance -> reconcile.
 Everything else is a choice it makes ABOUT a promoted change, not a rival to it:
 
-  EVOLUTION CONTROLLER   propose, evaluate, select          vivarium
+  EVOLUTION CONTROLLER   propose, evaluate, select          viva
         |
   PROMOTED CHANGE
         |
@@ -176,7 +176,7 @@ withdraw what the dead process registered elsewhere. B8 measures the first, B12
 the second.
 
 THE REPLACEMENT POLICIES ARE ALSO NOT RIVALS -- they answer the same question
-three ways, and which one a given mutation deserves is a decision vivarium is
+three ways, and which one a given mutation deserves is a decision viva is
 positioned to make: Cordis reverts and reapplies from a clean boundary, OTP
 migrates state forward through code_change/3, Smalltalk continues the same
 computational organism. B7 measured the third and B10 could not show it pays on
@@ -187,7 +187,7 @@ state should cross a version boundary at all -- ledger only, distilled
 cognition, full transcript, or full continuation.
 
 ATTRIBUTION, and it matters if any of this is ever written up. BOTH TAXONOMIES
-ABOVE ARE VIVARIUM'S SYNTHESIS, NOT CORDIS'S:
+ABOVE ARE VIVA'S SYNTHESIS, NOT CORDIS'S:
 
   ReplacementPolicy = RevertAndReapply | MigrateState | CaptureAndContinue
     Cordis, OTP and Smalltalk motivate the three cells. None of them presents
@@ -206,7 +206,7 @@ WHAT THE ARCHITECTURE BUYS, and the reason to stop editing it: four questions
 that were previously one.
 
   1 SHOULD THIS CHANGE SURVIVE?      propose, isolate, evaluate, select,
-                                     promote                        vivarium
+                                     promote                        viva
   2 HOW DOES AN ACCEPTED CHANGE      own effects, withdraw dependencies,
     LEAVE?                           revert or compensate                B12
   3 WHAT CROSSES FROM OLD VERSION    the replacement policy
@@ -270,7 +270,7 @@ WHAT FOLLOWS, and it is the same conclusion by three roads:
      component that declares the right thing and does another. So it is a filter,
      never a proof, and B9 remains necessary underneath it.
   3. THE ONLY BOUNDARY THAT HELD FOR EVERY FAULT CLASS TESTED is the one E1
-     measured and vivarium already uses: a separate OS process. Both
+     measured and viva already uses: a separate OS process. Both
      language-level answers -- effect containment and intra-VM execution
      containment -- are partial, and partial in ways an autonomous author
      controls."""
@@ -292,7 +292,7 @@ either story's finding.
                            away, in a longer-lived dependency, survives at zero
                            cost.
 
-So the distinction vivarium should draw is not durable-vs-volatile but
+So the distinction viva should draw is not durable-vs-volatile but
 
   COMPONENT STATE   disposable implementation state, dies with its component
   EVOLUTION STATE   explicitly durable, named OUTSIDE the component that uses it
@@ -318,7 +318,7 @@ result = """The distinction is the result, and it is measured rather than inferr
 
   Cordis guarantees    "I executed the recovery protocol registered for this
                         component."                          PROTOCOL COMPLIANCE
-  vivarium asks        "Did executing that protocol produce the authoritative
+  viva asks        "Did executing that protocol produce the authoritative
                         expected state?"                     SEMANTIC CORRECTNESS
 
 Different guarantees. The paper is explicit that the implementation TRUSTS the
@@ -350,7 +350,7 @@ reconciliation catches all three.
                          no guard, no ordering, no per-fiber failure isolation
   the pair               structural rollback plus empirical verification
 
-WHAT CORDIS SUPPLIES THAT VIVARIUM WOULD NOT HAVE BUILT, and each was verified
+WHAT CORDIS SUPPLIES THAT VIVA WOULD NOT HAVE BUILT, and each was verified
 against the paper before being measured:
 
   THE GUARD (Theorem 63). A provider withdraws a binding only after every
@@ -399,7 +399,7 @@ justifying building it yet:
 have: the three failure modes above are exactly what an unverified inverse looks
 like, and the class alone does not distinguish a component that CAN be reverted
 from one that WAS. S6.1 supplies the acquisition/emission boundary this rests on;
-the three-way classification remains VIVARIUM'S and must not be cited to the
+the three-way classification remains VIVA'S and must not be cited to the
 paper. Its warning transfers though: compensating actions compose in the same
 LIFO order as inverses, but the metatheory does not -- commutation is proved
 against the fine equivalence and "has to be re-established against the coarser
@@ -492,7 +492,7 @@ as_a     = "researcher"
 i_want   = "a set of tasks in a live image, each with a starting state and a score computed by calling into the image"
 so_that  = "a win over a file-based harness means something instead of being an artefact of the task I happened to write"
 notes    = """
-BUILT 2026-08-08 -- vivarium/tasks, 913 lines, 14 tasks, 42 cases, 357 assertions
+BUILT 2026-08-08 -- viva/tasks, 913 lines, 14 tasks, 42 cases, 357 assertions
 green. Each task is pinned by two tests: it FAILS before a fix and PASSES
 completely under a known-good one, with the answer key in tests/ so nothing on
 the agent path can reach it. Scored through a forked trial at 43-62ms.
@@ -523,7 +523,7 @@ at all. The 'keep serving' family therefore models in-flight work as runtime sta
 -- half-completed operations, captured closures -- rather than running concurrent
 traffic. The whole set is single-threaded and that is a constraint, not a taste.
 
-Build it inside vivarium, NOT against genera-lab. E1 already settled that argument:
+Build it inside viva, NOT against genera-lab. E1 already settled that argument:
 the zygote's warm state is loaded code and fixtures, not the serving image's live
 sessions, so genera-lab's realism does not survive the fork. Paying an external,
 un-versioned dependency buys nothing on the path that scores. genera-lab is the
@@ -615,7 +615,7 @@ as_a     = "researcher"
 i_want   = "a single command that runs any experiment, with the arms, repeats and output shape in one place"
 so_that  = "a run is reproducible from its command line and an experiment cannot rot unnoticed"
 notes    = """
-DONE 2026-08-08. bin/vivarium + src/cli (package, args, arms, commands, main).
+DONE 2026-08-08. bin/viva + src/cli (package, args, arms, commands, main).
 Four subcommands: check, tasks, calibrate, compare. .env is loaded by the
 launcher so no run depends on the caller having sourced it.
 
@@ -655,7 +655,7 @@ acceptance = [
   "the two-sweep comparison done by hand during calibration becomes a command",
 ]
 tasks = [
-  "bin/vivarium with subcommands; keep the argument parsing boring",
+  "bin/viva with subcommands; keep the argument parsing boring",
   "move arm construction out of the experiment scripts and into one place",
   "--repeats defaulting to 3, with spread reported",
 ]
@@ -1456,7 +1456,7 @@ capability. The gradient B14 needs is the middle line here:
   forbidden  arbitrary eval already does it   ->  sugar
 
 THE FORK THIS LEAVES OPEN, and it is E5's. If arbitrary eval turns out to be what
-vivarium agents should have, impact_map is the WRONG improvement target for B14,
+viva agents should have, impact_map is the WRONG improvement target for B14,
 because a one-shot inline program reproduces it. The target would then have to be
 a capability an inline form cannot cheaply reproduce -- PERSISTENT INDEXING,
 INSTRUMENTATION ACROSS TIME, or ACCUMULATED CROSS-CALL STATE. B14 is scoped to
@@ -1604,7 +1604,7 @@ THIS IS A REAL RIGGING RISK AND IT HAS TO BE MANAGED. src/image/self.lisp alread
 implements the live arm and has been tested for months; its own header says an
 agent that installs a DEFUN "has a new capability on its very next request -- no
 schema written, no restart, no file". The externalised arm does not exist at all:
-vivarium ported PI'S LOOP, not Pi's extension model, and has no SKILL.md, no
+viva ported PI'S LOOP, not Pi's extension model, and has no SKILL.md, no
 system-prompt file, no extension loader. Building the control from scratch to
 race a mature treatment is precisely the confound harness-lineage.md already
 warns about ("do not compare file-Pi against image-single-tool"). Both arms
@@ -1710,7 +1710,7 @@ i_want   = "three measurements on Pharo, not a port"
 so_that  = "the substrate question is decided by evidence rather than by which architecture diagram reads better"
 notes = """
 SPINOFF, deliberately outside the main line. Runs in its own session and must not
-consume the vivarium track.
+consume the viva track.
 
 Smalltalk is more genuinely an image than SBCL is, and the project's question is
 about images -- so the substrate choice deserves evidence rather than loyalty.
@@ -1915,7 +1915,7 @@ and (3) instrument continuity. Do not switch -- but it is close.
        reliably does the substrate turn that mistake into observable evidence?
      Arguably more important than headless autonomy. Note what it does NOT imply:
      better live mutation mechanics do not remove the need for validation,
-     provenance, rollback, evaluation and selection. vivarium's evaluator earns
+     provenance, rollback, evaluation and selection. viva's evaluator earns
      its place on either substrate.
 
 THREE THINGS THIS SENDS BACK:
@@ -1932,7 +1932,7 @@ THREE THINGS THIS SENDS BACK:
     green Processes say yes, the VM's OS-level heartbeat thread says measure it
     -- the availability argument disappears entirely. Untested; obvious next.
 
-ALSO CORRECTED, in vivarium's own code: derive.lisp's header claimed SBCL yields
+ALSO CORRECTED, in viva's own code: derive.lisp's header claimed SBCL yields
 (FUNCTION (LIST &KEY (:TAX SINGLE-FLOAT) ...)) with no help. On 2.6.7, via both
 eval and compile-file, it yields (FUNCTION (T &KEY (:TAX T)) (VALUES NUMBER
 &OPTIONAL)) -- the RETURN type is derived, argument types are T unless declared.
@@ -1957,7 +1957,7 @@ RETIRED: the availability trigger. The first pass set it at "a native arm64 VM
 under ~50 ms", against a number that was mostly Rosetta. Measured natively the
 pause is 214 ms, costs a 25 ms latency tail on a 300 ms workload and loses
 nothing. The availability objection is no longer a reason not to switch; it is a
-budget line -- one checkpoint per 214 ms of frozen service, against vivarium's
+budget line -- one checkpoint per 214 ms of frozen service, against viva's
 28-32 ms forked trials. A request SHORTER than the pause would make it visible
 again, so re-measure if the workload changes shape.
 
@@ -1979,7 +1979,7 @@ acceptance = [
   "a tool schema derived from a live method, or a written reason it cannot be",
   "a recommendation with a trigger: what result would make switching correct",
 ]
-kills_it = "Pharo's snapshot pause under load is no better than SBCL's, or resume-mid-computation is fragile in practice. Then Smalltalk's advantage is architectural rather than measurable and the substrate question closes in vivarium's favour."
+kills_it = "Pharo's snapshot pause under load is no better than SBCL's, or resume-mid-computation is fragile in practice. Then Smalltalk's advantage is architectural rather than measurable and the substrate question closes in viva's favour."
 
 [[story]]
 id       = "B10"
@@ -2191,7 +2191,7 @@ came out of re-reading S2c rather than out of design:
   fixed ordinal exists to remove. If too many train tasks are ineligible, the
   GLOBAL rule changes and every task moves with it, before scored execution.
 
-  A1 = CURRENT VIVARIUM RECOVERY SEMANTICS, and must not move in either
+  A1 = CURRENT VIVA RECOVERY SEMANTICS, and must not move in either
   direction. Not weakened into a strawman, and -- the likelier failure -- not
   quietly enriched because B10 wants some field. Add a field for B10's benefit
   and A1 stops being the baseline, at which point the A1 -> A2 delta measures
@@ -2202,7 +2202,7 @@ arms inherit the SAME live image, ledger and 4-turn prefix -- the fork is the
 control here, not an optimisation. And note what the checkpoint destroys: THE
 AGENT'S CONTEXT, NOT THE IMAGE. The agent's process dies, the world it was working
 on persists, and the question is what resuming costs. Destroying the image instead
-would measure something vivarium never does.
+would measure something viva never does.
 
 STARTING FROM, because B7's session state is gone and should be: the source of
 truth is the main checkout plus the committed probe files. NOT the worktree, not
@@ -2246,7 +2246,7 @@ substrate question that produced it.
 
 If explicit ~= native, the finding is that FOR THIS CLASS OF SELF-IMPROVING AGENT,
 DURABLE COGNITION IS BETTER MODELLED AS EXPLICIT DATA THAN AS PRESERVED EXECUTION
-STATE -- which retires Smalltalk's largest unique advantage for vivarium.
+STATE -- which retires Smalltalk's largest unique advantage for viva.
 
 AND IT DECIDES B8, THE BEAM PROBE. There are three persistence philosophies, not
 two: SBCL rewrites programs, Smalltalk persists a computational organism, BEAM
@@ -2256,7 +2256,7 @@ REPLACEMENT AROUND EXPLICIT STATE as a runtime primitive, NOT durability. Proces
 state is volatile across node death; a supervisor recreates children from scratch;
 durability needs Mnesia or another external store. So BEAM supplies the
 replacement half of arm A2 and leaves the durable half in the ledger, where
-vivarium already has it.
+viva already has it.
 
 The two stories therefore ask different questions -- B10: what does externalising
 cognition into data COST? B8: IF explicit state is sufficient, does a runtime with
@@ -2274,7 +2274,7 @@ HALTED 2026-08-11, and the phrasing matters. NOT "explicit state wins" and NOT
 "captured continuation is worthless" -- neither was measured. What was measured:
 
   B10 COULD NOT IDENTIFY THE VALUE OF CAPTURED CONTINUATION ON THE CURRENT
-  VIVARIUM WORKLOAD.
+  VIVA WORKLOAD.
 
 Two attempts, two different mistakes, both instructive. Stage 1 on family D found
 no reconstruction tax: recovery ran 4.6 turns against control's 6.5 at equal
@@ -2298,7 +2298,7 @@ in code -- the search must be over DATA. Whether such a task can be built while
 the source stays fully readable is an open question about the task set.
 
 DO NOT REOPEN BY BUILDING MORE SYNTHETIC TASKS. Two rounds of that produced two
-proxies for the property and no measurement of it. Reopen when vivarium meets a
+proxies for the property and no measurement of it. Reopen when viva meets a
 REAL task carrying expensive, reproducible investigative state -- at which point
 the instrument in experiments/b10-paired-fork.lisp is built, validated and ready.
 
@@ -2313,7 +2313,7 @@ acceptance = [
   "a statement of whether any in-flight information exists that the ledger cannot carry",
   "if B wins, the specific tasks it wins on -- a mean is not an answer here",
 ]
-kills_it = "A2 matches B on durability tax, not merely on score -- reconstruction tax near zero and no state-authoring premium large enough to cancel it. Then live continuation is decoration on a sufficient ledger, Smalltalk's remaining advantage buys nothing measurable, and the substrate question closes in vivarium's favour for good."
+kills_it = "A2 matches B on durability tax, not merely on score -- reconstruction tax near zero and no state-authoring premium large enough to cancel it. Then live continuation is decoration on a sufficient ledger, Smalltalk's remaining advantage buys nothing measurable, and the substrate question closes in viva's favour for good."
 
 [[story]]
 id       = "B11"
@@ -2484,7 +2484,7 @@ size     = "M"
 depends_on = []
 as_a     = "researcher"
 i_want   = "one complete mutation lifecycle run through an existing reversible-effects runtime"
-so_that  = "the half of self-evolution vivarium has never modelled is measured against something that already does it"
+so_that  = "the half of self-evolution viva has never modelled is measured against something that already does it"
 notes = """
 PROVENANCE DISCHARGED 2026-08-11. The paper was read (Shi, Zhang, Cui, "A
 Programming Paradigm for Spatiotemporal Composability", DeepSeek-AI / Peking
@@ -2504,12 +2504,12 @@ the description did not carry, and the first changes what this story is for.
    future work. What it buys instead: no hand-written migration functions, and
    the ability to unload a component ENTIRELY and recover its resources rather
    than only update one in place.
-   NOT "Cordis discards what vivarium exists to preserve" -- that was the first
-   draft of this note and it mis-stated vivarium. Vivarium's identity is
+   NOT "Cordis discards what viva exists to preserve" -- that was the first
+   draft of this note and it mis-stated viva. Viva's identity is
    propose -> isolate -> evaluate -> select -> promote -> provenance ->
    reconcile. Preserving in-memory state is a HYPOTHESIS B7 tested and B10
    failed to show valuable on the current workload. So Cordis is not opposite to
-   vivarium; it supplies a lifecycle vivarium lacks AFTER promotion.
+   viva; it supplies a lifecycle viva lacks AFTER promotion.
    AND STATE IT NARROWLY: the paper shows Cordis does not currently combine
    revert-and-reapply with DSU-style forward migration and names that as future
    work. It does not show that nobody anywhere has combined reversible effects
@@ -2531,7 +2531,7 @@ the description did not carry, and the first changes what this story is for.
 
      ReplacementPolicy = RevertAndReapply | MigrateState | CaptureAndContinue
 
-   Vivarium can sit above all three and decide which change deserves to survive
+   Viva can sit above all three and decide which change deserves to survive
    in the first place. Do not implement the abstraction yet; record it.
 
 2. THE INVERSE IS AN AUTHOR OBLIGATION THE RUNTIME DOES NOT CHECK. S5.1.1: "that
@@ -2558,7 +2558,7 @@ the description did not carry, and the first changes what this story is for.
    equivalence" -- and S6.1 is explicit that the metatheory does NOT transfer:
    commutation "has to be re-established against the coarser one".
 
-THE GAP THIS STORY NAMES, unchanged and confirmed. vivarium models mutation
+THE GAP THIS STORY NAMES, unchanged and confirmed. viva models mutation
 ENTERING the organism and has nothing for one leaving it:
 
   have:     propose -> isolate -> evaluate -> reject/promote
@@ -2570,7 +2570,7 @@ registered a tool AND a listener AND a service AND allocated owned state, and no
 has to leave without residue. E3 and E4 let an agent do exactly that.
 
 ONE LIFECYCLE, NOT A PLUGIN BENCHMARK. Run something structurally equivalent to a
-real vivarium self-edit end to end: agent notices a missing capability, proposes
+real viva self-edit end to end: agent notices a missing capability, proposes
 component X, installs it registering a tool and a listener and a service and
 allocating owned state, evaluates, promotes, operates, then replaces or retracts
 it, and reconciles.
@@ -2586,12 +2586,12 @@ is what makes a disagreement informative rather than a bug hunt:
   B FAILED PARTIAL INSTALL. Predicted by L-Raise (S4.3.4): the fiber routes into
     Unloading carrying the error, the accumulator applies, and it arrives Inactive
     "having installed nothing". Two further predictions worth checking because
-    vivarium has no equivalent: the failure is recorded PER FIBER so siblings keep
+    viva has no equivalent: the failure is recorded PER FIBER so siblings keep
     running, and the lifecycle is NOT re-entered from an error outcome -- a failed
     component is withheld rather than retried against an unchanged environment.
   C REPLACEMENT. S6.2 distinguishes exclusive binding, which "momentarily
     perturbs every consumer's dependency", from a service broker that absorbs it.
-    Which one an agent-generated replacement gets is a design choice vivarium
+    Which one an agent-generated replacement gets is a design choice viva
     would have to make too.
   D DEPENDENCY CASCADE. S5.1.3's precise claim: a provider entering UNLOADING has
     stopped providing, so dependents "recompute an unsatisfied target view and
@@ -2599,7 +2599,7 @@ is what makes a disagreement informative rather than a bug hunt:
     guard (Theorem 63) holds withdrawal back until every consumer has gone. A
     teardown needs the coeffect it is losing -- closing a connection pool hands
     connections back -- which a disposer stack alone would not order correctly.
-  E WRONG INVERSE -- THE CORDIS/VIVARIUM INTERSECTION, and probably the most
+  E WRONG INVERSE -- THE CORDIS/VIVA INTERSECTION, and probably the most
     valuable case here. Author-supplied, unverified. For a human plugin that is
     a discipline problem; for an agent writing its own activate and deactivate
     it is a correctness problem, and the failure is silent:
@@ -2612,7 +2612,7 @@ is what makes a disagreement informative rather than a bug hunt:
     layers compose exactly where each is strong:
 
       Cordis layer     "I executed every registered inverse."
-      vivarium layer   "Did the resulting world MATCH the authoritative one?"
+      viva layer   "Did the resulting world MATCH the authoritative one?"
 
       revert(component); expected = projection(ledger)
                          actual   = introspection(runtime)
@@ -2640,7 +2640,7 @@ is what makes a disagreement informative rather than a bug hunt:
     difference is a failure. Note S6.3 supplies a genuine gift here -- because
     dependencies are DECLARED, "the complete set of proxy-mediated capabilities a
     component requires is known before it runs", which is a stronger pre-install
-    review surface than vivarium currently has.
+    review surface than viva currently has.
 
 AMENDED 2026-08-11, AFTER B11 CLOSED. Two changes, neither cosmetic.
 
@@ -2658,7 +2658,7 @@ F (effect classification) and G (ledger reconciliation) are recorded from what
 the other five produce; they do not need their own runs. If time is short, A, B,
 C, D, E is the set.
 
-MEASURE CORDIS AS IT EXISTS. Do not improve it with vivarium ideas on the first
+MEASURE CORDIS AS IT EXISTS. Do not improve it with viva ideas on the first
 pass, and do not go looking for the intersection before the boundary is located.
 The order is:
 
@@ -2669,7 +2669,7 @@ The order is:
 
 Backwards, E measures a strawman: layering B9's reconciliation on a runtime
 whose own guarantees have not been characterised produces a finding about
-vivarium's checker, not about the composition. The composition claim needs both
+viva's checker, not about the composition. The composition claim needs both
 halves measured separately first.
 
 THE CONCEPT THIS SHOULD PRODUCE, whatever the measurements say:
@@ -2678,7 +2678,7 @@ THE CONCEPT THIS SHOULD PRODUCE, whatever the measurements say:
           -> SUPERSEDE/RETRACT -> DEACTIVATE -> RECONCILE
 
 B12 enters that lifecycle at SUPERSEDE/RETRACT. Everything left of it exists in
-vivarium already; nothing right of it does.
+viva already; nothing right of it does.
 
 DO NOT IMPLEMENT CORDIS SEMANTICS IN SBCL YET. Probe first, then extract only
 what measurement justifies -- plausibly no more than
@@ -2709,7 +2709,7 @@ coeffect-projection boundary p23 -- and all five hold verbatim.
 
 STAGE 1, CORDIS ALONE. The controls pass: clean unload leaves no residue inside
 the declared boundary and the registry goes 1 -> 0. Partial activation failure
-confirms all four L-Raise predictions, including the two vivarium would not have
+confirms all four L-Raise predictions, including the two viva would not have
 thought to build -- failure is recorded PER FIBER so siblings keep running, and
 the lifecycle is NOT re-entered from an error outcome, so a failed component is
 withheld rather than retried. Replacement costs one forced consumer reload under
@@ -2719,7 +2719,7 @@ DEPENDENCY WITHDRAWAL IS MORE THAN A DISPOSER STACK, and the discriminating
 control is what shows it. Registering the provision LAST makes pure LIFO revert
 it FIRST; the trace is BYTE-IDENTICAL to registering it first, and in both the
 consumer's teardown resolves the binding and hands its connections back. The
-ordering came from Theorem 63's guard. Two further behaviours vivarium lacks: a
+ordering came from Theorem 63's guard. Two further behaviours viva lacks: a
 consumer lands in PENDING rather than DISPOSED, and re-providing the key
 reactivates it unaided.
 
@@ -2756,7 +2756,7 @@ DISGUISED variant -- a no-op registered under the missing label -- is
 indistinguishable from faithful on that surface, and the INCOMPLETE INVERSE never
 was distinguishable there at all. Reconciliation catches all three; nothing else
 catches more than one. Not a Cordis defect: it never claims getEffects witnesses
-anything. It bounds what a pre-unload check can be worth, which vivarium needed
+anything. It bounds what a pre-unload check can be worth, which viva needed
 to know before building one.
 
 ISOLATION, measured not assumed: ctx.isolate isolates the realm a coeffect KEY
@@ -2771,13 +2771,13 @@ config loader, the HMR engine or the broker. Do NOT take parent/child as an
 ordering primitive: it is the one shape that looks protected and is not.
 """
 acceptance = [
-  "one complete lifecycle run end to end -- propose, install, evaluate, promote, replace or retract, reconcile -- on something shaped like a real vivarium self-edit, not a synthetic plugin",
-  "all seven cases measured, with B (failed partial install) and E (wrong inverse) reported whatever they show, since those are the two vivarium has no answer for",
+  "one complete lifecycle run end to end -- propose, install, evaluate, promote, replace or retract, reconcile -- on something shaped like a real viva self-edit, not a synthetic plugin",
+  "all seven cases measured, with B (failed partial install) and E (wrong inverse) reported whatever they show, since those are the two viva has no answer for",
   "the observational boundary stated BEFORE measuring: which locations are bound to keys, and therefore what 'as if it never existed' is allowed to forget",
-  "the in-memory-state question answered for vivarium's case: Cordis reverts and reapplies from a clean slate, so state a promoted mutation accumulated does not survive its own replacement unless it was placed in a longer-lived dependency -- measure what that costs a harness whose whole premise is accumulated live state",
-  "the minimal semantics vivarium would need extracted as a contract, with everything deliberately NOT taken listed and why",
+  "the in-memory-state question answered for viva's case: Cordis reverts and reapplies from a clean slate, so state a promoted mutation accumulated does not survive its own replacement unless it was placed in a longer-lived dependency -- measure what that costs a harness whose whole premise is accumulated live state",
+  "the minimal semantics viva would need extracted as a contract, with everything deliberately NOT taken listed and why",
 ]
-kills_it = "Clean unload holds only for components that own nothing but their own registrations, or the in-memory-state loss on reload costs more than the unload machinery saves for a harness built on accumulated live state. Then effect containment is not the primitive vivarium is missing, the gap closes with a rollback that walks the ledger backwards, and B8 keeps its original framing."
+kills_it = "Clean unload holds only for components that own nothing but their own registrations, or the in-memory-state loss on reload costs more than the unload machinery saves for a harness built on accumulated live state. Then effect containment is not the primitive viva is missing, the gap closes with a rollback that walks the ledger backwards, and B8 keeps its original framing."
 
 
 
@@ -2868,7 +2868,7 @@ dialect and found one blocking and two silent-semantic failures; that method
 generalises directly.
 
 B9 MAY BE THE BRIDGE, noted when B12 was filed. Cordis routes every context
-mutation through one effect primitive; vivarium routes every durable mutation
+mutation through one effect primitive; viva routes every durable mutation
 through one ledger and additionally demands the runtime reconcile against it.
 Composed, that is a shape worth building rather than two competing ones:
 
@@ -2879,7 +2879,7 @@ Composed, that is a shape worth building rather than two competing ones:
         -> introspection
         -> reconcile back to the ledger
 
-Note which half is vivarium's: the reconciliation arrow. An effect system tracks
+Note which half is viva's: the reconciliation arrow. An effect system tracks
 what it was asked to do; it does not check the running world still agrees.
 
 WHY IT IS NOT BLOCKED ON THE SUBSTRATE QUESTION: this is worth doing on SBCL now,
@@ -2888,7 +2888,7 @@ MORE, because M3 showed the image's own account of itself degrades off the ledge
 path.
 """
 acceptance = [
-  "an enumeration of every runtime path by which vivarium's agent can persistently change its own world, and which of them currently bypass the ledger",
+  "an enumeration of every runtime path by which viva's agent can persistently change its own world, and which of them currently bypass the ledger",
   "the ledger made the only sanctioned write path for the ones that matter, with the bypass either closed or made loud",
   "a mutation-observability score for SBCL: for each mutation class, does an incorrect change produce blocking, explicit, or silent-semantic failure",
   "the silent-semantic cases converted to explicit ones, or a written argument for why a given one cannot be",
@@ -2962,7 +2962,7 @@ Read them as THREE INCREASINGLY DEEP BOUNDARIES, not three unrelated benchmarks.
            agent is TRANSFORMING AN EXISTING PROGRAM rather than generating a
            function from scratch.
      So separate the two workloads and score them apart. Generation and
-     transformation are different jobs and vivarium does both; a single
+     transformation are different jobs and viva does both; a single
      "code-gen impedance" number would average them into noise.
 
   3. STATEFUL REPLACEMENT -- and split it in two, because only the second half is
@@ -2980,7 +2980,7 @@ Read them as THREE INCREASINGLY DEEP BOUNDARIES, not three unrelated benchmarks.
      CAVEAT THAT DECIDES WHETHER THIS AXIS MEASURES ANYTHING: OTP HOT UPGRADE IS
      NOT ARBITRARY SELF-MODIFICATION. code_change/3 is a controlled migration
      hook inside a release upgrade, with old/new module coexistence supplied by
-     the runtime. Vivarium's agent does something more aggressive: observe
+     the runtime. Viva's agent does something more aggressive: observe
      failure -> invent code -> compile candidate -> install -> evaluate ->
      possibly replace itself again, repeatedly, with no release engineer in the
      loop. This probe must not accidentally prove "OTP release upgrades work"
@@ -3025,7 +3025,7 @@ the converse holds is this story's axis 3 restated: OTP migrates process state
 FORWARD through code_change/3, where Cordis reverts and reapplies from a clean
 slate -- the paper (S7.3) grants that forward migration handles in-memory state
 "more gracefully" and calls layering it onto revertible effects future work. So
-axis 3 is now a three-way comparison and vivarium wants the property BOTH of
+axis 3 is now a three-way comparison and viva wants the property BOTH of
 them only half-supply: state that survives the change AND effects that leave
 cleanly.
 
@@ -3072,7 +3072,7 @@ process state is volatile, the supervision tree recreates children from scratch,
 and durability requires Mnesia, DETS or another external store. B6 says exactly
 this -- Erlang pushes durability OUTSIDE the VM and pairs it with let-it-crash.
 So BEAM supplies the REPLACEMENT half of arm A2 as a runtime primitive and leaves
-the DURABLE half where vivarium already has it, in the ledger.
+the DURABLE half where viva already has it, in the ledger.
 
 THE TWO STORIES ASK DIFFERENT QUESTIONS, which is why neither subsumes the other:
   B10  what does externalising cognition into data COST?
@@ -3120,14 +3120,14 @@ descriptions into comparisons against a measured baseline:
 
           That is answerable, and a negative answer is as useful as a positive
           one: it would say the externalisation rule B11 and B12 converged on is
-          sufficient and code_change/3 is machinery vivarium does not need.
+          sufficient and code_change/3 is machinery viva does not need.
 
 DO NOT RE-ESTABLISH THE THIRD POLICY. CaptureAndContinue was measured in B7 and
 that cell is filled. B8 does not implement Smalltalk again.
 
 DO NOT LET AXIS 3 BECOME AN OTP RELEASE-UPGRADE DEMO. The caveat above stands and
 B12 makes it sharper: the agent drives every upgrade, and the comparator is
-vivarium's own externalised state, not a release script.
+viva's own externalised state, not a release script.
 
 ---------------------------------------------------------------------------
 RESULT 2026-08-11, docs/beam-probe.md, probes at docs/probes/beam/.
@@ -3257,7 +3257,7 @@ WHAT IT MUST NOT INHERIT FROM B11:
     and everything else. Spread across families or the result is about tasks.
 
 WHY IT IS NOT FREE: this needs a harness that can rewrite an agent's history
-mid-run without a fork, which vivarium's E3 mechanism (prompt and tools re-read
+mid-run without a fork, which viva's E3 mechanism (prompt and tools re-read
 per request) makes plausible but does not supply. That machinery is the story.
 """
 acceptance = [

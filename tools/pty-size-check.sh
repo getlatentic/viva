@@ -22,11 +22,11 @@ load = f'''(progn
 (require :asdf)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 (push #p"{root}/" asdf:*central-registry*)
-(handler-bind ((warning #'muffle-warning)) (ql:quickload "vivarium/tui" :silent t)))'''
+(handler-bind ((warning #'muffle-warning)) (ql:quickload "viva/tui" :silent t)))'''
 
 # A separate --eval, because a form is READ in full before it is evaluated and
 # the package does not exist until the one above has run.
-report = '''(let ((size (funcall (read-from-string "vivarium.tui:terminal-size"))))
+report = '''(let ((size (funcall (read-from-string "viva.tui:terminal-size"))))
   (format t "~&SIZE ~d ~d~%" (car size) (cdr size)))'''
 
 pid, fd = pty.fork()

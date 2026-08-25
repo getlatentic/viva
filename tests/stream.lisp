@@ -1,6 +1,6 @@
 ;;;; SSE parsing and reassembly, driven from strings so no server is needed.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
 (defun sse (&rest payloads)
   (with-output-to-string (out)

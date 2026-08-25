@@ -19,7 +19,7 @@
 
 (push (truename ".") (symbol-value (find-symbol "*LOCAL-PROJECT-DIRECTORIES*" "QL")))
 (handler-bind ((warning #'muffle-warning))
-  (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/cli :silent t))
+  (funcall (find-symbol "QUICKLOAD" "QL") :viva/cli :silent t))
 
 (defun entry ()
   ;; The same interrupt handling bin/entry.lisp installs: Ctrl-C ends the run
@@ -32,7 +32,7 @@
      (format *error-output* "~&interrupted~%")
      (finish-output *error-output*)
      (sb-ext:exit :code 130 :abort t)))
-  (sb-ext:exit :code (funcall (find-symbol "MAIN" "VIVARIUM.CLI")
+  (sb-ext:exit :code (funcall (find-symbol "MAIN" "VIVA.CLI")
                               (rest sb-ext:*posix-argv*))))
 
 (sb-ext:save-lisp-and-die

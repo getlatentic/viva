@@ -4,7 +4,7 @@
 ;;;; over another lives in PROVIDER.LISP, and this file only asks it to augment
 ;;;; a finished payload.
 
-(in-package #:vivarium.client)
+(in-package #:viva.client)
 
 (defvar *default-provider* (provider:make-default-provider)
   "Used by an agent that carries none of its own.")

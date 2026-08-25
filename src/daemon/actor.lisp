@@ -29,7 +29,7 @@
 ;;;; everything after the last sequence number it saw, which is what makes
 ;;;; reattaching different from starting again.
 
-(in-package #:vivarium.actor)
+(in-package #:viva.actor)
 
 (defparameter +tail-limit+ 4096
   "Events kept in memory per session. Older ones are read back from the journal.
@@ -78,7 +78,7 @@ live undefined-variable warning that every later warning would have hidden in.")
   ;; Prompts that arrived while a turn was running, oldest first, as
   ;; (turn . text). The machine tracks the COUNT; this holds the content.
   (queued '() :type list)
-  (lock (bt:make-lock "vivarium.cell"))
+  (lock (bt:make-lock "viva.cell"))
   (sequence 0 :type integer)
   ;; The hot tail: a RING of the last +TAIL-LIMIT+ events, indexed by sequence
   ;; modulo the limit. A ring rather than a list because the list version
@@ -102,7 +102,7 @@ live undefined-variable warning that every later warning would have hidden in.")
   (running t :type boolean))
 
 (defvar *cells* (make-hash-table :test #'equal))
-(defvar *registry-lock* (bt:make-lock "vivarium.cells"))
+(defvar *registry-lock* (bt:make-lock "viva.cells"))
 
 (defparameter +stopping-grace+ 120
   "Seconds a shutting-down session waits for its turn to report. After this the
@@ -148,13 +148,13 @@ instants. Never PUBLISH inside: publishing takes the same lock."
 ;;; the ring's no-evict-before-commit machinery declares the degradation.
 
 (defvar *journal-root*
-  (let ((given (sb-posix:getenv "VIVARIUM_JOURNAL")))
+  (let ((given (sb-posix:getenv "VIVA_JOURNAL")))
     (if (and given (plusp (length given)))
         (namestring (uiop:ensure-directory-pathname given))
-        (namestring (merge-pathnames ".vivarium/journal/" (user-homedir-pathname)))))
+        (concatenate 'string (env:home-path "journal") "/")))
   "Where session journals and live markers live. In-process tests point this
 at a temporary directory; they wrote 26MB into the real home before it was
-configurable. VIVARIUM_JOURNAL does the same for a daemon started as a
+configurable. VIVA_JOURNAL does the same for a daemon started as a
 PROCESS: a check that runs its own daemon on its own socket was still writing
 into the real home, and once a daemon brings back whatever was live when the
 last one stopped, a test daemon's sessions would come back in yours.")
@@ -167,7 +167,7 @@ last one stopped, a test daemon's sessions would come back in yours.")
   (state :available))
 
 (defvar *journal-service* nil "The current generation, or NIL.")
-(defvar *journal-lock* (bt:make-lock "vivarium.journal"))
+(defvar *journal-lock* (bt:make-lock "viva.journal"))
 (defvar *journal-generation* 0)
 
 (defparameter *flush-grace* 30
@@ -233,7 +233,7 @@ file must not keep every other session from coming back."
             (when (and (hash-table-p table) (stringp (gethash "id" table)))
               (push table found)))
         (error (condition)
-          (format *error-output* "~&vivarium live-marker: ~a unreadable: ~a~%" path condition))))
+          (format *error-output* "~&viva live-marker: ~a unreadable: ~a~%" path condition))))
     (sort found #'string< :key (lambda (table) (gethash "id" table)))))
 
 (defun evolution-ledger-path ()
@@ -383,7 +383,7 @@ enforce by hand and now cannot get wrong differently from the spec."
         (ecase op
           (:spawn-owner (journal-spawn-generation (first arguments)))
           (:diagnostic
-           (format *error-output* "~&vivarium journal: ~(~a~) generation ~a~%"
+           (format *error-output* "~&viva journal: ~(~a~) generation ~a~%"
                    (first arguments) (second arguments))))))))
 
 (defun journal-spawn-generation (generation)
@@ -393,7 +393,7 @@ enforce by hand and now cannot get wrong differently from the spec."
     (ensure-directories-exist *journal-root*)
     (setf (journal-thread service)
           (bt:make-thread (lambda () (run-journal-owner service))
-                          :name (format nil "vivarium-journal-~d" generation)))
+                          :name (format nil "viva-journal-~d" generation)))
     (let ((effects (bt:with-lock-held (*journal-lock*)
                      (setf *journal-service* service)
                      (journal-dispatch (list :owner-started generation)))))
@@ -416,7 +416,7 @@ none is available."
         (ensure-directories-exist *journal-root*)
         (setf (journal-thread service)
               (bt:make-thread (lambda () (run-journal-owner service))
-                              :name (format nil "vivarium-journal-~d" bootstrap)))
+                              :name (format nil "viva-journal-~d" bootstrap)))
         (bt:with-lock-held (*journal-lock*)
           (setf *journal-service* service)))))
   *journal-service*)
@@ -660,7 +660,7 @@ outside the very ownership boundary the snapshot exists to respect."
           ;; the transcript it happens to hold would be wrong by whatever it
           ;; has not been sent.
           :tokens (harness:agent-last-tokens (cell-agent cell))
-          :limit (vivarium.compaction:settings-context-limit
+          :limit (viva.compaction:settings-context-limit
                   (harness:agent-compaction (cell-agent cell)))
           :effort (string-downcase
                    (princ-to-string
@@ -743,7 +743,7 @@ from the client's thread would put two threads in one agent's turn."
                                                            :detail detail
                                                            :reply reply
                                                            :model (agent:agent-model (cell-agent cell))))))
-                 :name (format nil "vivarium-turn-~a" turn))))
+                 :name (format nil "viva-turn-~a" turn))))
     (owning (cell) (setf (cell-worker cell) worker))))
 
 ;;; Translation: the mailbox protocol into the kernel's alphabet
@@ -994,7 +994,7 @@ visible loss. spec/Recovery.tla, RecoveryWitnessName."
     (bt:with-lock-held (*registry-lock*) (setf (gethash id *cells*) cell))
     (handler-case (mark-live cell)
       (error (condition)
-        (format *error-output* "~&vivarium live-marker: ~a not written: ~a~%" id condition)))
+        (format *error-output* "~&viva live-marker: ~a not written: ~a~%" id condition)))
     ;; SESSION.STARTED BEFORE THE THREAD, so it is always sequence 1.
     ;;
     ;; It used to be the worker's first act, which was fine while the worker
@@ -1011,7 +1011,7 @@ visible loss. spec/Recovery.tla, RecoveryWitnessName."
     ;; whichever thread happened to win.
     (publish cell "session.started" (event::object "label" (cell-label cell)))
     (setf (cell-thread cell)
-          (bt:make-thread (lambda () (run-cell cell)) :name (format nil "vivarium-~a" id)))
+          (bt:make-thread (lambda () (run-cell cell)) :name (format nil "viva-~a" id)))
     cell))
 
 (defun tell (cell &rest message)

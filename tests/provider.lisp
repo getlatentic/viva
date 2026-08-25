@@ -1,6 +1,6 @@
 ;;;; What one server adds over another, and that the core knows none of it.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
 (defun payload-for (agent)
   (client:request-payload agent (list (user "hello"))))

@@ -9,18 +9,18 @@
 
 (require :sb-introspect)
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
-(funcall (find-symbol "QUICKLOAD" "QL") :vivarium :silent t)
+(funcall (find-symbol "QUICKLOAD" "QL") :viva :silent t)
 
-(defpackage #:vivarium.smoke
+(defpackage #:viva.smoke
   (:use #:cl)
-  (:local-nicknames (#:msg #:vivarium.message)
-                    (#:tool #:vivarium.tool)
-                    (#:agent #:vivarium.agent)
-                    (#:client #:vivarium.client)
-                    (#:provider #:vivarium.provider)
-                    (#:loop* #:vivarium.loop)))
+  (:local-nicknames (#:msg #:viva.message)
+                    (#:tool #:viva.tool)
+                    (#:agent #:viva.agent)
+                    (#:client #:viva.client)
+                    (#:provider #:viva.provider)
+                    (#:loop* #:viva.loop)))
 
-(in-package #:vivarium.smoke)
+(in-package #:viva.smoke)
 
 (defparameter *provider*
   (provider:llama-cpp-provider :endpoint "http://localhost:8099/v1/chat/completions"

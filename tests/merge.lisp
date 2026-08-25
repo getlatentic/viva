@@ -1,6 +1,6 @@
 ;;;; Crossover: joining two candidates, and what happens when they disagree.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
 (defun candidate-with (id &rest target-source)
   (trial:make-candidate
@@ -87,8 +87,8 @@
          (result (trial:run-trial
                   backend merged
                   (cases "sum" (lambda ()
-                                 (+ (funcall (find-symbol "LEFT" '#:vivarium.tests.trial))
-                                    (funcall (find-symbol "RIGHT" '#:vivarium.tests.trial))))))))
+                                 (+ (funcall (find-symbol "LEFT" '#:viva.tests.trial))
+                                    (funcall (find-symbol "RIGHT" '#:viva.tests.trial))))))))
     (is eq :ok (trial:result-status result))
     (is = 7 (cdr (assoc "sum" (trial:result-scores result) :test #'equal)))))
 

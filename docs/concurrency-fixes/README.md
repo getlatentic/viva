@@ -1,7 +1,7 @@
-# The Vivarium concurrency kernel: what was done and how to run it
+# The Viva concurrency kernel: what was done and how to run it
 
 > **Integrated 2026-08-16.** `kernel.lisp` now lives at `src/daemon/kernel.lisp`
-> inside the `vivarium/daemon` system, the specs at `spec/`, and the
+> inside the `viva/daemon` system, the specs at `spec/`, and the
 > coordinator in `actor.lisp` dispatches every lifecycle message through
 > `cell-transition`. The queue policy is applied (`queue-policy.lisp` is kept
 > here as the delivery record). Integration found and fixed two holes the
@@ -50,7 +50,7 @@ Step 6 is the exit rule at the bottom of this file.
     sbcl --non-interactive \
          --eval '(compile-file "kernel.lisp")' \
          --eval '(load "kernel.fasl")' \
-         --eval '(vivarium.kernel:run-self-test)'
+         --eval '(viva.kernel:run-self-test)'
 
     java -cp tla2tools.jar tlc2.TLC -deadlock -config CellLifecycle.cfg  CellLifecycle.tla
     java -cp tla2tools.jar tlc2.TLC -deadlock -config ReplayBarrier.cfg  ReplayBarrier.tla
@@ -96,13 +96,13 @@ The effect descriptions map one to one onto what `handle`, `start-turn`,
 decision now lives in one checked table and the coordinator only performs.
 Wrap the call so a hole becomes a diagnostic:
 
-    (handler-bind ((vivarium.kernel:unmatched-transition
+    (handler-bind ((viva.kernel:unmatched-transition
                      (lambda (c)
                        (publish cell "session.error"
                                 (event::object "detail" (princ-to-string c)))
-                       (invoke-restart 'vivarium.kernel:ignore-message))))
+                       (invoke-restart 'viva.kernel:ignore-message))))
       (multiple-value-bind (next effects)
-          (vivarium.kernel:cell-transition state message)
+          (viva.kernel:cell-transition state message)
         ...))
 
 ## The exit rule, frozen

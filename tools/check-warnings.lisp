@@ -14,12 +14,12 @@
 (push (truename ".") (symbol-value (find-symbol "*LOCAL-PROJECT-DIRECTORIES*" "QL")))
 
 (defparameter *systems*
-  '("vivarium" "vivarium/image" "vivarium/search" "vivarium/tasks"
-    "vivarium/console" "vivarium/daemon" "vivarium/tui" "vivarium/cli"))
+  '("viva" "viva/image" "viva/search" "viva/tasks"
+    "viva/console" "viva/daemon" "viva/tui" "viva/cli"))
 
 ;; Quietly first, so the fetch and the dependency tree are not what is read.
 (handler-bind ((warning #'muffle-warning))
-  (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/cli :silent t))
+  (funcall (find-symbol "QUICKLOAD" "QL") :viva/cli :silent t))
 
 (let ((found '()))
   (handler-bind ((warning

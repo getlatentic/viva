@@ -19,7 +19,7 @@
 ;;;; set that has no way to call anything. Both models wrote a correct function
 ;;;; under a name of their own choosing and scored zero.
 
-(in-package #:vivarium.tasks)
+(in-package #:viva.tasks)
 
 (defun derivable-p (package name)
   "Can a tool schema be read off the live function? This is the property that
@@ -31,7 +31,7 @@ thing worth scoring rather than whether some registry was touched."
 
 ;;; T9
 
-(deftask :t9 (:family :b-capability :split :train :package "VIVARIUM.TASK.T9")
+(deftask :t9 (:family :b-capability :split :train :package "VIVA.TASK.T9")
   "Price the shipment described in *SHIPMENT*: a weight in kilograms and a
 destination zone.
 
@@ -56,7 +56,7 @@ a fresh process has never heard of anything in this image."
           (cons "schema-derivable"
                 (lambda ()
                   (let ((tool (derivable-p package '#:shipping-cost)))
-                    (score (and tool (plusp (length (vivarium.tool:tool-parameters tool))))))))
+                    (score (and tool (plusp (length (viva.tool:tool-parameters tool))))))))
           (cons "answer-correct"
                 (lambda ()
                   (let ((symbol (find-symbol "SHIPPING-COST" package)))
@@ -66,7 +66,7 @@ a fresh process has never heard of anything in this image."
 
 ;;; T10
 
-(deftask :t10 (:family :b-capability :split :held-out :package "VIVARIUM.TASK.T10")
+(deftask :t10 (:family :b-capability :split :held-out :package "VIVA.TASK.T10")
   "How many events in *EVENTS* have a quantity of exactly nine?
 
 *EVENTS* is far too large to read. Write a function COUNT-AT-QUANTITY that takes

@@ -28,7 +28,7 @@
 ;;;; contract true: THIS SURFACE MAY ESTABLISH A FUNCTION DEFINITION BUT MAY NOT
 ;;;; EXECUTE IT, AND MAY NOT USE TOP-LEVEL EVALUATION AS A COVERT ACTION CHANNEL.
 
-(in-package #:vivarium.inspect)
+(in-package #:viva.inspect)
 
 (defvar *callable* nil
   "Symbol -> the function object captured at setup, or NIL for unrestricted.
@@ -103,8 +103,8 @@ top-level forms are not accepted."
   (handler-case
       (progn
         (check-definition (read-one-form (gethash "source" args)))
-        (vivarium.image-tools::report-installation
-         (image:install-definition (vivarium.image-tools::backend)
+        (viva.image-tools::report-installation
+         (image:install-definition (viva.image-tools::backend)
                                    (gethash "source" args)
                                    :note (gethash "note" args))))
     (error (condition)

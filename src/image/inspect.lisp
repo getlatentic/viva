@@ -28,7 +28,7 @@
 ;;;; something an inline one-shot form cannot cheaply reproduce -- persistent
 ;;;; indexing, instrumentation across time, accumulated cross-call state.
 
-(in-package #:vivarium.inspect)
+(in-package #:viva.inspect)
 
 (declaim (ftype (function (symbol) t) callable-check))
 

@@ -21,7 +21,7 @@ offpeak_or_refuse || exit 1
 out="$here/results"; mkdir -p "$out"
 
 # ONE RUN AT A TIME. Two drivers against one workspace share a results file and
-# a .vivarium directory, and the collision is not loud: it produced a row
+# a .viva directory, and the collision is not loud: it produced a row
 # reading `pans v5` where `5<tab>spans<tab>v5` should have been, one task
 # apparently costing 235k tokens, and a corpus whose rows arrived out of order.
 # All of it looks like data. A run that starts while another is going is not an

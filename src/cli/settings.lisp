@@ -8,7 +8,7 @@
 ;;;; deciding for itself, which is how `--limit` came to mean 60 in a command
 ;;;; documented as 200.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defvar *settings* nil
   "This run's resolved settings, or NIL before they are loaded.")
@@ -47,14 +47,14 @@ thing."
         ((null *settings*) :default)
         (t (config:source *settings* name))))
 
-;;; vivarium config
+;;; viva config
 
 (defun describe-source (source)
   (ecase source
     (:flag "a flag on this command")
     (:environment "the environment")
-    (:project ".vivarium/config")
-    (:machine "~/.vivarium/config")
+    (:project (format nil "~a/config" env:+data-directory+))
+    (:machine (format nil "~~/~a/config" env:+data-directory+))
     (:default "the built-in default")))
 
 (defun command-config (parsed)

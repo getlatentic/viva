@@ -17,11 +17,11 @@
 ;;;; restart machinery rather than of lost cognition.
 ;;;;
 ;;;; Every parameter is fixed in docs/b10-preregistration.md and none of them is
-;;;; a knob here. See especially: the fork is quiescent, A1 is vivarium's
+;;;; a knob here. See especially: the fork is quiescent, A1 is viva's
 ;;;; existing ledger recovery semantics and must not be enriched, and a task
 ;;;; that finishes before the checkpoint is INELIGIBLE rather than relocated.
 ;;;;
-;;;;   ./bin/vivarium eval experiments/b10-paired-fork.lisp
+;;;;   ./bin/viva eval experiments/b10-paired-fork.lisp
 ;;;;   -- or --
 ;;;;   set -a && . ./.env && set +a
 ;;;;   sbcl --non-interactive --load experiments/b10-paired-fork.lisp
@@ -31,9 +31,9 @@
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 (push (truename ".") ql:*local-project-directories*)
 (handler-bind ((warning #'muffle-warning))
-  (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/cli :silent t))
+  (funcall (find-symbol "QUICKLOAD" "QL") :viva/cli :silent t))
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defparameter *family-d* '(:t18 :t19 :t20))
 (defparameter *calibration* '(:t22 :t23)
@@ -91,7 +91,7 @@ one alone.")
                  :system-prompt image-tools:*system-prompt*
                  :tools (image-tools:tool-set)))
 
-;;; A1 -- vivarium's existing recovery semantics, and nothing more
+;;; A1 -- viva's existing recovery semantics, and nothing more
 ;;;
 ;;; The ledger records what was INSTALLED. It does not record what was
 ;;; considered and rejected, which is the whole point of the comparison: A1 must

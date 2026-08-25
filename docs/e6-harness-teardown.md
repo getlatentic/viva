@@ -58,7 +58,7 @@ registered at startup. What no request does is introduce a tool that did not exi
 when the session began.
 
 That is exactly the line [E3](e3-subturn-steering.md) claims to cross, and exactly the
-distinction `register_tool` makes: vivarium's agent installs a `DEFUN` and derives a
+distinction `register_tool` makes: viva's agent installs a `DEFUN` and derives a
 tool from the live function, with nothing pre-registered and nothing restarted.
 
 ## opencode re-reads both, per request

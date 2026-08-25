@@ -34,13 +34,13 @@
 ;;;; SYMBOL-FUNCTION changes nothing the organism resolves through --
 ;;;; promotion has one door, and the attack for this lives in the suite.
 
-(in-package #:vivarium.actor)
+(in-package #:viva.actor)
 
 (defstruct (evolver (:conc-name evolver-))
-  (registry (vivarium.evolution:empty-registry))
+  (registry (viva.evolution:empty-registry))
   (mailbox (mailbox:make-mailbox))
   (thread nil)
-  (lock (bt:make-lock "vivarium.evolver"))
+  (lock (bt:make-lock "viva.evolver"))
   ;; version id -> function object. The registry holds identity and
   ;; lifecycle; this holds what a resolution can actually call.
   (functions (make-hash-table))
@@ -53,7 +53,7 @@
   (door :open))
 
 (defvar *evolver* nil)
-(defvar *evolver-lock* (bt:make-lock "vivarium.evolver-start"))
+(defvar *evolver-lock* (bt:make-lock "viva.evolver-start"))
 
 (defvar *default-door* :open
   "The arm a fresh evolver is born into. Configuration reads it once, before
@@ -65,7 +65,7 @@ any owner exists; KC6's arm B sets it to :CLOSED and never moves it.")
         (let ((evolver (make-evolver :door *default-door*)))
           (setf (evolver-thread evolver)
                 (bt:make-thread (lambda () (run-evolver evolver))
-                                :name "vivarium-evolution"))
+                                :name "viva-evolution"))
           (setf *evolver* evolver)))))
 
 (defun evolution-tell (&rest message)
@@ -142,7 +142,7 @@ got that way."
 
 Installed by the daemon rather than at load time: the ledger is the daemon's,
 so registering without one registers without a ledger -- which is what a plain
-`vivarium run` should do, and what keeps the registry's own tests from starting
+`viva run` should do, and what keeps the registry's own tests from starting
 an owner thread each."
   (setf registry:*on-register*
         (lambda (name) (register-file-tool name))))
@@ -183,7 +183,7 @@ first, and the mailbox is what orders the two."
 (defun resolve-component (component)
   "The version id the current dynamic context resolves COMPONENT to, or NIL."
   (let ((id (or (cdr (assoc component (snapshot-in-force) :test #'equal))
-                (vivarium.evolution:current-promoted (evolution-registry) component))))
+                (viva.evolution:current-promoted (evolution-registry) component))))
     (note-resolution component id)
     id))
 
@@ -213,7 +213,7 @@ somebody's symbol changes nothing that resolves through here."
   ;; bind it would run the open-door table while believing it was arm B.
   ;; The arm is announced into the ledger before the first message, so a run's
   ;; own journal proves which arm it was rather than its directory name.
-  (let ((vivarium.evolution:*door* (evolver-door evolver)))
+  (let ((viva.evolution:*door* (evolver-door evolver)))
     (journal-evolution "improvement.door"
                        (event::object "door" (string-downcase (evolver-door evolver))))
     (loop
@@ -222,7 +222,7 @@ somebody's symbol changes nothing that resolves through here."
         (handler-case (evolver-step evolver message)
           (error (condition)
             (let ((*print-level* 3) (*print-length* 8))
-              (format *error-output* "~&vivarium evolution: ~a: ~a~%"
+              (format *error-output* "~&viva evolution: ~a: ~a~%"
                       (type-of condition) condition))))))))
 
 (defun evolver-step (evolver message)
@@ -253,7 +253,7 @@ somebody's symbol changes nothing that resolves through here."
                          (declare (ignore condition))
                          (invoke-restart 'kernel:ignore-message))))
         (multiple-value-bind (next effects)
-            (vivarium.evolution:evolution-transition before translated)
+            (viva.evolution:evolution-transition before translated)
           (bt:with-lock-held ((evolver-lock evolver))
             (setf (evolver-registry evolver) next))
           ;; THE REPLY GOES LAST, after every effect of this message has run.
@@ -296,7 +296,7 @@ another thread's specials, and does not need to."
                         (list :box (list '()) :cell nil))))
          (box (getf rig :box)))
     (setf (car box)
-          (copy-alist (vivarium.evolution:pins-of (evolver-registry evolver) task)))))
+          (copy-alist (viva.evolution:pins-of (evolver-registry evolver) task)))))
 
 (defun task-context-box (task cell)
   "The supervisor fetches the child's box when starting its worker. Created
@@ -377,7 +377,7 @@ here if the task has never touched evolution, recorded with its owning cell."
        ;; From the registry BEFORE the transition: the new one has already
        ;; forgotten what this task held.
        (let ((task (first arguments)))
-         (dolist (pin (vivarium.evolution:pins-of before task))
+         (dolist (pin (viva.evolution:pins-of before task))
            (evolution-publish evolver task "improvement.deactivated"
                               (event::object "version" (cdr pin)
                                              "task" (princ-to-string task))))
@@ -394,7 +394,7 @@ here if the task has never touched evolution, recorded with its owning cell."
        ;; exactly that distinction.
        (let ((reason (first arguments)))
          (let ((*print-level* 3) (*print-length* 8))
-           (format *error-output* "~&vivarium evolution: ~(~a~) ~s~%"
+           (format *error-output* "~&viva evolution: ~(~a~) ~s~%"
                    reason (rest translated)))
          (list :refused reason))))))
 

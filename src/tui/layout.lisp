@@ -12,7 +12,7 @@
 ;;;; is gone, and the property worth testing is exactness: the regions tile the
 ;;;; area with no gap and no overlap, at every size.
 
-(in-package #:vivarium.tui)
+(in-package #:viva.tui)
 
 (defstruct (region (:conc-name region-))
   (name nil)

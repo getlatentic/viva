@@ -43,7 +43,7 @@
 ;;;; both halves carry every family, and because a B10 result found on train
 ;;;; should have somewhere to be confirmed.
 
-(in-package #:vivarium.tasks)
+(in-package #:viva.tasks)
 
 ;;; T18 -- ordered work: the second defect is masked by the first
 ;;;
@@ -52,7 +52,7 @@
 ;;; does the second become observable. An agent cannot see both at once, which
 ;;; is what makes the turns ordered rather than merely several.
 
-(deftask :t18 (:family :d-depth :split :train :package "VIVARIUM.TASK.T18")
+(deftask :t18 (:family :d-depth :split :train :package "VIVA.TASK.T18")
   "SETTLE-BATCH signals instead of returning a total.
 
 There are 800 lines in *LINES* and the failure comes from a handful of them.
@@ -116,7 +116,7 @@ Fees are quarter-units and settle to whole cents."
 ;;; T12 has this shape and is held out. B10 needs one it is allowed to spend,
 ;;; and five rather than three because the length is the point.
 
-(deftask :t19 (:family :d-depth :split :train :package "VIVARIUM.TASK.T19")
+(deftask :t19 (:family :d-depth :split :train :package "VIVA.TASK.T19")
   "Five charges are each wrong, independently:
 
   HANDLING-FEE   flat 5, but orders over 20 items should pay 5 plus 1 per
@@ -167,7 +167,7 @@ They do not interact. Fix what you can."
 ;;; nothing in the ledger records -- the ledger holds what was INSTALLED, and a
 ;;; rejected candidate is never installed.
 
-(deftask :t20 (:family :d-depth :split :train :package "VIVARIUM.TASK.T20")
+(deftask :t20 (:family :d-depth :split :train :package "VIVA.TASK.T20")
   "TOTAL-CONSUMPTION is slightly too high and nobody knows why.
 
 There are 500 readings in *READINGS*. NORMALIZE-READING and SCALE-FOR have both
@@ -246,7 +246,7 @@ An estimated reading is only 90% trusted and should be discounted accordingly."
 ;;; that is repaired the remaining error is not in the definition that looks
 ;;; responsible. Held out, so B10 spends T18-T20 and keeps somewhere to confirm.
 
-(deftask :t21 (:family :d-depth :split :held-out :package "VIVARIUM.TASK.T21")
+(deftask :t21 (:family :d-depth :split :held-out :package "VIVA.TASK.T21")
   "POST-LEDGER signals rather than returning a balance.
 
 There are 600 entries in *ENTRIES*. Repair it, and make the balance correct.

@@ -10,7 +10,7 @@
 # rendered pane rather than on bytes this program emitted.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
-session="vivarium-pane-check-$$"
+session="viva-pane-check-$$"
 width=${1:-90}
 height=${2:-24}
 
@@ -18,11 +18,11 @@ cleanup() { tmux kill-session -t "$session" 2>/dev/null || true; }
 trap cleanup EXIT
 
 tmux new-session -d -s "$session" -x "$width" -y "$height" \
-     "cd $root && ./bin/vivarium live"
+     "cd $root && ./bin/viva live"
 
 # The first run compiles; wait for a frame rather than guessing a duration.
 tries=0
-until tmux capture-pane -p -t "$session" 2>/dev/null | grep -q vivarium; do
+until tmux capture-pane -p -t "$session" 2>/dev/null | grep -q viva; do
   tries=$((tries + 1))
   if [ "$tries" -gt 300 ]; then
     echo "no frame after 300 seconds:"
@@ -45,7 +45,7 @@ echo "typing reaches the input line"
 tmux resize-window -t "$session" -x 50 -y 15
 sleep 3
 narrow=$(tmux capture-pane -p -t "$session")
-echo "$narrow" | grep -q vivarium || {
+echo "$narrow" | grep -q viva || {
   echo "the frame did not survive being narrowed to 50 columns:"
   echo "$narrow"; exit 1; }
 echo "$narrow" | grep -q "tasks" && {
@@ -55,7 +55,7 @@ echo "narrowing to 50 columns dropped the side pane and kept drawing"
 # And back out again.
 tmux resize-window -t "$session" -x "$width" -y "$height"
 sleep 3
-tmux capture-pane -p -t "$session" | grep -q vivarium || {
+tmux capture-pane -p -t "$session" | grep -q viva || {
   echo "widening lost the frame"; exit 1; }
 echo "widening again keeps the frame"
 

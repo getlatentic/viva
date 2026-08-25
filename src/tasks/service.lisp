@@ -11,7 +11,7 @@
 ;;;; a trial when more than one thread is running, so a fixture that spawns one
 ;;;; cannot be scored at all.
 
-(in-package #:vivarium.service)
+(in-package #:viva.service)
 
 (defun fresh-package (name)
   "A task owns its package outright, so one task cannot see another's damage."

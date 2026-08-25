@@ -25,14 +25,14 @@
 ;;;; Transport is stdio, one JSON object per line, which is why nothing here
 ;;;; may ever print to standard output except a reply.
 
-(in-package #:vivarium.mcp)
+(in-package #:viva.mcp)
 
 (defparameter *protocol-version* "2025-11-25"
   "The version this server speaks. A client asking for another gets this one
 back and decides for itself whether to continue -- the specification puts
 that choice on the client, and guessing agreement would be worse.")
 
-(defparameter *server-name* "vivarium-tools")
+(defparameter *server-name* "viva-tools")
 
 (defparameter *server-version* "0.1.0"
   "Stated, not derived. ASDF:COMPONENT-VERSION returns NIL for a system that

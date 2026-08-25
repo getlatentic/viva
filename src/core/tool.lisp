@@ -4,7 +4,7 @@
 ;;;; table, because an agent that adds a capability to itself mid-run does it by
 ;;;; adding a method -- not by rebuilding a dispatch table it does not own.
 
-(in-package #:vivarium.tool)
+(in-package #:viva.tool)
 
 (defclass tool ()
   ((name :initarg :name :reader tool-name :type string)

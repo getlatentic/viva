@@ -13,11 +13,11 @@
 ;;;; session can be asked what it knows WHILE it is working, rather than
 ;;;; queueing behind a turn that may run for minutes.
 ;;;;
-;;;; Two scopes, and they are kept apart on purpose. ~/.vivarium is the
-;;;; machine's, carried into every project; .vivarium/ is this project's. A
+;;;; Two scopes, and they are kept apart on purpose. ~/.viva is the
+;;;; machine's, carried into every project; .viva/ is this project's. A
 ;;;; reader who cannot tell which is which cannot tell what travels.
 
-(in-package #:vivarium.germline)
+(in-package #:viva.germline)
 
 (defstruct (item (:conc-name item-))
   (name "" :type string)
@@ -62,9 +62,8 @@ Deliberately NOT MEMORY:CONTEXT-FILES, which also gathers the instruction files
 a PERSON wrote in this directory and its ancestors. Those matter to a run and
 are not what the organism retained, and showing them here would credit the
 agent with everything it was told."
-  (list (env:join-path (uiop:native-namestring (user-homedir-pathname))
-                       ".vivarium" "MEMORY.md")
-        (env:join-path (env:env-cwd environment) memory:*memory-file*)))
+  (list (env:home-path "MEMORY.md")
+        (env:project-path (env:env-cwd environment) memory:*memory-file*)))
 
 (defun notes-for (environment)
   (loop for path in (memory-files environment)

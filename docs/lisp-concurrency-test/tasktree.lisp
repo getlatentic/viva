@@ -24,17 +24,17 @@
 ;;;; scoped children only, one delivery per message, so the interleavings TLC
 ;;;; explored are the interleavings the runtime will produce.
 
-(defpackage #:vivarium.tasktree
-  (:use #:cl #:vivarium.kernel)
+(defpackage #:viva.tasktree
+  (:use #:cl #:viva.kernel)
   ;; The DSL arrow is a symbol, so cross-package owners must share the
-  ;; kernel's. Kernel patch worth taking: export => from vivarium.kernel so
+  ;; kernel's. Kernel patch worth taking: export => from viva.kernel so
   ;; DEFINE-OWNER works from any package without this line.
-  (:import-from #:vivarium.kernel #:=>)
+  (:import-from #:viva.kernel #:=>)
   (:export #:tasktree-transition #:empty-tree #:task #:live-p #:terminal-p
            #:live-scoped-children #:live-children #:+child-limit+
            #:run-tasktree-self-test))
 
-(in-package #:vivarium.tasktree)
+(in-package #:viva.tasktree)
 
 (defparameter +child-limit+ 16
   "Live children a parent may own at once. Overflow is refused with its

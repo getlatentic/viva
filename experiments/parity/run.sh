@@ -1,5 +1,5 @@
 #!/bin/sh
-# vivarium against pi, same model, same task, same starting repository.
+# viva against pi, same model, same task, same starting repository.
 #
 # The point is not to win. It is to find out whether Level 1 is real: a harness
 # that solves nothing an established one solves has a gap, and the gap is worth
@@ -9,7 +9,7 @@
 #
 #   ./run.sh                     both harnesses, every fixture
 #   ./run.sh --only median       one fixture
-#   ./run.sh --harness vivarium  one harness
+#   ./run.sh --harness viva  one harness
 #   ./run.sh --repeats 3         n=1 is inside the noise for any of this
 #
 # Both sides get: the same model, AGENTS.md as the only instruction file,
@@ -22,9 +22,9 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 model=${PARITY_MODEL:-deepseek-v4-flash}
 provider=${PARITY_PROVIDER:-deepseek}
-work=${PARITY_WORK:-/tmp/vivarium-parity}
+work=${PARITY_WORK:-/tmp/viva-parity}
 only=""
-harnesses="vivarium pi"
+harnesses="viva pi"
 repeats=1
 
 while [ $# -gt 0 ]; do
@@ -52,10 +52,10 @@ run_one() {
   started=$(date +%s)
 
   case "$harness" in
-    vivarium)
+    viva)
       # No skills or extensions exist under a fresh fixture, and --root keeps
       # the run inside it, so neither side can wander into the other's output.
-      "$root/bin/vivarium" do "$prompt" --cwd "$sandbox" --root "$sandbox" \
+      "$root/bin/viva" do "$prompt" --cwd "$sandbox" --root "$sandbox" \
         --model "$provider" --limit 25 > "$sandbox/.transcript" 2>&1 || true
       ;;
     pi)

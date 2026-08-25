@@ -5,7 +5,7 @@
 ;;;; not been given a slow answer, it has been given a wrong one, and the cost
 ;;;; lands in a context window that was supposed to hold the actual work.
 
-(in-package #:vivarium.workspace)
+(in-package #:viva.workspace)
 
 (defvar *excluded-paths* '()
   "Absolute paths a walk must not descend into, beyond the ignore rules.

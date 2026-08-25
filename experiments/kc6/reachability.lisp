@@ -31,7 +31,7 @@
 (push *root* (symbol-value (find-symbol "*LOCAL-PROJECT-DIRECTORIES*" "QL")))
 
 (handler-bind ((warning #'muffle-warning))
-  (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/cli :silent t))
+  (funcall (find-symbol "QUICKLOAD" "QL") :viva/cli :silent t))
 
 (defparameter *evolution-verbs*
   '("create_candidate" "activate_candidate" "promote_candidate"
@@ -44,10 +44,10 @@ eventually chosen, not for one spelling of it.")
 (defun model-visible-tools ()
   (let ((sandbox "/tmp/kc6-reachability/"))
     (ensure-directories-exist sandbox)
-    (let ((agent (vivarium.harness:make-workspace-agent
+    (let ((agent (viva.harness:make-workspace-agent
                   :cwd sandbox :root sandbox :model "deepseek"
-                  :extra-tools (vivarium.actor:capability-tools))))
-      (sort (mapcar #'vivarium.tool:tool-name (vivarium.agent:tools agent)) #'string<))))
+                  :extra-tools (viva.actor:capability-tools))))
+      (sort (mapcar #'viva.tool:tool-name (viva.agent:tools agent)) #'string<))))
 
 (defun component-consumers ()
   "Files under src/ that resolve a component. Tests and probes do not count:
@@ -69,11 +69,11 @@ no `items`: the schema was malformed and the capability was never really
 offered. That cost an entire experiment, and this is the check that would have
 caught it in a second."
   (schema-complaints-of
-   (loop for tool in (vivarium.actor:capability-tools)
-         collect (cons (vivarium.tool:tool-name tool)
+   (loop for tool in (viva.actor:capability-tools)
+         collect (cons (viva.tool:tool-name tool)
                        (gethash "parameters"
                                 (gethash "function"
-                                         (vivarium.client::tool-json tool)))))))
+                                         (viva.client::tool-json tool)))))))
 
 (defun schema-complaints-of (pairs)
   "The complaint logic, over (NAME . PARAMETERS) so it can be fed known-bad

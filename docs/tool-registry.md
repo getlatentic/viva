@@ -11,8 +11,8 @@ from the machine's registry then the project's, later winning by name — the
 same resolution skills and templates already use.
 
 ```
-~/.vivarium/tools/<name>/       the machine's
-<cwd>/.vivarium/tools/<name>/   the project's, and it wins
+~/.viva/tools/<name>/       the machine's
+<cwd>/.viva/tools/<name>/   the project's, and it wins
     tool.json
     run.py                      any language; the model picks
 ```
@@ -53,7 +53,7 @@ semicolon and `rm -rf /`.
 
 ## What a tool inherits
 
-A whitelist: `PATH`, `HOME`, `LANG`, `LC_ALL`, `TMPDIR`, plus `VIVARIUM_CWD`
+A whitelist: `PATH`, `HOME`, `LANG`, `LC_ALL`, `TMPDIR`, plus `VIVA_CWD`
 naming the task's working directory. Nothing else — blacklisting credentials
 would mean enumerating every name a provider might ever use, a list that is
 wrong the moment somebody adds one. A tool that genuinely needs a secret
@@ -61,7 +61,7 @@ should be handed it as a parameter, which the transcript records, rather than
 by ambient inheritance, which it does not.
 
 Tools run from their own directory, not the task's, so a tool's helper files
-resolve relative to itself. The task's cwd is available as `VIVARIUM_CWD`.
+resolve relative to itself. The task's cwd is available as `VIVA_CWD`.
 
 ## Loading, and refusal
 
@@ -76,12 +76,12 @@ like a tool nobody wrote.
 ## Serving the registry over MCP
 
 ```bash
-vivarium mcp --cwd /path/to/project
+viva mcp --cwd /path/to/project
 ```
 
 Speaks MCP over stdio — one JSON object per line — so a tool the organism
 wrote is callable from any client that speaks the protocol, not only from
-inside vivarium. This is why the manifest was JSON from the start: the
+inside viva. This is why the manifest was JSON from the start: the
 parameter list becomes an `inputSchema` through the same builder every
 shipped tool uses, so `tools/list` is a projection of the registry rather
 than a translation of it.
@@ -91,8 +91,8 @@ Client configuration is one entry:
 ```json
 {
   "mcpServers": {
-    "vivarium-tools": {
-      "command": "/path/to/vivarium/bin/vivarium",
+    "viva-tools": {
+      "command": "/path/to/viva/bin/viva",
       "args": ["mcp", "--cwd", "/path/to/project"]
     }
   }
@@ -121,18 +121,18 @@ it is also the whole risk, so here is exactly what is and is not true.
 **It is not a sandbox.** A tool runs as you, with your filesystem access.
 KC6 proved the practical form of this: an agent handed a confined `:root`
 still read sibling directories through `bash`, because confinement applies
-to vivarium's own file tools and not to subprocesses. A registry tool is a
+to viva's own file tools and not to subprocesses. A registry tool is a
 subprocess. If it can be run, it can read what you can read.
 
 The trust boundary is therefore **who wrote the tool**, and that is the
 control:
 
-- **Only trusted projects.** `.vivarium/tools/` in a cloned repository is
+- **Only trusted projects.** `.viva/tools/` in a cloned repository is
   its author's code. It does not load until that project root is trusted,
-  and the trust record lives in `~/.vivarium/trusted.sexp` — outside every
+  and the trust record lives in `~/.viva/trusted.sexp` — outside every
   project, so a project cannot trust itself. The refusal is a warning rather
   than silence, because a control that looks like "there was nothing there"
-  is not a control. The machine's own `~/.vivarium/tools/` is always
+  is not a control. The machine's own `~/.viva/tools/` is always
   permitted: it is yours, and requiring you to trust yourself would only
   teach the habit of clicking through the question that matters.
 - **Paths are canonicalised on both sides** — symlinks resolved, trailing
@@ -142,7 +142,7 @@ control:
 - **Containment is containment.** `/foo` does not contain `/foobar`.
 
 **What a tool inherits** is a whitelist: `PATH`, `HOME`, `LANG`, `LC_ALL`,
-`TMPDIR`, and `VIVARIUM_CWD`. Not a scrub list — blacklisting credentials
+`TMPDIR`, and `VIVA_CWD`. Not a scrub list — blacklisting credentials
 means enumerating every name a provider might use and being wrong when one
 is added. A secret a tool genuinely needs should arrive as a parameter,
 which the transcript records, not by ambient inheritance, which it does not.
@@ -157,9 +157,9 @@ that failure is `isError: true` inside a result, while a *missing* tool is a
 protocol error, because a client that cannot tell those apart cannot report
 either honestly.
 
-**No network assumptions.** Vivarium neither grants nor blocks a tool's
+**No network assumptions.** Viva neither grants nor blocks a tool's
 network access; a tool has whatever the machine gives it. If that matters
-for your setting, confine the whole process — vivarium does not claim a
+for your setting, confine the whole process — viva does not claim a
 boundary it does not enforce.
 
 ## What a manifest promises, and how that is checked (#41)
@@ -177,7 +177,7 @@ File-backed tools gave that property up.
 arguments.** A script that takes parameters must answer a describe request:
 
 ```
-stdin   {"vivarium":"describe"}
+stdin   {"viva":"describe"}
 stdout  {"parameters":[{"name":"path","type":"string","required":true}]}
 exit    0, and nothing else happens
 ```

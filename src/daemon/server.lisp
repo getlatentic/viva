@@ -3,7 +3,7 @@
 ;;;;
 ;;;; A local-domain socket rather than stdin and stdout. The distinction is the
 ;;;; architecture: a daemon whose protocol lives on stdio is a daemon whose life
-;;;; ends when its parent's terminal does, and `vivarium ipc` becomes a bridge
+;;;; ends when its parent's terminal does, and `viva ipc` becomes a bridge
 ;;;; into this rather than the thing itself.
 ;;;;
 ;;;; JSON lines both ways, as the IPC mode already uses -- requests carry an id
@@ -11,7 +11,7 @@
 ;;;; handshake: a line is atomic enough for this traffic and `nc -U` is a
 ;;;; debugger.
 
-(in-package #:vivarium.daemon)
+(in-package #:viva.daemon)
 
 (define-condition daemon-error (error)
   ((detail :initarg :detail :reader daemon-error-detail))
@@ -32,7 +32,7 @@ current."
   (fd nil))
 
 (defvar *current* nil "The running generation, or NIL. Owned by *LOCK*.")
-(defvar *lock* (bt:make-lock "vivarium.daemon"))
+(defvar *lock* (bt:make-lock "viva.daemon"))
 (defvar *state* :stopped "One of :STOPPED :STARTING :RUNNING, owned by *LOCK*.
 
     OS lock     protects this process from another process
@@ -60,8 +60,13 @@ to release beyond the claim itself."
       (setf *starting* nil *state* :stopped))))
 
 (defun socket-path ()
-  (or (sb-posix:getenv "VIVARIUM_SOCKET")
-      (namestring (merge-pathnames ".vivarium/vivariumd.sock" (user-homedir-pathname)))))
+  "Where the daemon listens.
+
+The name follows the directory. An install that predates the rename keeps both
+its former directory and its former socket, so a running daemon stays reachable
+and a new build never opens a second one over the same journal."
+  (or (sb-posix:getenv "VIVA_SOCKET")
+      (env:home-file "viva.sock" "vivariumd.sock")))
 
 (defun object (&rest plist)
   (let ((table (make-hash-table :test #'equal)))
@@ -78,7 +83,7 @@ to release beyond the claim itself."
 
 (defparameter +diagnostics-kept+ 100)
 (defvar *diagnostics* '() "Recent contained failures, newest first.")
-(defvar *diagnostics-lock* (bt:make-lock "vivarium.diagnostics"))
+(defvar *diagnostics-lock* (bt:make-lock "viva.diagnostics"))
 (defvar *failures* 0 "How many there have been, which the kept ones do not say.")
 
 (defvar *started-at* (get-universal-time)
@@ -90,7 +95,7 @@ to release beyond the claim itself."
 (defparameter +hangup-errnos+
   (list sb-posix:epipe sb-posix:econnreset)
   "A peer that closed first. Distinguishing these from a genuine write failure
-is what stops ordinary use from looking like trouble: a person hosting vivarium
+is what stops ordinary use from looking like trouble: a person hosting viva
 in a multiplexer closes panes, and every close hangs up a client mid-greeting.")
 
 (defun hangup-p (condition)
@@ -166,7 +171,7 @@ answer because the journal makes it recoverable: it reconnects and asks for
 everything after the last sequence it saw.")
 
 (defvar *clients* '() "Connections currently served, for the sweeper.")
-(defvar *clients-lock* (bt:make-lock "vivarium.clients"))
+(defvar *clients-lock* (bt:make-lock "viva.clients"))
 
 (defun register-client (client)
   (bt:with-lock-held (*clients-lock*) (push client *clients*)))
@@ -243,7 +248,7 @@ because WAKE's shutdown forces the send to return first."
                            (wake client)
                            (return)))
              (bt:signal-semaphore (client-finished client) :count 1000)))
-         :name "vivarium-client-writer")))
+         :name "viva-client-writer")))
 
 (defun stop-writer (client)
   "Returns T once the writer has confirmed it will never touch the socket
@@ -381,7 +386,7 @@ cell on the same transcript would be two writers to one file."
                  :session session
                  :request-limit 60)))
     (setf (agent:agent-stream-p agent) t
-          (vivarium.compaction:settings-context-limit (harness:agent-compaction agent))
+          (viva.compaction:settings-context-limit (harness:agent-compaction agent))
           (models:choice-context-limit choice))
     ;; Carry an earlier conversation in, when asked. Until this existed the
     ;; organism could list the sessions it had recorded and could not continue
@@ -420,7 +425,7 @@ a person who closed the lid on an agent that was working and opens it to a
 session that is quietly idle has been told nothing, and will ask again what
 has already been half-answered. The interruption is said in the session's own
 stream, where the work was, not in a log nobody reads."
-  (let* ((agent (vivarium.actor::cell-agent cell))
+  (let* ((agent (viva.actor::cell-agent cell))
          (messages (loop*:context-messages (harness:agent-context agent)))
          (last (car (last messages))))
     (when (and last
@@ -453,7 +458,7 @@ keep."
          (actor:publish cell (if (eql 0 status) "tool.completed" "tool.failed")
                         (object "call" (object "id" id "name" "!")
                                 "output" output))))
-     :name "vivarium-shell")))
+     :name "viva-shell")))
 
 (defun rehydrate-sessions ()
   "Bring back every session that was running when the last daemon stopped.
@@ -755,7 +760,7 @@ place, on one thread, with exactly one close."
            (say client (object "type" "ready" "pid" (sb-posix:getpid)
                                ;; When this generation started. A long-lived
                                ;; process keeps the code it was built from, so
-                               ;; a person who edits vivarium and reattaches is
+                               ;; a person who edits viva and reattaches is
                                ;; talking to the old one -- which looks exactly
                                ;; like the change not working. The client
                                ;; compares this against the source on disk.
@@ -806,7 +811,7 @@ greeting, and a `Bad file descriptor` that quit the entire organism."
                                                    :external-format :utf-8)
                        connection)
        (error (condition) (note-failure "client" condition))))
-   :name "vivarium-client"))
+   :name "viva-client"))
 
 (defun start-sweeper (instance)
   "One sweeper per generation, ending with that generation.
@@ -820,7 +825,7 @@ thing they belong to are the same unowned lifetime as every other bug here."
      (loop while (current-p instance)
            do (sleep 1)
               (ignore-errors (sweep-clients))))
-   :name "vivarium-sweeper"))
+   :name "viva-sweeper"))
 
 ;;; The daemon
 
@@ -990,7 +995,7 @@ while the accept loop serves on."
                                              (loop-finish)))))
                         (retire instance))))
                (if background
-                   (bt:make-thread #'accept-loop :name "vivariumd")
+                   (bt:make-thread #'accept-loop :name "vivad")
                    (accept-loop)))
              path))
       (unless published

@@ -1,13 +1,13 @@
 ;;;; Layers, dependencies pointing inward.
 ;;;;
-;;;;   vivarium           the harness: messages, tools, an agent, a loop. Knows
+;;;;   viva           the harness: messages, tools, an agent, a loop. Knows
 ;;;;                      nothing about what the agent is for.
-;;;;   vivarium/workspace the ordinary world -- files, a shell, search, skills,
+;;;;   viva/workspace the ordinary world -- files, a shell, search, skills,
 ;;;;                      memory, extensions, sessions. What makes the harness
 ;;;;                      usable for real work rather than only for experiments.
-;;;;   vivarium/image     one task domain: a live Common Lisp image the agent
+;;;;   viva/image     one task domain: a live Common Lisp image the agent
 ;;;;                      reads, changes and rolls back.
-;;;;   vivarium/search    scored trials and an archive over them. Works on any
+;;;;   viva/search    scored trials and an archive over them. Works on any
 ;;;;                      candidate a backend can install.
 ;;;;
 ;;;; The split is so the harness can be loaded and tested without the task, and
@@ -15,7 +15,7 @@
 ;;;; and IMAGE are two task domains over the same core and neither imports the
 ;;;; other.
 
-(defsystem "vivarium"
+(defsystem "viva"
   :description "An agent harness whose world is a live image rather than a directory."
   :author "Tosin Amuda"
   :license "MIT"
@@ -35,11 +35,11 @@
                              (:file "stream")
                              (:file "client")
                              (:file "loop"))))
-  :in-order-to ((test-op (test-op "vivarium/tests"))))
+  :in-order-to ((test-op (test-op "viva/tests"))))
 
-(defsystem "vivarium/workspace"
+(defsystem "viva/workspace"
   :description "Ordinary work: files, search, a shell, skills, memory, extensions, sessions."
-  :depends-on ("vivarium" "cl-ppcre" "sb-posix" "sb-concurrency" "uiop")
+  :depends-on ("viva" "cl-ppcre" "sb-posix" "sb-concurrency" "uiop")
   :serial t
   :components ((:module "src/workspace"
                 :serial t
@@ -71,9 +71,9 @@
                              (:file "reflection")
                              (:file "germline")))))
 
-(defsystem "vivarium/daemon"
+(defsystem "viva/daemon"
   :description "The organism: one long-lived process, sessions living inside it."
-  :depends-on ("vivarium/workspace" "sb-concurrency" "sb-bsd-sockets")
+  :depends-on ("viva/workspace" "sb-concurrency" "sb-bsd-sockets")
   :serial t
   :components ((:module "src/daemon"
                 :serial t
@@ -88,9 +88,9 @@
                              (:file "capability")
                              (:file "server")))))
 
-(defsystem "vivarium/console"
+(defsystem "viva/console"
   :description "Two ways to run the workspace agent: an interactive shell and a JSONL IPC server."
-  :depends-on ("vivarium/workspace")
+  :depends-on ("viva/workspace")
   :serial t
   :components ((:module "src/console"
                 :serial t
@@ -99,9 +99,9 @@
                              (:file "shell")
                              (:file "ipc")))))
 
-(defsystem "vivarium/image"
+(defsystem "viva/image"
   :description "The live-image task domain: install, roll back and introspect definitions."
-  :depends-on ("vivarium" "sb-introspect")
+  :depends-on ("viva" "sb-introspect")
   :serial t
   :components ((:module "src/image"
                 :serial t
@@ -114,9 +114,9 @@
                              (:file "constrained")
                              (:file "self")))))
 
-(defsystem "vivarium/tasks"
+(defsystem "viva/tasks"
   :description "The task set: a live image to repair, and the cases that score it."
-  :depends-on ("vivarium/image")
+  :depends-on ("viva/image")
   :serial t
   :components ((:module "src/tasks"
                 :serial t
@@ -136,9 +136,9 @@
                              (:file "burden")
                              (:file "attempt")))))
 
-(defsystem "vivarium/search"
+(defsystem "viva/search"
   :description "Forked scored trials, an archive, and selection over it."
-  :depends-on ("vivarium/image" "sb-posix")
+  :depends-on ("viva/image" "sb-posix")
   :serial t
   :components ((:module "src/search"
                 :serial t
@@ -146,7 +146,7 @@
                              (:file "trial")
                              (:file "arena")))))
 
-(defsystem "vivarium/tui"
+(defsystem "viva/tui"
   :description "Speaking a terminal's protocols properly, without becoming one."
   :depends-on ("alexandria")
   :serial t
@@ -165,10 +165,10 @@
                              (:file "chrome")
                              (:file "paint")))))
 
-(defsystem "vivarium/cli"
+(defsystem "viva/cli"
   :description "One entry point for every run."
-  :depends-on ("vivarium/tasks" "vivarium/search" "vivarium/console" "vivarium/daemon"
-               "vivarium/tui" "uiop" "usocket" "croatoan")
+  :depends-on ("viva/tasks" "viva/search" "viva/console" "viva/daemon"
+               "viva/tui" "uiop" "usocket" "croatoan")
   :serial t
   :components ((:module "src/cli"
                 :serial t
@@ -186,9 +186,9 @@
                              (:file "live")
                              (:file "main")))))
 
-(defsystem "vivarium/tests"
-  :depends-on ("vivarium" "vivarium/image" "vivarium/search" "vivarium/tasks"
-               "vivarium/cli" "vivarium/daemon" "vivarium/tui" "parachute")
+(defsystem "viva/tests"
+  :depends-on ("viva" "viva/image" "viva/search" "viva/tasks"
+               "viva/cli" "viva/daemon" "viva/tui" "parachute")
   :serial t
   :components ((:module "tests"
                 :serial t
@@ -207,4 +207,4 @@
                              (:file "workspace")
                              (:file "release")
                              (:file "daemon"))))
-  :perform (test-op (op c) (symbol-call :parachute :test :vivarium.tests)))
+  :perform (test-op (op c) (symbol-call :parachute :test :viva.tests)))

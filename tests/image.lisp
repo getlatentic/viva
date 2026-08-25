@@ -4,20 +4,20 @@
 ;;;; Everything installed lives in the throwaway package below, so a failing
 ;;;; test cannot leave a redefined function behind in the test suite itself.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
-(defpackage #:vivarium.tests.scratch (:use #:cl))
+(defpackage #:viva.tests.scratch (:use #:cl))
 
 (defun fresh-image ()
-  (let ((package (find-package '#:vivarium.tests.scratch)))
+  (let ((package (find-package '#:viva.tests.scratch)))
     (do-symbols (symbol package)
       (when (eq package (symbol-package symbol))
         (when (fboundp symbol) (fmakunbound symbol))
         (when (boundp symbol) (makunbound symbol))))
-    (make-instance 'image:sbcl-image :package "VIVARIUM.TESTS.SCRATCH")))
+    (make-instance 'image:sbcl-image :package "VIVA.TESTS.SCRATCH")))
 
 (defun scratch (name)
-  (find-symbol (string-upcase name) '#:vivarium.tests.scratch))
+  (find-symbol (string-upcase name) '#:viva.tests.scratch))
 
 (defmacro with-image ((var) &body body)
   `(let* ((,var (fresh-image))
@@ -35,7 +35,7 @@
 (define-test "installing a defun makes it callable in this process"
   (with-image (image)
     (let ((result (image:install-definition image "(defun doubler (x) (* 2 x))")))
-      (is string= "DEFUN VIVARIUM.TESTS.SCRATCH::DOUBLER" (image:installation-target result))
+      (is string= "DEFUN VIVA.TESTS.SCRATCH::DOUBLER" (image:installation-target result))
       (false (image:installation-error result))
       (is = 14 (funcall (scratch "doubler") 7)))))
 
@@ -64,7 +64,7 @@
   (with-image (image)
     (image:install-definition image "(defun version (x) (declare (ignore x)) 1)")
     (image:install-definition image "(defun version (x) (declare (ignore x)) 2)")
-    (let ((target "DEFUN VIVARIUM.TESTS.SCRATCH::VERSION"))
+    (let ((target "DEFUN VIVA.TESTS.SCRATCH::VERSION"))
       (is = 2 (funcall (scratch "version") nil))
       (true (search "1)" (ledger:previous-source (image:image-ledger image) target)))
       (is = 2 (length (ledger:entries (image:image-ledger image) :target target))))))
@@ -74,14 +74,14 @@
     (image:install-definition image "(defun rolled (x) (declare (ignore x)) :first)")
     (image:install-definition image "(defun rolled (x) (declare (ignore x)) :second)")
     (is eq :second (funcall (scratch "rolled") nil))
-    (image:rollback-definition image "DEFUN VIVARIUM.TESTS.SCRATCH::ROLLED")
+    (image:rollback-definition image "DEFUN VIVA.TESTS.SCRATCH::ROLLED")
     (is eq :first (funcall (scratch "rolled") nil))))
 
 (define-test "rolling back a first install undefines it"
   (with-image (image)
     (image:install-definition image "(defun only-version () :here)")
     (true (fboundp (scratch "only-version")))
-    (image:rollback-definition image "DEFUN VIVARIUM.TESTS.SCRATCH::ONLY-VERSION")
+    (image:rollback-definition image "DEFUN VIVA.TESTS.SCRATCH::ONLY-VERSION")
     (false (fboundp (scratch "only-version")))))
 
 ;;; Tools
@@ -106,7 +106,7 @@
     (declare (ignore image))
     (call-tool* image-tools:install "source" "(defun readable (x) (* x x))")
     (let ((result (call-tool* image-tools:read-definition
-                              "target" "DEFUN VIVARIUM.TESTS.SCRATCH::READABLE")))
+                              "target" "DEFUN VIVA.TESTS.SCRATCH::READABLE")))
       (false (tool:tool-result-error-p result))
       (true (search "(* x x)" (tool:tool-result-output result))))))
 
@@ -128,7 +128,7 @@
     (declare (ignore image))
     (call-tool* image-tools:install "source" "(defun undoable (x) (declare (ignore x)) :one)")
     (call-tool* image-tools:install "source" "(defun undoable (x) (declare (ignore x)) :two)")
-    (call-tool* image-tools:rollback "target" "DEFUN VIVARIUM.TESTS.SCRATCH::UNDOABLE")
+    (call-tool* image-tools:rollback "target" "DEFUN VIVA.TESTS.SCRATCH::UNDOABLE")
     (is eq :one (funcall (scratch "undoable") nil))))
 
 (define-test "bash returns output, and a non-zero exit is an error result"
@@ -153,9 +153,9 @@
 ;;; stop that, because an absolute path ignores the working directory.
 
 (define-test "a scored shell refuses paths outside its own directory"
-  (let ((jail #p"/tmp/vivarium-jail-test/"))
+  (let ((jail #p"/tmp/viva-jail-test/"))
     (is equal '() (image-tools::escaping-paths "ls -la" jail))
-    (is equal '() (image-tools::escaping-paths "cat /tmp/vivarium-jail-test/x.lisp" jail))
+    (is equal '() (image-tools::escaping-paths "cat /tmp/viva-jail-test/x.lisp" jail))
     (is equal '() (image-tools::escaping-paths "/usr/bin/env sbcl --version" jail))
     (true (image-tools::escaping-paths
            "cat /Users/dev/workspace/vivarium/src/tasks/control.lisp" jail))
@@ -171,12 +171,12 @@
   ;; DEFUN DEPOT::IN-STOCK-P existed, because the filter also required the
   ;; SYMBOL name to match. Every benchmark task names its function outright, so
   ;; none of them ever reached it.
-  (let ((backend (make-instance 'image:sbcl-image :package "VIVARIUM.TESTS.FINDING")))
-    (service:fresh-package "VIVARIUM.TESTS.FINDING")
+  (let ((backend (make-instance 'image:sbcl-image :package "VIVA.TESTS.FINDING")))
+    (service:fresh-package "VIVA.TESTS.FINDING")
     (image:install-definition backend "(defun in-stock-p (sku) sku)")
-    (true (member "DEFUN VIVARIUM.TESTS.FINDING::IN-STOCK-P"
+    (true (member "DEFUN VIVA.TESTS.FINDING::IN-STOCK-P"
                   (image:find-targets backend "FINDING") :test #'string=))
-    (true (member "DEFUN VIVARIUM.TESTS.FINDING::IN-STOCK-P"
+    (true (member "DEFUN VIVA.TESTS.FINDING::IN-STOCK-P"
                   (image:find-targets backend "in-stock") :test #'string=))
     (is equal '() (image:find-targets backend "NOTHING-LIKE-THIS"))))
 
@@ -184,19 +184,19 @@
   ;; The image's whole advantage: what the data IS, not what the source says.
   ;; Without this an agent asked about *STOCK*, was told nothing, guessed a hash
   ;; table, and installed a GETHASH against a list of plists.
-  (let ((backend (make-instance 'image:sbcl-image :package "VIVARIUM.TESTS.LIVE")))
-    (service:fresh-package "VIVARIUM.TESTS.LIVE")
-    (let ((symbol (intern "*STOCK*" "VIVARIUM.TESTS.LIVE")))
+  (let ((backend (make-instance 'image:sbcl-image :package "VIVA.TESTS.LIVE")))
+    (service:fresh-package "VIVA.TESTS.LIVE")
+    (let ((symbol (intern "*STOCK*" "VIVA.TESTS.LIVE")))
       (setf (symbol-value symbol) (list (list :sku "A1" :count 4))))
-    (let ((report (image:definition-source backend "VIVARIUM.TESTS.LIVE::*STOCK*")))
+    (let ((report (image:definition-source backend "VIVA.TESTS.LIVE::*STOCK*")))
       (true report)
       (true (search ":SKU" report))
       (true (search "A1" report)))))
 
 (define-test "an enormous live value is clipped rather than flooding the context"
-  (let ((backend (make-instance 'image:sbcl-image :package "VIVARIUM.TESTS.BIG")))
-    (service:fresh-package "VIVARIUM.TESTS.BIG")
-    (let ((symbol (intern "*HUGE*" "VIVARIUM.TESTS.BIG")))
+  (let ((backend (make-instance 'image:sbcl-image :package "VIVA.TESTS.BIG")))
+    (service:fresh-package "VIVA.TESTS.BIG")
+    (let ((symbol (intern "*HUGE*" "VIVA.TESTS.BIG")))
       (setf (symbol-value symbol) (loop for i from 0 below 100000 collect i)))
-    (let ((report (image:definition-source backend "VIVARIUM.TESTS.BIG::*HUGE*")))
+    (let ((report (image:definition-source backend "VIVA.TESTS.BIG::*HUGE*")))
       (true (< (length report) 2000)))))

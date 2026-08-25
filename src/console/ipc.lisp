@@ -9,12 +9,12 @@
 ;;;; does. That is what makes STEER and ABORT mean anything -- a steer queued
 ;;;; here lands in the request already in flight, not after it.
 
-(in-package #:vivarium.console)
+(in-package #:viva.console)
 
 (defstruct (server (:conc-name server-))
   (agent nil)
   (out *standard-output* :type stream)
-  (lock (bt:make-lock "vivarium.ipc"))
+  (lock (bt:make-lock "viva.ipc"))
   (worker nil)
   (running t :type boolean))
 
@@ -91,7 +91,7 @@
                  (respond server id "prompt" "reply" (or reply "")))
              (error (condition)
                (fail server id "prompt" (princ-to-string condition)))))
-         :name "vivarium-prompt")))
+         :name "viva-prompt")))
 
 (defun state-object (server)
   (let ((agent (server-agent server)))

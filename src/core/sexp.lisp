@@ -22,9 +22,9 @@
 ;;;; reader runs in a package of its own, so a form can name a symbol without
 ;;;; that naming reaching any package the image cares about.
 
-(in-package #:vivarium.sexp)
+(in-package #:viva.sexp)
 
-(defpackage #:vivarium.sexp.sandbox
+(defpackage #:viva.sexp.sandbox
   (:use)
   ;; T and NIL must be the real ones. A package that inherits nothing reads the
   ;; model's `nil` as a fresh symbol named "NIL", which is not the empty list and
@@ -43,7 +43,7 @@ something in a form cannot touch a package the image uses."))
   "Longest form text accepted. An unbounded read from a model is a way to spend
 the heap on a mistake.")
 
-(defun read-form (text &key (package "VIVARIUM.SEXP.SANDBOX"))
+(defun read-form (text &key (package "VIVA.SEXP.SANDBOX"))
   "Read exactly one form from TEXT with evaluation disabled.
 
 Interning happens in a sandbox package so an unknown symbol in model output does
@@ -177,5 +177,5 @@ a definition as a form rather than as an escaped string."
 Kept as a question asked of the provider rather than a constant here: which
 literal a grammar must open with is a property of the model's template, not of
 s-expressions."
-  (and provider (funcall (find-symbol "CONSTRAINED-OUTPUT-PREFIX" "VIVARIUM.PROVIDER")
+  (and provider (funcall (find-symbol "CONSTRAINED-OUTPUT-PREFIX" "VIVA.PROVIDER")
                          provider)))

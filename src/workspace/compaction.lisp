@@ -18,7 +18,7 @@
 ;;;; estimate is only used to choose how much tail to keep, where being wrong
 ;;;; costs a few hundred tokens rather than a rejected request.
 
-(in-package #:vivarium.compaction)
+(in-package #:viva.compaction)
 
 (defstruct (settings (:conc-name settings-))
   (enabled-p t :type boolean)

@@ -12,19 +12,19 @@
 ;;;; A task publishes through the SESSION that owns its root, so a client
 ;;;; watching a session sees its task tree without a second protocol.
 
-(in-package #:vivarium.actor)
+(in-package #:viva.actor)
 
 (defstruct (supervisor (:conc-name supervisor-))
   (tree (tasktree:empty-tree))
   (mailbox (mailbox:make-mailbox))
   (thread nil)
-  (lock (bt:make-lock "vivarium.supervisor"))
+  (lock (bt:make-lock "viva.supervisor"))
   ;; id -> (:agent AGENT :cell CELL), the runtime riggings of each task. The
   ;; tree holds identity and lifecycle; this holds what threads need.
   (rigging (make-hash-table)))
 
 (defvar *supervisor* nil)
-(defvar *supervisor-lock* (bt:make-lock "vivarium.supervisor-start"))
+(defvar *supervisor-lock* (bt:make-lock "viva.supervisor-start"))
 
 (defun ensure-supervisor ()
   (bt:with-lock-held (*supervisor-lock*)
@@ -32,7 +32,7 @@
         (let ((supervisor (make-supervisor)))
           (setf (supervisor-thread supervisor)
                 (bt:make-thread (lambda () (run-supervisor supervisor))
-                                :name "vivarium-tasks"))
+                                :name "viva-tasks"))
           (setf *supervisor* supervisor)))))
 
 (defun task-tell (&rest message)
@@ -128,7 +128,7 @@ diagnostic. Silently, because the diagnostic's own destructuring then missed.")
         ;; diagnostic once printed a megabyte.
         (error (condition)
           (let ((*print-level* 3) (*print-length* 8))
-            (format *error-output* "~&vivarium tasks: ~a: ~a~%"
+            (format *error-output* "~&viva tasks: ~a: ~a~%"
                     (type-of condition) condition)))))))
 
 (defun task-state (supervisor id)
@@ -215,13 +215,13 @@ diagnostic. Silently, because the diagnostic's own destructuring then missed.")
                (publish cell "task.error"
                         (event::object "detail" (format nil "~(~a~): task ~a" kind subject)
                                        "task" subject))
-               (format *error-output* "~&vivarium tasks: ~(~a~) ~a~%" kind subject))))))))
+               (format *error-output* "~&viva tasks: ~(~a~) ~a~%" kind subject))))))))
 
 (defvar *task-lanes* 0)
 
 (defun task-terminal-p (supervisor id)
-  (vivarium.tasktree:terminal-p
-   (vivarium.tasktree:task (supervisor-tree supervisor) id)))
+  (viva.tasktree:terminal-p
+   (viva.tasktree:task (supervisor-tree supervisor) id)))
 
 (defun start-task-worker (supervisor id options)
   "The mechanics of a task: a sub-agent of the owning session's agent -- for a
@@ -268,4 +268,4 @@ thread, never inherited ambiently."
                               (if (agent:cancelled-p agent) :cancelled :completed))
                      (error () :failed))))
              (task-tell :task-finished id outcome))))
-       :name (format nil "vivarium-task-~d" id)))))
+       :name (format nil "viva-task-~d" id)))))

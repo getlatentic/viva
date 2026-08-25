@@ -1,6 +1,6 @@
 ;;;; The subcommands.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 ;;; check -- the rot guard
 ;;;
@@ -14,11 +14,11 @@
   (sort (directory (merge-pathnames "experiments/*.lisp" (repository-root))) #'string< :key #'namestring))
 
 (defun repository-root ()
-  (or (a:when-let ((override (env "VIVARIUM_ROOT"))) (truename override))
-      (asdf:system-source-directory "vivarium")))
+  (or (a:when-let ((override (env "VIVA_ROOT"))) (truename override))
+      (asdf:system-source-directory "viva")))
 
 (defun check-fasl-for (file)
-  (merge-pathnames (format nil "vivarium-check-~a.fasl" (pathname-name file))
+  (merge-pathnames (format nil "viva-check-~a.fasl" (pathname-name file))
                    (uiop:temporary-directory)))
 
 (defun compile-quietly (file)
@@ -53,7 +53,7 @@ whatever names they like."
   (handler-case
       (mapcar #'asdf:component-pathname
               (asdf:component-children
-               (asdf:find-component "vivarium/tests" "tests")))
+               (asdf:find-component "viva/tests" "tests")))
     (error () (directory (merge-pathnames "tests/*.lisp" (repository-root))))))
 
 (defun test-helpers ()
@@ -108,16 +108,16 @@ happened twice, so it is checked rather than remembered."
 ;;; a cycle.
 
 (defun load-test-system ()
-  "Load `vivarium/tests`, fetching what it needs.
+  "Load `viva/tests`, fetching what it needs.
 
 QUICKLOAD rather than ASDF:LOAD-SYSTEM because the test system depends on
 parachute, which nothing else does. The bootstrap quickloads the CLI, so a
 clean machine ends up with every dependency except that one -- and ASDF
-resolves dependencies but never downloads them, so `vivarium test` on a fresh
-clone died with `Component \"parachute\" not found` while `vivarium check`
+resolves dependencies but never downloads them, so `viva test` on a fresh
+clone died with `Component \"parachute\" not found` while `viva check`
 passed. The first thing a newcomer runs to see whether the install worked was
 the one command that could not."
-  (funcall (or (find-symbol "QUICKLOAD" "QL") 'asdf:load-system) "vivarium/tests"))
+  (funcall (or (find-symbol "QUICKLOAD" "QL") 'asdf:load-system) "viva/tests"))
 
 (defun command-soak (parsed)
   "Churn sessions, clients and journals for N minutes and demand a plateau.
@@ -127,7 +127,7 @@ which is the question a months-long process actually poses. Exits non-zero on
 growth."
   (load-test-system)
   (load (merge-pathnames "tests/soak.lisp" (repository-root)))
-  (uiop:symbol-call :vivarium.tests :soak
+  (uiop:symbol-call :viva.tests :soak
                     :minutes (flag-integer parsed "minutes" 10)))
 
 (defun command-mcp (parsed)
@@ -151,7 +151,7 @@ client. Diagnostics go to stderr or nowhere."
   ;; fork-based trial test, because SBCL refuses to fork a multithreaded
   ;; image -- nine failures from the instrument meant to catch one.
   (let ((status (uiop:symbol-call :parachute :status
-                                  (uiop:symbol-call :parachute :test :vivarium.tests))))
+                                  (uiop:symbol-call :parachute :test :viva.tests))))
     ;; PARACHUTE:STATUS returns :PASSED or :FAILED, and both are true. Testing
     ;; it for truth -- which is what every invocation in this project did until
     ;; now -- always exits 0, so a red suite could never fail a build.
@@ -229,7 +229,7 @@ client. Diagnostics go to stderr or nowhere."
          (rows '()))
     (when (null arms)
       (format t "~&No arms available. Set OPENROUTER_API_KEY, DEEPSEEK_API_KEY ~
-or VIVARIUM_LOCAL_ENDPOINT.~%")
+or VIVA_LOCAL_ENDPOINT.~%")
       (return-from command-calibrate 1))
     (format t "~&~d task~:p x ~d arm~:p x ~d repeat~:p~%~%"
             (length chosen) (length arms) repeats)
@@ -285,7 +285,7 @@ or VIVARIUM_LOCAL_ENDPOINT.~%")
 (defun command-compare (parsed)
   (destructuring-bind (&optional before after) (args-positional parsed)
     (unless (and before after)
-      (format t "~&usage: vivarium compare <before.json> <after.json>~%")
+      (format t "~&usage: viva compare <before.json> <after.json>~%")
       (return-from command-compare 1))
     (let ((old (rows-of before))
           (new (rows-of after))
@@ -362,7 +362,7 @@ fact about its evidence rather than about the directory it was written to."
   "Should this run paint? --colour decides when given; otherwise the terminal.
 
 Defaulting to ON regardless of where output goes is how a log file fills with
-escape sequences: `vivarium shell < script > log` is a supported way to run
+escape sequences: `viva shell < script > log` is a supported way to run
 this, and it wrote codes nobody could read into a file nobody could grep. The
 same test ATTEND already applied to its screen applies here, plus NO_COLOR,
 which is what a person redirecting output in a pane will already have set."
@@ -391,7 +391,7 @@ did not document."
   "Start, stop or inspect the organism.
 
 `start` runs in the foreground so a supervisor can own it; `--background`
-detaches the accept loop and returns, which is what `vivarium attach` uses when
+detaches the accept loop and returns, which is what `viva attach` uses when
 it finds nobody home."
   (let ((verb (or (first (args-positional parsed)) "status")))
     (cond
@@ -486,7 +486,7 @@ it finds nobody home."
                     (daemon:request stream "type" "shutdown"))
                   (format t "~&stopped~%") 0)
            (progn (format t "~&not running~%") 1)))
-      (t (format t "~&usage: vivarium daemon [status|start|stop|restart]~%") 1))))
+      (t (format t "~&usage: viva daemon [status|start|stop|restart]~%") 1))))
 
 (defun launch-daemon ()
   "Start a daemon in a process of its own and wait for it to answer.
@@ -499,7 +499,7 @@ It printed `listening on ...` and left nothing listening. SERVE's own
 :BACKGROUND is still right for a caller that IS the long-lived process, which
 is how the suite and the soak use it."
   (unless (daemon:running-p)
-    (uiop:launch-program (list (namestring (merge-pathnames "bin/vivarium" (repository-root)))
+    (uiop:launch-program (list (namestring (merge-pathnames "bin/viva" (repository-root)))
                                "daemon" "start")
                          :output nil :error-output nil)
     (loop repeat 100
@@ -545,8 +545,8 @@ still running and can be rejoined."
   (when (eq :connection-lost outcome)
     (format t "~&~%The organism closed this connection -- usually because this ~
 client fell behind~%what the session was producing. The session itself is ~
-untouched and still running.~%~%  vivarium        rejoins it~%  ~
-vivarium daemon status   shows what the organism is doing~%")
+untouched and still running.~%~%  viva        rejoins it~%  ~
+viva daemon status   shows what the organism is doing~%")
     t))
 
 (defun newest-source-time ()
@@ -559,7 +559,7 @@ vivarium daemon status   shows what the organism is doing~%")
   "Say so when the running organism predates the code on disk.
 
 A long-lived process keeps the code it was built from. Someone who edits
-vivarium, rebuilds, and reattaches is talking to the OLD one -- and the change
+viva, rebuilds, and reattaches is talking to the OLD one -- and the change
 they just made looks like it does not work. It cost a person five hours and a
 model that invented a shell workaround for a tool it could not see."
   (a:when-let ((started (and greeting (gethash "started" greeting))))
@@ -567,7 +567,7 @@ model that invented a shell workaround for a tool it could not see."
       (when (> newest started)
         (format t "~&! This organism started before the current code ~
 \(~d minute~:p ago).~%  Sessions live in the process, so a restart ends them:  ~
-vivarium daemon restart~%~%"
+viva daemon restart~%~%"
                 (max 1 (round (- (get-universal-time) started) 60)))))))
 
 (defun current-sequence (stream id)
@@ -602,7 +602,7 @@ this only mentions them -- continuing one is `--resume`."
     ;; looks at it. Advertising a flag the command ignores is worse than
     ;; advertising nothing.
     (format t "~&~d earlier session~:p recorded here. `/continue` carries the ~
-most recent~%  one into this session; `vivarium sessions` lists them all.~%"
+most recent~%  one into this session; `viva sessions` lists them all.~%"
             (length found)))))
 
 (defun command-attach (parsed)
@@ -716,7 +716,7 @@ The shell has had /trust since extensions existed; nothing else did. That was
 survivable while trust only gated extensions -- a file a person writes -- and
 stopped being survivable when the organism started writing TOOLS into the
 project it is working in: it would retain a tool and then be refused it, with
-the only remedy in a command that a script, a CI job and `vivarium do` cannot
+the only remedy in a command that a script, a CI job and `viva do` cannot
 reach.
 
 Saying yes is still a decision a person makes about a directory, so this
@@ -728,7 +728,7 @@ prints exactly what it is agreeing to."
         (progn
           (trust:trust (env:make-local-environment :cwd root) root)
           (format t "~&trusted ~a~%~
-Its .vivarium/extensions/*.lisp will be loaded, and its .vivarium/tools/ ~
+Its .viva/extensions/*.lisp will be loaded, and its .viva/tools/ ~
 will be run, as you.~%" root)))
     0))
 
@@ -758,9 +758,9 @@ driver: the organism's defining behaviour shipped switched off with no switch."
   (let* ((prompt (prompt-from parsed))
          (quiet (string= "true" (flag parsed "quiet" "false"))))
     (when (blank-prompt-p prompt)
-      (format t "~&usage: vivarium do \"<prompt>\" [--cwd DIR] [--model NAME]~%~
-       vivarium do --file prompt.txt~%~
-       echo \"<prompt>\" | vivarium do~%")
+      (format t "~&usage: viva do \"<prompt>\" [--cwd DIR] [--model NAME]~%~
+       viva do --file prompt.txt~%~
+       echo \"<prompt>\" | viva do~%")
       (return-from command-do 1))
     (let* ((console:*colour* nil)
            ;; A transcript only on request. It is what lets a run's cost be

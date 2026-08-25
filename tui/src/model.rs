@@ -1376,8 +1376,8 @@ mod tests {
 
     #[test]
     fn a_session_is_named_by_its_project_not_its_path() {
-        let session = SessionInfo { label: "/Users/dev/workspace/vivarium".into(), ..Default::default() };
-        assert_eq!(session.short_label(), "vivarium");
+        let session = SessionInfo { label: "/Users/you/work/atlas".into(), ..Default::default() };
+        assert_eq!(session.short_label(), "atlas");
         let trailing = SessionInfo { label: "/a/b/".into(), ..Default::default() };
         assert_eq!(trailing.short_label(), "b");
         let bare = SessionInfo { label: "notes".into(), ..Default::default() };

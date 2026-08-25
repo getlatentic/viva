@@ -15,7 +15,7 @@
 ;;;; across many chunks, keyed by an index, so they must be reassembled rather
 ;;;; than read off any single chunk.
 
-(in-package #:vivarium.stream)
+(in-package #:viva.stream)
 
 (defstruct (accumulator (:conc-name acc-))
   (text (make-string-output-stream))

@@ -8,7 +8,7 @@
 ;;;; message nobody receives, and the frontend that would have shown it simply
 ;;;; stays blank -- a failure indistinguishable from nothing having happened.
 
-(in-package #:vivarium.event)
+(in-package #:viva.event)
 
 (defparameter +names+
   '(;; a session's life. SESSION.COMPLETED asserts that nothing this session
@@ -104,7 +104,7 @@ one that is not worth publishing."
     ;; published turn.started twice and turn.completed twice, and any client
     ;; counting exchanges counted wrong.
     (:turn-start (values "model.started" nil))
-    (:delta (let ((text (vivarium.wire:text-field (getf loop-event :delta) "content")))
+    (:delta (let ((text (viva.wire:text-field (getf loop-event :delta) "content")))
               (when (and text (plusp (length text)))
                 (values "model.delta" (object "text" text)))))
     (:message (let ((message (getf loop-event :message)))

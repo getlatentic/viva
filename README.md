@@ -1,162 +1,192 @@
 # viva
 
-An experimental agent harness in Common Lisp, for long work and many agents.
+viva is an experimental agent harness for persistent, self-extending agents.
+Sessions persist beyond the terminal. Agents extend their environment in two
+different ways. One is temporary: they compile new behaviour into the running
+Common Lisp image. The other is durable: they write notes, skills and tools
+into the workspace for later sessions to reuse.
 
-Most coding agents live and die with a terminal window. viva runs the work in
-a daemon. Sessions survive a closed lid, a dropped network, a restart of the
-client, and a restart of the daemon. You reattach and the conversation is
-still there, under the same id.
+Most harnesses treat a run as disposable. The process starts and the model
+works with the tools it was given. When the run ends, whatever was useful
+survives only as files or conversation history.
 
-- Close the terminal and the turn keeps going.
-- Restart the daemon and every session comes back, under the same id.
-- 200 concurrent sessions cost 20 MB and one thread each.
-- Search every session you have ever had, by its text.
-- A session spawns scoped children that cannot outlive it.
-- It keeps what it learns as files you can read and edit.
+The experiment is whether agents benefit from turning the work they do into
+capabilities they can reuse. The alternative is solving the same class of
+problem from a fixed harness every time. The answer is not assumed. Each
+experiment fixes its comparison and its kill criterion before it runs, and the
+repository keeps the negative results beside the positive ones.
+
+![Sessions on the left, the transcript on the right, each tool call a titled rule with its result beneath it](docs/viva.png)
+
+- Sessions run in the background and reattach by id.
+- Closing the terminal does not end a running turn.
+- One client works with many concurrent sessions.
+- 200 idle sessions share about 20 MB of heap and use one thread each.
+- Full-text search spans every session recorded, in every directory.
+- A session spawns scoped child agents that cannot outlive it.
+- Live-image modification is off by default.
+- `viva shell --capabilities on` enables it for the shell harness.
+- `viva trust` gates a project's own tools before a later session can call them.
+
+## What persists
+
+Three continuities, and they are three different mechanisms.
+
+**Conversation.** Session state lives in the daemon. A client can disconnect
+and later reattach to the same session and transcript, under the same id.
+Closing a client removes a subscriber rather than ending the work, and a client
+whose daemon goes away reconnects by itself.
+
+| event | the session | the turn that was running |
+| --- | --- | --- |
+| client closed or crashed | keeps running | keeps running |
+| lid closed | pauses with the machine | resumes with the machine |
+| daemon stopped or killed | comes back, same id | lost; the session says so |
+| `session.stop` | ends | ends |
+
+A turn is a thread in the daemon. When the daemon dies, the turn dies with it,
+and the transcript holds everything up to the last message written.
+
+**Capability.** An agent writes notes, skills and tools into the workspace as
+ordinary project files. Those files survive a process restart, and a later
+session reuses them once you have run `viva trust` on the project.
+
+**Execution.** With capabilities enabled, an agent compiles a function into the
+running Common Lisp image and invokes it immediately. That function lives only
+in that image. viva records its lineage in the journal, and it does not
+reconstruct the compiled function after a restart.
+
+The third is deliberately not durable yet.
+
+```text
+                       viva
+                        │
+          ┌─────────────┴─────────────┐
+          │                           │
+     persistent work             self-extension
+          │                           │
+      daemon/session          ┌───────┴────────┐
+                              │                │
+                         live image        workspace
+                         transient          durable
+                              │                │
+                         functions       notes / skills /
+                                           tools
+```
+
+Common Lisp makes the live half of the experiment practical. Its image model
+lets an agent define, compile, install and invoke new behaviour without
+crossing an edit-build-restart boundary. Durable reuse is a separate mechanism,
+and it goes through workspace files.
+
+## Install
 
 ```bash
 sh install.sh     # needs SBCL; installs Quicklisp if it is absent
 viva              # opens this directory's session, or starts one
 ```
 
-Or take one file. `viva-macos-arm64` and `viva-linux-x86_64` are built by CI
-and need neither SBCL nor Quicklisp. CI starts a daemon with the file it built.
-It asks that daemon for its sessions, then stops it. An artifact that cannot
-serve fails the build.
+Or take one file. CI builds `viva-macos-arm64` and `viva-linux-x86_64`, which
+need neither SBCL nor Quicklisp.
 
-## Live with it
+### Windows
 
-```bash
-viva                       # full screen: sessions, transcript, tasks
-viva attach                # line oriented; pipes and diffs
-viva learned               # what this directory has retained
-viva sessions              # every recorded conversation here
-viva daemon status         # the long lived process
+Run it under WSL. Both ends talk over a unix socket, and Windows has none, so
+the daemon does not build there.
+
+```powershell
+wsl --install               # PowerShell, once, then reboot
 ```
 
-Inside the full screen client:
+```bash
+git clone <this repo> ~/viva     # inside the Ubuntu shell
+cd ~/viva && sh install.sh
+```
+
+Keep the checkout inside the WSL filesystem. A path under `/mnt/c/` sends every
+file read across the Windows boundary. CI does not test WSL. It tests the Linux
+build that WSL runs.
+
+## Run
+
+| command | what it does |
+| --- | --- |
+| `viva` | full screen: sessions, transcript, tasks |
+| `viva attach` | line oriented, for pipes and diffs |
+| `viva learned` | what this directory has retained |
+| `viva sessions` | every recorded conversation here |
+| `viva daemon status` | the long lived process |
+
+Keys inside the full screen client. Press `/` for the commands.
 
 | key | action |
 | --- | --- |
 | `Ctrl-P` | find any session, running or not; type to narrow |
 | `Ctrl-N` | start a session in a new tab |
-| `Ctrl-B` | put the sessions column away, or bring it back |
 | `Ctrl-W` | close the tab; the session keeps running |
 | `Ctrl-O` | show all of a tool's output, or the first three lines again |
 | `Ctrl-L` | what this session has learned |
-| `Ctrl-R` | read the session again from the daemon |
+| `Ctrl-B` | put the sessions column away, or bring it back |
 | `!` | run a shell command here; the model does not see it |
-| `/` | list the commands |
 | `Ctrl-C` | stop the running turn; leave when there is none |
-| wheel, `PageUp`, `Home`, `End` | move through the transcript |
-
-The page is the transcript, the full width of the screen.
-
-| part | shows |
-| --- | --- |
-| tab bar | the name, the sessions you opened, each with its state, and a count of the rest |
-| sessions | the conversations you have had here, running and recorded, each by what it is about |
-| page | your questions, marked; replies rendered from markdown; each tool call as a titled rule with its result and its time under it |
-| workers | a delegate reads as a `worker`, and the calls it makes are drawn inside it |
-| welcome | on a session nothing has been said in: the model, what this directory has retained, and the keys |
-| running | subagents and delegates, in a column that exists while one runs |
-| input edge | model, effort, project, branch, and the share of the context the last request used |
-
-The context share is the count the provider reported. It is not an estimate.
-
-Closing a client removes a subscriber. It does not end the work. If the daemon
-goes away, the client reconnects by itself and reads the session again.
-
-What survives what:
-
-| event | the session | the turn that was running |
-| --- | --- | --- |
-| client closed or crashed | keeps running | keeps running |
-| lid closed | paused with the machine | resumes with the machine |
-| daemon stopped or killed | comes back when the daemon does, same id | lost; the session says so |
-| `session.stop` | ends | ends |
-
-A turn is a thread in the daemon. When the daemon dies, the turn dies with it,
-and the transcript holds everything up to the last message written. The
-restored session opens with a note that says the turn did not finish.
 
 ## What it keeps, and where
 
 | tier | written to | reaches the model as |
 | --- | --- | --- |
-| note | `MEMORY.md` | prompt text |
-| skill | `.vivarium/skills/<name>/SKILL.md` | prompt text |
-| tool | `.vivarium/tools/<name>/tool.json` | the tool list, and MCP |
+| note | `.viva/MEMORY.md` | prompt text |
+| skill | `.viva/skills/<name>/SKILL.md` | prompt text |
+| tool | `.viva/tools/<name>/tool.json` | the tool list, and MCP |
 
-A fact becomes a note. Code becomes a skill. Code the agent has already
-wanted twice becomes a tool it calls by name.
+A fact becomes a note. Code becomes a skill. Code the agent has already wanted
+twice becomes a tool it calls by name. The agent writes these with the ordinary
+`write` tool, and you can author one by hand in the same format. `~/.viva/`
+applies to every directory, and the project directory wins on a name clash.
 
-The agent writes these with the ordinary `write` tool. You can author one by
-hand in the same format. `~/.vivarium/` applies to every directory, and the
-project directory wins when both define the same name.
+## Self-improvement experiments
 
-## Measured
+Where the answer stands today. Each entry links to the run that produced it.
 
-Run each command yourself. The numbers come from these runs.
+- [x] **Retention on real work.** 25 tasks, five recurring job shapes, policy
+  on. It retains, and what it retains is good: 5 artifacts, 4 of 5 worth
+  keeping on a cold review. Later tasks called the one tool it built five
+  times. [Results](experiments/dogfood/RESULTS.md).
+- [x] **Does retention pay?** Not yet, and honestly split. The corpus improved
+  8.2% against a 20% threshold, and one job shape got 18% worse. Averaging
+  those into a win is the thing the threshold exists to prevent.
+- [x] **Live self-modification** — compiling retained code into the running
+  Lisp image, mid-task. Killed on the pre-registered rule. Carrying the door
+  costs about 23% in tokens even when nothing opens it. The cleanest, most
+  fluent use in the battery still cost 43% to 73% more.
+  [Results](experiments/kc6/RESULTS.md).
+- [x] **Will a model invest if you let it?** Not on its own. Across 45
+  task-runs with the door open, every arm made zero `remember` calls and wrote
+  no `MEMORY.md`. Re-running under explicit framing did not move it.
+- [ ] **Composition** — does a capability that calls another capability beat a
+  text skill re-derived each time? This needs both retention and live
+  execution in one harness, which is why it is testable here.
+  [Pre-registration](docs/b15-preregistration.md).
+- [ ] **A Lisp-fluent model.** 19 of 59 self-modification attempts failed to
+  compile, which measures the model rather than the mechanism. The current
+  pin forbids the probe.
+- [ ] **Ergonomics on the door** — shipping an idiom guide in the tool
+  descriptions, since a door's ergonomics include its language.
+- [ ] **Rehydrating a live capability** — does reconstructing a minted
+  function after a restart beat simply reloading the file-backed tool? Held
+  until a result gives a reason to build it.
 
-Every one of these also runs on macOS and Linux in CI.
+What the record supports so far: **retention pays where the work is mechanical
+and recurs, and costs where the work is judgment.** The round trip is the
+expense, not the language. Short tasks have no derivation cost to amortise an
+artifact against.
 
-| what | number | command |
-| --- | --- | --- |
-| Lisp tests | 1,930 pass | `viva test` |
-| Rust tests | 85 pass | `cargo test --manifest-path tui/Cargo.toml` |
-| TLA+ configurations | 23 agree | `./spec/verify.sh` |
-| undefined variables | none, in 8 systems | `sbcl --script tools/check-warnings.lisp` |
-| terminal invariants | 33 hold | `python3 tui/conformance.py` |
-| recorded sessions replayed through the client | clean | `python3 tui/journal_replay.py` |
-| 2 minutes of churn | 6,906 cycles, heap 67 MB flat | `viva soak --minutes 2` |
-| 200 sessions | heap 59 MB to 79 MB, 202 threads | the snippet below |
-| one streamed token, 10 turns | 4.25 ms | `cargo test --manifest-path tui/Cargo.toml bench -- --nocapture` |
-| one streamed token, 400 turns | 4.29 ms | the same |
-
-Threads are the limit, not memory. The frame cost does not grow with the
-conversation: the client lays out only the entry that changed.
-
-```lisp
-;; With vivarium/daemon loaded and nothing else. The heap before is 59 MB.
-(dotimes (n 200) (vivarium.actor:spawn :label "/tmp/x"
-                   :agent (vivarium.harness:make-workspace-agent :cwd "/tmp/")))
-(round (sb-kernel:dynamic-usage) (* 1024 1024))   ; 79
-(length (sb-thread:list-all-threads))             ; 202
-```
-
-Eleven of the 23 TLA+ configurations must fail. A proof that stops proving
-breaks the run instead of passing quietly. `spec/Recovery.tla` is the one for
-a session that outlives its daemon: it names the two hazards, and one of them
-is the arrangement the daemon still has.
-
-## What is borrowed
-
-- The agent loop is a port of [Pi](https://github.com/badlogic/pi-mono).
-  See [docs/harness-lineage.md](docs/harness-lineage.md).
-- The skill format follows Anthropic's Agent Skills.
-- The tool format follows MCP. `viva mcp` serves the registry to any client.
-- The Rust client draws with ratatui and parses markdown with pulldown-cmark.
-
-Other harnesses retain too. Codex ships a retention pipeline with usage
-ranking and pruning. Read [docs/harness-comparison.md](docs/harness-comparison.md)
-for what each one does, with citations.
-
-## What failed
-
-Kill criterion 6 tested compiling retained code into the live Lisp image.
-It lost on all 6 families and cost about twice as much as text.
-
-The detail matters. 19 of 59 attempts failed to compile, which measures the
-model's Common Lisp fluency. One family used the door with zero failures and
-still cost 43% to 73% more. The round trip is the cost, not the language.
-
-[experiments/kc6/RESULTS.md](experiments/kc6/RESULTS.md) carries the numbers.
+[docs/self-improvement-model.md](docs/self-improvement-model.md) states the
+model behind them.
 
 ## Files
 
 ```
-bin/vivarium         the launcher; `viva` links to it
+bin/viva             the launcher
 src/core/            messages, tools, the agent loop
 src/workspace/       skills, registry, memory, reflection
 src/daemon/          sessions as actors, the socket, the task tree
@@ -168,32 +198,29 @@ tools/               the image build, and the checks that need a terminal
 docs/                design decisions and comparisons
 ```
 
+```bash
+viva test                                   # the Lisp suite
+cargo test --manifest-path tui/Cargo.toml   # the client
+./spec/verify.sh                            # the TLA+ configurations
+```
+
+CI runs all three on macOS and Linux, builds a standalone binary on each, then
+starts a daemon with the binary it built and asks it for its sessions. An
+artifact that cannot serve fails the build. Eleven of the 23 TLA+
+configurations must fail: a proof that stops proving breaks the run instead of
+passing quietly.
+
+## Acknowledgements
+
+- The agent loop is a port of [Pi](https://github.com/badlogic/pi-mono).
+  [docs/harness-lineage.md](docs/harness-lineage.md) names what came from Pi
+  and what this project added.
+- The skill format follows Anthropic's Agent Skills.
+- The tool format follows MCP. `viva mcp` serves the registry to any client.
+- The Rust client draws with [ratatui](https://ratatui.rs) and parses markdown
+  with pulldown-cmark.
+- The Lisp engine runs on SBCL.
+
 ## Status
 
-This is a research harness. The experiments measure the retention policy.
-Nobody has run the composition experiment yet. See
-[docs/b15-preregistration.md](docs/b15-preregistration.md).
-
-It runs on macOS and Linux, and CI builds and checks both on every push.
-
-Windows does not build. `.github/workflows/windows-probe.yml` measures what is
-there, on a Windows runner:
-
-| | on Windows |
-| --- | --- |
-| the client | 6 compile errors, every one `std::os::unix` |
-| SBCL 2.6.7 | installs |
-| SB-POSIX | loads; 12 of the 20 calls this code makes |
-| missing | `lockf` `kill` `killpg` `fork` `pipe` `waitpid` `tcgetattr` `tcsetattr` |
-| sb-bsd-sockets | loads |
-| unix sockets | absent |
-
-Both sides talk over a unix socket, and Windows has none. `fork` and the
-termios calls belong to the trial runner and the Lisp client, neither of which
-a Windows daemon needs. What it does need is a transport, and TCP on loopback
-is not a drop-in: file permissions guard a unix socket, and nothing guards a
-loopback port.
-
-Windows works today under WSL, where the Linux build is what runs.
-
-The code still says `vivarium` inside. Only the command is `viva`.
+Still in development, as a research harness.

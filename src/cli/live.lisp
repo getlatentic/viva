@@ -11,7 +11,7 @@
 ;;;; produce -- which is the test of whether the daemon's interface was
 ;;;; actually general or merely enough for one client.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defparameter *idle-poll* 0.02
   "Seconds to wait when neither the socket nor the keyboard has anything.
@@ -241,7 +241,7 @@ terminal it was invited into.")
 (defun command-live (parsed)
   "The full-screen client: sessions, the running turn and tasks at once."
   (unless (tui:terminal-p)
-    (format t "~&vivarium live needs a terminal. Use `vivarium attach` when piping.~%")
+    (format t "~&viva live needs a terminal. Use `viva attach` when piping.~%")
     (return-from command-live 1))
   (unless (ensure-daemon)
     (format t "~&could not start a daemon~%")

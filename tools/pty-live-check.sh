@@ -1,7 +1,7 @@
 #!/bin/sh
-# Does `vivarium live` actually draw a frame?
+# Does `viva live` actually draw a frame?
 #
-# It compiles, and compiling proves nothing: `vivarium check` reports an
+# It compiles, and compiling proves nothing: `viva check` reports an
 # undefined function as a style warning, so a client that calls something that
 # does not exist builds clean and dies on the first keypress. The only evidence
 # is a real terminal, a real daemon, and a frame read back off the wire.
@@ -17,12 +17,12 @@ import os, pty, fcntl, termios, struct, sys, select, time, subprocess
 
 root = sys.argv[1]
 ROWS, COLS = 30, 100
-vivarium = os.path.join(root, "bin", "vivarium")
+viva = os.path.join(root, "bin", "viva")
 
 pid, fd = pty.fork()
 if pid == 0:
     os.chdir(root)
-    os.execv(vivarium, [vivarium, "live"])
+    os.execv(viva, [viva, "live"])
 fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
 
 out = b""
@@ -126,7 +126,7 @@ def wait_for(marker, seconds, label):
 
 # The first run compiles the world; give it room.
 wait_for(b"\x1b[?1049h", 300, "the alternate screen")
-wait_for(b"vivarium", 60, "the title bar")
+wait_for(b"viva", 60, "the title bar")
 print("entered the alternate screen and drew a title")
 
 os.write(fd, b"hello")
@@ -177,7 +177,7 @@ def marked():
     # a check that could not fail, which is worse than one that does.
     for line in replay(out)[:-4]:
         # Strip the pane border too, not only whitespace: the marker row now
-        # reads "|>   vivarium", and a matcher that only stripped spaces saw a
+        # reads "|>   viva", and a matcher that only stripped spaces saw a
         # border character and reported the feature broken.
         stripped = line.strip().lstrip("\u2502\u2500|").strip()
         if stripped.startswith(">") and len(stripped) > 1:

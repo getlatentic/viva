@@ -1,6 +1,6 @@
 ;;;; The verbs an attached session answers.
 ;;;;
-;;;; `vivarium shell` had eighteen verbs and `vivarium attach` -- the organism,
+;;;; `viva shell` had eighteen verbs and `viva attach` -- the organism,
 ;;;; the long-lived thing this project is about -- had one. Everything else
 ;;;; typed with a leading slash was forwarded to the model as a literal prompt:
 ;;;; a paid request, a confused model, and no error. The flagship had the worst
@@ -15,7 +15,7 @@
 ;;;; `/memory` and `/status` are four questions about one instant, and four
 ;;;; round trips would answer them from four.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defstruct (attached-verb (:conc-name attached-))
   (name "" :type string)
@@ -60,7 +60,7 @@ and rejoining a session hung forever.
 
 Replay is a nicety; hanging is not. The client attaches from NOW, so nothing
 is queued into the socket to poison the next prompt, and the history stays
-where it has always been: `vivarium sessions`, and the transcript on disk."
+where it has always been: `viva sessions`, and the transcript on disk."
   (let ((session (gethash "session" reply)))
     (format t "~&  ~a~@[, ~a~]~@[, ~d queued~]~%"
             (or (gethash "state" session) "idle")
@@ -150,7 +150,7 @@ and its answer went nowhere while quietly desynchronising the stream."
                        do (format t "  ~a~24tpresent, but will not run~%" (gethash "name" item)))
                  (unless (eq t (gethash "trusted" reply))
                    (format t "  trust this project to enable them: ~
-vivarium trust ~a~%" (gethash "cwd" reply)))))))))))
+viva trust ~a~%" (gethash "cwd" reply)))))))))))
 
 (defparameter +attached-verbs+
   (list

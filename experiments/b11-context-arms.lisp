@@ -36,9 +36,9 @@
 (load (merge-pathnames "quicklisp/setup.lisp" (user-homedir-pathname)))
 (push (truename ".") ql:*local-project-directories*)
 (handler-bind ((warning #'muffle-warning))
-  (funcall (find-symbol "QUICKLOAD" "QL") :vivarium/cli :silent t))
+  (funcall (find-symbol "QUICKLOAD" "QL") :viva/cli :silent t))
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defparameter *family-d* '(:t18 :t19 :t20))
 (defparameter *b11-tasks* '(:t1 :t4 :t7 :t9 :t11 :t18 :t20)
@@ -109,7 +109,7 @@ transcript. Do not speculate beyond it. Be terse."
                  :system-prompt image-tools:*system-prompt*
                  :tools (image-tools:tool-set)))
 
-;;; A1 -- vivarium's existing recovery semantics, and nothing more
+;;; A1 -- viva's existing recovery semantics, and nothing more
 ;;;
 ;;; The ledger records what was INSTALLED. It does not record what was
 ;;; considered and rejected, which is the whole point of the comparison: A1 must

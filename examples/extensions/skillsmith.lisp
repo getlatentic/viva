@@ -5,13 +5,13 @@
 ;;;; procedure down as a skill, and the skill is in its own system prompt on the
 ;;;; very next request -- no restart, no human, no edit to the harness.
 ;;;;
-;;;; Copy this file to .vivarium/extensions/ in a project you have trusted, or
-;;;; to ~/.vivarium/extensions/ to have it everywhere.
+;;;; Copy this file to .viva/extensions/ in a project you have trusted, or
+;;;; to ~/.viva/extensions/ to have it everywhere.
 
-(in-package #:vivarium.extension)
+(in-package #:viva.extension)
 
 (defun skillsmith-directory ()
-  (env:join-path (env:env-cwd (vivarium.workspace:environment)) ".vivarium" "skills"))
+  (env:project-path (env:env-cwd (viva.workspace:environment)) "skills"))
 
 (defun skillsmith-valid-name-p (name)
   (and (plusp (length name))
@@ -43,14 +43,14 @@ situation it applies to, not as a title."
 letters, digits and hyphens, e.g. \"run-the-tests\"." name)
          :error-p t)))
     (let ((path (env:join-path (skillsmith-directory) name "SKILL.md")))
-      (env:write-text (vivarium.workspace:environment) path
+      (env:write-text (viva.workspace:environment) path
                       (format nil "---~%name: ~a~%description: ~a~%---~%~%~a~%"
                               name (gethash "description" args) (gethash "content" args)))
       ;; Reloading here is the whole point: the skill has to be usable now, not
       ;; after a restart. A skill that only takes effect next process is a note
       ;; to a future agent, which is a weaker claim than the one being tested.
-      (a:when-let ((agent vivarium.harness:*agent*))
-        (vivarium.harness:refresh-resources agent))
+      (a:when-let ((agent viva.harness:*agent*))
+        (viva.harness:refresh-resources agent))
       (format nil "Wrote the skill ~a to ~a. It is available from your next ~
 request onward; invoke it by reading that file when the situation matches."
               name path))))

@@ -6,11 +6,11 @@
 ;;;; in a trial at all. What survives the modelling is the property that matters:
 ;;;; a restart destroys it and there is no source to rebuild it from.
 
-(in-package #:vivarium.tasks)
+(in-package #:viva.tasks)
 
 ;;; T7
 
-(deftask :t7 (:family :a-flight :split :train :package "VIVARIUM.TASK.T7")
+(deftask :t7 (:family :a-flight :split :train :package "VIVA.TASK.T7")
   "Forty orders are stuck part-way through in *PENDING*. Each is a plist with a
 :STAGE.
 
@@ -80,7 +80,7 @@ must be called to produce its amount."
 
 ;;; T8
 
-(deftask :t8 (:family :a-flight :split :held-out :package "VIVARIUM.TASK.T8")
+(deftask :t8 (:family :a-flight :split :held-out :package "VIVA.TASK.T8")
   "*DEFERRED* holds closures. Each captured values from the request that queued
 it, and those values exist nowhere else -- not in a file, not in a database, only
 in the closure.

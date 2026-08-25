@@ -11,7 +11,7 @@
 ;;;; choose something else -- where an exception would end the run and teach it
 ;;;; nothing. Saying no is a message, not a crash.
 
-(in-package #:vivarium.extension)
+(in-package #:viva.extension)
 
 (defparameter +guard-refused+
   '("rm -rf /" "rm -rf ~" "mkfs" "dd if=" ":(){" "> /dev/sda" "chmod -R 777 /")
@@ -24,19 +24,19 @@ cost of a false refusal is higher than the cost of a narrow list.")
   "Prefixes worth removing from a tool result before anyone sees it.")
 
 (defun guard-command (call)
-  (let ((arguments (vivarium.message:tool-call-arguments call)))
+  (let ((arguments (viva.message:tool-call-arguments call)))
     (and (hash-table-p arguments)
          (or (gethash "command" arguments) ""))))
 
 (defun guard-refuse (event)
   "Refuse a command that matches, by answering with the refusal itself."
   (let ((call (getf event :call)))
-    (when (string= "bash" (vivarium.message:tool-call-name call))
+    (when (string= "bash" (viva.message:tool-call-name call))
       (let ((command (guard-command call)))
         (a:when-let ((hit (find-if (lambda (fragment) (search fragment command))
                                    +guard-refused+)))
-          (vivarium.harness:record :guard-refused "command" command "matched" hit)
-          (vivarium.tool:make-tool-result
+          (viva.harness:record :guard-refused "command" command "matched" hit)
+          (viva.tool:make-tool-result
            :output (format nil "Refused: this command contains ~s, which the guard ~
 extension does not allow. Nothing was run. If you need this, ask the person ~
 running the session to do it." hit)
@@ -47,12 +47,12 @@ running the session to do it." hit)
 transcript sees it. Returning a replacement is the only way -- by the time this
 would have been an observation, the value is already in both."
   (let* ((result (getf event :result))
-         (text (vivarium.tool:tool-result-output result)))
+         (text (viva.tool:tool-result-output result)))
     (when (some (lambda (prefix) (search prefix text)) +guard-secrets+)
-      (vivarium.harness:record :guard-redacted "bytes" (length text))
-      (vivarium.tool:make-tool-result
+      (viva.harness:record :guard-redacted "bytes" (length text))
+      (viva.tool:make-tool-result
        :output (guard-scrub text)
-       :error-p (vivarium.tool:tool-result-error-p result)))))
+       :error-p (viva.tool:tool-result-error-p result)))))
 
 (defun guard-scrub (text)
   (let ((result text))

@@ -18,7 +18,7 @@ retains is good**, **what it keeps gets reused**, **reuse pays**.
 
 ## An honest amendment to "a week"
 
-Issue #12 says a week of vivarium's own development. A week is wall-clock
+Issue #12 says a week of viva's own development. A week is wall-clock
 and cannot be compressed into a session, and "whatever development happened
 this week" is not a measurable unit — real feature work mostly does not
 recur, and retention has nothing to pay off against.

@@ -37,7 +37,7 @@ E5          arbitrary eval         ->  one-shot programs collapse that cost
 These are different hypotheses about what the base harness should be. B14 does
 not settle E5 and must not be read as having done so. **If E5 later wins, B14 is
 not retroactively wrong** — it measured self-improvement under a restricted-tool
-regime, and E5 would have established that vivarium's optimal base harness
+regime, and E5 would have established that viva's optimal base harness
 removes that particular opportunity. Both are results.
 
 ## Three gates, sequential and hard
@@ -333,7 +333,7 @@ agent rewriting live code looked like evidence for self-improvement because the
 ```
 
 **In an image, all three are the same act:** compile a definition in. That is
-vivarium's actual claim, and it is why the distinction has to be enforced by the
+viva's actual claim, and it is why the distinction has to be enforced by the
 experiment rather than by the machinery -- a file-based harness separates them by
 ceremony, and an image does not separate them at all.
 

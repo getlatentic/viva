@@ -13,7 +13,7 @@
 ;;;; the same KEY structure either way: everything above should be written once
 ;;;; against a key, not twice against two dialects.
 
-(in-package #:vivarium.tui)
+(in-package #:viva.tui)
 
 (defstruct (key (:conc-name key-))
   ;; A character, or a keyword for the ones that are not: :up :down :left

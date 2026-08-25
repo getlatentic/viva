@@ -62,13 +62,13 @@ prompt_cache_miss_tokens, completion_tokens."* True, non-obvious, transfers,
 and it is the exact fact this session rediscovered by hand four times.
 
 **KEPT — suite output shape.** *"run.log ends with a `;; Summary:` block;
-failure lines carry the test name after `VIVARIUM.TESTS::`."* Same three
+failure lines carry the test name after `VIVA.TESTS::`."* Same three
 answers.
 
 **KEPT — the registry's own bug.** *"token-usage-total resolves its dir
 argument against a different cwd than this workspace: a relative path like
 'data' silently yields all zeros. Pass an absolute path."* True, and it is a
-defect report about vivarium written by vivarium. See below.
+defect report about viva written by viva. See below.
 
 **DELETED — the experiment's own layout.** *"task workspaces contain PROMPT,
 expectations.txt, logs/, check.py … answer.txt is the deliverable."* True and
@@ -107,7 +107,7 @@ described below and is not counted as a result.
 ## The instrument, corrected mid-flight
 
 The first run gave every task its own working directory. Retention in
-vivarium is **project-scoped** — `remember` writes `.vivarium/MEMORY.md`
+viva is **project-scoped** — `remember` writes `.vivarium/MEMORY.md`
 relative to cwd, and skills and tools resolve the same way — so each task got
 its own germline and none could see another's. The organism built the same
 tool twice under two names in three separate shapes: `sum-token-usage` and

@@ -5,11 +5,11 @@
 ;;;; produced by a history of calls that no source records, so a harness working
 ;;;; from source alone is guessing about a distribution it cannot see.
 
-(in-package #:vivarium.tasks)
+(in-package #:viva.tasks)
 
 ;;; T4
 
-(deftask :t4 (:family :a-live :split :train :package "VIVARIUM.TASK.T4")
+(deftask :t4 (:family :a-live :split :train :package "VIVA.TASK.T4")
   "NET-TOTAL is wrong, and every test anyone wrote for it passes.
 
 It takes the absolute value of each price before multiplying. Look at what is
@@ -51,7 +51,7 @@ Fix NET-TOTAL so it returns the true net figure."
 
 ;;; T5
 
-(deftask :t5 (:family :a-live :split :train :package "VIVARIUM.TASK.T5")
+(deftask :t5 (:family :a-live :split :train :package "VIVA.TASK.T5")
   "DESCRIBE-ITEM is a generic function whose methods were installed at runtime
 by whatever module owned each item class. It signals for at least one class of
 item that is actually in the catalogue.
@@ -108,7 +108,7 @@ the existing methods already produce."
 
 ;;; T6
 
-(deftask :t6 (:family :a-live :split :held-out :package "VIVARIUM.TASK.T6")
+(deftask :t6 (:family :a-live :split :held-out :package "VIVA.TASK.T6")
   "AVERAGE-EVENT-VALUE truncates, and on the distribution actually flowing
 through this image the lost remainder is not negligible.
 
@@ -147,7 +147,7 @@ events count as zero and still count toward the denominator."
 ;;; against a list of plists. The value was in the image the whole time. Here the
 ;;; source is deliberately mute about the shape: it says NIL.
 
-(deftask :t15 (:family :a-live :split :train :package "VIVARIUM.TASK.T15")
+(deftask :t15 (:family :a-live :split :train :package "VIVA.TASK.T15")
   "ORDERS-FOR treats *INDEX* as an association list and returns NIL for
 everything. Its declaration says only `nil`, so the source will not tell you what
 it actually holds -- the running image will.
@@ -194,7 +194,7 @@ has none. Leave *INDEX* alone."
 ;;; error and returns 0 -- a plausible answer, and the wrong one. Only calling it
 ;;; in this image shows the defect.
 
-(deftask :t16 (:family :a-live :split :held-out :package "VIVARIUM.TASK.T16")
+(deftask :t16 (:family :a-live :split :held-out :package "VIVA.TASK.T16")
   "DISTINCT-SKUS is meant to count how many different SKUs appear in *EVENTS*.
 It returns one entry per event instead.
 
@@ -229,9 +229,9 @@ this running image the function looks correct. Check it here."
 ;;;
 ;;; Real code arrives by LOAD, not through this harness, so the ledger has no
 ;;; previous source for it and READ-DEFINITION falls back to introspection. That
-;;; path is load-bearing for `vivarium run` and no other task exercises it.
+;;; path is load-bearing for `viva run` and no other task exercises it.
 
-(deftask :t17 (:family :a-live :split :train :package "VIVARIUM.TASK.T17")
+(deftask :t17 (:family :a-live :split :train :package "VIVA.TASK.T17")
   "SHIPPING-BAND was loaded from a file rather than installed here, so this image
 has no previous source for it -- only the live function itself.
 
@@ -256,7 +256,7 @@ Fix it."
             (cons "installed-through-the-image"
                   ;; The fix has to land in the image, not merely be described.
                   (lambda ()
-                    (score (find "DEFUN VIVARIUM.TASK.T17::SHIPPING-BAND"
+                    (score (find "DEFUN VIVA.TASK.T17::SHIPPING-BAND"
                                  (ledger:entries ledger)
                                  :key #'ledger:entry-target :test #'string=))))
             (cons "still-a-function-of-one-argument"

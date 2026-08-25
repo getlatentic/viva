@@ -4,7 +4,7 @@
 ;;;; full-screen client fails is by drawing the wrong thing, and the only way
 ;;;; to catch that is to render into a buffer and read it back.
 
-(in-package #:vivarium.tui)
+(in-package #:viva.tui)
 
 (defparameter *sidebar* 22)
 (defparameter *tasks-width* 26)
@@ -151,7 +151,7 @@ twenty-column line truncates the answer to the first."
     (flet ((region (name) (cdr (assoc name regions))))
       (a:when-let ((tabs (region :tabs)))
         (setf (view-tab-ranges view)
-              (draw-tabs screen tabs (or (view-tabs view) (list "vivarium"))
+              (draw-tabs screen tabs (or (view-tabs view) (list "viva"))
                          (view-tab view))))
       (a:when-let ((sessions (region :sessions)))
         (paint-sessions view screen

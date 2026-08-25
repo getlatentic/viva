@@ -4,7 +4,7 @@
 ;;;; croatoan pane cannot be exercised here -- there is no tty -- but everything
 ;;;; that decides its contents is an ordinary function and is checked below.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
 (defclass collecting () ((seen :initform '() :accessor seen)))
 (defmethod cli:render ((r collecting) event) (push event (seen r)))
@@ -43,8 +43,8 @@
     (false (string= (line t) (line nil)))))
 
 (define-test "the image pane is state, showing was and now per definition"
-  (let ((backend (make-instance 'image:sbcl-image :package "VIVARIUM.TESTS.RENDER")))
-    (service:fresh-package "VIVARIUM.TESTS.RENDER")
+  (let ((backend (make-instance 'image:sbcl-image :package "VIVA.TESTS.RENDER")))
+    (service:fresh-package "VIVA.TESTS.RENDER")
     (is equal '("nothing installed yet") (cli:ledger-lines backend))
     (image:install-definition backend "(defun f () 1)" :note "fixture")
     ;; Fixture installs are the task's own setup, not the agent's work.

@@ -8,7 +8,7 @@
 ;;;; ncurses owns terminal input. Events arrive from the worker, so the queue is
 ;;;; behind a lock.
 
-(in-package #:vivarium.cli)
+(in-package #:viva.cli)
 
 (defclass screen ()
   ((trajectory :initform '() :accessor screen-trajectory)
@@ -17,7 +17,7 @@
    (heading :initform "" :accessor screen-heading)
    (typing :initform "" :accessor screen-typing)
    (dirty :initform t :accessor screen-dirty-p)
-   (lock :initform (bt:make-lock "vivarium.screen") :reader screen-lock)))
+   (lock :initform (bt:make-lock "viva.screen") :reader screen-lock)))
 
 (defmethod render ((renderer screen) event)
   (bt:with-lock-held ((screen-lock renderer))

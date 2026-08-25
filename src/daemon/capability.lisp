@@ -15,8 +15,8 @@
 ;;;; frictions this exists for -- reshape this format, parse this dialect,
 ;;;; normalise this output -- are string to string anyway.
 ;;;;
-;;;; These tools live daemon-side because VIVARIUM/DAEMON depends on
-;;;; VIVARIUM/WORKSPACE and not the reverse, and they reach an agent through
+;;;; These tools live daemon-side because VIVA/DAEMON depends on
+;;;; VIVA/WORKSPACE and not the reverse, and they reach an agent through
 ;;;; the :EXTRA-TOOLS seam MAKE-WORKSPACE-AGENT already has. Nothing in the
 ;;;; workspace layer learns about evolution.
 ;;;;
@@ -24,7 +24,7 @@
 ;;;; ACTIVATE and PROMOTE are refused by the door, and the refusal text says so
 ;;;; plainly so a competent agent stops instead of thrashing against it.
 
-(in-package #:vivarium.actor)
+(in-package #:viva.actor)
 
 ;;; Task identity
 ;;;
@@ -37,7 +37,7 @@
   "Agent -> task identity. Weak on the key: an agent that is gone takes its
 entry with it, and this table is not a reason to retain one.")
 
-(defvar *capability-lock* (bt:make-lock "vivarium.capability"))
+(defvar *capability-lock* (bt:make-lock "viva.capability"))
 (defvar *capability-counter* 0)
 
 (defun agent-task (agent)
@@ -191,7 +191,7 @@ you have put in force for this task."
   :parameters ()
   (let* ((agent (capability-agent))
          (registry (evolution-registry))
-         (pins (vivarium.evolution:pins-of registry (agent-task agent))))
+         (pins (viva.evolution:pins-of registry (agent-task agent))))
     (tool:make-tool-result
      :output
      (if (null pins)

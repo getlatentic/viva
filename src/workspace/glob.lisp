@@ -9,7 +9,7 @@
 ;;;; translation is small enough to read in one sitting, and the alternative is
 ;;;; reimplementing backtracking for `**`.
 
-(in-package #:vivarium.glob)
+(in-package #:viva.glob)
 
 (defun quoted (character)
   (if (find character "\\^$.|?*+()[]{}")
@@ -89,18 +89,19 @@ alternative silently returns nothing for the most common query there is."
 (defstruct (ignore-set (:conc-name ignore-set-) (:constructor %make-ignore-set))
   (rules '() :type list))
 
-(defparameter +default-ignores+ '(".git/" ".vivarium/")
+(defparameter +default-ignores+ '(".git/" ".viva/" ".vivarium/")
   "Always excluded from a recursive walk. Not configurable.
 
 .git because an agent that greps its way into it finds every version of every
 file it was just shown, which is a context-window denial of service rather than
 a search result.
 
-.vivarium because it is the harness's own state -- sessions, memory, skills --
+.viva because it is the harness's own state -- sessions, memory, skills --
 and a search that returns the transcript of the search is worse than noise: it
 has been observed sending a worker off to investigate its own conversation.
-Nothing is hidden by this; LS still lists it and READ still opens it. Only the
-recursive walk declines to wander in.")
+Both spellings, because a machine installed before the rename still keeps its
+state under the former name. Nothing is hidden by this: LS still lists it and
+READ still opens it. Only the recursive walk declines to wander in.")
 
 (defun make-ignore-set (&optional (patterns +default-ignores+))
   (let ((set (%make-ignore-set)))

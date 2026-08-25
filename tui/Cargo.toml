@@ -1,12 +1,12 @@
 [package]
-name = "vivarium-tui"
+name = "viva-tui"
 version = "0.1.0"
 edition = "2021"
-description = "A full-screen client for the vivarium daemon."
+description = "A full-screen client for the viva daemon."
 license = "Apache-2.0"
 
 [[bin]]
-name = "vivarium-tui"
+name = "viva-tui"
 path = "src/main.rs"
 
 [dependencies]

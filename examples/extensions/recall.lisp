@@ -11,7 +11,7 @@
 ;;;; someone writes, not a change to the harness. If this needed the harness to
 ;;;; move, the extension API would be the wrong shape.
 
-(in-package #:vivarium.extension)
+(in-package #:viva.extension)
 
 (defparameter +recall-limit+ 5)
 
@@ -35,7 +35,7 @@ because every line contains `the`.")
 
 (defun recall-lines ()
   (remove-if (lambda (line) (< (length (string-trim '(#\Space #\-) line)) 8))
-             (uiop:split-string (vivarium.memory:read-memory (vivarium.workspace:environment))
+             (uiop:split-string (viva.memory:read-memory (viva.workspace:environment))
                                 :separator (string #\Newline))))
 
 (defun recall-score (line words)
@@ -71,8 +71,8 @@ worked and quietly destroyed the record: the transcript then showed the person
 saying words they had not typed, and on resume there was no way to tell which
 were theirs. A custom message keeps the attribution, and a reader can strip
 this extension's contributions without having to guess which ones they were."
-  (a:when-let ((found (recall-matching (vivarium.message:text-of message))))
-    (vivarium.harness:send-message
+  (a:when-let ((found (recall-matching (viva.message:text-of message))))
+    (viva.harness:send-message
      "recall"
      (format nil "<recalled>~%You have worked here before and noted:~%~{~a~%~}</recalled>"
              found)))

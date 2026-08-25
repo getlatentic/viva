@@ -1,11 +1,11 @@
 ;;;; READ, WRITE, EDIT.
 ;;;;
 ;;;; Deliberately the same three verbs, the same argument names and the same
-;;;; output limits as Pi. Vivarium is going to be compared against Pi on the
+;;;; output limits as Pi. Viva is going to be compared against Pi on the
 ;;;; same model and the same task, and a comparison where one side reads 2000
 ;;;; lines and the other reads 400 measures the constant, not the harness.
 
-(in-package #:vivarium.workspace)
+(in-package #:viva.workspace)
 
 (defvar *environment* nil
   "The execution environment tools act on. Bound per run, never global state.")
@@ -13,7 +13,7 @@
 (defun environment ()
   (or *environment*
       (error "No environment bound. Use WITH-ENVIRONMENT, or bind ~
-VIVARIUM.WORKSPACE:*ENVIRONMENT* to an ENV:ENVIRONMENT.")))
+VIVA.WORKSPACE:*ENVIRONMENT* to an ENV:ENVIRONMENT.")))
 
 (defmacro with-environment ((environment) &body body)
   `(let ((*environment* ,environment)) ,@body))

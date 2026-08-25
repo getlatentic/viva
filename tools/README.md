@@ -7,7 +7,7 @@ terminal actually received.
 | script | answers |
 |---|---|
 | `pty-size-check.sh` | does `terminal-size` read the **real** size? |
-| `pty-live-check.sh` | does `vivarium live` draw, type, send, scroll and hand the terminal back? |
+| `pty-live-check.sh` | does `viva live` draw, type, send, scroll and hand the terminal back? |
 | `pty-conformance.sh` | do the terminal **invariants** hold — erase, resize, selection, paging? |
 
 Run them after any change to `src/tui/` or `src/cli/live.lisp`:
@@ -18,7 +18,7 @@ Run them after any change to `src/tui/` or `src/cli/live.lisp`:
 
 ## Why these are separate from the suite
 
-`vivarium test` has no tty, so `terminal-size` returns its fallback and a
+`viva test` has no tty, so `terminal-size` returns its fallback and a
 broken `ioctl` is indistinguishable from a working one. Worse, an in-process
 test can assert what the program *meant* to draw and never what the terminal
 *received* — and the gap between those two is where every bug in this TUI has

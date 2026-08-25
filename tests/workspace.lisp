@@ -11,16 +11,16 @@
 ;;;; printed a hunk twice, the confinement that refused the harness's own
 ;;;; resource directories.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
 (defun temporary-repository ()
   "A throwaway repository with a .gitignore, a nested source tree, a skill and
 an instruction file. Returned as an unconfined environment over its root."
-  (let* ((root (format nil "/tmp/vivarium-tests-~36r" (random (expt 2 48) (make-random-state t))))
+  (let* ((root (format nil "/tmp/viva-tests-~36r" (random (expt 2 48) (make-random-state t))))
          (environment (env:make-local-environment :cwd "/tmp")))
     (env:ensure-directory environment (format nil "~a/src/deep" root))
     (env:ensure-directory environment (format nil "~a/node_modules/junk" root))
-    (env:ensure-directory environment (format nil "~a/.vivarium/skills/tidy" root))
+    (env:ensure-directory environment (format nil "~a/.viva/skills/tidy" root))
     (flet ((put (relative content)
              (env:write-text environment (format nil "~a/~a" root relative) content)))
       (put ".gitignore" (format nil "node_modules/~%*.log~%"))
@@ -34,9 +34,9 @@ an instruction file. Returned as an unconfined environment over its root."
       (put "src/deep/nested.lisp" "(defun nested () :here)")
       (put "node_modules/junk/huge.lisp" "(defun total () :decoy)")
       (put "debug.log" "ignored")
-      (put ".vivarium/skills/tidy/SKILL.md"
+      (put ".viva/skills/tidy/SKILL.md"
            (format nil "---~%name: tidy~%description: How to tidy this repository.~%---~%Run the formatter.~%"))
-      (put "VIVARIUM.md" "Always run `make check`."))
+      (put "VIVA.md" "Always run `make check`."))
     (env:make-local-environment :cwd root)))
 
 (defun discard-repository (environment)
@@ -54,7 +54,7 @@ an instruction file. Returned as an unconfined environment over its root."
 
 EVERY TEST FILE SHARES ONE PACKAGE, so a helper here silently replaces one of
 the same name anywhere else and breaks tests in files it never mentions. It has
-happened twice: CALL-TOOL, then SAY. `vivarium check` now refuses a duplicate
+happened twice: CALL-TOOL, then SAY. `viva check` now refuses a duplicate
 rather than leaving it to be rediscovered a third time."
   (let ((result (tool:execute tool (apply #'args plist) nil)))
     (values (tool:tool-result-output result) (tool:tool-result-error-p result))))
@@ -62,6 +62,42 @@ rather than leaving it to be rediscovered a third time."
 (defun mentions (needle text) (and (search needle text) t))
 
 ;;; Reading
+
+(defun throwaway-directory ()
+  (let ((path (format nil "/tmp/viva-home-~36r/" (random (expt 2 48) (make-random-state t)))))
+    (ensure-directories-exist path)
+    (string-right-trim "/" path)))
+
+(define-test "a fresh directory gets the current name"
+  (let ((parent (throwaway-directory)))
+    (multiple-value-bind (resolved former) (env:data-directory parent)
+      (is equal (format nil "~a/.viva" parent) resolved)
+      (false former))))
+
+(define-test "an install that predates the rename keeps its own directory"
+  ;; Sessions, journal, config and keys are all under it. Resolving to the new
+  ;; name because the new name is newer would leave every one of them behind.
+  (let ((parent (throwaway-directory)))
+    (ensure-directories-exist (format nil "~a/.vivarium/" parent))
+    (multiple-value-bind (resolved former) (env:data-directory parent)
+      (is equal (format nil "~a/.vivarium" parent) resolved)
+      (true former "the caller has to know, because the socket name follows"))))
+
+(define-test "the current name wins once it exists"
+  ;; Both present means the move has happened. Reading the former one then
+  ;; would be reading whatever was left behind.
+  (let ((parent (throwaway-directory)))
+    (ensure-directories-exist (format nil "~a/.vivarium/" parent))
+    (ensure-directories-exist (format nil "~a/.viva/" parent))
+    (multiple-value-bind (resolved former) (env:data-directory parent)
+      (is equal (format nil "~a/.viva" parent) resolved)
+      (false former))))
+
+(define-test "the recursive walk skips both spellings"
+  ;; A machine on the former name still has its state under it, and a walk
+  ;; that wanders in returns the transcript of its own search.
+  (true (member ".viva/" glob:+default-ignores+ :test #'equal))
+  (true (member ".vivarium/" glob:+default-ignores+ :test #'equal)))
 
 (define-test "read returns a file and reports where to continue"
   (with-repository (environment)
@@ -162,7 +198,7 @@ rather than leaving it to be rediscovered a third time."
 
 (define-test "a skill advertises its description and withholds its body"
   (with-repository (environment)
-    (multiple-value-bind (skills warnings) (skill:load-skills environment (list ".vivarium/skills"))
+    (multiple-value-bind (skills warnings) (skill:load-skills environment (list ".viva/skills"))
       (is = 0 (length warnings))
       (is = 1 (length skills))
       (is string= "tidy" (skill:skill-name (first skills)))
@@ -189,7 +225,7 @@ rather than leaving it to be rediscovered a third time."
   ;; meant it for exactly this, and another harness reading what this one wrote
   ;; is the point of keeping the organism's identity in files. The behaviour
   ;; was there and untested, which is the same as being one refactor from gone.
-  (let ((root (format nil "/tmp/vivarium-agents-~36r/" (random (expt 2 48) (make-random-state t)))))
+  (let ((root (format nil "/tmp/viva-agents-~36r/" (random (expt 2 48) (make-random-state t)))))
     (unwind-protect
          (let ((environment (env:make-local-environment
                              :cwd (namestring (ensure-directories-exist root)))))
@@ -203,14 +239,14 @@ rather than leaving it to be rediscovered a third time."
                  "AGENTS.md must reach the prompt through the ordinary context path")
            ;; ONE file per directory, by precedence, which is what the name list
            ;; means and is worth pinning: a repository carrying both a
-           ;; VIVARIUM.md and an AGENTS.md gets the first, and discovering that
+           ;; VIVA.md and an AGENTS.md gets the first, and discovering that
            ;; by wondering why half your instructions vanished is expensive.
-           (env:write-text environment (env:join-path root "VIVARIUM.md")
+           (env:write-text environment (env:join-path root "VIVA.md")
                            "Prefer the local rule.")
            (let ((block* (memory:context-block (memory:context-files environment))))
              (true (mentions "Prefer the local rule" block*))
              (false (mentions "PINEAPPLE-SENTINEL" block*)
-                    "VIVARIUM.md comes first in the list, so it is the one read")))
+                    "VIVA.md comes first in the list, so it is the one read")))
       (uiop:delete-directory-tree (pathname root) :validate (constantly t)
                                                   :if-does-not-exist :ignore))))
 
@@ -220,15 +256,15 @@ rather than leaving it to be rediscovered a third time."
   ;; the request AFTER the one that reloaded.
   (with-repository (environment)
     (let ((extension:*registry* '()))
-      (env:ensure-directory environment ".vivarium/extensions")
-      (env:write-text environment ".vivarium/extensions/probe.lisp"
-                      "(in-package #:vivarium.extension)
+      (env:ensure-directory environment ".viva/extensions")
+      (env:write-text environment ".viva/extensions/probe.lisp"
+                      "(in-package #:viva.extension)
 (defextension \"probe\"
   :description \"A probe.\"
-  (register-tool (make-instance 'vivarium.tool:function-tool
+  (register-tool (make-instance 'viva.tool:function-tool
                                 :name \"probe_ping\" :description \"Ping.\" :parameters '()
                                 :body (lambda (a c) (declare (ignore a c)) \"pong\"))))")
-      (let ((directories (list (env:join-path (env:env-cwd environment) ".vivarium" "extensions"))))
+      (let ((directories (list (env:join-path (env:env-cwd environment) ".viva" "extensions"))))
         (dotimes (round 3)
           (is = 0 (length (extension:load-extensions environment :directories directories
                                                                  :require-trust nil)))
@@ -238,24 +274,24 @@ rather than leaving it to be rediscovered a third time."
 (define-test "a project's extensions do not load until the project is trusted"
   (with-repository (environment)
     (let ((extension:*registry* '()))
-      (env:ensure-directory environment ".vivarium/extensions")
-      (env:write-text environment ".vivarium/extensions/probe.lisp" "(in-package #:cl-user)")
+      (env:ensure-directory environment ".viva/extensions")
+      (env:write-text environment ".viva/extensions/probe.lisp" "(in-package #:cl-user)")
       (let ((complaints (extension:load-extensions
                          environment
                          :directories (list (env:join-path (env:env-cwd environment)
-                                                           ".vivarium" "extensions")))))
+                                                           ".viva" "extensions")))))
         (is = 1 (length complaints))
         (true (mentions "not a trusted project" (first complaints)))))))
 
 (define-test "a broken extension is reported rather than fatal"
   (with-repository (environment)
     (let ((extension:*registry* '()))
-      (env:ensure-directory environment ".vivarium/extensions")
-      (env:write-text environment ".vivarium/extensions/broken.lisp" "(this is not valid lisp")
+      (env:ensure-directory environment ".viva/extensions")
+      (env:write-text environment ".viva/extensions/broken.lisp" "(this is not valid lisp")
       (let ((complaints (extension:load-extensions
                          environment
                          :directories (list (env:join-path (env:env-cwd environment)
-                                                           ".vivarium" "extensions"))
+                                                           ".viva" "extensions"))
                          :require-trust nil)))
         (is = 1 (length complaints))
         (true (mentions "did not load" (first complaints)))))))
@@ -288,7 +324,7 @@ rather than leaving it to be rediscovered a third time."
 
 (define-test "a transcript survives the round trip with its tool calls intact"
   (let* ((directory (uiop:parse-native-namestring
-                     (format nil "/tmp/vivarium-tests-session-~36r/" (random (expt 2 40) (make-random-state t)))))
+                     (format nil "/tmp/viva-tests-session-~36r/" (random (expt 2 40) (make-random-state t)))))
          (session (session:open-session :directory directory)))
     (unwind-protect
          (progn
@@ -326,10 +362,10 @@ rather than leaving it to be rediscovered a third time."
     (let ((extension:*registry* '()))
       (let ((agent (harness:make-workspace-agent :cwd (env:env-cwd environment)))
             (out (make-broadcast-stream)))
-        (dolist (verb (symbol-value (find-symbol "+VERBS+" "VIVARIUM.CONSOLE")))
-          (unless (member (funcall (find-symbol "VERB-NAME" "VIVARIUM.CONSOLE") verb)
+        (dolist (verb (symbol-value (find-symbol "+VERBS+" "VIVA.CONSOLE")))
+          (unless (member (funcall (find-symbol "VERB-NAME" "VIVA.CONSOLE") verb)
                           '("exit" "trust" "skill") :test #'string=)
-            (finish (funcall (funcall (find-symbol "VERB-HANDLER" "VIVARIUM.CONSOLE") verb)
+            (finish (funcall (funcall (find-symbol "VERB-HANDLER" "VIVA.CONSOLE") verb)
                              agent "" out))))))))
 
 ;;; The session, through the path that actually writes it
@@ -409,7 +445,7 @@ rather than leaving it to be rediscovered a third time."
 (defun ws-scratch-session ()
   (session:open-session
    :directory (uiop:parse-native-namestring
-               (format nil "/tmp/vivarium-tests-session-~36r/" (random (expt 2 40) (make-random-state t))))
+               (format nil "/tmp/viva-tests-session-~36r/" (random (expt 2 40) (make-random-state t))))
    :cwd "/somewhere"))
 
 (defun ws-say (session role text)
@@ -642,7 +678,7 @@ rather than leaving it to be rediscovered a third time."
         (is = 1 (length (agent:tools fresh)))))))
 
 (define-test "sessions are found by project, and by prefix of an id"
-  (let* ((where "/tmp/vivarium-tests-project")
+  (let* ((where "/tmp/viva-tests-project")
          (directory (session:session-directory where)))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))
     (let ((session (session:open-session :directory directory :cwd where)))
@@ -689,11 +725,11 @@ rather than leaving it to be rediscovered a third time."
 
 (define-test "templates load from disk with their descriptions"
   (with-repository (environment)
-    (env:ensure-directory environment ".vivarium/prompts")
-    (env:write-text environment ".vivarium/prompts/review.md"
+    (env:ensure-directory environment ".viva/prompts")
+    (env:write-text environment ".viva/prompts/review.md"
                     (format nil "---~%description: Review a file for correctness.~%---~%Review $1 and list what is wrong.~%"))
-    (env:write-text environment ".vivarium/prompts/notes.txt" "not a template")
-    (let ((templates (template:load-templates environment (list ".vivarium/prompts"))))
+    (env:write-text environment ".viva/prompts/notes.txt" "not a template")
+    (let ((templates (template:load-templates environment (list ".viva/prompts"))))
       (is = 1 (length templates))
       (is string= "review" (template:template-name (first templates)))
       (is string= "Review a file for correctness." (template:template-description (first templates)))
@@ -781,7 +817,7 @@ rather than leaving it to be rediscovered a third time."
                          :key #'session:entry-kind)))))))
 
 (define-test "sessions can be searched by what was said in them"
-  (let* ((where "/tmp/vivarium-tests-search")
+  (let* ((where "/tmp/viva-tests-search")
          (directory (session:session-directory where)))
     (ignore-errors (uiop:delete-directory-tree directory :validate t))
     (let ((one (session:open-session :directory directory :cwd where))
@@ -827,7 +863,7 @@ rather than leaving it to be rediscovered a third time."
   (with-repository (environment)
     (let ((extension:*registry* '()))
       (load (merge-pathnames "examples/extensions/guard.lisp"
-                             (asdf:system-source-directory "vivarium")))
+                             (asdf:system-source-directory "viva")))
       ;; Refused: the marker file is never created.
       (let ((result (ws-guarded-run environment "rm -rf / ; touch refused-marker")))
         (true (msg:tool-result-message-error-p result))
@@ -842,7 +878,7 @@ rather than leaving it to be rediscovered a third time."
   (with-repository (environment)
     (let ((extension:*registry* '()))
       (load (merge-pathnames "examples/extensions/guard.lisp"
-                             (asdf:system-source-directory "vivarium")))
+                             (asdf:system-source-directory "viva")))
       (let ((result (ws-guarded-run environment "echo token=sk-abcdef123456 done")))
         (true (mentions "[redacted]" (msg:tool-result-message-output result)))
         (false (mentions "sk-abcdef" (msg:tool-result-message-output result)))
@@ -948,14 +984,14 @@ rather than leaving it to be rediscovered a third time."
   ;; Observed three times before this existed, once badly enough that a worker
   ;; was delegated to investigate the session's own transcript.
   (with-repository (environment)
-    (env:write-text environment ".vivarium/sessions/x.jsonl" "{\"text\":\"needle\"}")
+    (env:write-text environment ".viva/sessions/x.jsonl" "{\"text\":\"needle\"}")
     (env:write-text environment "real.txt" "needle")
     (let ((found (run-tool workspace:grep-tool "pattern" "needle")))
       (true (mentions "real.txt" found))
-      (false (mentions ".vivarium" found)))
+      (false (mentions ".viva" found)))
     ;; Hidden from the walk, not from the agent: a direct read still works.
     (true (mentions "needle" (run-tool workspace:read-tool
-                                       "path" ".vivarium/sessions/x.jsonl")))
+                                       "path" ".viva/sessions/x.jsonl")))
     ;; And an explicitly excluded path is skipped too, wherever it is.
     (let ((workspace:*excluded-paths* (list (env:join-path (env:env-cwd environment) "src"))))
       (false (mentions "src/core.lisp" (run-tool workspace:find-tool "pattern" "*.lisp"))))))
@@ -1154,7 +1190,7 @@ rather than leaving it to be rediscovered a third time."
     ;; would have pinned the killed path in place through every future edit.
     (false (search "create_capability" prompt) "the prompt still names the parked door")
     (false (search "promote_capability" prompt) "the prompt still names the parked door")
-    (true (search ".vivarium/tools/" prompt) "the registry is not named as the code channel")
+    (true (search ".viva/tools/" prompt) "the registry is not named as the code channel")
     (true (search "stdin" prompt) "the calling convention is unstated")
     (true (search "EXPENSIVE TIER" prompt)
           "the cost caveat is gone -- the kill punished premature registration")
@@ -1174,11 +1210,11 @@ rather than leaving it to be rediscovered a third time."
     (true (search "No code" prompt) "tier 1 must be told it is not for code")
     ;; Tier 2: code that runs, as a skill, with the shape a loader can read.
     (true (search "CODE YOU WOULD OTHERWISE WRITE AGAIN" prompt))
-    (true (search ".vivarium/skills/" prompt) "tier 2 has no home")
+    (true (search ".viva/skills/" prompt) "tier 2 has no home")
     (true (search "language:" prompt) "a code-skill must declare its language")
     (true (search "fenced code block" prompt) "tier 2 must carry runnable code")
     ;; Tier 3 stays, and stays expensive.
-    (true (search ".vivarium/tools/" prompt))
+    (true (search ".viva/tools/" prompt))
     ;; And the rule that decides between 2 and 3 -- a fact, not a judgement.
     (true (search "EVIDENCE OF REUSE" prompt)
           "the routing rule is the whole point of the middle tier")
@@ -1189,9 +1225,9 @@ rather than leaving it to be rediscovered a third time."
   ;; If the loader wanted something else, every skill the organism wrote would
   ;; be silently dropped -- and a retention policy whose output does not load
   ;; is worse than none, because it looks like it is working.
-  (let ((root (format nil "/tmp/vivarium-codeskill-~36r/" (random (expt 2 48) (make-random-state t)))))
+  (let ((root (format nil "/tmp/viva-codeskill-~36r/" (random (expt 2 48) (make-random-state t)))))
     (unwind-protect
-         (let* ((directory (merge-pathnames ".vivarium/skills/total-usage/" root))
+         (let* ((directory (merge-pathnames ".viva/skills/total-usage/" root))
                 (environment (env:make-local-environment :cwd (namestring root))))
            (ensure-directories-exist directory)
            (with-open-file (out (merge-pathnames "SKILL.md" directory) :direction :output)
@@ -1235,8 +1271,8 @@ import json, sys
 args = json.load(sys.stdin)
 print(args.get('input', '').upper())
 "))
-  "Write one tool into ROOT/.vivarium/tools/NAME/. Returns the directory."
-  (let ((directory (format nil "~a/.vivarium/tools/~a/" root name)))
+  "Write one tool into ROOT/.viva/tools/NAME/. Returns the directory."
+  (let ((directory (format nil "~a/.viva/tools/~a/" root name)))
     (ensure-directories-exist directory)
     (with-open-file (out (format nil "~atool.json" directory)
                          :direction :output :if-exists :supersede)
@@ -1251,7 +1287,7 @@ print(args.get('input', '').upper())
       ;; The suite's own, never the user's: these tests trust throwaway
       ;; directories by the dozen and must not write that into a real
       ;; person's record.
-      (format nil "/tmp/vivarium-test-trust-~36r.sexp" (random (expt 2 40) (make-random-state t))))
+      (format nil "/tmp/viva-test-trust-~36r.sexp" (random (expt 2 40) (make-random-state t))))
 
 (defun substitute-manifest-name (manifest name)
   (let ((start (search "\"shout\"" manifest)))
@@ -1263,7 +1299,7 @@ print(args.get('input', '').upper())
   "A throwaway project root. TRUSTED by default, because most of these tests
 are about the registry rather than about the gate -- and with the gate in
 place an untrusted fixture loads nothing, which is the gate working."
-  (let ((root (format nil "/tmp/vivarium-registry-~36r" (random (expt 2 48) (make-random-state t)))))
+  (let ((root (format nil "/tmp/viva-registry-~36r" (random (expt 2 48) (make-random-state t)))))
     (ensure-directories-exist (format nil "~a/" root))
     (when trusted
       (trust:trust (env:make-local-environment :cwd root) root))
@@ -1297,7 +1333,7 @@ place an untrusted fixture loads nothing, which is the gate working."
     (write-registry-tool root "shout" +shout-manifest+)
     (let* ((agent (harness:make-workspace-agent :cwd root :root root :model "none"))
            (tool (find "shout" (agent:tools agent) :key #'tool:tool-name :test #'string=))
-           (json (vivarium.client::tool-json tool))
+           (json (viva.client::tool-json tool))
            (parameters (gethash "parameters" (gethash "function" json)))
            (properties (gethash "properties" parameters)))
       (true tool "no shout tool to inspect")
@@ -1395,12 +1431,12 @@ sys.exit(3)
 
 (defun mcp-exchange (request entries &key (cwd "/tmp"))
   "One request in, the parsed reply a client would receive out."
-  (let ((response (vivarium.mcp::handle (com.inuoe.jzon:parse request) entries cwd)))
+  (let ((response (viva.mcp::handle (com.inuoe.jzon:parse request) entries cwd)))
     (and response (com.inuoe.jzon:parse (com.inuoe.jzon:stringify response)))))
 
 (defun mcp-entries (root)
   (registry:load-entries (env:make-local-environment :cwd root)
-                         (list (format nil "~a/.vivarium/tools" root))))
+                         (list (format nil "~a/.viva/tools" root))))
 
 (define-test "the MCP handshake answers with the shapes the specification names"
   (let ((reply (mcp-exchange "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}" '())))
@@ -1484,13 +1520,13 @@ import sys; sys.exit(4)
 ;;; ---------------------------------------------------------------------------
 
 (define-test "a project's tools do not run until the project is trusted"
-  ;; The exposure MCP export creates: clone a repository, point vivarium at
-  ;; it, and .vivarium/tools/ is somebody else's code running as you.
+  ;; The exposure MCP export creates: clone a repository, point viva at
+  ;; it, and .viva/tools/ is somebody else's code running as you.
   ;; Extensions already refused this; the registry had the same exposure and
   ;; none of the answer.
   (let* ((root (registry-fixture :trusted nil))
          (environment (env:make-local-environment :cwd root))
-         (directories (list (format nil "~a/.vivarium/tools" root))))
+         (directories (list (format nil "~a/.viva/tools" root))))
     (write-registry-tool root "helper" +shout-manifest+)
     (multiple-value-bind (entries warnings)
         (registry:load-entries environment directories :project root)
@@ -1520,10 +1556,10 @@ import sys; sys.exit(4)
 (define-test "containment is containment, not a shared prefix"
   ;; /foo does not contain /foobar. For a control deciding what may execute,
   ;; that is not a rounding error.
-  (true (vivarium.trust::within-p "/a/b" "/a/b"))
-  (true (vivarium.trust::within-p "/a/b" "/a/b/c"))
-  (false (vivarium.trust::within-p "/a/b" "/a/bc"))
-  (false (vivarium.trust::within-p "/a/b" "/a")))
+  (true (viva.trust::within-p "/a/b" "/a/b"))
+  (true (viva.trust::within-p "/a/b" "/a/b/c"))
+  (false (viva.trust::within-p "/a/b" "/a/bc"))
+  (false (viva.trust::within-p "/a/b" "/a")))
 
 (define-test "a tool's output is bounded before it reaches memory or the model"
   ;; bound.lisp's own header says every tool that can return unbounded text
@@ -1591,7 +1627,7 @@ print(len(os.listdir(args.get('input', '.'))))
 (defun registering (&key parameters script (name "probe"))
   "Register a tool in a throwaway project. Returns (values NAME REASON)."
   (let* ((root (namestring (uiop:ensure-directory-pathname
-                            (format nil "/tmp/vivarium-register-~d-~d"
+                            (format nil "/tmp/viva-register-~d-~d"
                                     (get-universal-time) (random 100000)))))
          (environment (env:make-local-environment :cwd root)))
     (ensure-directories-exist root)
@@ -1606,7 +1642,7 @@ print(len(os.listdir(args.get('input', '.'))))
 (defparameter +honest-script+
   "import sys, json
 request = json.load(sys.stdin)
-if request.get('vivarium') == 'describe':
+if request.get('viva') == 'describe':
     print(json.dumps({'parameters': [
         {'name': 'path', 'type': 'string', 'required': True},
         {'name': 'depth', 'type': 'integer', 'required': False}]}))
@@ -1670,10 +1706,10 @@ print(json.load(sys.stdin)['path'])
 
 (define-test "a script edited after registration is reported, not called"
   (let* ((root (namestring (uiop:ensure-directory-pathname
-                            (format nil "/tmp/vivarium-stale-~d-~d"
+                            (format nil "/tmp/viva-stale-~d-~d"
                                     (get-universal-time) (random 100000)))))
          (environment (env:make-local-environment :cwd root))
-         (directories (list (format nil "~a.vivarium/tools" root))))
+         (directories (list (format nil "~a.viva/tools" root))))
     (ensure-directories-exist root)
     (multiple-value-bind (name reason)
         (registry:register environment :name "counter"
@@ -1689,7 +1725,7 @@ print(json.load(sys.stdin)['path'])
       (is = 1 (length entries) "a freshly registered tool did not load")
       (is = 0 (length warnings) "~a" warnings))
     ;; Somebody edits the script and not the manifest.
-    (env:write-text environment (format nil "~a.vivarium/tools/counter/run.py" root)
+    (env:write-text environment (format nil "~a.viva/tools/counter/run.py" root)
                     "print(2)
 ")
     (multiple-value-bind (entries warnings) (registry:load-entries environment directories)
@@ -1703,10 +1739,10 @@ print(json.load(sys.stdin)['path'])
   ;; Every tool written before #41 existed is of this kind, and refusing them
   ;; would be a check that broke what it was meant to protect.
   (let* ((root (namestring (uiop:ensure-directory-pathname
-                            (format nil "/tmp/vivarium-nodigest-~d-~d"
+                            (format nil "/tmp/viva-nodigest-~d-~d"
                                     (get-universal-time) (random 100000)))))
          (environment (env:make-local-environment :cwd root))
-         (directory (format nil "~a.vivarium/tools/old" root)))
+         (directory (format nil "~a.viva/tools/old" root)))
     (ensure-directories-exist (format nil "~a/" directory))
     (env:write-text environment (format nil "~a/run.py" directory) "print(1)
 ")
@@ -1714,7 +1750,7 @@ print(json.load(sys.stdin)['path'])
                     "{\"name\":\"old\",\"description\":\"from before\",
                       \"exec\":[\"python3\",\"run.py\"],\"parameters\":[]}")
     (multiple-value-bind (entries warnings)
-        (registry:load-entries environment (list (format nil "~a.vivarium/tools" root)))
+        (registry:load-entries environment (list (format nil "~a.viva/tools" root)))
       (is = 1 (length entries) "a pre-digest tool was refused: ~a" warnings))))
 
 (define-test "a run counts the tokens it actually spent"
@@ -1780,7 +1816,7 @@ print(json.load(sys.stdin)['path'])
   ;; disagrees, which is exactly what retiring did.
   ;; Asked for by NAME. Indexing into SKILL-DIRECTORIES by position is how the
   ;; first draft of this fixture wrote its skills into the home of whoever ran
-  ;; the suite: `first` reads like the obvious one and means ~/.vivarium.
+  ;; the suite: `first` reads like the obvious one and means ~/.viva.
   (let ((directory (env:join-path (harness:project-resource-directory environment "skills")
                                   name)))
     (env:ensure-directory environment directory)
@@ -1867,11 +1903,11 @@ body~%~@[~%```~a~%print(1)~%```~%~]" name (and (plusp (length language)) languag
       (false (skill:last-used-of environment skill)))))
 
 (define-test "the decay window and counter are settings, not constants"
-  ;; In the settings table rather than as bare defparameters, so `vivarium
+  ;; In the settings table rather than as bare defparameters, so `viva
   ;; config` shows them and cannot drift out of step with what is read.
-  (true (assoc "retire-after-days" vivarium.config::+settings+ :test #'string=)
+  (true (assoc "retire-after-days" viva.config::+settings+ :test #'string=)
         "the window is not a setting a person can change")
-  (true (assoc "retire-keep-above" vivarium.config::+settings+ :test #'string=)
+  (true (assoc "retire-keep-above" viva.config::+settings+ :test #'string=)
         "the counter is not a setting a person can change"))
 
 (define-test "what the model was actually sent is recorded"
@@ -1944,15 +1980,15 @@ body~%~@[~%```~a~%print(1)~%```~%~]" name (and (plusp (length language)) languag
   ;; not mention the describe request, so reflection would have written tools
   ;; that were then refused -- a check whose only effect was to stop retention
   ;; working. A rule the writer is not told is a trap, not a contract.
-  (let ((prompt vivarium.harness::*reflection-prompt*))
+  (let ((prompt viva.harness::*reflection-prompt*))
     (true (search "describe" prompt) "the prompt never mentions describe")
-    (true (search "vivarium" (subseq prompt (or (search "describe" prompt) 0)))
+    (true (search "viva" (subseq prompt (or (search "describe" prompt) 0)))
           "the prompt does not say what to send")
     (true (search "NO parameters" prompt)
           "the prompt does not say when the convention is unnecessary"))
   ;; And the string it teaches is the string registration actually sends.
-  (let ((taught vivarium.harness::*reflection-prompt*))
-    (true (search "\"vivarium\"" taught) "the key is not quoted as it is on the wire")
+  (let ((taught viva.harness::*reflection-prompt*))
+    (true (search "\"viva\"" taught) "the key is not quoted as it is on the wire")
     (true (search "\"describe\"" taught))
-    (true (search "vivarium" registry:*describe-request*))
+    (true (search "viva" registry:*describe-request*))
     (true (search "describe" registry:*describe-request*))))

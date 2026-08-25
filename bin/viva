@@ -4,7 +4,7 @@
 # the task set.
 set -eu
 
-# Follow symlinks to find the REPOSITORY, not the link. `vivarium install`
+# Follow symlinks to find the REPOSITORY, not the link. `viva install`
 # puts a link on your PATH, so $0 is usually somewhere like ~/.local/bin --
 # and resolving the root from there looked for the repository beside the link
 # and died on a missing bin/entry.lisp. Found by installing and then running
@@ -24,15 +24,23 @@ done
 
 root=$(cd "$(dirname "$target")/.." && pwd)
 
+# Where viva keeps its own files. A machine installed before the rename still
+# holds the former directory, with its keys and sessions in it, so that one is
+# used where it is the only one there. The engine resolves it the same way.
+viva_home="${HOME:-}/.viva"
+if [ ! -d "$viva_home" ] && [ -d "${HOME:-}/.vivarium" ]; then
+  viva_home="${HOME:-}/.vivarium"
+fi
+
 # Credentials, machine first and repository second, so the repository wins for
-# a run made from inside it. `vivarium config` moved SETTINGS to ~/.vivarium
-# and left keys here, which meant half the setup still lived in a clone you
+# a run made from inside it. Settings live in the machine directory and keys
+# used to stay in the clone, which meant half the setup lived somewhere you
 # might never open again -- and a second checkout had none of it.
 #
-# Keys are not settings and stay out of ~/.vivarium/config: that file is meant
-# to be copied into projects and committed. This one is not.
+# Keys are not settings and stay out of the config file: that one is meant to
+# be copied into projects and committed. This one is not.
 set -a
-[ -f "${HOME:-}/.vivarium/.env" ] && . "$HOME/.vivarium/.env"
+[ -f "$viva_home/.env" ] && . "$viva_home/.env"
 [ -f "$root/.env" ] && . "$root/.env"
 set +a
 
@@ -44,11 +52,11 @@ set +a
 #
 # It falls through to the Lisp client when the Rust one has not been built,
 # because a checkout with no cargo must still have a full-screen client.
-# BARE `vivarium` IS THE FULL-SCREEN CLIENT, when there is a terminal to draw
-# on. Typing the name of the thing should open the thing; `vivarium tui` asks a
+# BARE `viva` IS THE FULL-SCREEN CLIENT, when there is a terminal to draw
+# on. Typing the name of the thing should open the thing; `viva tui` asks a
 # person to know which of two clients they want before they have seen either.
 #
-# Only when stdout is a terminal. Piped or redirected, `vivarium` stays the
+# Only when stdout is a terminal. Piped or redirected, `viva` stays the
 # line client it has always been -- that is the form that scripts and diffs,
 # and a full-screen program in a pipe is a program drawing into a buffer
 # nobody reads.
@@ -59,12 +67,12 @@ fi
 case "${1:-}" in
   tui|live)
     for candidate in \
-      "$root/tui/target/release/vivarium-tui" \
-      "$root/tui/target/debug/vivarium-tui"
+      "$root/tui/target/release/viva-tui" \
+      "$root/tui/target/debug/viva-tui"
     do
       if [ -x "$candidate" ]; then
         shift
-        VIVARIUM_BIN="$root/bin/vivarium" exec "$candidate" "$@"
+        VIVA_BIN="$root/bin/viva" exec "$candidate" "$@"
       fi
     done
     if [ "${1:-}" = "tui" ]; then

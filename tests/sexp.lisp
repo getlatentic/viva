@@ -1,6 +1,6 @@
 ;;;; Reading model-emitted s-expressions, and the grammars that constrain them.
 
-(in-package #:vivarium.tests)
+(in-package #:viva.tests)
 
 ;;; Reading
 
@@ -17,7 +17,7 @@
 
 (define-test "symbols intern into a sandbox, not into a package that matters"
   (let ((form (sexp:read-form "(some-tool :key totally-new-symbol)")))
-    (is string= "VIVARIUM.SEXP.SANDBOX" (package-name (symbol-package (first form))))
+    (is string= "VIVA.SEXP.SANDBOX" (package-name (symbol-package (first form))))
     (false (find-symbol "TOTALLY-NEW-SYMBOL" '#:common-lisp-user))))
 
 (define-test "two forms are refused, as are unbalanced ones"

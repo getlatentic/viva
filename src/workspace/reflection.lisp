@@ -15,7 +15,7 @@
 ;;;; own request budget on top of whatever the task consumed, so it can
 ;;;; neither starve nor be starved by the work that preceded it.
 
-(in-package #:vivarium.harness)
+(in-package #:viva.harness)
 
 (defparameter *reflection-budget* 6
   "Requests a reflection turn may spend beyond what the task consumed.")
@@ -30,7 +30,7 @@ Route by the SHAPE of the thing, not by how pleased you are with it.
    where something lives. Use remember, one line each. No code.
 
 2. CODE YOU WOULD OTHERWISE WRITE AGAIN -- a parse, a reshape, a conversion.
-   Write it as a skill: a file .vivarium/skills/<name>/SKILL.md holding
+   Write it as a skill: a file .viva/skills/<name>/SKILL.md holding
 
        ---
        name: <name>
@@ -43,7 +43,7 @@ Route by the SHAPE of the thing, not by how pleased you are with it.
    working code you are not yet sure will be wanted often.
 
 3. A TOOL, when the transformation is plainly one you will call by name again
-   and again: a directory .vivarium/tools/<name>/ holding tool.json --
+   and again: a directory .viva/tools/<name>/ holding tool.json --
 
       {\"name\": \"...\", \"description\": \"...\",
        \"exec\": [\"python3\", \"run.py\"],
@@ -55,7 +55,7 @@ Route by the SHAPE of the thing, not by how pleased you are with it.
 
    IF YOU DECLARE ANY PARAMETERS, the script must also answer a describe
    request, or the tool is refused and nothing is registered. When the JSON on
-   stdin is exactly {\"vivarium\": \"describe\"}, print your own parameter list
+   stdin is exactly {\"viva\": \"describe\"}, print your own parameter list
    and exit, doing nothing else:
 
        {\"parameters\": [{\"name\": \"path\", \"type\": \"string\",
