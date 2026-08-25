@@ -361,6 +361,57 @@ DOES rather than about what it says."
     (true (search "\"model\" (option parsed \"model\")" source)
           "session.start must carry the resolved model")))
 
+(define-test "a key file is read the way the shell reads it"
+  (flet ((pair (line) (cli::credential-line line)))
+    (is equal '("DEEPSEEK_API_KEY" . "abc") (pair "DEEPSEEK_API_KEY=abc"))
+    (is equal '("A" . "b") (pair "export A=b"))
+    (is equal '("A" . "b") (pair "  A = b  "))
+    (is equal '("A" . "b c") (pair "A=\"b c\""))
+    (is equal '("A" . "b c") (pair "A='b c'"))
+    (is equal '("A" . "") (pair "A="))
+    ;; A file edited by hand has these in it, and one of them must not stop a
+    ;; run that has every key it needs.
+    (false (pair "# a comment"))
+    (false (pair ""))
+    (false (pair "   "))
+    (false (pair "no equals sign here"))
+    (false (pair "=novalue"))))
+
+(define-test "a key already in the environment is not replaced by the file"
+  ;; A person who wrote KEY=... in front of the command meant that key for that
+  ;; run, and the launcher may have loaded the file already.
+  (let* ((directory (format nil "/tmp/viva-keys-~d-~d/"
+                            (get-universal-time) (random 100000)))
+         (file (merge-pathnames ".env" directory))
+         (mine "VIVA_TEST_EXISTING")
+         (fresh "VIVA_TEST_FRESH"))
+    (ensure-directories-exist directory)
+    (unwind-protect
+         (progn
+           (with-open-file (out file :direction :output :if-exists :supersede)
+             (format out "~a=from-the-file~%~a=from-the-file~%" mine fresh))
+           (sb-posix:setenv mine "from-the-caller" 1)
+           (sb-posix:unsetenv fresh)
+           (let ((set (cli::load-credentials (namestring file))))
+             (is equal (list fresh) set "the wrong names were set")
+             (is string= "from-the-caller" (sb-posix:getenv mine))
+             (is string= "from-the-file" (sb-posix:getenv fresh))))
+      (sb-posix:unsetenv mine)
+      (sb-posix:unsetenv fresh)
+      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
+                                                 :validate t)))))
+
+(define-test "a named client wins over every other place to look"
+  ;; VIVA_TUI is the override. Everything below it is a guess about where a
+  ;; build put things, and a guess must never beat an instruction.
+  (let ((named (namestring (merge-pathnames "bin/viva" (cli::repository-root))))
+        (before (sb-posix:getenv "VIVA_TUI")))
+    (unwind-protect
+         (progn
+           (sb-posix:setenv "VIVA_TUI" named 1)
+           (is string= named (cli::rust-client)))
+      (if before (sb-posix:setenv "VIVA_TUI" before 1) (sb-posix:unsetenv "VIVA_TUI")))))
+
 (define-test "credentials load from the machine as well as the clone"
   ;; Settings live in the machine directory and keys stayed in the repository,
   ;; so half the setup lived in a checkout you might never open again.
