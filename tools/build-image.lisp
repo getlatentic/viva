@@ -21,6 +21,12 @@
 (handler-bind ((warning #'muffle-warning))
   (funcall (find-symbol "QUICKLOAD" "QL") :viva/cli :silent t))
 
+;; Collect before saving, for the same reason the launcher does it after
+;; loading: what compiling the systems allocated is garbage by now, and an
+;; image saved around it carries those pages into every process started from
+;; it, for as long as each one runs.
+(sb-ext:gc :full t)
+
 (defun entry ()
   ;; The same interrupt handling bin/entry.lisp installs: Ctrl-C ends the run
   ;; rather than printing two hundred frames of backtrace, which include the
