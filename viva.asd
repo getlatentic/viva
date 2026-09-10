@@ -84,6 +84,7 @@
                              (:file "package")
                              (:file "events")
                              (:file "actor")
+                             (:file "capability-store")
                              (:file "evolver")
                              (:file "supervisor")
                              (:file "capability")

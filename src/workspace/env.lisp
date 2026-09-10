@@ -110,6 +110,7 @@ and how somebody keeps their keys and sessions somewhere other than home."
 (defun sessions-directory () (home-path "sessions"))
 (defun journal-directory () (home-path "journal"))
 (defun trust-file () (home-path "trusted.sexp"))
+(defun capabilities-directory () (home-path "capabilities"))
 
 (defun project-config-file (cwd) (project-path cwd "config"))
 (defun project-memory-file (cwd) (project-path cwd "MEMORY.md"))

@@ -29,6 +29,7 @@
            #:+data-directory+
            #:auth-path #:machine-config-file #:machine-memory-file
            #:sessions-directory #:journal-directory #:trust-file
+           #:capabilities-directory
            #:project-config-file #:project-memory-file
            #:services-directory #:retired-directory
            #:read-text #:read-bytes #:write-text #:file-info

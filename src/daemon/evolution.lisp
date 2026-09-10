@@ -42,7 +42,9 @@
 (defpackage #:viva.evolution
   (:use #:cl #:viva.kernel)
   (:export #:evolution-transition #:empty-registry #:resolve
-           #:registry-minted #:version-status #:current-promoted #:pins-of
+           #:registry-minted #:version-status #:version-component
+           #:current-promoted #:pins-of #:rehydrate-promoted
+           #:reserve-identities
            #:*door* #:door-open-p #:run-evolution-self-test))
 
 (in-package #:viva.evolution)
@@ -65,13 +67,16 @@ run. Mirrors CONSTANT Door; ClosedDoorIsInert is the law it buys.")
 (defun registry-pins (registry) (fifth registry))
 (defun registry-ended (registry) (sixth registry))
 
-(defun rebuild (registry &key minted versions lineages pins ended)
-  (list :evolution
-        (or minted (registry-minted registry))
-        (or versions (registry-versions registry))
-        (or lineages (registry-lineages registry))
-        (or pins (registry-pins registry))
-        (or ended (registry-ended registry))))
+(defun rebuild (registry &key (minted (registry-minted registry))
+                              (versions (registry-versions registry))
+                              (lineages (registry-lineages registry))
+                              (pins (registry-pins registry))
+                              (ended (registry-ended registry)))
+  ;; Defaults, not OR. An empty slot is a value: DROP-PINS removing the last
+  ;; pinned task passed :PINS NIL and got the old pins back, so a task that was
+  ;; the only pin holder ended without releasing anything -- its version stayed
+  ;; pinned forever and :DISCARD was refused for the life of the process.
+  (list :evolution minted versions lineages pins ended))
 
 (defun version (registry id) (cdr (assoc id (registry-versions registry))))
 (defun version-status (registry id) (getf (version registry id) :status))
@@ -134,6 +139,40 @@ pin counts, which is the whole reason inheritance is registry-visible."
 default, else NIL."
   (or (cdr (assoc component (pins-of registry task) :test #'equal))
       (current-promoted registry component)))
+
+(defun reserve-identities (registry high-water)
+  "Never mint at or below HIGH-WATER again.
+
+A restart restores what was PROMOTED, and a run mints far more than it
+promotes. Without this the next candidate takes an id the ledger already spent
+on something else, and two different versions answer to one number in the one
+account that is supposed to settle what happened."
+  (if (> high-water (registry-minted registry))
+      (rebuild registry :minted high-water)
+      registry))
+
+(defun rehydrate-promoted (registry id component)
+  "Restore ID as COMPONENT's promoted version, at that exact number. Returns
+the new registry, or NIL when the pair will not place.
+
+INIT, NOT NEXT. A restart does not re-decide anything: it starts the process
+in a state a previous one reached. So this runs the two ordinary transitions
+rather than assembling a registry by hand -- a restored registry is one the
+lifecycle could have produced -- and it opens the door around them, because a
+closed door governs what a run MAY CHANGE ABOUT ITSELF and remembering is not
+changing. ClosedDoorIsInert is a property of the transition relation and this
+does not touch it.
+
+ONLY THE IDENTITY IS PLACED rather than minted. A version id names a line in
+the ledger; a second run that renumbered would leave the account describing
+something else."
+  (let ((*door* :open))
+    (let* ((placed (rebuild registry :minted (1- id)))
+           (created (evolution-transition placed (list :create-candidate component))))
+      (multiple-value-bind (next effects)
+          (evolution-transition created (list :promote id))
+        (when (eq :improvement.promoted (second (first effects)))
+          next)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; The owner

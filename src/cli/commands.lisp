@@ -337,14 +337,21 @@ noise, not a result.~%")
                        (actor:capability-tools))))
 
 (defun apply-journal-flag (parsed)
-  "Point this run's journal -- and so its evolution ledger -- somewhere of its
-own. KC6's analysis is a program over one run's ledger, and the checker refuses
-a file holding two arms rather than blending them, so a battery sharing the
-home journal would produce one unreadable ledger and no results."
+  "Point this run's journal -- its evolution ledger, and the capability store
+that ledger accounts for -- somewhere of its own. KC6's analysis is a program
+over one run's ledger, and the checker refuses a file holding two arms rather
+than blending them, so a battery sharing the home journal would produce one
+unreadable ledger and no results.
+
+BOTH, TOGETHER. The ledger says what was promoted and the store holds what was
+promoted; a run that moved one and not the other would start by restoring
+another run\'s capabilities under its own account of them."
   (a:when-let ((given (flag parsed "journal-dir")))
     (let ((directory (if (a:ends-with #\/ given) given (concatenate 'string given "/"))))
       (ensure-directories-exist directory)
-      (setf actor:*journal-root* (namestring (truename directory)))))
+      (let ((root (namestring (truename directory))))
+        (setf actor:*journal-root* root
+              actor:*capability-root* (concatenate 'string root "capabilities/")))))
   t)
 
 (defun apply-door-flag (parsed)

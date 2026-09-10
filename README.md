@@ -203,9 +203,10 @@ Where the answer stands today. Each entry links to the run that produced it.
   pin forbids the probe.
 - [ ] **Ergonomics on the door** — shipping an idiom guide in the tool
   descriptions, since a door's ergonomics include its language.
-- [ ] **Rehydrating a live capability** — does reconstructing a minted
-  function after a restart beat simply reloading the file-backed tool? Held
-  until a result gives a reason to build it.
+- [ ] **Rehydrating a live capability** — a promoted capability compiles back
+  from disk when the daemon starts, so the comparison is buildable: does a
+  reconstructed minted function beat reloading the file-backed tool? The
+  mechanism is in, the measurement is not.
 
 What the record supports so far: **retention pays where the work is mechanical
 and recurs, and costs where the work is judgment.** The round trip is the
