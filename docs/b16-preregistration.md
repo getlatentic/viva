@@ -48,6 +48,49 @@ runtime-independent.
 after a win like that is to conclude the substrate question is closed. It is
 not: parking answered the thread argument and says nothing about the other two.
 
+## B8 tested a port, not a design — and that is the flaw to fix here
+
+Re-reading B8's fault table before building on it. Ten fault classes, three
+contained. But of the seven uncontained:
+
+- **Three are the same NIF**, at `+S 1`, across every scheduler, and across every
+  dirty scheduler. A NIF is native code sharing the VM, and OTP's own guidance
+  is that a long-running NIF wedges the scheduler. The idiom for untrusted or
+  generated native code is a **port** — a separate OS process — precisely
+  because a NIF is not contained and never claimed to be. Counting one
+  documented anti-pattern three times inflates the failure column.
+- **Atom-table exhaustion** is reachable only by minting atoms from untrusted
+  input, which the idiom also forbids.
+- **Binaries above the heap cap** is a fair hit with no idiomatic answer.
+- **Killing the code server** is a fair hit.
+
+Within the idiom the count is closer to three of five than three of ten. And
+B8's own sentence, which the summary of it dropped: *"Fork gets the same
+containment by killing a process; BEAM gets it while keeping the system up."*
+Fork wins that column by giving up the liveness a live-image organism exists
+for.
+
+**What B8 did not test is the thing an OTP engineer would build.** It injected
+faults into one node holding everything — viva's current shape, ported. It did
+not test a generated component in its **own node** over distribution, native
+code behind a **port**, or supervision strategies chosen for the failure shape.
+Those are the first three things the idiom prescribes, and none was measured.
+
+So B8 is evidence about a naive port, not about BEAM. That is the flaw this
+pre-registration must not repeat.
+
+## And today's wall is a point for BEAM that B8 never collected
+
+Measured 2026-09-10, fixing viva's session ceiling: the daemon dies at around
+1100 sessions with `1205 is not of type (UNSIGNED-BYTE 10)` — a descriptor
+number that no longer fits the ten bits `select` allows. Per-session cost was
+one thread and two file descriptors; both are now released when a session is
+quiet, which moved the wall from ~600 to ~1100 and made threads flat at 6.
+
+The remaining ceiling is `select` itself, and it is a class of problem the BEAM
+runtime does not have. B8 never collected this because it measured containment,
+not scale. **A substrate comparison that omits it is as partial as B8 was.**
+
 ## The claim, stated so it can lose
 
 > With threads no longer the ceiling, BEAM's remaining advantages over SBCL —
@@ -57,6 +100,19 @@ not: parking answered the thread argument and says nothing about the other two.
 
 If that is right, SBCL stays and the question closes properly for the first
 time. If it is wrong, the manifesto's reopened question has an answer.
+
+## Arms
+
+1. **SBCL as it stands**, after the parking work.
+2. **Idiomatic BEAM**, designed by someone who writes OTP — generated components
+   in their own nodes, ports for native code, supervision strategies chosen per
+   failure shape. Not viva transliterated.
+3. **BEAM as B8 built it**, kept as the control, so the difference between "BEAM"
+   and "BEAM used properly" is itself a measured quantity rather than an
+   argument.
+
+Arm 3 exists because the honest reading of B8 is that it measured arm 3 and
+reported it as arm 2.
 
 ## What must be measured, and nothing else
 
