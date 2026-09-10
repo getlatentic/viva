@@ -51,8 +51,17 @@ its store says nothing is a run that cannot be read back.")
            (*read-eval* nil)
            (*print-readably* nil)
            (*print-pretty* t)
+           ;; Lower case, because WITH-STANDARD-IO-SYNTAX shouts and a model
+           ;; reading (LAMBDA (INPUT) ...) back is reading something it did not
+           ;; write. The reader upcases either way, so nothing round trips
+           ;; differently for it.
+           (*print-case* :downcase)
            (*print-right-margin* 78))
        ,@body)))
+
+(defun capability-text (source)
+  "SOURCE as the model wrote it: the package it was read in, and lower case."
+  (with-capability-syntax (prin1-to-string source)))
 
 (defun write-capability (id component source &optional note)
   "Write the promoted SOURCE for version ID. Returns the path, or NIL.

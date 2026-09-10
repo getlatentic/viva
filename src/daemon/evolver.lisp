@@ -263,6 +263,13 @@ compiled -- the part nothing else in a prompt mentions."
                   when kept collect (list component id (kept-note kept)))
             #'string< :key #'first))))
 
+(defun capability-record (id)
+  "What was written down about version ID, as (values SOURCE NOTE)."
+  (let ((evolver (ensure-evolver)))
+    (bt:with-lock-held ((evolver-lock evolver))
+      (a:when-let ((kept (gethash id (evolver-sources evolver))))
+        (values (kept-source kept) (kept-note kept))))))
+
 (defun call-component (component &rest arguments)
   "The one door. Not SYMBOL-FUNCTION: components are not fbound, so a SETF of
 somebody's symbol changes nothing that resolves through here."

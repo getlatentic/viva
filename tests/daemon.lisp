@@ -2481,6 +2481,68 @@ bind it is testing nothing the agent loop does."
                  :timeout 15)
                 "the agent ran its own capability and the ledger recorded no use"))))))
 
+(define-test "a session reads what it inherited before improving it"
+  ;; THE LOOP CLOSES HERE. The prompt tells an agent to improve a capability by
+  ;; writing a new version under the same name, and until it can read the one
+  ;; it has, improving is replacing -- blind, over a version that was promoted
+  ;; because it worked.
+  (with-own-store (root)
+    (with-restarted-owner
+      (let ((v1 (actor:create-candidate
+                 "kc6-read" (viva.actor::capability-source "(lambda (input) (string-capitalize input))")
+                 :note "capitalises each word")))
+        (actor:promote-candidate v1)
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
+        (with-paced-cell (cell agent :pause 0.01 :limit 1)
+          (with-capability-agent (agent)
+            (let* ((result (run-capability-tool "show_capability" "name" "kc6-read"))
+                   (output (tool:tool-result-output result)))
+              (false (tool:tool-result-error-p result) "show refused: ~a" output)
+              (true (search "string-capitalize" output)
+                    "the source is not in the report: ~a" output)
+              (true (search "capitalises each word" output)
+                    "the note is not in the report: ~a" output)
+              ;; Lower case, because a model reading (LAMBDA (INPUT) ...) back
+              ;; is reading something it did not write.
+              (false (search "LAMBDA" output) "the source was shouted back: ~a" output))
+            ;; A second version, and the report says what stands behind it.
+            (let ((v2 (actor:create-candidate
+                       "kc6-read"
+                       (viva.actor::capability-source "(lambda (input) (string-upcase input))"))))
+              (actor:promote-candidate v2)
+              (let ((output (tool:tool-result-output
+                             (run-capability-tool "show_capability" "name" "kc6-read"))))
+                (true (search (format nil "version ~d" v2) output)
+                      "the report does not name the version it read: ~a" output)
+                (true (search (format nil "Earlier versions: ~d" v1) output)
+                      "the report does not say what is behind it: ~a" output)))))))))
+
+(define-test "show_capability reaches no further than resolution does"
+  ;; A candidate another task pinned is that task's own. A tool that could read
+  ;; those would be a way around the isolation law rather than a window onto
+  ;; what this task can already run.
+  (with-own-store (root)
+    (with-paced-cell (cell agent :pause 0.01 :limit 1)
+      (let ((mine (viva.harness:make-workspace-agent
+                   :extra-tools (actor:capability-tools))))
+        (let ((hidden (with-capability-agent (agent)
+                        (let ((id (actor:create-candidate
+                                   "kc6-private"
+                                   (viva.actor::capability-source "(lambda (input) input)"))))
+                          (run-capability-tool "activate_capability" "version" id)
+                          id))))
+          (with-capability-agent (agent)
+            (false (tool:tool-result-error-p
+                    (run-capability-tool "show_capability" "name" "kc6-private"
+                                                           "version" hidden))
+                   "a task could not read the version it had in force"))
+          (with-capability-agent (mine)
+            (let ((result (run-capability-tool "show_capability" "name" "kc6-private"
+                                                                 "version" hidden)))
+              (true (tool:tool-result-error-p result)
+                    "another task's candidate was readable: ~a"
+                    (tool:tool-result-output result)))))))))
+
 (define-test "an agent takes back a promotion through the tools"
   ;; Retraction that only a person can reach is supervised modification. The
   ;; lifecycle had REVERT from the day the table was proven and no tool

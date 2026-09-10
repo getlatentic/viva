@@ -1,5 +1,5 @@
-;;;; The model-facing door: seven tools through which an agent can mint, keep,
-;;;; run and take back compiled capability of its own.
+;;;; The model-facing door: eight tools through which an agent can mint, read,
+;;;; keep, run and take back compiled capability of its own.
 ;;;;
 ;;;; Everything under this file was already proven and none of it was
 ;;;; reachable. The evolution owner had a verified lifecycle, a witnessed door,
@@ -148,7 +148,7 @@ error back and no version is created."
                                          :note (gethash "note" args))
            (if id
                (tool:make-tool-result
-                :output (format nil "Created version ~d of ~a.~@[ ~a~] ~
+                :output (format nil "Created version ~d of ~a.~@[~%~a~]~%~
 Not in force yet -- activate_capability ~d to use it."
                                 id name (gethash "note" args) id))
                (tool:make-tool-result
@@ -243,14 +243,71 @@ next request should say."
   (a:when-let ((promoted (promoted-capabilities)))
     (with-output-to-string (out)
       (format out "These capabilities are compiled into this process and ~
-resolve from any task. Call one with call_capability. To improve one, create ~
-a new version under the same name.~%~%")
+resolve from any task. Call one with call_capability. To improve one, read it ~
+with show_capability first, then create a new version under the same name.~%~%")
       (format out "<promoted_capabilities>~%")
       (loop for (name id note) in promoted
             do (format out "  <capability>~%    <name>~a</name>~%    ~
 <version>~a</version>~%~@[    <purpose>~a</purpose>~%~]  </capability>~%"
                        name id (and note (skill:escape-xml note))))
       (format out "</promoted_capabilities>"))))
+
+(defun version-visible-p (id component registry task)
+  "May this task read version ID of COMPONENT?
+
+THE SAME REACH AS RESOLUTION, and no wider: a version in the lineage is one
+every task already resolves through, and a version this task pinned is its
+own. Anything else is another task's candidate, and a task that could read
+those could read work the isolation law exists to keep separate."
+  (or (member id (viva.evolution:lineage-of registry component))
+      (eql id (cdr (assoc component (viva.evolution:pins-of registry task)
+                          :test #'equal)))))
+
+(defun capability-report (component id registry source note)
+  (format nil "~a, version ~d (~(~a~)).~@[~%Earlier versions: ~{~a~^, ~}.~]~
+~@[~%Purpose: ~a~]~%~%~a"
+          component id
+          (or (viva.evolution:version-status registry id) "in force here")
+          (rest (member id (viva.evolution:lineage-of registry component)))
+          note
+          (capability-text source)))
+
+(tool:define-tool show-capability (args context)
+  :name "show_capability"
+  :description "Read what a capability does now: its source, what it is for,
+and the versions behind it.
+
+Do this before you write a new version of one. Improving something you cannot
+see is replacing it, and the version you replace was promoted because it
+worked."
+  :parameters (("name" :string "The capability to read" :required-p t)
+               ("version" :integer "A particular version. Leave it out for whatever resolves for this task." :required-p nil))
+  (let* ((agent (capability-agent))
+         (component (gethash "name" args))
+         (registry (evolution-registry))
+         (task (agent-task agent))
+         (id (or (gethash "version" args)
+                 (viva.evolution:resolve registry task component))))
+    (cond
+      ((null id)
+       (tool:make-tool-result
+        :output (format nil "No version of ~a resolves here. list_capabilities ~
+shows what does." component)
+        :error-p t))
+      ((not (version-visible-p id component registry task))
+       (tool:make-tool-result
+        :output (format nil "Version ~d is not ~a's promoted lineage and is not ~
+in force for this task." id component)
+        :error-p t))
+      (t
+       (multiple-value-bind (source note) (capability-record id)
+         (if source
+             (tool:make-tool-result
+              :output (capability-report component id registry source note))
+             (tool:make-tool-result
+              :output (format nil "Version ~d of ~a has no source kept for it."
+                              id component)
+              :error-p t)))))))
 
 (tool:define-tool revert-capability (args context)
   :name "revert_capability"
@@ -295,5 +352,5 @@ somebody is running may not become abandoned underneath them."
 whoever is configuring an arm; absent, an agent cannot self-modify at all,
 which is exactly KC6's arm C."
   (list create-capability activate-capability call-capability
-        promote-capability list-capabilities
+        promote-capability list-capabilities show-capability
         revert-capability discard-capability))

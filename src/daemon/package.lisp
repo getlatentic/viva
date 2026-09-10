@@ -76,7 +76,8 @@ can name without qualifying it."))
            #:reconcile-capabilities
            #:call-component #:resolve-component #:reconstruct-lineage
            #:evolution-registry #:*activation-box* #:*default-door*
-           #:capability-tools #:capability-prompt #:promoted-capabilities))
+           #:capability-tools #:capability-prompt #:promoted-capabilities
+           #:capability-record))
 
 (defpackage #:viva.daemon
   (:use #:cl)
