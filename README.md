@@ -165,7 +165,7 @@ Keys inside the full screen client. Press `/` for the commands.
 | note | `.viva/MEMORY.md` | prompt text |
 | skill | `.viva/skills/<name>/SKILL.md` | prompt text |
 | tool | `.viva/tools/<name>/tool.json` | the tool list, and MCP |
-| capability | `~/.viva/capabilities/<version>.lisp` | `call_capability` |
+| capability | `~/.viva/capabilities/<version>.lisp` | prompt text, and `call_capability` |
 
 Everything viva keeps for itself is under `~/.viva/`: `auth.json`, `config`,
 `sessions/`, `journal/`, `capabilities/`, `trusted.sexp`. `VIVA_HOME` names
