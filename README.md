@@ -165,13 +165,21 @@ Keys inside the full screen client. Press `/` for the commands.
 | note | `.viva/MEMORY.md` | prompt text |
 | skill | `.viva/skills/<name>/SKILL.md` | prompt text |
 | tool | `.viva/tools/<name>/tool.json` | the tool list, and MCP |
+| capability | `~/.viva/capabilities/<version>.lisp` | `call_capability` |
 
 Everything viva keeps for itself is under `~/.viva/`: `auth.json`, `config`,
-`sessions/`, `journal/`, `trusted.sexp`. `VIVA_HOME` names that directory
-outright.
+`sessions/`, `journal/`, `capabilities/`, `trusted.sexp`. `VIVA_HOME` names
+that directory outright.
 
 A fact becomes a note. Code becomes a skill. Code the agent has already wanted
-twice becomes a tool it calls by name. The agent writes these with the ordinary
+twice becomes a tool it calls by name.
+
+A capability is the fourth tier, and the only one that is not a file the model
+writes: it is a Lisp function the agent compiles into the running process, so a
+call costs no subprocess. Promotion writes the source down, and the next daemon
+start compiles it again at the same version number. Reversion moves that file
+aside, so what the agent takes back stays taken back. The tier needs
+`--capabilities on`. The agent writes these with the ordinary
 `write` tool, and you can author one by hand in the same format. `~/.viva/`
 applies to every directory, and the project directory wins on a name clash.
 
