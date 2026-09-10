@@ -21,7 +21,8 @@ repository keeps the negative results beside the positive ones.
 - Sessions run in the background and reattach by id.
 - Closing the terminal does not end a running turn.
 - One client works with many concurrent sessions.
-- One process starts at 95 MB and holds 100 sessions in 129 MB, a thread each.
+- One process starts at 95 MB and holds 100 sessions in 127 MB, a thread each.
+- A thread each is the ceiling: it answers at 500 sessions and stops near 750.
 - Full-text search spans every session recorded, in every directory.
 - A session spawns scoped child agents that cannot outlive it.
 - Live-image modification is off by default.
