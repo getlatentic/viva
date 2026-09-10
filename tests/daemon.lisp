@@ -2236,6 +2236,61 @@ bind it is testing nothing the agent loop does."
                  :timeout 15)
                 "the agent ran its own capability and the ledger recorded no use"))))))
 
+(define-test "an agent takes back a promotion through the tools"
+  ;; Retraction that only a person can reach is supervised modification. The
+  ;; lifecycle had REVERT from the day the table was proven and no tool
+  ;; reached it: the organism could promote into every future task and had no
+  ;; verb for finding out it was wrong.
+  (with-own-store (root)
+    (with-paced-cell (cell agent :pause 0.01 :limit 1)
+      (with-capability-agent (agent)
+        (flet ((promoted (source)
+                 (let ((version (created-version
+                                 (run-capability-tool "create_capability"
+                                                      "name" "kc6-undo"
+                                                      "source" source))))
+                   (run-capability-tool "promote_capability" "version" version)
+                   version)))
+          (let* ((v1 (promoted "(lambda (input) (concatenate 'string \"one:\" input))"))
+                 (v2 (promoted "(lambda (input) (concatenate 'string \"two:\" input))")))
+            (is eql v2 (viva.evolution:current-promoted (actor:evolution-registry) "kc6-undo")
+                "the second promotion did not take")
+            (let ((reverted (run-capability-tool "revert_capability" "name" "kc6-undo")))
+              (false (tool:tool-result-error-p reverted)
+                     "revert refused: ~a" (tool:tool-result-output reverted))
+              (true (search (princ-to-string v1) (tool:tool-result-output reverted))
+                    "the agent was not told what it is back to: ~a"
+                    (tool:tool-result-output reverted)))
+            (is eql v1 (viva.evolution:current-promoted (actor:evolution-registry) "kc6-undo"))
+            ;; Durable, not only in this image: the whole point of a withdrawal.
+            (is = 1 (length (actor:stored-capabilities root))
+                "the withdrawn version is still restorable")
+            ;; And the bottom of a lineage refuses, with a reason the model reads.
+            (let ((floor (run-capability-tool "revert_capability" "name" "kc6-undo")))
+              (true (tool:tool-result-error-p floor)
+                    "the organism reverted past the first version it ever promoted")
+              (true (search "refused" (string-downcase (tool:tool-result-output floor)))
+                    "the refusal did not say it was refused"))))))))
+
+(define-test "an agent abandons a candidate through the tools"
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (with-capability-agent (agent)
+      (flet ((minted ()
+               (created-version (run-capability-tool "create_capability"
+                                                     "name" "kc6-abandon"
+                                                     "source" "(lambda (input) input)"))))
+        (let ((tried (minted)))
+          (run-capability-tool "activate_capability" "version" tried)
+          (let ((refused (run-capability-tool "discard_capability" "version" tried)))
+            (true (tool:tool-result-error-p refused)
+                  "a version in force was abandoned underneath the task running it")))
+        (let* ((spare (minted))
+               (discarded (run-capability-tool "discard_capability" "version" spare)))
+          (false (tool:tool-result-error-p discarded)
+                 "discard refused: ~a" (tool:tool-result-output discarded))
+          (is eq :discarded (viva.evolution:version-status (actor:evolution-registry) spare)
+              "the judgment was reported and not recorded"))))))
+
 (define-test "the closed door refuses the model, and says so in words it can act on"
   ;; Arm B, through the tools rather than through the Lisp API: the agent may
   ;; still create -- it pays the same cost for the same attempt, which is the

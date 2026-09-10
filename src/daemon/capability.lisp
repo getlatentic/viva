@@ -1,5 +1,5 @@
-;;;; The model-facing door: five tools through which an agent can mint, keep
-;;;; and run compiled capability of its own during a task.
+;;;; The model-facing door: seven tools through which an agent can mint, keep,
+;;;; run and take back compiled capability of its own.
 ;;;;
 ;;;; Everything under this file was already proven and none of it was
 ;;;; reachable. The evolution owner had a verified lifecycle, a witnessed door,
@@ -9,8 +9,8 @@
 ;;;;
 ;;;; A CAPABILITY IS (LAMBDA (INPUT) ...) -- one string in, one value out.
 ;;;; That constraint is deliberate and it is the whole reason this surface is
-;;;; five small tools instead of a language binding. A JSON schema can describe
-;;;; a string; it cannot describe an arbitrary Lisp lambda list without
+;;;; a handful of small tools instead of a language binding. A JSON schema can
+;;;; describe a string; it cannot describe an arbitrary Lisp lambda list without
 ;;;; teaching the model a second calling convention it will get wrong, and the
 ;;;; frictions this exists for -- reshape this format, parse this dialect,
 ;;;; normalise this output -- are string to string anyway.
@@ -23,6 +23,13 @@
 ;;;; ARM B falls out of the table rather than out of this file: CREATE is open,
 ;;;; ACTIVATE and PROMOTE are refused by the door, and the refusal text says so
 ;;;; plainly so a competent agent stops instead of thrashing against it.
+;;;;
+;;;; UNDO IS A TOOL, not an operator's console. The lifecycle had REVERT and
+;;;; DISCARD from the day the table was proven, reachable by whoever ran the
+;;;; daemon and by nobody inside it: an organism could promote a capability
+;;;; into every future task and had no verb for finding out it was wrong.
+;;;; Retraction that only a person can reach is not self-modification, it is
+;;;; supervised modification.
 
 (in-package #:viva.actor)
 
@@ -199,9 +206,48 @@ you have put in force for this task."
          (format nil "In force for this task:~{~%  ~a -> version ~a~}"
                  (loop for (name . id) in pins append (list name id)))))))
 
+(tool:define-tool revert-capability (args context)
+  :name "revert_capability"
+  :description "Step a capability's promoted default back to the version
+before it, for every future task. Use this when you promoted something and
+then found it wrong.
+
+The version you step off is not kept: reverting twice walks back twice, and
+nothing walks forward again. Refused when there is only one promoted version,
+because there is nothing behind it."
+  :parameters (("name" :string "The capability to step back" :required-p t))
+  (let* ((agent (capability-agent))
+         (name (gethash "name" args))
+         (answer (revert-component name :cell (agent-cell agent))))
+    (if (equal answer name)
+        (tool:make-tool-result
+         :output (format nil "~a is back to version ~a." name
+                         (viva.evolution:current-promoted (evolution-registry) name)))
+        (tool:make-tool-result :output (refusal-text answer "revert_capability")
+                               :error-p t))))
+
+(tool:define-tool discard-capability (args context)
+  :name "discard_capability"
+  :description "Say a version you created will not be kept. Use it on a
+candidate you tried and rejected, so the record shows the judgment rather than
+an attempt that trails off.
+
+Refused while any task still has it in force, including your own -- a version
+somebody is running may not become abandoned underneath them."
+  :parameters (("version" :integer "The version to abandon" :required-p t))
+  (let* ((agent (capability-agent))
+         (version (gethash "version" args))
+         (answer (discard-candidate version :cell (agent-cell agent))))
+    (if (eql answer version)
+        (tool:make-tool-result
+         :output (format nil "Version ~d will not be kept." version))
+        (tool:make-tool-result :output (refusal-text answer "discard_capability")
+                               :error-p t))))
+
 (defun capability-tools ()
   "The door, as a tool set. Passed to MAKE-WORKSPACE-AGENT as :EXTRA-TOOLS by
 whoever is configuring an arm; absent, an agent cannot self-modify at all,
 which is exactly KC6's arm C."
   (list create-capability activate-capability call-capability
-        promote-capability list-capabilities))
+        promote-capability list-capabilities
+        revert-capability discard-capability))
