@@ -2453,6 +2453,57 @@ bind it is testing nothing the agent loop does."
               (true (search "refused" (string-downcase (tool:tool-result-output floor)))
                     "the refusal did not say it was refused"))))))))
 
+(define-test "a capability composes another, and the composition resolves through the door"
+  ;; The composition claim needs the composed call to be a RESOLUTION and not
+  ;; a function reference. A capability that captured its collaborator would
+  ;; keep calling the version that was promoted when it was compiled, and the
+  ;; isolation law -- your pin is yours, and nobody else sees it -- would end
+  ;; at the first composition.
+  (with-own-store (root)
+    (with-paced-cell (cell agent :pause 0.01 :limit 1)
+      (with-capability-agent (agent)
+        (flet ((mint (name source)
+                 (let ((result (run-capability-tool "create_capability"
+                                                    "name" name "source" source)))
+                   (false (tool:tool-result-error-p result)
+                          "~a refused: ~a" name (tool:tool-result-output result))
+                   (created-version result)))
+               (ran (input)
+                 (let ((result (run-capability-tool "call_capability"
+                                                    "name" "kc6-outer" "input" input)))
+                   (false (tool:tool-result-error-p result)
+                          "call failed: ~a" (tool:tool-result-output result))
+                   (tool:tool-result-output result))))
+          (let ((base (mint "kc6-inner" "(lambda (input) (concatenate 'string \"base:\" input))")))
+            (run-capability-tool "promote_capability" "version" base)
+            (let ((outer (mint "kc6-outer"
+                               "(lambda (input) (string-upcase (call-capability \"kc6-inner\" input)))")))
+              (run-capability-tool "promote_capability" "version" outer)
+              (is string= "BASE:X" (ran "x") "the composed call did not reach the promoted default")
+              ;; Now put a different inner in force for this task alone. The
+              ;; outer capability is untouched and must follow the pin.
+              (let ((pinned (mint "kc6-inner" "(lambda (input) (concatenate 'string \"pinned:\" input))")))
+                (run-capability-tool "activate_capability" "version" pinned)
+                (is string= "PINNED:X" (ran "x")
+                    "the composed call ignored the version in force for this task")))))))))
+
+(define-test "a composed capability still composes after a restart"
+  (with-own-store (root)
+    (let ((inner (actor:create-candidate
+                  "composes-inner"
+                  (viva.actor::capability-source "(lambda (input) (string-trim \" \" input))"))))
+      (actor:promote-candidate inner)
+      (let ((outer (actor:create-candidate
+                    "composes-outer"
+                    (viva.actor::capability-source
+                     "(lambda (input) (string-upcase (call-capability \"composes-inner\" input)))"))))
+        (actor:promote-candidate outer)
+        (is equal "HELLO" (actor:call-component "composes-outer" "  hello  "))
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
+        (with-restarted-owner
+          (is equal "HELLO" (actor:call-component "composes-outer" "  hello  ")
+              "the restored capability lost its collaborator"))))))
+
 (define-test "an agent abandons a candidate through the tools"
   (with-paced-cell (cell agent :pause 0.01 :limit 1)
     (with-capability-agent (agent)

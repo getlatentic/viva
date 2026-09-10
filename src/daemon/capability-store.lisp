@@ -47,7 +47,7 @@ its store says nothing is a run that cannot be read back.")
 
 (defmacro with-capability-syntax (&body body)
   `(with-standard-io-syntax
-     (let ((*package* (find-package '#:common-lisp-user))
+     (let ((*package* (find-package '#:viva.capabilities))
            (*read-eval* nil)
            (*print-readably* nil)
            (*print-pretty* t)

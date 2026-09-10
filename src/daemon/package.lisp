@@ -24,6 +24,21 @@
            #:event-sequence #:event-time #:event-data #:as-json #:from-json
            #:from-loop #:+names+ #:name-valid-p #:call-json))
 
+(defpackage #:viva.capabilities
+  (:use #:cl)
+  (:documentation "The world a capability's source is read, printed and
+compiled in.
+
+A SYMBOL READ IN ONE PACKAGE AND PRINTED IN ANOTHER IS A DIFFERENT SYMBOL, and
+a capability's source makes that round trip twice: once from the model's text
+into a compiled function, once through the store and back at the next daemon
+start. Both ends bind this package, so what the model wrote is what the next
+process compiles.
+
+It uses CL and nothing else. That is a stated contract rather than a sandbox --
+the door is not a jail, and the version this package pins is what a capability
+can name without qualifying it."))
+
 (defpackage #:viva.actor
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)

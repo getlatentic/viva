@@ -90,6 +90,19 @@ configuration. ~a is unavailable for this whole run -- do not retry it, and ~
 solve the task with the ordinary tools." verb)
       (format nil "Refused: ~(~a~)." (second (a:ensure-list answer)))))
 
+(defun capability-source (text)
+  "The model's text as a form.
+
+READ IN THE PACKAGE THE STORE PRINTS IN. A symbol read in one package and
+printed in another is a different symbol, and a capability's source makes that
+round trip every time the daemon restarts.
+
+*READ-EVAL* NIL: reading the model's text must not execute it. Compilation is
+the deliberate step, and it happens once, where its failure is caught."
+  (let ((*read-eval* nil)
+        (*package* (find-package '#:viva.capabilities)))
+    (read-from-string text)))
+
 (defun capability-agent ()
   (or harness:*agent*
       (error "No agent is running; a capability tool cannot act.")))
@@ -102,6 +115,11 @@ solve the task with the ordinary tools." verb)
 image. The source must be exactly one lambda taking one string and returning
 one value, e.g. (lambda (input) (string-upcase input)).
 
+Inside it you may call any Common Lisp function, and call another capability
+by name with (call-capability \"name\" input). A capability you call this way
+resolves the same way your own calls do: whatever you have in force for this
+task, otherwise the promoted default.
+
 Nothing changes until you activate it. If it does not compile you get the
 error back and no version is created."
   :parameters (("name" :string "What this capability is called. Reusing a name creates a new version of it." :required-p t)
@@ -113,11 +131,7 @@ error back and no version is created."
          (name (gethash "name" args))
          (source (gethash "source" args)))
     (multiple-value-bind (form condition)
-        (handler-case (let ((*read-eval* nil))
-                        ;; *READ-EVAL* nil: reading the model's text must not
-                        ;; execute it. Compilation is the deliberate step and
-                        ;; it happens below, once, where its failure is caught.
-                        (values (read-from-string source) nil))
+        (handler-case (values (capability-source source) nil)
           (error (c) (values nil c)))
       (cond
         (condition

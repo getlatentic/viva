@@ -93,6 +93,29 @@ any owner exists; KC6's arm B sets it to :CLOSED and never moves it.")
 ;;; thread, a worker -- so a source that will not compile is the caller's
 ;;; rejected candidate, never the owner's death.
 
+(defun capability-form (form)
+  "The model's lambda, in the world a capability runs in.
+
+ONE THING A LAMBDA CANNOT SAY: how to reach another capability. Resolution
+goes through the door -- the task's pin, else the promoted default -- so a
+capability that reached another by symbol would be calling a function instead
+of resolving a component, and the isolation law would end at the first
+composition. This binds the verb inside the lambda\'s own body, where the
+model can write it without naming a package it should not have to know.
+
+Applied at compile time and not before, so what the store holds is what the
+model wrote. A form that is not a lambda passes through untouched: its
+rejection belongs to the compiler, which words it better than a guess here."
+  (if (and (consp form) (eq 'lambda (first form)))
+      (destructuring-bind (head arguments &rest body) form
+        (declare (ignore head))
+        `(lambda ,arguments
+           (flet ((viva.capabilities::call-capability (name input)
+                    (call-component name input)))
+             (declare (ignorable #'viva.capabilities::call-capability))
+             ,@body)))
+      form))
+
 (defun compile-capability (component form)
   "FORM as a callable, or (values NIL CONDITION).
 
@@ -103,7 +126,8 @@ callable would ship the failure to every future caller of the component.
 One judge for both doors into the image: a form arriving from a model now, and
 the same form read back off disk at the next daemon start."
   (handler-case
-      (multiple-value-bind (compiled warnings-p failure-p) (compile nil form)
+      (multiple-value-bind (compiled warnings-p failure-p)
+          (compile nil (capability-form form))
         (declare (ignore warnings-p))
         (if (or failure-p (null compiled))
             (values nil (make-condition
