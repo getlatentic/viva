@@ -160,8 +160,27 @@ nursery collection — the one that runs constantly — is flat regardless of
 session count. So the per-process-heap argument is real but narrow: it buys
 something on the rare case and nothing on the common one.
 
-**BEAM, not measured, and the attempt is the finding.** Five instruments, none
-usable. Counting a bystander's ticks reported baselines below their own
+**BEAM, not measured, and the probe was wrong before it was noisy.** Recorded
+plainly because this pre-registration was written to stop exactly this.
+
+The probe sent every process a message telling it to run
+`erlang:garbage_collect()` at the same instant. That manufactures a synchronised
+global collection — the thing BEAM's design exists to avoid — and then times it.
+It is SBCL's failure mode rebuilt in Erlang and measured there. BEAM collects
+each process when that process needs it, independently and spread over time, and
+none of that was exercised.
+
+It was unidiomatic in three further ways: raw `spawn` and a `receive` loop
+rather than `gen_server` under a supervisor; state that was a list of integers
+rather than a conversation of maps and binaries, which the collector treats
+differently; and no allocation churn, so no collection ever happened for its own
+reasons.
+
+This is B8's error repeated by the document that criticises B8 for it. The
+noise findings below are true and secondary: the probe would not have answered
+the question on a silent machine either.
+
+**The noise, separately.** Five instruments, none usable. Counting a bystander's ticks reported baselines below their own
 treatments. Measuring the worst gap between ticks found 56.9 ms **with nothing
 collecting at all**, against a target signal near 80 ms.
 
