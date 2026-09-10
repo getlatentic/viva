@@ -2062,6 +2062,47 @@ when it recorded no promotion at all."
           (true (search "announced" (or (last-ledger-field "improvement.reconciled" "detail") ""))
                 "the disagreement did not say which capability"))))))
 
+(define-test "the ledger's account and the registry never disagree"
+  ;; EVERYTHING ABOVE RESTS ON THIS. The registry is what a running process
+  ;; decides by; the ledger is what a restart rebuilds from. If any sequence of
+  ;; lifecycle moves can drive the two apart, a restart resolves to something
+  ;; the organism never promoted, and no amount of care in the restore path
+  ;; would find it -- the restore path would be faithfully rebuilding a wrong
+  ;; account.
+  ;;
+  ;; Driven through the real owner and read back off the real ledger, because
+  ;; a fold tested against events the test wrote itself only proves the test
+  ;; and the fold agree.
+  (with-own-store (root)
+    (let* ((tag (format nil "fold-~36r" (random (expt 2 30) (make-random-state t))))
+           (names (loop for index below 3 collect (format nil "~a-~d" tag index)))
+           (minted '()))
+      (dotimes (step 60)
+        (let ((component (alexandria:random-elt names)))
+          (case (random 4)
+            (0 (alexandria:when-let
+                   ((id (actor:create-candidate component '(lambda (input) input))))
+                 (push id minted)))
+            ((1 2) (when minted (actor:promote-candidate (alexandria:random-elt minted))))
+            (3 (actor:revert-component component)))))
+      (true (viva.actor::journal-sync) "the ledger never confirmed")
+      (let ((registry (actor:evolution-registry))
+            (lineages (actor:reconstruct-lineage)))
+        (dolist (component names)
+          (is equal (viva.evolution:lineage-of registry component)
+              (cdr (assoc component lineages :test #'equal))
+              "~a: the registry and the ledger tell different stories" component))
+        ;; And what a restart would restore is what this process resolves.
+        ;; This test's own components only: the suite shares one owner across
+        ;; tests that each point the store somewhere of their own, so versions
+        ;; promoted into a directory that no longer exists are a true finding
+        ;; about a directory nobody is asking about.
+        (let ((findings (remove-if-not
+                         (lambda (each) (member (getf each :component) names :test #'equal))
+                         (actor:reconcile-capabilities (actor:ensure-evolver)))))
+          (false findings "sixty lifecycle moves left the two accounts disagreeing: ~s"
+                 findings))))))
+
 (define-test "a task that holds the only pin releases it when it ends"
   ;; REBUILD defaulted every slot with OR, so an empty slot fell back to the
   ;; old value. Dropping the last task's pins kept them: the version it pinned
