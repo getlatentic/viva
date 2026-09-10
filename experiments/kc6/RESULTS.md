@@ -3,6 +3,19 @@
 Filled as the runs land. The verdict section, when it exists, quotes the
 decision rule verbatim and fills in only the numbers.
 
+## What these numbers are about
+
+KC6 scored a capability channel that was **within-task and non-persisting**:
+a version compiled into one process, resolvable by one task, and gone when
+that process exited. The battery's tasks ran 5 to 20 seconds each, so there
+was no second task for a retained capability to pay off in.
+
+A promoted capability now has its source written to `~/.viva/capabilities/`
+and compiled again at the next daemon start. The mechanism these results score
+is therefore not the mechanism in the harness today, and nothing here has been
+re-run against it. Read every number below as a measurement of the transient
+channel.
+
 ## Pre-checks
 
 **0, reachability — PASS** (gated in `preflight.sh`: model pin, tool surface,
