@@ -2743,7 +2743,14 @@ it reports nothing, and the suite has to be killed to find out why."
   (with-daemon (path)
     (with-paced-cell (cell agent :pause 0.01 :limit 6)
       (actor:submit cell "go")
-      (true (daemon-wait (lambda () (not (viva.actor::busy-p cell))) :timeout 30))
+      ;; The TERMINAL EVENT, not BUSY-P. A cell commits its state machine
+      ;; before running the effects that publish, so BUSY-P goes false one step
+      ;; ahead of turn.completed reaching the ring. A snapshot taken in that
+      ;; window is one event short of what the replay then delivers, and this
+      ;; test failed roughly once in ten full-suite runs and never on its own.
+      (true (daemon-wait (lambda () (plusp (terminal-count (cell-event-names cell))))
+                         :timeout 30)
+            "the turn never reached a terminal event")
       (let ((before (length (actor:since cell 0))))
         (true (plusp before) "the session produced no events to replay")
         (let ((stream (daemon:connect path)))
