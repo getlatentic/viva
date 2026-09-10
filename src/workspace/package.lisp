@@ -81,7 +81,7 @@
   (:export #:skill #:skill-name #:skill-description #:skill-content
            #:skill-path #:skill-hidden-p #:skill-language
            #:snippet-of #:uses-of #:note-use #:last-used-of #:uses-path #:+interpreters+
-           #:load-skills #:find-skill #:prompt-block #:invocation
+           #:load-skills #:find-skill #:prompt-block #:invocation #:escape-xml
            #:parse-frontmatter #:skill-warning #:warning-message #:warning-path))
 
 (defpackage #:viva.workspace

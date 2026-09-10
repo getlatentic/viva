@@ -2103,6 +2103,70 @@ when it recorded no promotion at all."
           (false findings "sixty lifecycle moves left the two accounts disagreeing: ~s"
                  findings))))))
 
+(define-test "a later session finds what an earlier one promoted"
+  ;; RETENTION A LATER SESSION CANNOT FIND IS RETENTION THAT NEVER PAYS. The
+  ;; store restored two capabilities into a fresh image and the agent that
+  ;; asked what it had was told "nothing is in force for this task", which was
+  ;; true and useless. The whole point of writing them down is the session
+  ;; after the one that wrote them.
+  (with-own-store (root)
+    (let ((id (actor:create-candidate "found-later" '(lambda (input) input)
+                                      :note "what a later session reads")))
+      (actor:promote-candidate id)
+      (true (viva.actor::journal-sync) "the ledger never confirmed")
+      (with-restarted-owner
+        (let* ((promoted (actor:promoted-capabilities))
+               (entry (assoc "found-later" promoted :test #'equal)))
+          (true entry "the restored capability is not listed: ~s" promoted)
+          (is eql id (second entry) "listed at the wrong version")
+          (is equal "what a later session reads" (third entry)
+              "the note did not survive the restart"))))))
+
+(define-test "the prompt names what the organism can already call"
+  ;; A listing tool the model has to think of calling is not discovery. What
+  ;; an earlier session promoted has to be in front of this one without it
+  ;; asking, the way a skill is.
+  (with-own-store (root)
+    (with-restarted-owner
+      (false (actor:capability-prompt)
+             "a fresh organism advertised capabilities it does not have")
+      (let ((id (actor:create-candidate "named-in-prompt" '(lambda (input) input)
+                                        :note "one line & a <tag>")))
+        (actor:promote-candidate id)
+        (let ((said (actor:capability-prompt)))
+          (true said "nothing was said about a promoted capability")
+          (true (search "named-in-prompt" said) "the block does not name it")
+          (true (search "call_capability" said) "the block does not say how to call it")
+          (true (search "&amp; a &lt;tag&gt;" said)
+                "a note reached the block unescaped: ~a" said))))))
+
+(define-test "a registry tool is not described twice"
+  ;; A file-backed tool is a promoted version too, and it already reaches a
+  ;; model through the tool list. Naming it again in a second vocabulary
+  ;; leaves a reader no way to tell the two entries are one thing.
+  (with-own-store (root)
+    (with-restarted-owner
+      (let ((id (actor:register-file-tool "a-registry-tool")))
+        (true (integerp id) "the registry tool was not promoted")
+        (false (assoc "a-registry-tool" (actor:promoted-capabilities) :test #'equal)
+               "a file-backed tool was listed as a compiled capability")))))
+
+(define-test "an appended line and the capability block both reach the prompt"
+  ;; They are different things arriving at the same slot. The first version of
+  ;; this wiring put both under one key, where the plist's first entry won and
+  ;; the other was silently dropped.
+  (with-own-store (root)
+    (with-restarted-owner
+      (let ((id (actor:create-candidate "in-the-prompt" '(lambda (input) input))))
+        (actor:promote-candidate id)
+        (let* ((agent (viva.harness:make-workspace-agent
+                       :extra-tools (actor:capability-tools)
+                       :extra-prompt (list "a line from --append"
+                                           #'actor:capability-prompt)))
+               (prompt (viva.agent:system-prompt agent)))
+          (true (search "a line from --append" prompt) "the appended line is gone")
+          (true (search "in-the-prompt" prompt) "the capability block is gone"))))))
+
 (define-test "a task that holds the only pin releases it when it ends"
   ;; REBUILD defaulted every slot with OR, so an empty slot fell back to the
   ;; old value. Dropping the last task's pins kept them: the version it pinned

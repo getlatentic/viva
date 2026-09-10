@@ -55,6 +55,7 @@ can name without qualifying it."))
                     (#:tasktree #:viva.tasktree)
                     (#:tool #:viva.tool)
                     (#:registry #:viva.registry)
+                    (#:skill #:viva.skill)
                     (#:event #:viva.event))
   ;; Sealed. A cell is an ownership boundary, not an object with a mailbox
   ;; attached: CELL-AGENT, CELL-STATE, CELL-EVENTS and CELL-QUEUED were
@@ -75,7 +76,7 @@ can name without qualifying it."))
            #:reconcile-capabilities
            #:call-component #:resolve-component #:reconstruct-lineage
            #:evolution-registry #:*activation-box* #:*default-door*
-           #:capability-tools))
+           #:capability-tools #:capability-prompt #:promoted-capabilities))
 
 (defpackage #:viva.daemon
   (:use #:cl)

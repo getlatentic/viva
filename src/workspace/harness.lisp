@@ -245,6 +245,21 @@ Reach for this instead of retyping the same transformation."
         (remove-if-not (lambda (each) (member (tool:tool-name each) active :test #'string=)) tools)
         tools)))
 
+(defun extra-prompt-text (agent)
+  "EXTRA-PROMPT is a string, a function returning one, or a list of either.
+
+A FUNCTION BECAUSE WHAT A RUN CAN SAY ABOUT ITSELF CHANGES DURING THE RUN: an
+organism that promotes a capability has to be able to name it in the next
+request, and a string fixed when the agent was built names what was true
+before the work started. BUILD-SYSTEM-PROMPT is already called per request for
+this reason. Calling a function somebody else closed over teaches this layer
+nothing about what is inside it."
+  (a:when-let ((parts (loop for part in (a:ensure-list (agent-extra-prompt agent))
+                            for text = (if (functionp part) (funcall part) part)
+                            when (and (stringp text) (plusp (length text)))
+                              collect text)))
+    (format nil "~{~a~^~%~%~}" parts)))
+
 (defmethod agent:system-prompt ((agent workspace-agent))
   (workspace:with-environment ((agent-environment agent))
     (workspace:build-system-prompt
@@ -252,7 +267,7 @@ Reach for this instead of retyping the same transformation."
      :skills-block (skill:prompt-block (agent-skills agent))
      :instructions-block (memory:context-block
                           (memory:context-files (agent-resource-environment agent)))
-     :extra (agent-extra-prompt agent)
+     :extra (extra-prompt-text agent)
      :cwd (env:env-cwd (agent-environment agent)))))
 
 (defmethod agent:should-stop-after-turn ((agent workspace-agent) message results context)
@@ -816,7 +831,12 @@ thread, and one that inherited the transcript would defeat itself."
                               ;; able to resolve them. Third place in this
                               ;; codebase where extra-tools had to be threaded
                               ;; by hand and the second where it was dropped.
+                              ;; EXTRA-PROMPT with it, for the same reason one
+                              ;; step on: a child holding the tools and told
+                              ;; nothing about what they already reach would
+                              ;; rebuild what its parent could see.
                               :extra-tools (agent-extra-tools parent)
+                              :extra-prompt (agent-extra-prompt parent)
                               :request-limit request-limit)))
     (setf (agent-lane child) lane
           (agent-compaction child) (agent-compaction parent))

@@ -42,7 +42,8 @@
 (defpackage #:viva.evolution
   (:use #:cl #:viva.kernel)
   (:export #:evolution-transition #:empty-registry #:resolve
-           #:registry-minted #:version-status #:version-component
+           #:registry-minted #:registry-lineages
+           #:version-status #:version-component
            #:current-promoted #:lineage-of #:pins-of #:rehydrate-promoted
            #:reserve-identities
            #:*door* #:door-open-p #:run-evolution-self-test))

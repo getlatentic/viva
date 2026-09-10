@@ -316,12 +316,15 @@ noise, not a result.~%")
   ;; OPTION, not FLAG: a setting may come from this project's config, the
   ;; machine's, or the environment, and a person who set a model once should
   ;; not type --model on every command for the rest of time.
-  (list :model (option parsed "model")
+  (let ((capabilities (string= "on" (flag parsed "capabilities" "off"))))
+    (list :model (option parsed "model")
         :cwd (a:when-let ((cwd (flag parsed "cwd"))) (namestring (truename cwd)))
         :root (a:when-let ((root (option parsed "root"))) (namestring (truename root)))
         ;; Appended rather than replacing, so a condition that adds one line to
-        ;; the prompt differs from the default by exactly that line.
-        :extra-prompt (flag parsed "append")
+        ;; the prompt differs from the default by exactly that line. The
+        ;; capability block rides here too, as a function: what the organism
+        ;; has promoted changes during a run, and a string fixed at startup
+        ;; would name what was true before the work began.
         :extension-directories (a:when-let ((given (flag parsed "extension")))
                                  (list (namestring (truename given))))
         :resume (a:when-let ((given (flag parsed "resume")))
@@ -333,8 +336,13 @@ noise, not a result.~%")
         ;;   --capabilities on  --door open     arm A, the organism
         ;;   --capabilities on  --door closed   arm B, the same tools refused
         ;;   --capabilities off                 arm C, no live compile at all
-        :extra-tools (when (string= "on" (flag parsed "capabilities" "off"))
-                       (actor:capability-tools))))
+        ;;
+        ;; ONE VARIABLE FOR BOTH. Tools the model cannot be told about, or a
+        ;; block naming capabilities it has no verb to call, are two halves of
+        ;; a door and neither is one.
+        :extra-tools (when capabilities (actor:capability-tools))
+        :extra-prompt (append (a:ensure-list (flag parsed "append"))
+                              (when capabilities (list #'actor:capability-prompt))))))
 
 (defun apply-journal-flag (parsed)
   "Point this run's journal -- its evolution ledger, and the capability store

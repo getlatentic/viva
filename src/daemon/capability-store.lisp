@@ -54,7 +54,7 @@ its store says nothing is a run that cannot be read back.")
            (*print-right-margin* 78))
        ,@body)))
 
-(defun write-capability (id component source)
+(defun write-capability (id component source &optional note)
   "Write the promoted SOURCE for version ID. Returns the path, or NIL.
 
 Written aside and renamed, because RENAME is the atomic step. A daemon killed
@@ -69,9 +69,11 @@ read, and the failure would look like a capability that never existed."
                                      :external-format :utf-8)
           (with-capability-syntax
             (format out ";;; viva capability ~d -- ~a~%" id component)
+            (a:when-let ((line note)) (format out ";;; ~a~%" line))
             (format out ";;; Promoted. Recompiled at every daemon start.~%~%")
-            (prin1 (list :capability :version id :component component
-                         :source source)
+            (prin1 (append (list :capability :version id :component component)
+                           (when note (list :note note))
+                           (list :source source))
                    out)
             (terpri out)))
         (rename-file staging path)
@@ -99,7 +101,8 @@ version from the lineage for good, so nothing here has to bring one back."
           nil)))))
 
 (defun read-capability (path)
-  "One stored capability as (ID COMPONENT SOURCE), or NIL if it will not read."
+  "One stored capability as (ID COMPONENT SOURCE NOTE), or NIL if it will not
+read. NOTE is what the model said the capability was for, and may be missing."
   (handler-case
       (let ((form (with-capability-syntax
                     (with-open-file (in path :external-format :utf-8)
@@ -107,9 +110,10 @@ version from the lineage for good, so nothing here has to bring one back."
         (when (and (consp form) (eq :capability (first form)))
           (let ((id (getf (rest form) :version))
                 (component (getf (rest form) :component))
-                (source (getf (rest form) :source)))
+                (source (getf (rest form) :source))
+                (note (getf (rest form) :note)))
             (when (and (integerp id) (stringp component) source)
-              (list id component source)))))
+              (list id component source (and (stringp note) note))))))
     (error (condition)
       (format *error-output* "~&viva capability: ~a unreadable: ~a~%" path condition)
       nil)))

@@ -124,7 +124,7 @@ Nothing changes until you activate it. If it does not compile you get the
 error back and no version is created."
   :parameters (("name" :string "What this capability is called. Reusing a name creates a new version of it." :required-p t)
                ("source" :string "One lambda form of exactly one argument, e.g. (lambda (input) ...)" :required-p t)
-               ("note" :string "One line: what this does and why" :required-p nil))
+               ("note" :string "One line: what this does and why. A later session sees this line and not your source, so write it for somebody deciding whether to call it." :required-p nil))
   ;; Task-independent -- create is the verb the door leaves open in every arm --
   ;; but still the session's business to see.
   (let* ((agent (capability-agent))
@@ -144,7 +144,8 @@ error back and no version is created."
           :error-p t))
         (t
          (multiple-value-bind (id compile-condition)
-             (create-candidate name form :cell (agent-cell agent))
+             (create-candidate name form :cell (agent-cell agent)
+                                         :note (gethash "note" args))
            (if id
                (tool:make-tool-result
                 :output (format nil "Created version ~d of ~a.~@[ ~a~] ~
@@ -207,18 +208,49 @@ everybody resolves."
 
 (tool:define-tool list-capabilities (args context)
   :name "list_capabilities"
-  :description "What capabilities exist: the promoted defaults, and whatever
-you have put in force for this task."
+  :description "What capabilities exist: the promoted defaults every task
+resolves, and whatever you have put in force for this one."
   :parameters ()
   (let* ((agent (capability-agent))
          (registry (evolution-registry))
+         (promoted (promoted-capabilities))
          (pins (viva.evolution:pins-of registry (agent-task agent))))
     (tool:make-tool-result
      :output
-     (if (null pins)
-         "Nothing is in force for this task. Promoted defaults resolve."
-         (format nil "In force for this task:~{~%  ~a -> version ~a~}"
-                 (loop for (name . id) in pins append (list name id)))))))
+     (format nil "~a~%~%~a"
+             (if promoted
+                 (format nil "Promoted, and callable from any task:~{~%  ~a -> version ~a~@[ -- ~a~]~}"
+                         (loop for (name id note) in promoted append (list name id note)))
+                 "No capability has been promoted yet.")
+             (if pins
+                 (format nil "In force for this task:~{~%  ~a -> version ~a~}"
+                         (loop for (name . id) in pins append (list name id)))
+                 "Nothing is in force for this task, so the promoted defaults resolve.")))))
+
+(defun capability-prompt ()
+  "The promoted capabilities, for the system prompt, or \"\" when there are none.
+
+A LISTING TOOL IS NOT DISCOVERY. What the organism promoted in one session was
+restored into the next and named nowhere a model would look: a capability it
+could have called by name was reachable only by first guessing that a listing
+tool existed and would say something. Retention that a later session cannot
+find is retention that never pays, and it is the half of the door KC6 could
+not have measured.
+
+Rebuilt per request, because BUILD-SYSTEM-PROMPT is called per request for
+exactly this reason -- a run that promotes a capability has changed what the
+next request should say."
+  (a:when-let ((promoted (promoted-capabilities)))
+    (with-output-to-string (out)
+      (format out "These capabilities are compiled into this process and ~
+resolve from any task. Call one with call_capability. To improve one, create ~
+a new version under the same name.~%~%")
+      (format out "<promoted_capabilities>~%")
+      (loop for (name id note) in promoted
+            do (format out "  <capability>~%    <name>~a</name>~%    ~
+<version>~a</version>~%~@[    <purpose>~a</purpose>~%~]  </capability>~%"
+                       name id (and note (skill:escape-xml note))))
+      (format out "</promoted_capabilities>"))))
 
 (tool:define-tool revert-capability (args context)
   :name "revert_capability"

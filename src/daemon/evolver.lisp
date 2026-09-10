@@ -44,12 +44,14 @@
   ;; version id -> function object. The registry holds identity and
   ;; lifecycle; this holds what a resolution can actually call.
   (functions (make-hash-table))
-  ;; version id -> the form it was compiled from, where there was one.
+  ;; version id -> what was written down about it: the form it was compiled
+  ;; from, and the line the model said it was for.
   ;;
   ;; COMPILE keeps nothing of its argument, so a capability was a callable and
   ;; no more: unreadable, unwritable, and gone with the process. Keeping the
   ;; form is what lets a promoted capability be written down, read back by a
-  ;; person, and compiled again by the next daemon.
+  ;; person, and compiled again by the next daemon. Keeping the note is what
+  ;; lets a later session tell what it is for without reading the lambda.
   (sources (make-hash-table))
   ;; task -> (:box BOX :cell CELL). BOX is a one-cell cons whose CAR is the
   ;; task's immutable snapshot; this owner is its only writer.
@@ -58,6 +60,12 @@
   ;; else, because SBCL threads inherit no dynamic context -- the same law
   ;; that makes the box a box.
   (door :open))
+
+(defstruct (kept (:conc-name kept-))
+  "What is written down about a version. A capability nobody can describe is
+one a later session reads a lambda to understand, and then rewrites."
+  (source nil)
+  (note nil))
 
 (defvar *evolver* nil)
 (defvar *evolver-lock* (bt:make-lock "viva.evolver-start"))
@@ -137,7 +145,7 @@ the same form read back off disk at the next daemon start."
             (values compiled nil)))
     (error (c) (values nil c))))
 
-(defun create-candidate (component function-or-source &key cell)
+(defun create-candidate (component function-or-source &key cell note)
   "Returns (values VERSION-ID nil) or (values NIL CONDITION).
 
 The SOURCE rides along with the function when there was one. A candidate is
@@ -152,7 +160,7 @@ promotion cannot write what creation threw away."
                                :function function
                                :source (and (consp function-or-source)
                                             function-or-source)
-                               :cell cell)
+                               :note note :cell cell)
                 nil)
         (values nil condition))))
 
@@ -235,6 +243,25 @@ first, and the mailbox is what orders the two."
   (let ((evolver (ensure-evolver)))
     (bt:with-lock-held ((evolver-lock evolver))
       (gethash id (evolver-functions evolver)))))
+
+(defun promoted-capabilities ()
+  "Component and version for every promoted capability this image can call,
+by component name.
+
+A REGISTRY TOOL IS A PROMOTED VERSION TOO and is not one of these. It reaches
+a model through the tool list already, and a second listing under another name
+would be one thing described twice, in two vocabularies, with no way for a
+reader to tell they were the same thing. What is left is what the organism
+compiled -- the part nothing else in a prompt mentions."
+  (let ((evolver (ensure-evolver)))
+    (bt:with-lock-held ((evolver-lock evolver))
+      (sort (loop for (component . lineage) in (viva.evolution:registry-lineages
+                                                (evolver-registry evolver))
+                  for id = (first lineage)
+                  for kept = (and (stringp component)
+                                  (gethash id (evolver-sources evolver)))
+                  when kept collect (list component id (kept-note kept)))
+            #'string< :key #'first))))
 
 (defun call-component (component &rest arguments)
   "The one door. Not SYMBOL-FUNCTION: components are not fbound, so a SETF of
@@ -366,7 +393,8 @@ here if the task has never touched evolution, recorded with its owning cell."
                 (setf (gethash id (evolver-functions evolver))
                       (getf options :function))
                 (a:when-let ((source (getf options :source)))
-                  (setf (gethash id (evolver-sources evolver)) source)))
+                  (setf (gethash id (evolver-sources evolver))
+                        (make-kept :source source :note (getf options :note)))))
               (evolution-publish evolver nil "improvement.created"
                                  (event::object "version" id
                                                 "component" (second detail))
@@ -544,8 +572,8 @@ promoted versions only; the ledger holds every one that was ever minted, which
 is what an id has to clear to be new."
   (account-high-water (ledger-account path)))
 
-(defun source-for (id stored)
-  (third (find id stored :key #'first)))
+(defun entry-for (id stored) (find id stored :key #'first))
+(defun source-for (id stored) (third (entry-for id stored)))
 
 (defun restorable-promotion (component registry stored)
   "The version a restart would resolve COMPONENT to: the newest one still in
@@ -638,15 +666,15 @@ A version whose write fails has a source and no file, and that is a promoted
 default with no code behind it. Both leave the store empty and one of them is
 a fault; a single word for the pair would put the fault where nobody could
 find it, which is the shape of the failure B12 named."
-  (a:if-let ((source (bt:with-lock-held ((evolver-lock evolver))
-                       (gethash id (evolver-sources evolver)))))
-    (or (write-capability id component source) :failed)
+  (a:if-let ((kept (bt:with-lock-held ((evolver-lock evolver))
+                     (gethash id (evolver-sources evolver)))))
+    (or (write-capability id component (kept-source kept) (kept-note kept)) :failed)
     :none))
 
 (defun kept-word (outcome)
   (case outcome (:none "no source") (:failed "failed") (t "yes")))
 
-(defun restore-version (evolver registry id component source)
+(defun restore-version (evolver registry id component source note)
   "Compile SOURCE and place it at ID. Returns the new registry, or NIL.
 
 A source that will not compile any more -- a macro that moved, an SBCL that
@@ -656,7 +684,8 @@ read it."
   (multiple-value-bind (function condition) (compile-capability component source)
     (let ((next (and function (viva.evolution:rehydrate-promoted registry id component))))
       (cond (next (setf (gethash id (evolver-functions evolver)) function
-                        (gethash id (evolver-sources evolver)) source)
+                        (gethash id (evolver-sources evolver))
+                        (make-kept :source source :note note))
                   next)
             (t (format *error-output*
                        "~&viva capability: version ~d (~a) not restored: ~a~%"
@@ -672,8 +701,9 @@ before, and a version restored without its predecessors has nothing to step
 back to."
   (let ((count 0) (missing '()))
     (dolist (id (reverse lineage))
-      (a:if-let ((source (source-for id stored)))
-        (a:when-let ((next (restore-version evolver registry id component source)))
+      (a:if-let ((entry (entry-for id stored)))
+        (a:when-let ((next (restore-version evolver registry id component
+                                            (third entry) (fourth entry))))
           (setf registry next)
           (incf count))
         (push id missing)))
