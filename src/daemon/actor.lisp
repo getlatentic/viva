@@ -965,6 +965,19 @@ fresh 120 seconds, so a session with any traffic at all never times out."
          (mailbox:receive-message (cell-mailbox cell) :timeout (seconds-left cell)))
         (t nil)))
 
+(defun release-descriptors (cell)
+  "Give back what a quiet session should not be holding.
+
+THE FILE DESCRIPTOR, not only the thread. A session held its transcript open
+for as long as it existed, at two descriptors apiece, and the daemon died
+around six hundred sessions when a descriptor number no longer fit the ten bits
+SELECT allows it. Returning the thread and keeping the file would have moved
+that wall by nothing. The transcript reopens on the next line written to it."
+  (a:when-let* ((agent (cell-agent cell))
+                (session (harness:agent-session agent)))
+    (ignore-errors (session:release-transcript session)))
+  cell)
+
 (defun park (cell)
   "Release the thread when there is nothing to do. True when it parked.
 
@@ -978,6 +991,7 @@ flag set and starts a thread."
                (null (cell-turn cell))
                (null (cell-queued cell))
                (zerop (mailbox:mailbox-count (cell-mailbox cell))))
+      (release-descriptors cell)
       (setf (cell-parked cell) t))))
 
 (defun wake (cell)
@@ -1084,6 +1098,10 @@ visible loss. spec/Recovery.tla, RecoveryWitnessName."
     ;; this is a registry entry and a mailbox. Parking on idle alone would not
     ;; help here -- opening a thousand sessions would still open a thousand
     ;; threads and wait for them to notice.
+    ;; Parked before it is registered, and holding nothing. SPAWN never enters
+    ;; RUN-CELL, so a session born parked would otherwise keep the transcript
+    ;; that OPEN-SESSION just opened for the whole of its life.
+    (release-descriptors cell)
     (setf (cell-parked cell) t)
     cell))
 

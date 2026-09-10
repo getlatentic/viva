@@ -157,8 +157,33 @@ Absence is unambiguous and costs a byte."
 
 ;;; Opening and writing
 
+(defun transcript-stream (session)
+  "The transcript, opened if it is not open.
+
+Lazy so a quiet session can give its file descriptor back. Before this a closed
+stream meant WRITE-LINE* found NIL and returned, so the entry was not written
+and nothing said so -- which is the wrong failure for the file that IS the
+session."
+  (or (session-stream session)
+      (when (plusp (length (session-path session)))
+        (setf (session-stream session)
+              (open (session-path session) :direction :output :if-exists :append
+                                           :if-does-not-exist :create
+                                           :external-format :utf-8)))))
+
+(defun release-transcript (session)
+  "Give the file descriptor back and keep the transcript.
+
+Not CLOSE-SESSION, which removes a transcript nothing was ever said in. That is
+right when a session ends and wrong when it is merely quiet: a session parks
+having said nothing all the time, and would come back to a deleted file."
+  (when (session-stream session)
+    (close (session-stream session))
+    (setf (session-stream session) nil))
+  session)
+
 (defun write-line* (session table)
-  (a:when-let ((stream (session-stream session)))
+  (a:when-let ((stream (transcript-stream session)))
     (jzon:with-writer* (:stream stream)
       (jzon:write-value* table))
     (terpri stream)
