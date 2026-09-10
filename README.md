@@ -175,9 +175,10 @@ A fact becomes a note. Code becomes a skill. Code the agent has already wanted
 twice becomes a tool it calls by name.
 
 A capability is the fourth tier, and the only one that is not a file the model
-writes: it is a Lisp function the agent compiles into the running process, so a
-call costs no subprocess. Promotion writes the source down, and the next daemon
-start compiles it again at the same version number. Reversion moves that file
+writes. It is a Lisp function the agent compiles into the running process, so a
+call costs no subprocess. One capability can call another by name. Promotion
+writes the source down, and the next daemon start compiles it again at the same
+version number. Reversion moves that file
 aside, so what the agent takes back stays taken back. The tier needs
 `--capabilities on`. The agent writes these with the ordinary
 `write` tool, and you can author one by hand in the same format. `~/.viva/`
@@ -204,8 +205,9 @@ Where the answer stands today. Each entry links to the run that produced it.
   no `MEMORY.md`. Re-running under explicit framing did not move it.
 - [ ] **Composition** — does a capability that calls another capability beat a
   text skill re-derived each time? This needs both retention and live
-  execution in one harness, which is why it is testable here.
-  [Pre-registration](docs/b15-preregistration.md).
+  execution in one harness, which is why it is testable here. The compiled
+  path composes and survives a restart. The pre-registration measures the
+  file-backed one. [Pre-registration](docs/b15-preregistration.md).
 - [ ] **A Lisp-fluent model.** 19 of 59 self-modification attempts failed to
   compile, which measures the model rather than the mechanism. The current
   pin forbids the probe.
