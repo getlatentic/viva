@@ -203,6 +203,45 @@ duration: 8000 processes holding ~34 KB each cost BEAM **471 MB** against SBCL's
 **331 MB**, so BEAM spends roughly 19 KB per process on overhead the shared heap
 does not. That favours SBCL and was not what the probe set out to find.
 
+## Arm 2, built the way OTP would build it — and the result reverses
+
+`gen_server` sessions under a `simple_one_for_one` supervisor, holding
+conversations of maps and binaries, allocating by growing rather than by being
+told to collect. Measured from inside the VM with `system_monitor`, so a busy
+machine cannot corrupt the reading.
+
+| sessions | collections | over 1 ms | worst | heap |
+| --- | --- | --- | --- | --- |
+| 500 | 1,429 | 0 | — | 49 MB |
+| 1000 | 3,304 | 0 | — | 54 MB |
+| 2000 | 6,640 | 0 | — | 65 MB |
+| 4000 | 12,794 | 0 | — | 87 MB |
+| 8000 | 24,568 | **2** | **4 ms** | 124 MB |
+
+The collection count is there as proof the mechanism fired: 24,568 collections
+is not a probe that tested nothing.
+
+**Against SBCL, same machine, same day:**
+
+| | SBCL | BEAM |
+| --- | --- | --- |
+| worst stall at 8000 sessions | 159.7 ms | **4 ms** |
+| what stops | every session | one session |
+| memory at 8000 sessions | 331 MB | **124 MB** |
+
+**Two earlier conclusions here were wrong and are withdrawn.** That BEAM spends
+~19 KB per process more than the shared heap: false, an artifact of the
+strawman's on-heap integers where a real conversation holds shared off-heap
+binaries. Idiomatic BEAM uses less than half the memory. And that the
+per-process-heap argument is "real but narrow": it is forty times the stall, at
+the scale the question was asked about.
+
+**What this does not settle.** These are gen_servers holding conversations, not
+viva — no tools, no model calls, no daemon protocol. It measures heap behaviour
+under allocation, which is one of the two things B16 set out to measure.
+Transformation fidelity is untouched, and that is where SBCL's advantage lives.
+B8's containment findings are also untouched and remain BEAM's real weakness.
+
 ## The kill criterion, as a number
 
 **If neither advantage produces a measured difference of 20% or more on a
