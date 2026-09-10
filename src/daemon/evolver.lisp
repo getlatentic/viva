@@ -376,6 +376,7 @@ here if the task has never touched evolution, recorded with its owning cell."
                                                 ;; promotion that kept nothing.
                                                 "kept" (if kept "yes" "no"))
                                  :cell (getf options :cell))
+              (announce-reconciliation evolver options)
               id))
            (:improvement.reverted
             (let ((component (first detail)))
@@ -386,6 +387,7 @@ here if the task has never touched evolution, recorded with its owning cell."
               (evolution-publish evolver nil "improvement.reverted"
                                  (event::object "component" component)
                                  :cell (getf options :cell))
+              (announce-reconciliation evolver options)
               component))
            (:improvement.discarded
             (evolution-publish evolver nil "improvement.discarded"
@@ -497,6 +499,71 @@ account of when."
   (a:when-let ((source (bt:with-lock-held ((evolver-lock evolver))
                          (gethash id (evolver-sources evolver)))))
     (write-capability id component source)))
+
+(defun restorable-promotion (component stored)
+  "The version a restart would resolve COMPONENT to, given what is STORED.
+Highest id wins, because that is the order RESTORE-CAPABILITIES replays them."
+  (let ((best nil))
+    (dolist (entry stored best)
+      (destructuring-bind (id name source) entry
+        (declare (ignore source))
+        (when (and (equal name component) (or (null best) (> id best)))
+          (setf best id))))))
+
+(defun reconcile-capabilities (evolver &optional (stored (stored-capabilities)))
+  "Every component where what this process resolves and what a restart would
+restore disagree, as (:COMPONENT c :RESOLVES id :RESTORES id). Empty means the
+two accounts agree.
+
+B12 IS WHY THIS EXISTS. Cordis reported a clean unload for every failure mode
+viva actually has, because what it reported was what it had asked for. A
+withdrawal that says it happened and did not is the one failure a
+self-modifying system cannot notice from the inside, so this looks at the
+disk instead of trusting the transition that fired.
+
+TWO ACCOUNTS, READ INDEPENDENTLY: the registry this process decides by, and
+the files a cold start would find. A promoted version COMPILE kept nothing of
+has no source to write and is not a disagreement -- there was never anything
+for the store to hold."
+  (let ((registry (evolver-registry evolver))
+        (components '())
+        (findings '()))
+    (maphash (lambda (id source)
+               (declare (ignore source))
+               (a:when-let ((component (viva.evolution:version-component registry id)))
+                 (pushnew component components :test #'equal)))
+             (evolver-sources evolver))
+    (dolist (entry stored) (pushnew (second entry) components :test #'equal))
+    (dolist (component components findings)
+      (let ((resolves (viva.evolution:current-promoted registry component))
+            (restores (restorable-promotion component stored)))
+        (unless (or (eql resolves restores)
+                    (and (null restores)
+                         (null (gethash resolves (evolver-sources evolver)))))
+          (push (list :component component :resolves resolves :restores restores)
+                findings))))))
+
+(defun announce-reconciliation (evolver options)
+  "Look after the organism moves its own default, and say what was found.
+
+Every lifecycle verb before this published what it DECIDED. This publishes
+what is TRUE afterwards, which is the only one of the two an audit can use."
+  (let ((findings (reconcile-capabilities evolver)))
+    (evolution-publish
+     evolver nil "improvement.reconciled"
+     (event::object "agree" (if findings "no" "yes")
+                    "disagreements" (length findings)
+                    "detail"
+                    (when findings
+                      (format nil "~{~a~^; ~}"
+                              (mapcar (lambda (finding)
+                                        (format nil "~a resolves ~a, a restart restores ~a"
+                                                (getf finding :component)
+                                                (or (getf finding :resolves) "nothing")
+                                                (or (getf finding :restores) "nothing")))
+                                      findings))))
+     :cell (getf options :cell))
+    findings))
 
 (defun restore-capabilities (evolver)
   "Compile what previous runs promoted and put the registry back where they

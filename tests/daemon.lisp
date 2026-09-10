@@ -1819,6 +1819,21 @@ afterwards: its registry is every candidate the rest of the suite created."
                                         (list :shutdown))))
        (setf viva.actor::*evolver* displaced))))
 
+(defun last-ledger-field (event field &optional (path (viva.actor::evolution-ledger-path)))
+  "The FIELD of the last EVENT the ledger recorded, or NIL. The ledger is
+append-only and the suite runs serially, so the last one is the caller\'s."
+  (when (probe-file path)
+    (with-open-file (in path :external-format :utf-8)
+      (loop with found = nil
+            for line = (read-line in nil nil)
+            while line
+            for table = (ignore-errors (com.inuoe.jzon:parse line))
+            for data = (and (hash-table-p table)
+                            (equal event (gethash "event" table))
+                            (gethash "data" table))
+            when (hash-table-p data) do (setf found (gethash field data))
+            finally (return found)))))
+
 (defun promotion-kept (version &optional (path (viva.actor::evolution-ledger-path)))
   "What the ledger says the promotion of VERSION kept: \"yes\", \"no\", or NIL
 when it recorded no promotion at all."
@@ -1921,6 +1936,51 @@ when it recorded no promotion at all."
       (false (actor:stored-capabilities root) "a function object was written down")
       (is equal "no" (promotion-kept id)
           "the ledger does not record that version ~d kept nothing" id))))
+
+(define-test "a withdrawal that did not happen is found by looking"
+  ;; B12, as a test. Cordis reported a clean unload for every failure mode
+  ;; viva actually has, because what it reported was what it had asked for.
+  ;; Take the file away behind a promoted capability and every transition
+  ;; still says promoted -- only a look at the disk disagrees.
+  ;;
+  ;; A FRESH OWNER over the test's own store. The suite's owner carries source
+  ;; for versions promoted into other temporary stores, and each of those is a
+  ;; true disagreement about a directory this test is not asking about.
+  (with-own-store (root)
+    (with-restarted-owner
+      (let ((id (actor:create-candidate "watched" '(lambda (input) input))))
+        (actor:promote-candidate id)
+        (false (actor:reconcile-capabilities (actor:ensure-evolver))
+               "the accounts disagree straight after a promotion")
+        (delete-file (viva.actor::capability-path id))
+        (let ((findings (actor:reconcile-capabilities (actor:ensure-evolver))))
+          (is = 1 (length findings) "a capability that vanished reconciled clean: ~s" findings)
+          (is equal "watched" (getf (first findings) :component))
+          (is eql id (getf (first findings) :resolves))
+          (false (getf (first findings) :restores)
+                 "the store was reported to hold what it does not"))))))
+
+(define-test "the ledger records what was true after the organism moved its default"
+  ;; Every lifecycle verb before this published what it DECIDED. Only this one
+  ;; publishes what is true afterwards, which is the half an audit can use.
+  (with-own-store (root)
+    (with-restarted-owner
+      (let ((first-id (actor:create-candidate "announced" '(lambda (input) input))))
+        (actor:promote-candidate first-id)
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
+        (is equal "yes" (last-ledger-field "improvement.reconciled" "agree")
+            "a promotion that kept its source reported a disagreement")
+        ;; Now break the store behind it and move a different default. The
+        ;; look is over the whole organism, so the damage is found by the next
+        ;; move rather than by whoever eventually restarts the daemon.
+        (delete-file (viva.actor::capability-path first-id))
+        (let ((second-id (actor:create-candidate "also-announced" '(lambda (input) input))))
+          (actor:promote-candidate second-id)
+          (true (viva.actor::journal-sync) "the ledger never confirmed")
+          (is equal "no" (last-ledger-field "improvement.reconciled" "agree")
+              "a missing capability was reported as agreement")
+          (true (search "announced" (or (last-ledger-field "improvement.reconciled" "detail") ""))
+                "the disagreement did not say which capability"))))))
 
 (define-test "a task that holds the only pin releases it when it ends"
   ;; REBUILD defaulted every slot with OR, so an empty slot fell back to the

@@ -57,6 +57,7 @@
            #:promote-candidate #:revert-component #:discard-candidate
            #:register-file-tool #:ledger-registrations
            #:*capability-root* #:stored-capabilities #:restore-capabilities
+           #:reconcile-capabilities
            #:call-component #:resolve-component #:reconstruct-lineage
            #:evolution-registry #:*activation-box* #:*default-door*
            #:capability-tools))

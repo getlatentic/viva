@@ -56,9 +56,14 @@
     ;; which is the whole question KC6 asks of it.
     ;; DOOR and DOOR-REFUSED are the arm -- what a run was configured to allow,
     ;; and every attempt it turned away.
+    ;; RECONCILED is the only one that reports a LOOK rather than a decision or
+    ;; a use: after the organism moves its own default it compares what it now
+    ;; resolves against what a restart would restore, and says which. B12 is
+    ;; why it exists -- Cordis reported a clean unload for every failure mode
+    ;; viva actually has, because it reported what it had asked for.
     "improvement.created" "improvement.activated" "improvement.deactivated"
     "improvement.inherited" "improvement.discarded" "improvement.resolved"
-    "improvement.promoted" "improvement.reverted"
+    "improvement.promoted" "improvement.reverted" "improvement.reconciled"
     "improvement.door" "improvement.door-refused"
     "component.version-created" "component.activated" "component.rolled-back")
   "Every event the organism may emit. Closed on purpose.")
