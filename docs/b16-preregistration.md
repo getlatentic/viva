@@ -242,6 +242,49 @@ under allocation, which is one of the two things B16 set out to measure.
 Transformation fidelity is untouched, and that is where SBCL's advantage lives.
 B8's containment findings are also untouched and remain BEAM's real weakness.
 
+## Arm 1 rebuilt fairly — and the memory claim reverses again
+
+Arm 2 was rebuilt as OTP after the first version was a strawman. Arm 1 was left
+as viva happens to be written, which is the same asymmetry with the sides
+swapped.
+
+Every cell eagerly allocates a 4096-slot event ring: `(make-array 4096)` is
+32,776 bytes, for a session that has published nothing. The ring is a cache --
+the journal is the truth and anything older is served from disk -- so its size
+is a tuning choice, not a correctness one. Measured by rebinding the size the
+probe spawns with, without changing viva:
+
+| SBCL, 8000 sessions | heap | full collection |
+| --- | --- | --- |
+| ring as shipped, 4096 slots | 331 MB | 371.8 ms |
+| ring right-sized, 64 slots | **88 MB** | **98.8 ms** |
+
+**The fair comparison, all three:**
+
+| | SBCL as shipped | SBCL right-sized | BEAM idiomatic |
+| --- | --- | --- | --- |
+| heap at 8000 | 331 MB | **88 MB** | 124 MB |
+| worst stall | 160 ms, all stop | ~99 ms, all stop | **4 ms, one stops** |
+
+**The memory claim reverses a second time and is now settled the other way.**
+Right-sized SBCL uses less than BEAM, not more. Both earlier readings compared
+one side tuned against the other untouched.
+
+**What survives is the stall, and it is structural.** One heap against eight
+thousand. No tuning of viva closes it, because the thing being tuned is how much
+lives in the one heap, not how many heaps there are.
+
+So the question has reduced usefully: memory is not a reason to move, and the
+global pause may be. That turns on how OFTEN a full collection fires under real
+load, which converts "99 ms exists" into a rate that can meet the threshold
+below. That has not been measured.
+
+**A viva finding, independent of substrate.** Right-sizing the ring is worth
+243 MB at 8000 sessions whichever runtime it runs on. It needs a ring that grows
+rather than one allocated full, which means re-placing events across a change of
+modulus inside code whose own comments say a displaced uncommitted event is data
+loss and must be declared. It is worth doing carefully and separately.
+
 ## The kill criterion, as a number
 
 **If neither advantage produces a measured difference of 20% or more on a
