@@ -43,7 +43,7 @@
   (:use #:cl #:viva.kernel)
   (:export #:evolution-transition #:empty-registry #:resolve
            #:registry-minted #:version-status #:version-component
-           #:current-promoted #:pins-of #:rehydrate-promoted
+           #:current-promoted #:lineage-of #:pins-of #:rehydrate-promoted
            #:reserve-identities
            #:*door* #:door-open-p #:run-evolution-self-test))
 

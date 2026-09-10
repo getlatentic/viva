@@ -1819,6 +1819,11 @@ afterwards: its registry is every candidate the rest of the suite created."
                                         (list :shutdown))))
        (setf viva.actor::*evolver* displaced))))
 
+(defun tool-refuses-smuggled ()
+  "Whether CALL-COMPONENT refuses \"smuggled\". The door is the only way in, so
+a version the door never promoted must not be callable through it either."
+  (nth-value 1 (ignore-errors (actor:call-component "smuggled" "x"))))
+
 (defun last-ledger-field (event field &optional (path (viva.actor::evolution-ledger-path)))
   "The FIELD of the last EVENT the ledger recorded, or NIL. The ledger is
 append-only and the suite runs serially, so the last one is the caller\'s."
@@ -1911,31 +1916,106 @@ when it recorded no promotion at all."
           (is equal "one:x" (actor:call-component "reverts" "x")))))))
 
 (define-test "a source that will not compile costs one capability, not the start"
-  ;; A macro that moved, an SBCL that changed underneath: the file reads and
-  ;; the compiler refuses it. The organism starts with one fewer capability
-  ;; and says so, rather than failing to start at all.
+  ;; A macro that moved, an SBCL that changed underneath: the ledger accounts
+  ;; for the version, the file reads, and the compiler refuses it. The
+  ;; organism starts with one fewer capability and says so, rather than
+  ;; failing to start at all.
   (with-own-store (root)
-    (let ((good (actor:create-candidate "survives" '(lambda (input) input))))
+    (let ((good (actor:create-candidate "survives" '(lambda (input) input)))
+          (rotten (actor:create-candidate "rots" '(lambda (input) input))))
       (actor:promote-candidate good)
-      (viva.actor::write-capability (+ good 1000) "rotten" '(lambda "not a lambda list" x))
+      (actor:promote-candidate rotten)
+      (true (viva.actor::journal-sync) "the ledger never confirmed")
+      (viva.actor::write-capability rotten "rots" '(lambda "not a lambda list" x))
       (with-restarted-owner
         (is eql good (viva.evolution:current-promoted (actor:evolution-registry) "survives")
             "one bad file took the others with it")
-        (false (viva.evolution:current-promoted (actor:evolution-registry) "rotten")
+        (false (viva.evolution:current-promoted (actor:evolution-registry) "rots")
                "a capability that will not compile was restored anyway")))))
 
-(define-test "a promotion that kept nothing says so in the ledger"
-  ;; COMPILE keeps nothing of its argument, so a version created from a live
-  ;; function object has no source and cannot be written. Reported rather than
-  ;; assumed: a promotion the organism believes is durable and is not would
-  ;; come back as a capability that vanished with no account of when.
+(define-test "a withdrawal survives a rename that did not happen"
+  ;; THE COMPENSATION QUESTION, answered by not needing one. Reversion moves
+  ;; the file out of what a restart restores. That move can fail after the
+  ;; registry has already moved, and a restart reading the store alone would
+  ;; bring back the version the organism took back -- as its own default, for
+  ;; every future task. Nothing compensates here; the restart consults the
+  ;; ledger, which recorded the judgment, and the stale file cannot speak.
   (with-own-store (root)
-    (let ((id (actor:create-candidate "opaque" (lambda (input) input))))
-      (actor:promote-candidate id)
+    (let ((v1 (actor:create-candidate
+               "survives-revert" '(lambda (input) (concatenate 'string "one:" input)))))
+      (actor:promote-candidate v1)
+      (let ((v2 (actor:create-candidate
+                 "survives-revert" '(lambda (input) (concatenate 'string "two:" input)))))
+        (actor:promote-candidate v2)
+        (actor:revert-component "survives-revert")
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
+        ;; The rename never took: the file is exactly where promotion left it.
+        (rename-file (viva.actor::capability-path v2 :retracted t)
+                     (viva.actor::capability-path v2))
+        (true (probe-file (viva.actor::capability-path v2)) "the setup did not stage the failure")
+        (with-restarted-owner
+          (is eql v1 (viva.evolution:current-promoted (actor:evolution-registry) "survives-revert")
+              "a restart brought back a version the organism had withdrawn")
+          (is equal "one:x" (actor:call-component "survives-revert" "x")))))))
+
+(define-test "a file nobody minted is not a capability"
+  ;; Promotion has one door. The store is where a promoted version's source
+  ;; lands, not a second way in: a file written into that directory carries no
+  ;; line in the ledger saying where it came from, and a restart that compiled
+  ;; it would make every future task resolve to something the organism never
+  ;; decided.
+  (with-own-store (root)
+    (viva.actor::write-capability 90210 "smuggled" '(lambda (input) input))
+    (with-restarted-owner
+      (false (viva.evolution:current-promoted (actor:evolution-registry) "smuggled")
+             "a file with no ledger entry became the promoted default")
+      (true (tool-refuses-smuggled) "the smuggled version was callable")
+      (let ((findings (actor:reconcile-capabilities (actor:ensure-evolver))))
+        (true (find 90210 findings :key (lambda (each) (getf each :unaccounted)))
+              "the store held what no lineage names and reconciliation said nothing: ~s"
+              findings)))))
+
+(define-test "a restart restores enough lineage to revert into"
+  ;; The whole lineage comes back, not only its head. Reversion steps to the
+  ;; version before, and a head restored on its own has nothing to step to.
+  (with-own-store (root)
+    (let ((v1 (actor:create-candidate
+               "steps-back" '(lambda (input) (concatenate 'string "one:" input)))))
+      (actor:promote-candidate v1)
+      (let ((v2 (actor:create-candidate
+                 "steps-back" '(lambda (input) (concatenate 'string "two:" input)))))
+        (actor:promote-candidate v2)
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
+        (with-restarted-owner
+          (is equal "two:x" (actor:call-component "steps-back" "x"))
+          (actor:revert-component "steps-back")
+          (is eql v1 (viva.evolution:current-promoted (actor:evolution-registry) "steps-back"))
+          (is equal "one:x" (actor:call-component "steps-back" "x")
+              "the restart left a head with nothing behind it"))))))
+
+(define-test "the ledger tells a promotion with nothing to keep from one that failed"
+  ;; Both leave the store empty and only one is a fault. A single word for the
+  ;; pair would file the fault where nobody looks, which is the shape B12
+  ;; named: a report that cannot distinguish what it is reporting.
+  (with-own-store (root)
+    ;; COMPILE keeps nothing of a live function object, so there is no source.
+    (let ((opaque (actor:create-candidate "opaque" (lambda (input) input))))
+      (actor:promote-candidate opaque)
       (true (viva.actor::journal-sync) "the ledger never confirmed")
       (false (actor:stored-capabilities root) "a function object was written down")
-      (is equal "no" (promotion-kept id)
-          "the ledger does not record that version ~d kept nothing" id))))
+      (is equal "no source" (promotion-kept opaque)
+          "version ~d had nothing to keep and the ledger does not say so" opaque))
+    ;; A source that cannot be written is a promoted default with no code.
+    (let ((previous viva.actor::*capability-root*))
+      (unwind-protect
+           (progn
+             (setf viva.actor::*capability-root* "/dev/null/no-such-place/")
+             (let ((lost (actor:create-candidate "lost" '(lambda (input) input))))
+               (actor:promote-candidate lost)
+               (true (viva.actor::journal-sync) "the ledger never confirmed")
+               (is equal "failed" (promotion-kept lost)
+                   "a write that failed reads as a promotion with nothing to keep")))
+        (setf viva.actor::*capability-root* previous)))))
 
 (define-test "a withdrawal that did not happen is found by looking"
   ;; B12, as a test. Cordis reported a clean unload for every failure mode
