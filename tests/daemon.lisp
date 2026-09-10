@@ -123,6 +123,108 @@ traffic that put two client threads on one descriptor."
       (is equal "SIMPLE-ERROR" (first kinds))
       (is equal "note" (second kinds) "a note is not marked as one"))))
 
+(defun quiet-cell (environment label)
+  (actor:spawn :label label
+               :agent (make-instance 'harness::workspace-agent
+                                     :environment environment
+                                     :resource-environment environment
+                                     :provider nil :model "none")))
+
+(defmacro parking-quickly (&body body)
+  "Run BODY with sessions parking after a second.
+
+SETF rather than LET: the cell runs in a thread of its own, and SBCL gives a
+new thread the global value rather than the binding in force where it was
+started. A LET here binds the value in the test's thread, which is the one
+thread that never reads it."
+  (let ((before (gensym "BEFORE")))
+    `(let ((,before viva.actor::*park-after*))
+       (setf viva.actor::*park-after* 1)
+       (unwind-protect (progn ,@body)
+         (setf viva.actor::*park-after* ,before)))))
+
+(defun settles (test &key (within 8))
+  "Wait up to WITHIN seconds for TEST, which is how a thread's exit is observed.
+A fixed sleep either flakes on a loaded machine or wastes the difference."
+  (let ((deadline (+ (get-universal-time) within)))
+    (loop until (or (funcall test) (> (get-universal-time) deadline))
+          do (sleep 0.1))
+    (funcall test)))
+
+(define-test "a session with nothing to do gives its thread back"
+  ;; One thread apiece is what stopped the daemon near 750 sessions, and a
+  ;; session is nearly always waiting -- on a person, or on a provider. So the
+  ;; waiting ones hold no thread.
+  (with-repository (environment)
+    (parking-quickly
+      (let ((cell (quiet-cell environment "parks")))
+        (unwind-protect
+             (progn
+               (true (settles (lambda () (viva.actor::cell-parked cell)))
+                     "an idle session never released its thread")
+               (let ((thread (viva.actor::cell-thread cell)))
+                 (false (and thread (bt:thread-alive-p thread))
+                        "it set the flag but the thread is still running")))
+          (actor:tell cell :stop))))))
+
+(define-test "a message wakes a parked session and is answered"
+  ;; The whole risk of parking: a message posted to a session with no thread
+  ;; sits unread until some other message happens to arrive.
+  (with-repository (environment)
+    (parking-quickly
+      (let ((cell (quiet-cell environment "wakes")))
+        (unwind-protect
+             (progn
+               (true (settles (lambda () (viva.actor::cell-parked cell))) "never parked")
+               (actor:tell cell :ping)
+               (true (settles (lambda () (not (viva.actor::cell-parked cell))))
+                     "a message did not wake it")
+               (true (settles (lambda ()
+                                (let ((thread (viva.actor::cell-thread cell)))
+                                  (and thread (bt:thread-alive-p thread)))))
+                     "it woke without a thread to read the message")
+               (is eq :idle (getf (actor:snapshot cell) :state)
+                   "a woken session did not come back answering"))
+          (actor:tell cell :stop))))))
+
+(define-test "a session that is working keeps its thread"
+  ;; PARK is only ever reached from a standing start. A session mid-turn that
+  ;; released its thread would have nothing left to receive the completion.
+  (with-repository (environment)
+    (let ((cell (quiet-cell environment "busy")))
+      (unwind-protect
+           (progn
+             (setf (viva.actor::cell-turn cell) "t1")
+             (false (viva.actor::park cell) "a session with a turn running parked"))
+        (setf (viva.actor::cell-turn cell) nil)
+        (actor:tell cell :stop)))))
+
+(define-test "a session is born without a thread"
+  ;; Opening a session costs a registry entry and a mailbox. Starting a thread
+  ;; to discover that nothing has been asked yet is the entire per-session cost,
+  ;; paid up front, for every session that is only ever listed.
+  (with-repository (environment)
+    (let ((cell (quiet-cell environment "unborn")))
+      (unwind-protect
+           (progn
+             (true (viva.actor::cell-parked cell) "a new session took a thread")
+             (false (viva.actor::cell-thread cell) "a new session started a thread"))
+        (actor:tell cell :stop)))))
+
+(define-test "waking a session that already has a thread changes nothing"
+  ;; WAKE runs on every delivery. If it started a thread for a cell that
+  ;; already had one, two threads would own one mailbox.
+  (with-repository (environment)
+    (let ((cell (quiet-cell environment "awake")))
+      (unwind-protect
+           (progn
+             (true (viva.actor::wake cell) "the first wake did not start a thread")
+             (let ((thread (viva.actor::cell-thread cell)))
+               (false (viva.actor::wake cell) "it woke a session that was awake")
+               (is eq thread (viva.actor::cell-thread cell)
+                   "it replaced the thread of a session that had one")))
+        (actor:tell cell :stop)))))
+
 (define-test "a cell reports how full its context is, measured"
   ;; A client cannot know how full a context is from the transcript it happens
   ;; to hold: it was sent what it was sent, and the agent's context is a

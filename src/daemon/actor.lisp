@@ -57,6 +57,16 @@ live undefined-variable warning that every later warning would have hidden in.")
   (state :idle :type keyword)
   (mailbox (mailbox:make-mailbox))
   (thread nil)
+  ;; NO THREAD, ON PURPOSE. A session with nothing to do gives its thread back
+  ;; and is woken by the next message posted to it. Sessions are nearly always
+  ;; waiting -- on a person, or on a provider -- so a thread apiece is a thread
+  ;; per waiting room. Measured before this existed: the daemon answered at 500
+  ;; sessions and stopped near 750, one thread each, on a ten-core machine.
+  ;;
+  ;; This is lifecycle, not scheduling. Nothing shares an executor with anything
+  ;; else and no policy decides whose turn it is: a session either has work and
+  ;; a thread, or has neither.
+  (parked nil)
   ;; THE definition of busy: the id of the turn now running, or NIL. A turn is
   ;; over when the coordinator has consumed its completion, not when its thread
   ;; happens to have exited.
@@ -119,6 +129,12 @@ describe as completed.")
 
 (defun resolve (cell)
   (if (stringp cell) (find-cell cell) cell))
+
+(defparameter *park-after* 60
+  "Seconds a session waits with an empty mailbox before it releases its thread.
+
+Long enough that a conversation in progress never pays the wake, short enough
+that a directory left open overnight costs nothing.")
 
 (defmacro owning ((cell) &body body)
   "Change the cell's externally visible state under its lock.
@@ -737,12 +753,11 @@ from the client's thread would put two threads in one agent's turn."
                      ;; the completion -- a caller that waited for turn N and
                      ;; then read the live agent could read state already
                      ;; being rewritten by turn N+1, started from the queue.
-                     (mailbox:send-message (cell-mailbox cell)
-                                           (list :finished :turn turn
-                                                           :outcome outcome
-                                                           :detail detail
-                                                           :reply reply
-                                                           :model (agent:agent-model (cell-agent cell))))))
+                     (deliver cell (list :finished :turn turn
+                                                    :outcome outcome
+                                                    :detail detail
+                                                    :reply reply
+                                                    :model (agent:agent-model (cell-agent cell))))))
                  :name (format nil "viva-turn-~a" turn))))
     (owning (cell) (setf (cell-worker cell) worker))))
 
@@ -943,10 +958,67 @@ The wait is what remains of one absolute deadline, recomputed each time. Passing
 the grace period to each RECEIVE-MESSAGE instead gives every arriving message a
 fresh 120 seconds, so a session with any traffic at all never times out."
   (cond ((not (eq :stopping (first (cell-machine cell))))
-         (mailbox:receive-message (cell-mailbox cell)))
+         ;; Bounded so an idle session reaches PARK. Waiting forever here is
+         ;; what tied a thread to a session for as long as the session existed.
+         (mailbox:receive-message (cell-mailbox cell) :timeout *park-after*))
         ((plusp (seconds-left cell))
          (mailbox:receive-message (cell-mailbox cell) :timeout (seconds-left cell)))
         (t nil)))
+
+(defun release-descriptors (cell)
+  "Give back what a quiet session should not be holding.
+
+THE FILE DESCRIPTOR, not only the thread. A session held its transcript open
+for as long as it existed, at two descriptors apiece, and the daemon died
+around six hundred sessions when a descriptor number no longer fit the ten bits
+SELECT allows it. Returning the thread and keeping the file would have moved
+that wall by nothing. The transcript reopens on the next line written to it."
+  (a:when-let* ((agent (cell-agent cell))
+                (session (harness:agent-session agent)))
+    (ignore-errors (session:release-transcript session)))
+  cell)
+
+(defun park (cell)
+  "Release the thread when there is nothing to do. True when it parked.
+
+Under the lock, and only from a standing start: idle, no turn, nothing waiting.
+The emptiness check and the flag are one atomic step, which is what makes the
+race with DELIVER safe in both directions. A message that arrives first leaves
+the mailbox non-empty and parking declines; one that arrives after finds the
+flag set and starts a thread."
+  (owning (cell)
+    (when (and (eq :idle (first (cell-machine cell)))
+               (null (cell-turn cell))
+               (null (cell-queued cell))
+               (zerop (mailbox:mailbox-count (cell-mailbox cell))))
+      (release-descriptors cell)
+      (setf (cell-parked cell) t))))
+
+(defun wake (cell)
+  "Give a parked cell a thread again. Does nothing to a cell that has one.
+
+The thread starts OUTSIDE the lock. RUN-CELL publishes, publishing takes this
+same lock, and a thread started while holding it would deadlock on its own
+first event."
+  (let ((woken (owning (cell)
+                 (when (cell-parked cell)
+                   (setf (cell-parked cell) nil)
+                   t))))
+    (when woken
+      (setf (cell-thread cell)
+            (bt:make-thread (lambda () (run-cell cell))
+                            :name (format nil "viva-~a" (cell-id cell)))))
+    woken))
+
+(defun deliver (cell message)
+  "Post MESSAGE to CELL and make sure something is there to read it.
+
+Every path into a mailbox goes through here. A send that skipped the wake would
+leave the message sitting in a parked cell until some other message happened to
+arrive, which is a session that answers only when a neighbour speaks."
+  (mailbox:send-message (cell-mailbox cell) message)
+  (wake cell)
+  t)
 
 (defun deregister (cell)
   "The session has ended, by request. Only here is the live marker removed: a
@@ -964,12 +1036,22 @@ deadline declared :STUCK keeps receiving -- the table absorbs late completions
 as diagnostics -- and stays registered, visibly, until an operator resolves it."
   (loop until (eq :completed (first (cell-machine cell)))
         do (let ((message (next-message cell)))
-             (handler-case (handle cell (or message '(:stop-deadline)))
-               ;; Nothing a message can do may kill the session's thread. A cell
-               ;; whose thread died looks exactly like one that is merely quiet.
-               (error (condition)
-                 (publish cell "session.error"
-                          (event::object "detail" (princ-to-string condition))))))))
+             (cond
+               ;; NOTHING CAME, AND NOTHING IS OWED. A stopping session waiting
+               ;; out its deadline also receives NIL, and that one means
+               ;; something -- so the two are told apart by the machine rather
+               ;; than by the message, which is empty in both cases.
+               ((and (null message)
+                     (not (eq :stopping (first (cell-machine cell)))))
+                (when (park cell) (return-from run-cell)))
+               (t
+                (handler-case (handle cell (or message '(:stop-deadline)))
+                  ;; Nothing a message can do may kill the session's thread. A
+                  ;; cell whose thread died looks exactly like one that is
+                  ;; merely quiet.
+                  (error (condition)
+                    (publish cell "session.error"
+                             (event::object "detail" (princ-to-string condition))))))))))
 
 (defun spawn (&key (label "") agent (id (session:new-id)))
   "Start a session that outlives whoever started it.
@@ -1010,14 +1092,23 @@ visible loss. spec/Recovery.tla, RecoveryWitnessName."
     ;; before anything else can, makes it true by construction rather than by
     ;; whichever thread happened to win.
     (publish cell "session.started" (event::object "label" (cell-label cell)))
-    (setf (cell-thread cell)
-          (bt:make-thread (lambda () (run-cell cell)) :name (format nil "viva-~a" id)))
+    ;; BORN PARKED. A session that has been asked nothing has nothing to
+    ;; receive, and starting a thread to discover that is the whole cost of a
+    ;; session paid up front. The first message posted starts it; until then
+    ;; this is a registry entry and a mailbox. Parking on idle alone would not
+    ;; help here -- opening a thousand sessions would still open a thousand
+    ;; threads and wait for them to notice.
+    ;; Parked before it is registered, and holding nothing. SPAWN never enters
+    ;; RUN-CELL, so a session born parked would otherwise keep the transcript
+    ;; that OPEN-SESSION just opened for the whole of its life.
+    (release-descriptors cell)
+    (setf (cell-parked cell) t)
     cell))
 
 (defun tell (cell &rest message)
   "Post a message and return at once. The session works at its own pace."
   (let ((cell (resolve cell)))
-    (when cell (mailbox:send-message (cell-mailbox cell) message) t)))
+    (when cell (deliver cell message))))
 
 (defun submit (cell text)
   "Post a prompt and return the id of the turn it will become.

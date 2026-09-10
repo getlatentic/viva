@@ -188,7 +188,7 @@
            #:session-entries #:session-cwd #:session-leaf #:session-parent
            #:lane-leaf #:lanes-of #:+main-lane+ #:session-lanes
            #:record-entry #:append-entry #:append-record #:append-custom-message #:append-custom #:entries-of #:records-of
-           #:close-session #:load-session #:session-messages #:latest-session
+           #:close-session #:release-transcript #:load-session #:session-messages #:latest-session
            #:session-directory #:usage-of #:+format-version+ #:+conversation-kinds+
            #:list-sessions #:search-sessions #:find-session #:describe-session #:slug
            #:summary #:summary-id #:summary-path #:summary-cwd #:summary-time
