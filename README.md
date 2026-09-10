@@ -26,7 +26,8 @@ repository keeps the negative results beside the positive ones.
 - Full-text search spans every session recorded, in every directory.
 - A session spawns scoped child agents that cannot outlive it.
 - Live-image modification is off by default.
-- `viva shell --capabilities on` enables it for the shell harness.
+- `viva shell --capabilities on` enables it for one run. `capabilities = on`
+  in `~/.viva/config` enables it for the sessions the daemon starts.
 - `viva trust` gates a project's own tools before a later session can call them.
 
 ## What persists
