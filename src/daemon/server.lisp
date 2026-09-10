@@ -380,6 +380,13 @@ cell on the same transcript would be two writers to one file."
                  :model (models:choice-model choice)
                  :reasoning-effort (models:choice-effort choice)
                  :session session
+                 ;; One variable for both halves, as the CLI does it: tools the
+                 ;; model cannot be told about, or a block naming capabilities
+                 ;; it has no verb to call, are two halves of a door and
+                 ;; neither is one.
+                 :extra-tools (when *capabilities* (actor:capability-tools))
+                 :extra-prompt (when *capabilities*
+                                 (list #'actor:capability-prompt))
                  :request-limit 60)))
     (setf (agent:agent-stream-p agent) t
           (viva.compaction:settings-context-limit (harness:agent-compaction agent))
@@ -904,6 +911,27 @@ unlink the socket the first had just bound."
       (handler-case (progn (sb-posix:lockf fd sb-posix:f-tlock 0) fd)
         (error () (ignore-errors (sb-posix:close fd)) nil)))))
 
+(defvar *capabilities* nil
+  "Whether sessions this daemon starts may compile and keep capability of
+their own.
+
+FROM THE MACHINE CONFIG, not from a flag. A daemon is usually started detached
+and often by a client rather than by a person at a shell, so a flag is a
+channel that mostly is not there -- which is how the door ended up reachable
+from `viva shell` and from nothing else. The one process whose whole premise
+is outliving its clients was the one process that could not modify itself.")
+
+(defun wire-evolution ()
+  "Give this process an evolution owner that hears about registrations, and
+decide whether its sessions may reach the door.
+
+BOTH BELONG TO THE DAEMON. LEDGER-REGISTRATIONS says so in its own docstring
+and no daemon installed it, so a registry tool minted in a session left no
+line in the ledger and its lineage did not survive a restart -- which is the
+one thing promotion is for."
+  (actor:ledger-registrations)
+  (setf *capabilities* (equal "on" (config:machine-setting "capabilities" "off"))))
+
 (defun serve (&key (path (socket-path)) (background nil) announce)
   "Listen until stopped. One thread per connection; sessions outlive all of them.
 
@@ -912,6 +940,7 @@ itself: in the foreground SERVE does not return, so anything printed beforehand
 is printed by every process that is about to be refused -- five racing daemons
 all reported `listening on`, and four of them were not."
   (ensure-directories-exist path)
+  (wire-evolution)
   ;; Claimed as one transition, not read-then-act: two threads that both saw
   ;; nothing serving both went on to bind, a race the OS lock cannot see -- a
   ;; POSIX record lock is held by the process and grants itself the same lock

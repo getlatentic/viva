@@ -99,6 +99,7 @@ can name without qualifying it."))
                     (#:event #:viva.event)
                     (#:loop* #:viva.loop)
                     (#:workspace #:viva.workspace)
+                    (#:config #:viva.config)
                     (#:actor #:viva.actor))
   (:export #:serve #:stop #:running-p #:socket-path #:connect
            #:daemon-error #:with-connection #:request #:diagnostics))

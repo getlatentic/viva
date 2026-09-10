@@ -269,7 +269,7 @@
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:env #:viva.env))
-  (:export #:load-settings #:setting #:source #:+settings+
+  (:export #:load-settings #:setting #:machine-setting #:source #:+settings+
            #:machine-config-path #:project-config-path #:environment-name
            #:read-config #:credential-like-p #:+reserved-variables+))
 

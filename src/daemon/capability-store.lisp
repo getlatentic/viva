@@ -25,7 +25,11 @@
 (in-package #:viva.actor)
 
 (defvar *capability-root*
-  (let ((given (sb-posix:getenv "VIVA_CAPABILITIES")))
+  ;; VIVA_CAPABILITY_STORE, not VIVA_CAPABILITIES: the latter is what the
+  ;; `capabilities` setting resolves to, and one variable meaning both "may
+  ;; this process modify itself" and "where does it keep the source" is a
+  ;; collision nobody would find from either end.
+  (let ((given (sb-posix:getenv "VIVA_CAPABILITY_STORE")))
     (if (and given (plusp (length given)))
         (namestring (uiop:ensure-directory-pathname given))
         (concatenate 'string (env:capabilities-directory) "/")))

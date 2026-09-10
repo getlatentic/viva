@@ -25,6 +25,7 @@
   '(("model" . "Which model to use, by catalogue name: deepseek, openai, openrouter, bedrock, local.")
     ("limit" . "Model requests one prompt may spend.")
     ("retain" . "Run the retention policy after each task: true or false.")
+    ("capabilities" . "Let sessions compile and keep capability of their own: on or off.")
     ("colour" . "Paint output: true, false, or unset to follow the terminal.")
     ("root" . "Refuse any path outside this directory.")
     ("context-limit" . "How much context the model will accept.")
@@ -134,6 +135,21 @@ Returns (values TABLE COMPLAINTS)."
             do (setf (gethash name table)
                      (make-resolved :value from-environment :source :environment)))
     (values table complaints)))
+
+(defun machine-setting (name &optional default)
+  "One setting from the MACHINE config, or the environment, or DEFAULT.
+
+NOT THE PROJECT'S, which every other setting layers on top. Whether a
+long-lived process may change what it runs is a decision by the person running
+it, and a `.viva/config` inside a repository somebody cloned is not that
+person. This is the one setting where the narrower layer is the point."
+  (let ((environment (env:make-local-environment
+                      :cwd (uiop:native-namestring (uiop:getcwd)))))
+    (flet ((given (value) (and (stringp value) (plusp (length value)) value)))
+      (or (given (sb-posix:getenv (environment-name name)))
+          (given (cdr (assoc name (read-config environment (machine-config-path))
+                             :test #'string=)))
+          default))))
 
 (defun setting (table name &optional default)
   (a:if-let ((found (gethash name table)))

@@ -2103,6 +2103,65 @@ when it recorded no promotion at all."
           (false findings "sixty lifecycle moves left the two accounts disagreeing: ~s"
                  findings))))))
 
+(defun session-tool-names (stream root)
+  "The tool names an agent the DAEMON built is holding."
+  (multiple-value-bind (reply events)
+      (daemon:request stream "type" "session.start" "cwd" root)
+    (declare (ignore events))
+    (true (gethash "success" reply) "~a" (gethash "error" reply))
+    (let* ((id (gethash "id" (gethash "session" reply)))
+           (agent (viva.actor::cell-agent (actor:find-cell id))))
+      (values (mapcar #'tool:tool-name (viva.agent:tools agent))
+              (viva.agent:system-prompt agent)))))
+
+(define-test "a daemon session can reach the door its config opened"
+  ;; THE ONE PROCESS WHOSE PREMISE IS OUTLIVING ITS CLIENTS was the one process
+  ;; that could not modify itself. Every capability tool was reachable from
+  ;; `viva shell --capabilities on` and from nothing the daemon started, so the
+  ;; durable half was built for a surface that never opened it.
+  (with-repository (environment)
+    (let ((root (env:env-cwd environment))
+          (previous viva.daemon::*capabilities*))
+      (unwind-protect
+           (with-own-store (store)
+             (with-restarted-owner
+               (let ((id (actor:create-candidate "in-a-daemon-session"
+                                                 '(lambda (input) input)
+                                                 :note "reached from a session")))
+                 (actor:promote-candidate id))
+               (with-daemon (path)
+                 (let ((stream (daemon:connect path)))
+                   (unwind-protect
+                        (progn
+                          (read-line stream nil nil)
+                          (setf viva.daemon::*capabilities* nil)
+                          (let ((closed (session-tool-names stream root)))
+                            (false (member "create_capability" closed :test #'string=)
+                                   "a door nobody opened was open"))
+                          (setf viva.daemon::*capabilities* t)
+                          (multiple-value-bind (open prompt) (session-tool-names stream root)
+                            (dolist (verb '("create_capability" "call_capability"
+                                            "show_capability" "promote_capability"))
+                              (true (member verb open :test #'string=)
+                                    "~a is not reachable from a daemon session" verb))
+                            (true (search "in-a-daemon-session" prompt)
+                                  "the session was given the tools and told nothing")))
+                     (ignore-errors (close stream)))))))
+        (setf viva.daemon::*capabilities* previous)))))
+
+(define-test "the daemon installs the hook its own ledger depends on"
+  ;; LEDGER-REGISTRATIONS says in its own docstring that the daemon installs
+  ;; it, and no daemon did. A registry tool minted in a session left no line in
+  ;; the ledger, so its lineage did not survive a restart -- which is the one
+  ;; thing promotion is for.
+  (let ((previous viva.registry:*on-register*))
+    (unwind-protect
+         (progn (setf viva.registry:*on-register* nil)
+                (viva.daemon::wire-evolution)
+                (true viva.registry:*on-register*
+                      "a daemon started without the hook that reaches its ledger"))
+      (setf viva.registry:*on-register* previous))))
+
 (define-test "a later session finds what an earlier one promoted"
   ;; RETENTION A LATER SESSION CANNOT FIND IS RETENTION THAT NEVER PAYS. The
   ;; store restored two capabilities into a fresh image and the agent that
