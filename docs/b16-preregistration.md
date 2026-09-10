@@ -141,6 +141,49 @@ viva does, rather than differently unsafe.
 *How:* the B8 fault battery, re-run against the mechanism rather than the
 containment boundary. Same fault classes, same counting.
 
+## First results, 2026-09-10 — one half measured, one half not
+
+**SBCL, measured and trustworthy.** Real viva cells spawned in a real image,
+minimum of five runs so scheduling noise can only inflate and never deflate:
+
+| sessions | full collection | nursery collection | heap |
+| --- | --- | --- | --- |
+| 0 | 33.2 ms | 1.6 ms | 59 MB |
+| 500 | 39.9 ms | 1.7 ms | 76 MB |
+| 1000 | 52.7 ms | 1.6 ms | 93 MB |
+| 2000 | 72.7 ms | 2.8 ms | 128 MB |
+| 4000 | 108.7 ms | 3.7 ms | 196 MB |
+| 8000 | **159.7 ms** | 2.4 ms | 331 MB |
+
+The full collection tracks live data and stops every session together. The
+nursery collection — the one that runs constantly — is flat regardless of
+session count. So the per-process-heap argument is real but narrow: it buys
+something on the rare case and nothing on the common one.
+
+**BEAM, not measured, and the attempt is the finding.** Five instruments, none
+usable. Counting a bystander's ticks reported baselines below their own
+treatments. Measuring the worst gap between ticks found 56.9 ms **with nothing
+collecting at all**, against a target signal near 80 ms.
+
+The cause is not tuning. Observing a pause from outside needs a *maximum*, and
+noise only inflates maxima; SBCL's number survives only because a *minimum* is
+robust to the same noise. On a workstation running an editor and browsers,
+external observation cannot resolve this.
+
+**Ask the runtime, do not watch it.** `erlang:system_monitor(long_gc)` and
+`sb-ext:*gc-run-time*` are VM-internal accounting and immune to the scheduler.
+That is the instrument this measurement needs.
+
+**And a synthetic probe may not settle it anyway.** Processes holding a list of
+integers are not sessions holding conversations. B8 reached the same wall on its
+own axis 2 and said so: testing the downstream claim needs the harness pointed
+at both substrates on matched tasks. This measurement inherits that limit.
+
+One number did survive the attempt, because it is a count rather than a
+duration: 8000 processes holding ~34 KB each cost BEAM **471 MB** against SBCL's
+**331 MB**, so BEAM spends roughly 19 KB per process on overhead the shared heap
+does not. That favours SBCL and was not what the probe set out to find.
+
 ## The kill criterion, as a number
 
 **If neither advantage produces a measured difference of 20% or more on a
