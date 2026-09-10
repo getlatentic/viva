@@ -285,6 +285,51 @@ rather than one allocated full, which means re-placing events across a change of
 modulus inside code whose own comments say a displaced uncommitted event is data
 loss and must be declared. It is worth doing carefully and separately.
 
+## The axis dissolves at both bests — and that is the result
+
+Arm 1 was rebuilt fairly, then rebuilt again by asking what a dormant session
+must keep resident at all. viva already reconstructs sessions from transcripts
+when the daemon restarts, so the object graph is derivable rather than
+essential.
+
+| 8000 dormant sessions | each | heap | full collection |
+| --- | --- | --- | --- |
+| id, label, cwd, mailbox only | 0.4 KB | 62 MB | 31.7 ms |
+| the whole object graph | 3.8 KB | 88 MB | 41.5 ms |
+
+62 MB is the empty image. Eight thousand dormant sessions add about three.
+
+**So the stall stops growing with session count** once dormant sessions are
+registry rows rather than live objects. It becomes proportional to ACTIVE
+sessions, which is bounded by how many people and agents are working at once --
+tens, not thousands.
+
+**And the same argument applies to BEAM, which this probe did not examine.**
+Eight thousand gen_servers were spawned because processes are cheap. An OTP
+engineer facing eight thousand mostly dormant sessions would plausibly keep them
+in ETS or on disk and spawn a process per active one. Cheap processes are
+BEAM's party trick, not automatically its best design for dormancy.
+
+Both bests converge on one architecture: **dormant state is data, live state is
+small.** Under it, SBCL's global collection is proportional to concurrency
+rather than to session count, and BEAM's per-process heaps still win but on
+tens of sessions instead of thousands.
+
+**The measurement that opened B16 was therefore comparing two runtimes on an
+architecture neither should have.** The 160 ms that started it was viva keeping
+eight thousand conversations live for no reason, recorded as a property of SBCL.
+
+**A caveat that limits every number above.** A configuration measured at 98.8 ms
+in one run measured 41.5 ms in another -- same code, same size, same machine.
+Run-to-run variance is about twofold, so only within-run comparisons hold and
+every absolute figure here is an order of magnitude rather than a measurement.
+
+**What the decision should turn on**, being the axes that do not dissolve:
+transformation fidelity, containment at the node boundary, versioned hot
+loading, and the I/O layer where `select` caps the daemon at 1100 sessions and
+BEAM has no equivalent. Not garbage collection, which was a proxy for a design
+flaw viva can fix in either runtime.
+
 ## The kill criterion, as a number
 
 **If neither advantage produces a measured difference of 20% or more on a
