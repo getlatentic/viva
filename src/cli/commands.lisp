@@ -503,6 +503,25 @@ it finds nobody home."
            (progn (format t "~&not running~%") 1)))
       (t (format t "~&usage: viva daemon [status|start|stop|restart]~%") 1))))
 
+(defun own-launcher ()
+  "The program to start a daemon with: THIS one, when this is one file.
+
+A STANDALONE BUILD MUST SPAWN ITSELF. The alternative was a path into the
+checkout the image happened to be built in, which is a path that need not exist
+on the machine somebody copied the executable to -- and a detached daemon is
+the one thing that cannot fall back on the caller, because the caller exits.
+
+A saved executable is its own runtime and its own core; under `sbcl --script`
+those are the SBCL binary and sbcl.core, which are not a launcher. So the
+question `am I one file?` is exactly the question `can I spawn myself?`.
+
+It is also the difference between one image load and two: starting detached
+used to pay this image for the command and the repository's source load for the
+daemon, which is most of what a cold start costs."
+  (if (equal sb-ext:*runtime-pathname* sb-ext:*core-pathname*)
+      (namestring sb-ext:*runtime-pathname*)
+      (namestring (merge-pathnames "bin/viva" (repository-root)))))
+
 (defun launch-daemon ()
   "Start a daemon in a process of its own and wait for it to answer.
 
@@ -514,8 +533,7 @@ It printed `listening on ...` and left nothing listening. SERVE's own
 :BACKGROUND is still right for a caller that IS the long-lived process, which
 is how the suite and the soak use it."
   (unless (daemon:running-p)
-    (uiop:launch-program (list (namestring (merge-pathnames "bin/viva" (repository-root)))
-                               "daemon" "start")
+    (uiop:launch-program (list (own-launcher) "daemon" "start")
                          :output nil :error-output nil)
     (loop repeat 100
           until (daemon:running-p)

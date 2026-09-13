@@ -33,7 +33,7 @@
                     (#:config #:viva.config)
                     (#:daemon #:viva.daemon)
                     (#:actor #:viva.actor))
-  (:export #:main #:arms-named #:available-arms
+  (:export #:main #:own-launcher #:arms-named #:available-arms
            #:render #:broadcast #:transcript #:screen
            #:trajectory-line #:ledger-lines #:score-line #:one-line
            #:arm #:arm-label #:arm-provider #:arm-model #:arm-effort))
