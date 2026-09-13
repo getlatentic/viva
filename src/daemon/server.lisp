@@ -623,9 +623,14 @@ correct and nobody could receive it."
         ;; a client that built its own list would offer what the daemon has no
         ;; key for.
         ((string= "models" type)
-         (ok "models" (coerce (mapcar #'model-json
-                                      (ignore-errors (models:available-models)))
-                              'vector)))
+         ;; REFRESH asks the dynamic providers again rather than trusting what
+         ;; they last said. A person who has just pulled a model wants the list
+         ;; to know, and nothing else here can tell that they have.
+         (let ((refresh (and (gethash "refresh" command) t)))
+           (ok "models" (coerce (mapcar #'model-json
+                                        (ignore-errors
+                                         (models:available-models :refresh refresh)))
+                                'vector))))
 
         ((string= "session.attach" type)
          (if cell

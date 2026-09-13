@@ -244,32 +244,15 @@ fn perform(
             }))?;
         }
         Action::Open(id) => open_session(connection, model, &id)?,
-        Action::NewTab => {
-            let started =
-                connection.send(json!({"type": "session.start", "cwd": model.cwd.clone()}))?;
-            let (reply, events) = connection.wait_for(started, Duration::from_secs(30));
-            for event in events {
-                model.absorb(&event);
-            }
-            if let Some(id) = reply
-                .as_ref()
-                .and_then(|reply| reply.get("session"))
-                .and_then(|session| session.get("id"))
-                .and_then(Value::as_str)
-            {
-                let id = id.to_string();
-                model.open_tab(&id);
-                refresh_sessions(connection, model)?;
-                attach(connection, model, &id)?;
-            } else if let Some(reply) = reply.as_ref() {
-                // A START THAT FAILED HAS TO SAY SO. This arm only ever looked
-                // for a session id, so a refusal was dropped and the pane kept
-                // saying `starting a session…` -- which is what a person with
-                // no provider key saw instead of the message naming the file to
-                // put one in.
-                take_response(model, reply);
-            }
+        Action::NewTab => start_session(connection, model, None)?,
+        Action::Models => {
+            model.models.query.clear();
+            model.models.refreshing = true;
+            fetch_models(connection, model, false)?;
+            model.focus = model::Focus::Models;
         }
+        Action::RefreshModels => fetch_models(connection, model, true)?,
+        Action::UseModel(label) => start_session(connection, model, Some(&label))?,
         Action::CloseTab => {
             let index = model.tab;
             model.close_tab(index);
@@ -395,6 +378,14 @@ fn run_command(
         }
         "/close" => return perform(connection, model, input::Action::CloseTab).map(|_| false),
         "/refresh" => return perform(connection, model, input::Action::Refresh).map(|_| false),
+        "/models" => {
+            // The typed remainder seeds the search, so `/models oss` narrows on
+            // the way in rather than making somebody type it twice.
+            let outcome = perform(connection, model, input::Action::Models);
+            model.models.query = rest.clone();
+            model.models.selection = 0;
+            return outcome.map(|_| false);
+        }
         _ => {}
     }
     Ok(false)
@@ -565,6 +556,77 @@ fn attach(connection: &mut Connection, model: &mut Model, id: &str) -> std::io::
 /// ONE request, not four: session.inspect answers notes, skills, tools and
 /// trust from a single instant. Four questions about one moment answered by
 /// four round trips would be four different moments.
+/// Start a session here, on MODEL when one was chosen, and open it in a tab.
+///
+/// ONE PATH FOR BOTH. `ctrl-n` and the model picker differ by one field, and two
+/// copies of this would be two chances for a refusal to be handled in one and
+/// dropped in the other -- which is exactly the fault this arm already had once.
+fn start_session(
+    connection: &mut Connection,
+    model: &mut Model,
+    named: Option<&str>,
+) -> std::io::Result<()> {
+    let mut request = json!({"type": "session.start", "cwd": model.cwd.clone()});
+    if let Some(named) = named {
+        request["model"] = json!(named);
+    }
+    let started = connection.send(request)?;
+    let (reply, events) = connection.wait_for(started, Duration::from_secs(30));
+    for event in events {
+        model.absorb(&event);
+    }
+    if let Some(id) = reply
+        .as_ref()
+        .and_then(|reply| reply.get("session"))
+        .and_then(|session| session.get("id"))
+        .and_then(Value::as_str)
+    {
+        let id = id.to_string();
+        model.open_tab(&id);
+        refresh_sessions(connection, model)?;
+        attach(connection, model, &id)?;
+        // NO CONFIRMATION IN THE STATUS. That field carries what went wrong and
+        // is never replaced by the facts, so a note put there sits on top of the
+        // learned counts for the rest of the run. The header already names the
+        // model the session resolved to, which is the confirmation.
+    } else if let Some(reply) = reply.as_ref() {
+        // A START THAT FAILED HAS TO SAY SO. This only ever looked for a session
+        // id, so a refusal was dropped and the pane kept saying `starting a
+        // session…` -- which is what a person with no provider key saw instead
+        // of the message naming the file to put one in.
+        take_response(model, reply);
+    }
+    Ok(())
+}
+
+/// What the daemon can reach. REFRESH asks its dynamic providers again.
+fn fetch_models(
+    connection: &mut Connection,
+    model: &mut Model,
+    refresh: bool,
+) -> std::io::Result<()> {
+    let asked = connection.send(json!({"type": "models", "refresh": refresh}))?;
+    // Longer than the other round trips on purpose: a refresh reaches every
+    // local server, and one that is not running is a bounded wait each.
+    let (reply, events) = connection.wait_for(asked, Duration::from_secs(20));
+    for event in events {
+        model.absorb(&event);
+    }
+    model.models.refreshing = false;
+    if let Some(reply) = reply {
+        if let Some(array) = reply.get("models").and_then(Value::as_array) {
+            let offers = array
+                .iter()
+                .filter_map(|value| serde_json::from_value::<model::ModelOffer>(value.clone()).ok())
+                .collect();
+            model.models.absorb(offers);
+        } else {
+            take_response(model, &reply);
+        }
+    }
+    Ok(())
+}
+
 fn refresh_learned(connection: &mut Connection, model: &mut Model) -> std::io::Result<()> {
     if model.current.is_empty() {
         return Ok(());

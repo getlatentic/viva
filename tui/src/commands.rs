@@ -38,6 +38,11 @@ pub const COMMANDS: &[Command] = &[
         blurb: "close this tab; the session keeps running",
     },
     Command {
+        name: "/models",
+        aliases: &["/model"],
+        blurb: "choose which model answers; a digit takes that one",
+    },
+    Command {
         name: "/refresh",
         aliases: &[],
         blurb: "re-read the session list",

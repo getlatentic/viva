@@ -37,6 +37,18 @@ pub enum Action {
     /// Run a shell command in the session's directory, without asking the
     /// model to do it. The model does not see it.
     Shell(String),
+    /// Offer the models this daemon can reach.
+    Models,
+    /// Ask the daemon again what its dynamic providers serve. A local server's
+    /// list is whatever somebody pulled onto the machine, and pulling one is
+    /// exactly the moment the answer here is stale.
+    RefreshModels,
+    /// Start a session on the named model, in a new tab.
+    ///
+    /// A NEW SESSION, not a change to this one. A cell owns its agent, and
+    /// retargeting a live one means a message through its mailbox and a verb in
+    /// the proven lifecycle table -- which is spec work, not a key binding.
+    UseModel(String),
 }
 
 pub fn read(event: &Event, model: &mut Model, hits: &Hitboxes) -> Action {
@@ -64,6 +76,9 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
 
     if model.focus == Focus::Picker {
         return picker_key(key, model);
+    }
+    if model.focus == Focus::Models {
+        return models_key(key, model);
     }
 
     if control {
@@ -246,6 +261,59 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
             model.command_selection = 0;
             Action::None
         }
+        _ => Action::None,
+    }
+}
+
+/// The model picker's keys. A mode, so every key here means one thing -- which
+/// is what lets a digit mean `take that one` rather than `type a digit`.
+fn models_key(key: &KeyEvent, model: &mut Model) -> Action {
+    match key.code {
+        KeyCode::Esc => {
+            model.focus = Focus::Input;
+            Action::None
+        }
+        KeyCode::Up => {
+            model.models.move_selection(-1);
+            Action::None
+        }
+        KeyCode::Down => {
+            model.models.move_selection(1);
+            Action::None
+        }
+        KeyCode::Backspace => {
+            model.models.query.pop();
+            model.models.selection = 0;
+            Action::None
+        }
+        // A DIGIT TAKES A ROW, counted from what is on screen. This is why the
+        // search is not itself an item in the list: if it were, the first
+        // keystroke would have to be `go to the list` before a number meant
+        // anything.
+        KeyCode::Char(ch @ '1'..='9') => {
+            match model.models.at_digit(ch as usize - '0' as usize) {
+                Some(offer) => {
+                    model.focus = Focus::Input;
+                    Action::UseModel(offer.label)
+                }
+                None => Action::None,
+            }
+        }
+        KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            model.models.refreshing = true;
+            Action::RefreshModels
+        }
+        KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            model.models.type_into_query(ch);
+            Action::None
+        }
+        KeyCode::Enter => match model.models.selected() {
+            Some(offer) => {
+                model.focus = Focus::Input;
+                Action::UseModel(offer.label)
+            }
+            None => Action::None,
+        },
         _ => Action::None,
     }
 }

@@ -174,6 +174,7 @@ Keys inside the full screen client. Press `/` for the commands.
 | `Ctrl-O` | show all of a tool's output, or the first three lines again |
 | `Ctrl-L` | what this session has learned |
 | `Ctrl-B` | put the sessions column away, or bring it back |
+| `/models` | choose which model answers; a digit takes that row |
 | `!` | run a shell command here; the model does not see it |
 | `Ctrl-C` | stop the running turn; leave when there is none |
 
@@ -192,6 +193,10 @@ that directory outright.
 
 A fact becomes a note. Code becomes a skill. Code the agent has already wanted
 twice becomes a tool it calls by name.
+
+`/models` lists every model this daemon can reach, marks the one already
+answering, and opens a session on whichever you pick. Press `Ctrl-R` there to
+ask the local servers again: they serve whatever you pulled onto the machine.
 
 A capability is the fourth tier, and the only one that is not a file the model
 writes. It is a Lisp function the agent compiles into the running process, so a

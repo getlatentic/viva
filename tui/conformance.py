@@ -656,6 +656,51 @@ def main():
         else:
             ok("an unknown slash command is refused, not forwarded")
 
+        # The model picker. Its rules are worth an invariant each, because the
+        # ones that matter are invisible in a screenshot: a digit must name the
+        # row it is drawn beside, and the model already answering must say so.
+        tabs_before = client.term.lines()[0].count("│")
+        client.send(b"/models\r")
+        client.pump(8.0)
+        frame = client.term.text()
+        if "which model answers" not in frame:
+            print(frame)
+            fail("/models did not open the picker")
+        elif " (1) " not in frame:
+            print(frame)
+            fail("the picker offered no numbered row")
+        else:
+            ok("/models opens a picker with numbered rows")
+            rows = [line for line in client.term.lines() if re.search(r"\(\d\) ", line)]
+            if len(rows) > 6:
+                fail(f"the picker drew {len(rows)} rows past its own window")
+            elif "(current)" not in frame:
+                print(frame)
+                fail("the picker does not say which model is already answering")
+            else:
+                ok(f"the window holds {len(rows)} rows and marks the current model")
+            # Typing narrows, and a digit takes a row from what is on screen.
+            client.send(b"nothing-matches-this")
+            client.pump(2.0)
+            if "no matches" not in client.term.text():
+                print(client.term.text())
+                fail("a filter that matches nothing does not say so")
+            else:
+                ok("a filter matching nothing says `no matches`")
+            for _ in range(len("nothing-matches-this")):
+                client.send(b"\x7f")
+            client.pump(2.0)
+            client.send(b"1")
+            client.pump(12.0)
+            tabs_after = client.term.lines()[0].count("│")
+            if tabs_after != tabs_before + 1:
+                print(client.term.text())
+                fail(f"a digit opened no session: {tabs_before} tabs -> {tabs_after}")
+            elif "which model answers" in client.term.text():
+                fail("the picker stayed open after choosing")
+            else:
+                ok("a digit opens a session and closes the picker")
+
         # THE MENU. A closed set nobody can see is barely better than no set.
         client.send(b"/")
         client.pump(2.0)
