@@ -552,6 +552,27 @@ context it was drawn from."
                (actor:publish cell "tool.started"
                               (object "call" (event:call-json call)))))))))
 
+(defun answer (client line)
+  "Handle one request, and reply to THAT request whatever happens.
+
+CARRYING THE ID IS THE WHOLE POINT. A failing handler used to answer with no
+id, and a client matches replies to requests by id -- so the answer was
+unmatchable and the caller waited out its own timeout instead. Measured: a
+session.start on a daemon with no model configured never replied, and the
+client sat for thirty seconds before drawing a frame. The error message was
+correct and nobody could receive it."
+  (let ((command (handler-case (jzon:parse line) (error () nil))))
+    (if (not (hash-table-p command))
+        (say client (object "type" "response" "success" nil
+                            "error" "that line is not a JSON object"))
+        (handler-case (handle client command)
+          (error (condition)
+            (say client (object "id" (or (gethash "id" command) :omit)
+                                "type" "response"
+                                "command" (text-of command "type" "")
+                                "success" nil
+                                "error" (princ-to-string condition))))))))
+
 (defun handle (client command)
   (let* ((id (gethash "id" command))
          (type (text-of command "type" ""))
@@ -789,10 +810,7 @@ place, on one thread, with exactly one close."
            (loop for line = (next-line client)
                  while line
                  do (unless (zerop (length (string-trim '(#\Space #\Tab #\Return) line)))
-                      (handler-case (handle client (jzon:parse line))
-                        (error (condition)
-                          (say client (object "type" "response" "success" nil
-                                              "error" (princ-to-string condition))))))))
+                      (answer client line))))
       ;; Unsubscribe before stopping the writer: a session publishing into a
       ;; mailbox nobody drains would queue for a client that has gone.
       (unwatch-all client)

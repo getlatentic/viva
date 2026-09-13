@@ -2162,6 +2162,34 @@ when it recorded no promotion at all."
                       "a daemon started without the hook that reaches its ledger"))
       (setf viva.registry:*on-register* previous))))
 
+(define-test "a request that fails answers the request that asked"
+  ;; The outer guard replied WITHOUT AN ID, and a client matches replies to
+  ;; requests by id -- so the answer was unmatchable and the caller waited out
+  ;; its own timeout instead. Measured before this: a session.start on a daemon
+  ;; with no model configured never appeared to reply at all, and the client sat
+  ;; for thirty seconds before drawing a frame. The message was correct and
+  ;; nobody could receive it.
+  (with-daemon (path)
+    (let ((stream (daemon:connect path)))
+      (unwind-protect
+           (progn
+             (read-line stream nil nil)
+             ;; AN ID ON PURPOSE. The Lisp helper matches replies by type, so
+             ;; only a caller that sends one can observe that it comes back --
+             ;; and the Rust client, which matches by id, is the one that sat
+             ;; through its own timeout when it did not.
+             (let ((reply (daemon:request stream "type" "session.start"
+                                                 "id" 4242
+                                                 "cwd" "/tmp"
+                                                 "model" "no-such-model-anywhere")))
+               (false (gethash "success" reply) "an unknown model started a session")
+               (is eql 4242 (gethash "id" reply)
+                   "the failure came back with ~s instead of the id that asked"
+                   (gethash "id" reply))
+               (true (search "no-such-model-anywhere" (or (gethash "error" reply) ""))
+                     "the failure did not say what was wrong: ~s" (gethash "error" reply))))
+        (ignore-errors (close stream))))))
+
 (define-test "a later session finds what an earlier one promoted"
   ;; RETENTION A LATER SESSION CANNOT FIND IS RETENTION THAT NEVER PAYS. The
   ;; store restored two capabilities into a fresh image and the agent that
