@@ -316,6 +316,14 @@ transcript to draw a list would take longer the longer you had used it."
           "messages" (session:summary-messages summary)
           "opening" (session:summary-opening summary)))
 
+(defun model-json (choice)
+  "One offer from the catalogue. The ID is what reaches the provider and the
+LABEL is what a person asks for; both, because a session records the id and
+somebody bringing one back has only that."
+  (object "label" (models:choice-label choice)
+          "id" (models:choice-model choice)
+          "endpoint" (models:choice-endpoint-label choice)))
+
 (defun cell-json (cell)
   "One coherent instant of a cell, not six field reads racing the coordinator."
   (let ((now (actor:snapshot cell)))
@@ -588,6 +596,15 @@ context it was drawn from."
 
         ((string= "session.list" type)
          (ok "sessions" (coerce (mapcar #'cell-json (actor:all-cells)) 'vector)))
+
+        ;; What this daemon can reach, so a client can offer a choice rather
+        ;; than make a person edit a file and restart. Resolution stays here:
+        ;; a client that built its own list would offer what the daemon has no
+        ;; key for.
+        ((string= "models" type)
+         (ok "models" (coerce (mapcar #'model-json
+                                      (ignore-errors (models:available-models)))
+                              'vector)))
 
         ((string= "session.attach" type)
          (if cell
