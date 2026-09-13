@@ -21,7 +21,7 @@
   '(("model" . "Which model to use, by catalogue name: deepseek, openai, openrouter, bedrock, local.")
     ("limit" . "Model requests one prompt may spend.")
     ("retain" . "Run the retention policy after each task: true or false.")
-    ("capabilities" . "Let sessions compile and keep capability of their own: on or off.")
+    ("capabilities" . "Which capabilities to enable, comma separated: a name this build offers, or a path to a file you wrote.")
     ("colour" . "Paint output: true, false, or unset to follow the terminal.")
     ("root" . "Refuse any path outside this directory.")
     ("context-limit" . "How much context the model will accept.")

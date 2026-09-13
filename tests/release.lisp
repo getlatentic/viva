@@ -352,6 +352,17 @@ DOES rather than about what it says."
     (true (search "\"model\" (option parsed \"model\")" source)
           "session.start must carry the resolved model")))
 
+(define-test "the capability setting is described as what it is"
+  ;; `viva config` is where a person reads what a setting takes, so a
+  ;; description that says `on or off` for a list of names and paths sends them
+  ;; to write the one thing it no longer means.
+  (let ((described (cdr (assoc "capabilities" config:+settings+ :test #'string=))))
+    (true described "the capability setting is not described at all")
+    (false (search "on or off" described)
+           "the description still offers a switch: ~s" described)
+    (true (or (search "name" described) (search "path" described))
+          "the description does not say what an entry is: ~s" described)))
+
 (define-test "a capability setting is read from config, not only from a flag"
   ;; `viva config` lists every setting and which file decided it, so a setting
   ;; it reports and a run ignores is worse than one that does not exist. The
