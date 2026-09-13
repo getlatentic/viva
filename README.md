@@ -86,22 +86,19 @@ and it goes through workspace files.
 
 ## Install
 
-A released binary, which needs no SBCL, no Quicklisp and no checkout. macOS on
-Apple silicon and Linux on x86_64.
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/getlatentic/viva/main/get.sh | sh
 viva              # opens this directory's session, or starts one
 ```
 
-It puts the engine and the full-screen client in `~/.viva/bin`, checks both
-against the release's checksums, and links `viva` onto your `PATH`.
-`VIVA_VERSION` pins a tag and `VIVA_PREFIX` names the directory to link into.
+A released binary for macOS on Apple silicon and Linux on x86_64. Re-run it to
+upgrade.
 
-To build from source instead, or to work on viva:
+Anywhere else, build from source. This needs SBCL:
 
 ```bash
-sh install.sh     # needs SBCL; installs Quicklisp if it is absent
+brew install sbcl        # or: apt install sbcl
+sh install.sh
 ```
 
 ### A provider key
