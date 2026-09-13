@@ -316,6 +316,14 @@ transcript to draw a list would take longer the longer you had used it."
           "messages" (session:summary-messages summary)
           "opening" (session:summary-opening summary)))
 
+(defun model-json (choice)
+  "One offer from the catalogue. The ID is what reaches the provider and the
+LABEL is what a person asks for; both, because a session records the id and
+somebody bringing one back has only that."
+  (object "label" (models:choice-label choice)
+          "id" (models:choice-model choice)
+          "endpoint" (models:choice-endpoint-label choice)))
+
 (defun cell-json (cell)
   "One coherent instant of a cell, not six field reads racing the coordinator."
   (let ((now (actor:snapshot cell)))
@@ -374,12 +382,22 @@ cell on the same transcript would be two writers to one file."
                       (session:reopen-session (session:summary-path earlier))
                       (session:open-session :directory (session:session-directory cwd)
                                             :cwd cwd)))
+         (declared (multiple-value-list (extension:contributions *declared*)))
+         (declared-tools (first declared))
+         (declared-prompts (second declared))
          (agent (harness:make-workspace-agent
                  :cwd cwd
                  :provider (models:choice-provider choice)
                  :model (models:choice-model choice)
                  :reasoning-effort (models:choice-effort choice)
                  :session session
+                 ;; Whatever the declared capabilities contribute. Neither half
+                 ;; is named here: a capability that offered tools and no prompt
+                 ;; would be a door nothing could be told about, and that is the
+                 ;; capability's business to get right, once.
+                 :extra-tools declared-tools
+                 :extra-prompt declared-prompts
+                 :extension-files *declared-files*
                  :request-limit 60)))
     (setf (agent:agent-stream-p agent) t
           (viva.compaction:settings-context-limit (harness:agent-compaction agent))
@@ -537,6 +555,27 @@ context it was drawn from."
                (actor:publish cell "tool.started"
                               (object "call" (event:call-json call)))))))))
 
+(defun answer (client line)
+  "Handle one request, and reply to THAT request whatever happens.
+
+CARRYING THE ID IS THE WHOLE POINT. A failing handler used to answer with no
+id, and a client matches replies to requests by id -- so the answer was
+unmatchable and the caller waited out its own timeout instead. Measured: a
+session.start on a daemon with no model configured never replied, and the
+client sat for thirty seconds before drawing a frame. The error message was
+correct and nobody could receive it."
+  (let ((command (handler-case (jzon:parse line) (error () nil))))
+    (if (not (hash-table-p command))
+        (say client (object "type" "response" "success" nil
+                            "error" "that line is not a JSON object"))
+        (handler-case (handle client command)
+          (error (condition)
+            (say client (object "id" (or (gethash "id" command) :omit)
+                                "type" "response"
+                                "command" (text-of command "type" "")
+                                "success" nil
+                                "error" (princ-to-string condition))))))))
+
 (defun handle (client command)
   (let* ((id (gethash "id" command))
          (type (text-of command "type" ""))
@@ -581,6 +620,20 @@ context it was drawn from."
 
         ((string= "session.list" type)
          (ok "sessions" (coerce (mapcar #'cell-json (actor:all-cells)) 'vector)))
+
+        ;; What this daemon can reach, so a client can offer a choice rather
+        ;; than make a person edit a file and restart. Resolution stays here:
+        ;; a client that built its own list would offer what the daemon has no
+        ;; key for.
+        ((string= "models" type)
+         ;; REFRESH asks the dynamic providers again rather than trusting what
+         ;; they last said. A person who has just pulled a model wants the list
+         ;; to know, and nothing else here can tell that they have.
+         (let ((refresh (and (gethash "refresh" command) t)))
+           (ok "models" (coerce (mapcar #'model-json
+                                        (ignore-errors
+                                         (models:available-models :refresh refresh)))
+                                'vector))))
 
         ((string= "session.attach" type)
          (if cell
@@ -765,10 +818,7 @@ place, on one thread, with exactly one close."
            (loop for line = (next-line client)
                  while line
                  do (unless (zerop (length (string-trim '(#\Space #\Tab #\Return) line)))
-                      (handler-case (handle client (jzon:parse line))
-                        (error (condition)
-                          (say client (object "type" "response" "success" nil
-                                              "error" (princ-to-string condition))))))))
+                      (answer client line))))
       ;; Unsubscribe before stopping the writer: a session publishing into a
       ;; mailbox nobody drains would queue for a client that has gone.
       (unwatch-all client)
@@ -904,6 +954,40 @@ unlink the socket the first had just bound."
       (handler-case (progn (sb-posix:lockf fd sb-posix:f-tlock 0) fd)
         (error () (ignore-errors (sb-posix:close fd)) nil)))))
 
+(defvar *declared-files* '()
+  "The extension files this daemon was configured with -- loaded per session,
+under the trust gate, because loading one runs it.")
+
+(defvar *declared* '()
+  "The capability names this daemon was configured with.
+
+FROM THE MACHINE CONFIG, not from a flag. A daemon is usually started detached
+and often by a client rather than by a person at a shell, so a flag is a
+channel that mostly is not there -- which is how the door ended up reachable
+from `viva shell` and from nothing else. The one process whose whole premise is
+outliving its clients was the one process that could not modify itself.
+
+NAMES, so this is a list and not a switch. What a session gets is whatever
+those names contribute, and a build that offers three capabilities can be asked
+for two of them.")
+
+(defun wire-evolution ()
+  "Give this process an evolution owner that hears about registrations, and
+decide whether its sessions may reach the door.
+
+BOTH BELONG TO THE DAEMON. LEDGER-REGISTRATIONS says so in its own docstring
+and no daemon installed it, so a registry tool minted in a session left no
+line in the ledger and its lineage did not survive a restart -- which is the
+one thing promotion is for."
+  (actor:ledger-registrations)
+  ;; THE NAMES, not a boolean. A daemon that only knew on-or-off could offer one
+  ;; capability; the setting is a list, and what a session gets is whatever those
+  ;; names contribute.
+  (multiple-value-bind (names files)
+      (extension:declared (config:machine-setting "capabilities" "off"))
+    (setf *declared* names
+          *declared-files* files)))
+
 (defun serve (&key (path (socket-path)) (background nil) announce)
   "Listen until stopped. One thread per connection; sessions outlive all of them.
 
@@ -912,6 +996,7 @@ itself: in the foreground SERVE does not return, so anything printed beforehand
 is printed by every process that is about to be refused -- five racing daemons
 all reported `listening on`, and four of them were not."
   (ensure-directories-exist path)
+  (wire-evolution)
   ;; Claimed as one transition, not read-then-act: two threads that both saw
   ;; nothing serving both went on to bind, a race the OS lock cannot see -- a
   ;; POSIX record lock is held by the process and grants itself the same lock

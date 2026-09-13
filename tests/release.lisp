@@ -15,35 +15,26 @@
   (uiop:read-file-string
    (merge-pathnames relative (asdf:system-source-directory "viva"))))
 
-(define-test "every provider in the catalogue is named in .env.example"
-  ;; A provider added to the catalogue and not to the example is a provider
-  ;; nobody can discover: the error message names the key, but only once you
-  ;; have already failed to configure anything.
-  (let ((example (repository-file ".env.example")))
-    (dolist (entry models::+catalogue+)
-      (dolist (variable (list (getf entry :key)
-                              (getf entry :endpoint-var)
-                              (getf entry :model-var)))
-        (true (search variable example)
-              "~a is in the catalogue but not in .env.example" variable)))))
+(define-test "the documented auth shape names only providers that exist"
+  ;; The shape is what the no-model error prints, so a provider named there and
+  ;; absent from the catalogue is advice that cannot work -- and one in the
+  ;; catalogue is still discoverable, because the same error lists every key.
+  (let ((shape (com.inuoe.jzon:parse viva.auth:*file-shape*))
+        (labels* (mapcar (lambda (entry) (getf entry :label)) models::+catalogue+)))
+    (true (hash-table-p shape) "the documented shape does not parse as JSON")
+    (loop for provider being the hash-keys of shape
+          do (true (member provider labels* :test #'string=)
+                   "the shape names ~s, which is not in the catalogue" provider))))
 
-(define-test ".env.example carries names and never a value"
-  ;; The file is committed, so a key pasted into it is a key published. Every
-  ;; assignment is either empty or a commented-out default.
-  (dolist (line (uiop:split-string (repository-file ".env.example")
-                                   :separator '(#\Newline)))
-    (let ((trimmed (string-left-trim " " line)))
-      (unless (or (zerop (length trimmed)) (char= #\# (char trimmed 0)))
-        (let ((equals (position #\= trimmed)))
-          (true equals "~s is neither a comment nor an assignment" line)
-          (when equals
-            (is string= "" (subseq trimmed (1+ equals))
-                "~a has a value in a committed file" (subseq trimmed 0 equals))))))))
-
-(define-test ".env.example is not swallowed by the .env ignore"
-  ;; `.env.*` was added before `.env.example` existed and matched it exactly.
-  ;; Writing the file is not the same as shipping it.
-  (true (search "!.env.example" (repository-file ".gitignore"))))
+(define-test "the documented auth shape carries no key"
+  ;; It is committed source and it is printed to anyone who has configured
+  ;; nothing, so a real key pasted in is a key published twice over.
+  (let ((shape (com.inuoe.jzon:parse viva.auth:*file-shape*)))
+    (loop for provider being the hash-keys of shape using (hash-value entry)
+          do (let ((key (gethash "apiKey" entry)))
+               (true (stringp key) "~a has no apiKey in the shape" provider)
+               (true (or (search "..." key) (< (length key) 12))
+                     "~a looks like a real key in a committed file" provider)))))
 
 (define-test "the test system is loaded the way that resolves its dependencies"
   ;; ASDF resolves dependencies and never downloads them. The bootstrap
@@ -162,6 +153,160 @@ DOES rather than about what it says."
     ;; stripped first: the file explains why it does NOT use that flag, and a
     ;; search over the whole text finds the explanation and fails on it.
     (false (search "readlink -f" (shell-code launcher)))))
+
+(define-test "asking for the version is not asking for a session"
+  ;; A flag with no command opened a session, so `viva --version` started an
+  ;; interactive agent in the current directory: the wrong answer to a question,
+  ;; and much the wrong answer to a typo one letter away from a real flag.
+  (let ((asked (cli::parse-arguments '("--version"))))
+    (true (cli::flag asked "version"))
+    (false (cli::unknown-flags asked) "--version must be an option, not a typo"))
+  ;; Every config setting is a flag too, because OPTION falls back to the table.
+  ;; Checking against only the hand-written list would refuse `--model`.
+  (dolist (setting (mapcar #'car config:+settings+))
+    (false (cli::unknown-flags (cli::parse-arguments (list (format nil "--~a" setting) "x")))
+           setting))
+  (is equal '("versoin") (cli::unknown-flags (cli::parse-arguments '("--versoin"))))
+  (is equal '("aa" "bb") (cli::unknown-flags (cli::parse-arguments '("--bb" "--aa")))))
+
+(define-test "a build says which build it is"
+  ;; A binary has no checkout to ask, and a checkout must not report a string
+  ;; baked in before the last edit. Both answers, in that order.
+  (let ((cli::*build-version* "v9.9.9"))
+    (is string= "v9.9.9" (cli::version) "a stamped build reports its stamp"))
+  (let ((cli::*build-version* nil))
+    ;; This suite runs from a checkout, so git is the answer here.
+    (true (plusp (length (cli::version))))
+    (false (string= "unknown" (cli::version))
+           "a source run in a git checkout must not report `unknown`"))
+  ;; The stamp reaches the image from the build, not from a literal in the file.
+  (let ((builder (shell-code (repository-file "tools/build-image.sh"))))
+    (true (search "VIVA_BUILD_VERSION" builder))
+    (true (search "git describe" builder)))
+  (true (search "VIVA_BUILD_VERSION" (repository-file "tools/build-image.lisp"))))
+
+(define-test "the installer says what it replaced, and what is still running"
+  (let ((code (shell-code (repository-file "get.sh"))))
+    ;; Asked BEFORE the replacement, or there is nothing to compare with.
+    (true (search "--version" code))
+    (true (search "was=" code))
+    ;; A daemon keeps the file it started from, so it serves the old build until
+    ;; it restarts. Silence there gets the new build blamed for old behaviour.
+    (true (search "daemon status" code))
+    (true (search "viva daemon restart" code))))
+
+(define-test "the curl installer reaches a release, and checks what it gets"
+  (let* ((script (repository-file "get.sh"))
+         (code (shell-code script))
+         (workflow (repository-file ".github/workflows/release.yml")))
+    ;; A RELEASE ASSET, NOT A WORKFLOW ARTIFACT. Artifacts answer 401 without a
+    ;; token and expire after ninety days, so `curl | sh` cannot use them --
+    ;; which is the whole reason the release workflow exists alongside `check`.
+    (true (search "/releases/latest/download" code))
+    (false (search "/actions/artifacts" code)
+           "the installer is back to an artifact no anonymous curl can fetch")
+    ;; It never leaves half a binary where a working one was: check, then move.
+    (true (search "SHA256SUMS" code))
+    (true (search "mktemp -d" code))
+    (true (search "-c" code))
+    ;; And the PATH question belongs to `viva install`, which already refuses to
+    ;; replace a stranger's binary and knows to link itself.
+    (true (search "\"$store/viva\" install" code))
+    ;; A machine with no binary is told the one thing that works there.
+    (true (search "sh install.sh" script))
+    ;; The workflow has to prove the binary stands alone, because the fault it
+    ;; guards against -- needing the directory it was built in -- looks fine on
+    ;; the machine that built it.
+    (true (search "Prove the binary stands alone" workflow))
+    (true (search "gh release upload" workflow))))
+
+(define-test "a binary on PATH finds the client through its own symlink"
+  ;; Installing makes a symlink, so this is the normal case, not an edge one.
+  ;; Typing the name leaves argv0 a bare `viva` that TRUENAME cannot resolve,
+  ;; and the runtime path is then the LINK: looking beside that is looking in
+  ;; the PATH directory, where only the link lives. Every standalone install
+  ;; quietly fell back to the Lisp client.
+  (let* ((root (uiop:ensure-directory-pathname
+                (format nil "~a/viva-beside-~a" (uiop:temporary-directory) (random 100000))))
+         (store (merge-pathnames "store/" root))
+         (path (merge-pathnames "path/" root)))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist store)
+           (ensure-directories-exist path)
+           (let ((binary (namestring (merge-pathnames "viva" store)))
+                 (client (namestring (merge-pathnames "viva-tui" store)))
+                 (link (namestring (merge-pathnames "viva" path))))
+             (with-open-file (out binary :direction :output) (write-line "binary" out))
+             (with-open-file (out client :direction :output) (write-line "client" out))
+             (sb-posix:symlink binary link)
+             ;; Compared as TRUENAMEs: what comes back is resolved, and on a
+             ;; mac /var is itself a link to /private/var.
+             (let ((want (namestring (truename client))))
+               ;; argv0 is a bare name, as it is when somebody types `viva`.
+               (is string= want (cli::beside-me "viva-tui" "viva" link)
+                   "the client beside the real binary must be found through the link")
+               ;; And the direct case still holds.
+               (is string= want (cli::beside-me "viva-tui" binary binary)))
+             ;; A name that is not there is still NIL, not an error.
+             (false (cli::beside-me "viva-nothing" "viva" link))))
+      (ignore-errors (uiop:delete-directory-tree root :validate t)))))
+
+(define-test "a standalone build installs itself, not a checkout"
+  ;; `install` linked bin/viva resolved from the ASDF source directory and
+  ;; reported success. Run from a downloaded binary that is a path into the
+  ;; machine it was BUILT on, so `viva` dangled on every other machine -- the
+  ;; same fault as spawning a daemon, in the other function that asks where the
+  ;; program is. One answer for both.
+  (let ((one-file #p"/downloads/viva-macos-arm64"))
+    (is string= "/downloads/viva-macos-arm64"
+        (cli::own-launcher one-file one-file))
+    ;; And a link to exactly this program is ours to replace, which is the only
+    ;; claim a standalone binary can make: it has no checkout to compare with.
+    (true (search "(string= (install-source) link)"
+                  (repository-file "src/cli/install.lisp"))
+          "install cannot recognise its own link, so re-installing refuses")
+    (true (search "(own-launcher)" (repository-file "src/cli/install.lisp"))
+          "install is back to linking a checkout it may not have")))
+
+(define-test "a standalone build starts its daemon with itself"
+  ;; The path into the build machine's checkout was real: a binary from CI tried
+  ;; to exec /Users/runner/work/viva/viva/bin/viva and could not. CI cannot
+  ;; catch that -- its smoke test runs ON the runner, where that path exists --
+  ;; so the decision is tested here instead of trusted there.
+  ;;
+  ;; One file means runtime and core are the same file. The suite runs under
+  ;; `sbcl --script`, where they differ, so both cases are passed in.
+  (let ((one-file #p"/somewhere/viva"))
+    (is string= "/somewhere/viva" (cli::own-launcher one-file one-file)
+        "a standalone build must spawn itself, not a checkout")
+    (is string= (namestring (merge-pathnames "bin/viva" (cli::repository-root)))
+        (cli::own-launcher #p"/usr/bin/sbcl" #p"/usr/lib/sbcl/sbcl.core")
+        "running from source, the launcher is the thing to spawn")))
+
+(define-test "every script finds sbcl rather than assuming the PATH has it"
+  ;; A terminal opened from a GUI reads no login profile, so its PATH has no
+  ;; Homebrew and `exec sbcl` failed with `sbcl: not found` -- the TUI reported
+  ;; the shell's words, and a working install looked broken. One resolver, so
+  ;; the launcher and the image build cannot disagree about where sbcl lives.
+  (let ((launcher (shell-code (repository-file "bin/viva")))
+        (image (shell-code (repository-file "tools/build-image.sh")))
+        (resolver (shell-code (repository-file "tools/sbcl.sh")))
+        (installer (shell-code (repository-file "install.sh"))))
+    (false (search "exec sbcl " launcher)
+           "the launcher is back to hoping sbcl is on the PATH")
+    (false (search "sbcl --script" image)
+           "the image build is back to hoping sbcl is on the PATH")
+    (true (search "tools/sbcl.sh" launcher))
+    (true (search "tools/sbcl.sh" image))
+    ;; Named beats found, everywhere. The installer cannot source the resolver
+    ;; -- it runs from a pipe, before there is a checkout -- so it says so too.
+    (true (search "VIVA_SBCL" resolver))
+    (true (search "VIVA_SBCL" installer)
+          "the installer ignores the override the launcher honours")
+    ;; And a named one that is not there is an error, not a fallback.
+    (true (search "which is not an executable file" resolver))
+    (true (search "brew install sbcl" resolver))))
 
 (define-test "install refuses to replace something it did not put there"
   (let ((source (repository-file "src/cli/install.lisp")))
@@ -307,13 +452,13 @@ DOES rather than about what it says."
              (car entry) variable))))
 
 (define-test "a credential in a config file is refused by name"
-  ;; .env is gitignored and a config file is committed, so a key in one is a
-  ;; key published.
+  ;; auth.json lives outside any repository and a config file is committed, so
+  ;; a key in the second is a key published.
   (with-config (path "model=deepseek" "DEEPSEEK_API_KEY=sk-pretend")
     (declare (ignore path))
     (multiple-value-bind (table complaints) (config:load-settings cwd)
       (is string= "deepseek" (config:setting table "model"))
-      (true (find-if (lambda (said) (search "Credentials belong in .env" said)) complaints)
+      (true (find-if (lambda (said) (search "Credentials belong in auth.json" said)) complaints)
             "a key in a config file must be refused, not stored"))))
 
 (define-test "a mistyped setting is named rather than ignored"
@@ -361,67 +506,79 @@ DOES rather than about what it says."
     (true (search "\"model\" (option parsed \"model\")" source)
           "session.start must carry the resolved model")))
 
-(define-test "a key file is read the way the shell reads it"
-  (flet ((pair (line) (cli::credential-line line)))
-    (is equal '("DEEPSEEK_API_KEY" . "abc") (pair "DEEPSEEK_API_KEY=abc"))
-    (is equal '("A" . "b") (pair "export A=b"))
-    (is equal '("A" . "b") (pair "  A = b  "))
-    (is equal '("A" . "b c") (pair "A=\"b c\""))
-    (is equal '("A" . "b c") (pair "A='b c'"))
-    (is equal '("A" . "") (pair "A="))
-    ;; A file edited by hand has these in it, and one of them must not stop a
-    ;; run that has every key it needs.
-    (false (pair "# a comment"))
-    (false (pair ""))
-    (false (pair "   "))
-    (false (pair "no equals sign here"))
-    (false (pair "=novalue"))))
+(define-test "the capability setting is described as what it is"
+  ;; `viva config` is where a person reads what a setting takes, so a
+  ;; description that says `on or off` for a list of names and paths sends them
+  ;; to write the one thing it no longer means.
+  (let ((described (cdr (assoc "capabilities" config:+settings+ :test #'string=))))
+    (true described "the capability setting is not described at all")
+    (false (search "on or off" described)
+           "the description still offers a switch: ~s" described)
+    (true (or (search "name" described) (search "path" described))
+          "the description does not say what an entry is: ~s" described)))
 
-(define-test "a key already in the environment is not replaced by the file"
-  ;; A person who wrote KEY=... in front of the command meant that key for that
-  ;; run, and the launcher may have loaded the file already.
-  (let* ((directory (format nil "/tmp/viva-keys-~d-~d/"
-                            (get-universal-time) (random 100000)))
-         (file (merge-pathnames ".env" directory))
-         (mine "VIVA_TEST_EXISTING")
-         (fresh "VIVA_TEST_FRESH"))
-    (ensure-directories-exist directory)
-    (unwind-protect
-         (progn
-           (with-open-file (out file :direction :output :if-exists :supersede)
-             (format out "~a=from-the-file~%~a=from-the-file~%" mine fresh))
-           (sb-posix:setenv mine "from-the-caller" 1)
-           (sb-posix:unsetenv fresh)
-           (let ((set (cli::load-credentials (namestring file))))
-             (is equal (list fresh) set "the wrong names were set")
-             (is string= "from-the-caller" (sb-posix:getenv mine))
-             (is string= "from-the-file" (sb-posix:getenv fresh))))
-      (sb-posix:unsetenv mine)
-      (sb-posix:unsetenv fresh)
-      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
-                                                 :validate t)))))
+(define-test "a capability setting is read from config, not only from a flag"
+  ;; `viva config` lists every setting and which file decided it, so a setting
+  ;; it reports and a run ignores is worse than one that does not exist. The
+  ;; daemon read this from the machine config while the shell and `run` read
+  ;; only the command line.
+  (let ((source (repository-file "src/cli/commands.lisp")))
+    (true (search "(option parsed \"capabilities\"" source)
+          "the capability door is resolved from the command line alone")
+    (false (search "(flag parsed \"capabilities\"" source)
+           "a flag-only read of the capability setting is back")))
 
-(define-test "a named client wins over every other place to look"
-  ;; VIVA_TUI is the override. Everything below it is a guess about where a
-  ;; build put things, and a guess must never beat an instruction.
-  (let ((named (namestring (merge-pathnames "bin/viva" (cli::repository-root))))
-        (before (sb-posix:getenv "VIVA_TUI")))
-    (unwind-protect
-         (progn
-           (sb-posix:setenv "VIVA_TUI" named 1)
-           (is string= named (cli::rust-client)))
-      (if before (sb-posix:setenv "VIVA_TUI" before 1) (sb-posix:unsetenv "VIVA_TUI")))))
-
-(define-test "credentials load from the machine as well as the clone"
-  ;; Settings live in the machine directory and keys stayed in the repository,
-  ;; so half the setup lived in a checkout you might never open again.
+(define-test "the launcher does not clobber a named daemon starter"
+  ;; The client starts a daemon with $VIVA_BIN. Setting it unconditionally here
+  ;; forced every cold start through this script: one source load for the
+  ;; command and another for the daemon it spawns, measured at 2.9s of a 3.1s
+  ;; cold start. A guess must never beat an instruction, which is already the
+  ;; rule for VIVA_TUI one clause below.
   (let ((launcher (shell-code (repository-file "bin/viva"))))
-    (true (search "$viva_home/.env" launcher))
-    ;; The repository's is sourced second so it wins for a run made inside it.
-    (let ((machine (search "$viva_home/.env" launcher))
-          (repo (search "$root/.env" launcher)))
-      (true (and machine repo (< machine repo))
-            "the repository's .env must be sourced after the machine's"))))
+    (true (search "VIVA_BIN=\"${VIVA_BIN:-" launcher)
+          "the launcher overrides a VIVA_BIN the caller set")))
+
+(define-test "the launcher sources no key file"
+  ;; Keys come out of ~/.viva/auth.json, read by the engine. A launcher that
+  ;; sourced a file of exports meant a standalone build -- one executable on a
+  ;; PATH, no launcher, no checkout -- started with no key and no way to be
+  ;; told where one was.
+  (let ((launcher (shell-code (repository-file "bin/viva"))))
+    (false (search ".env" launcher)
+           "the launcher is sourcing a key file again")
+    (false (search "set -a" launcher)
+           "the launcher is still exporting a file into the environment")))
+
+(define-test "the key file beats the environment, and both beat the default"
+  ;; AUTH:KEY-FOR's stated order, which the endpoint and the model now share:
+  ;; the environment is where a shell leaves whatever it happened to export,
+  ;; and the file is where somebody wrote something down on purpose. A flag
+  ;; beats both, because it names one key for one run.
+  (let ((auth (com.inuoe.jzon:parse
+               "{\"deepseek\": {\"apiKey\": \"from-the-file\",
+                                \"endpoint\": \"https://written.example/v1/chat/completions\",
+                                \"model\": \"deepseek-from-the-file\"}}"))
+        (name "DEEPSEEK_API_KEY")
+        (before (sb-posix:getenv "DEEPSEEK_API_KEY")))
+    (unwind-protect
+         (progn
+           (sb-posix:unsetenv name)
+           (is string= "from-the-file" (viva.auth:key-for "deepseek" name :auth auth)
+               "the file did not supply the key")
+           (sb-posix:setenv name "from-the-caller" 1)
+           (is string= "from-the-file" (viva.auth:key-for "deepseek" name :auth auth)
+               "an exported variable overrode the file")
+           (is string= "from-the-flag"
+               (viva.auth:key-for "deepseek" name :given "from-the-flag" :auth auth)
+               "a flag did not beat both"))
+      (if before (sb-posix:setenv name before 1) (sb-posix:unsetenv name)))
+    ;; And the non-secret half of the same entry.
+    (is string= "https://written.example/v1/chat/completions"
+        (viva.auth:entry-setting "deepseek" "endpoint" :auth auth))
+    (is string= "deepseek-from-the-file"
+        (viva.auth:entry-setting "deepseek" "model" :auth auth))
+    (false (viva.auth:entry-setting "deepseek" "nothing-like-this" :auth auth))
+    (false (viva.auth:entry-setting "no-such-provider" "endpoint" :auth auth))))
 
 (define-test "the launcher and the engine agree on the machine directory"
   ;; The launcher reads the keys BEFORE the engine starts. Resolving the
@@ -433,46 +590,6 @@ DOES rather than about what it says."
     (true (search "/.viva" launcher)
           "the launcher must fall back to the same default the engine uses")))
 
-(define-test "a key file is read the way the shell reads it"
-  (flet ((pair (line) (cli::credential-line line)))
-    (is equal '("DEEPSEEK_API_KEY" . "abc") (pair "DEEPSEEK_API_KEY=abc"))
-    (is equal '("A" . "b") (pair "export A=b"))
-    (is equal '("A" . "b") (pair "  A = b  "))
-    (is equal '("A" . "b c") (pair "A=\"b c\""))
-    (is equal '("A" . "b c") (pair "A='b c'"))
-    (is equal '("A" . "") (pair "A="))
-    ;; A file edited by hand has these in it, and one of them must not stop a
-    ;; run that has every key it needs.
-    (false (pair "# a comment"))
-    (false (pair ""))
-    (false (pair "   "))
-    (false (pair "no equals sign here"))
-    (false (pair "=novalue"))))
-
-(define-test "a key already in the environment is not replaced by the file"
-  ;; A person who wrote KEY=... in front of the command meant that key for that
-  ;; run, and the launcher may have loaded the file already.
-  (let* ((directory (format nil "/tmp/viva-keys-~d-~d/"
-                            (get-universal-time) (random 100000)))
-         (file (merge-pathnames ".env" directory))
-         (mine "VIVA_TEST_EXISTING")
-         (fresh "VIVA_TEST_FRESH"))
-    (ensure-directories-exist directory)
-    (unwind-protect
-         (progn
-           (with-open-file (out file :direction :output :if-exists :supersede)
-             (format out "~a=from-the-file~%~a=from-the-file~%" mine fresh))
-           (sb-posix:setenv mine "from-the-caller" 1)
-           (sb-posix:unsetenv fresh)
-           (let ((set (cli::load-credentials (namestring file))))
-             (is equal (list fresh) set "the wrong names were set")
-             (is string= "from-the-caller" (sb-posix:getenv mine))
-             (is string= "from-the-file" (sb-posix:getenv fresh))))
-      (sb-posix:unsetenv mine)
-      (sb-posix:unsetenv fresh)
-      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname directory)
-                                                 :validate t)))))
-
 (define-test "a named client wins over every other place to look"
   ;; VIVA_TUI is the override. Everything below it is a guess about where a
   ;; build put things, and a guess must never beat an instruction.
@@ -483,17 +600,6 @@ DOES rather than about what it says."
            (sb-posix:setenv "VIVA_TUI" named 1)
            (is string= named (cli::rust-client)))
       (if before (sb-posix:setenv "VIVA_TUI" before 1) (sb-posix:unsetenv "VIVA_TUI")))))
-
-(define-test "credentials load from the machine as well as the clone"
-  ;; Settings live in the machine directory and keys stayed in the repository,
-  ;; so half the setup lived in a checkout you might never open again.
-  (let ((launcher (shell-code (repository-file "bin/viva"))))
-    (true (search "$viva_home/.env" launcher))
-    ;; The repository's is sourced second so it wins for a run made inside it.
-    (let ((machine (search "$viva_home/.env" launcher))
-          (repo (search "$root/.env" launcher)))
-      (true (and machine repo (< machine repo))
-            "the repository's .env must be sourced after the machine's"))))
 
 ;;; Sessions as tabs
 
@@ -529,10 +635,11 @@ you where you were rather than nowhere"))))
     ;; that fixes it, not a stack trace or a silent skip.
     (true (search "brew install sbcl" script))
     (true (search "quicklisp-quickstart:install" code))
-    ;; It copies the EXAMPLE, which carries names and no values, and locks it
-    ;; down. Writing a credential file the world can read would be worse than
-    ;; writing none.
-    (true (search ".env.example" code))
+    ;; It writes an auth.json skeleton and locks it down. A credential file the
+    ;; world can read would be worse than none, and a committed example is a
+    ;; file somebody eventually pastes a real key into.
+    (true (search "auth.json" code))
+    (false (search ".env" code) "the installer still writes a file of exports")
     (true (search "chmod 600" code))
     ;; And it never clobbers a key file that is already there.
     (true (search "leaving it alone" script))))

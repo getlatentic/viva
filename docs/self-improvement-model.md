@@ -92,7 +92,7 @@ missing:
 
 ```
 REGISTER   make a capability usable NOW        self.lisp:register-tool
-PERSIST    make a capability exist LATER       nothing implements this
+PERSIST    make a capability exist LATER       promotion writes the source
 ```
 
 A tool can be perfectly registered and disappear at the episode boundary.
@@ -104,6 +104,12 @@ case 3. Case 3 additionally needs:
 created capability -> should this survive? -> promote -> artifact/ledger
                    -> next episode inherits it
 ```
+
+Promotion is where that chain is cut or kept. A candidate is task-local and
+dies with its task; a promoted version has its source written to
+`~/.viva/capabilities/<version>.lisp` and compiled again at the next daemon
+start, at the same version id the ledger recorded. A reversion moves the file
+aside, so the organism can take a change back and have it stay taken back.
 
 ## Self-improvement is not synonymous with writing tools
 

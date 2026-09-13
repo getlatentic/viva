@@ -83,6 +83,13 @@ jobs:
       - name: Client, release
         run: cargo build --release --manifest-path tui/Cargo.toml
 
+      # The frame budget is a claim about THIS build, not the debug one. The
+      # debug run above carries the same claim scaled, and a scaled claim is
+      # the weaker one -- so the bound that ships gets checked where it holds.
+      - name: Frame budget
+        run: |
+          cargo test --release --manifest-path tui/Cargo.toml bench:: -- --nocapture
+
       # A warning nobody reads is the same as no warning. A docstring with an
       # unescaped quote in it ended early, what followed parsed as a free
       # variable reference, and the compiler said so on every build for as

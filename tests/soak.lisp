@@ -67,7 +67,8 @@ multi-hour soak from writing hundreds of thousands of files into /tmp."
       (actor:await-shutdown cell :timeout 30))))
 
 (defun soak (&key (minutes 10) (path (format nil "/tmp/viva-soak-~d.sock" (sb-posix:getpid))))
-  (setf actor:*journal-root* (format nil "/tmp/viva-soak-journal-~d/" (sb-posix:getpid)))
+  (setf actor:*journal-root* (format nil "/tmp/viva-soak-journal-~d/" (sb-posix:getpid))
+        actor:*capability-root* (concatenate 'string actor:*journal-root* "capabilities/"))
   (daemon:serve :path path :background t)
   (unwind-protect
        (let ((deadline (+ (get-universal-time) (* 60 minutes)))

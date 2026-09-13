@@ -4,6 +4,25 @@
 ;;;; under test is the loop's control flow -- which is the whole point of the
 ;;;; port. Model-level fidelity against real Pi is a separate measurement.
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  ;; BEFORE ANYTHING: viva's own directory must not be the real one.
+  ;;
+  ;; The journal was redirected after test runs left 462 files and 26MB in
+  ;; ~/.viva/journal. Sessions were not, and every run since left a directory
+  ;; of transcripts behind -- 776 of them, under two spellings of the project
+  ;; name -- because only the journal had a special to override. VIVA_HOME is
+  ;; the one knob that covers all of it: every path beneath it is computed per
+  ;; call from the environment rather than captured at load time, so sessions,
+  ;; the capability store, auth, trust and config all move together.
+  ;; TRUENAME, because /tmp is a symlink to /private/tmp on macOS. A home that
+  ;; kept the unresolved spelling made every path that went through TRUENAME
+  ;; differ from every path that did not, and the two met in an equality
+  ;; assertion.
+  (let ((home (format nil "/tmp/viva-test-home-~36r/"
+                      (random (expt 2 40) (make-random-state t)))))
+    (ensure-directories-exist home)
+    (sb-posix:setenv "VIVA_HOME" (namestring (truename home)) 1)))
+
 (defpackage #:viva.tests
   (:use #:cl #:parachute)
   (:local-nicknames (#:msg #:viva.message)

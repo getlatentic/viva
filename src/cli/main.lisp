@@ -150,24 +150,50 @@ EXPERIMENTS
       --file prompt.txt       read the prompt from a file, or pipe it on stdin
   compare <before> <after>    how many cells moved between two sweeps
 
-Credentials are read from .env at the repository root by bin/viva, so no
-run depends on the caller having sourced it.
+  --version                   which build this is
+  --help                      this text
+
+Credentials are read from ~/.viva/auth.json by the engine itself, so no run
+depends on the caller having exported anything.
 ")
 
 (defun help-wanted-p (parsed name)
   "Did they ask for the usage text, rather than just typing the command?"
   (or name (flag parsed "help") (flag parsed "h")))
 
+(defparameter +session-flags+
+  '("help" "h" "version" "cwd" "new" "resume" "since" "model")
+  "What bare `viva` accepts on its own. Every CONFIG setting is also a flag,
+because OPTION falls back to the config table, so the two lists together are the
+answer rather than either alone.")
+
+(defun unknown-flags (parsed)
+  "The flags bare `viva` cannot act on, in the order they were given.
+
+A FLAG WITH NO COMMAND USED TO OPEN A SESSION. `viva --versoin` is a question,
+and answering it by starting an interactive agent in the current directory is
+the wrong answer to a typo -- the more so because the right one was one letter
+away."
+  (let ((known (append +session-flags+ (mapcar #'car config:+settings+))))
+    (sort (loop for name being the hash-keys of (args-flags parsed)
+                unless (member name known :test #'string=) collect name)
+          #'string<)))
+
 (defun main (tokens)
-  ;; BEFORE ANYTHING READS A KEY. A standalone build has no launcher to source
-  ;; the file for it, and a provider that finds no key fails at the first
-  ;; request rather than at startup, which reads as a broken model.
-  (handler-case (load-every-credential)
-    (error (condition) (format *error-output* "~&! credentials: ~a~%" condition)))
   (let* ((parsed (parse-arguments tokens))
          (name (first (args-positional parsed)))
          (entry (find name +commands+ :key #'first :test #'equal)))
     (cond
+      ;; Before anything reads a config or opens a socket: it is a question
+      ;; about this file, and an installer asks it to find out what it replaced.
+      ((flag parsed "version")
+       (format t "~&viva ~a~%" (version))
+       0)
+      ((and (null entry) (not (help-wanted-p parsed name)) (unknown-flags parsed))
+       (let ((unknown (unknown-flags parsed)))
+         (format *error-output* "~&viva: ~{--~a~^, ~} ~:[is not an option~;are not options~] here.~%~
+Try `viva --help`.~%" unknown (rest unknown)))
+       1)
       ;; Bare `viva` opens the organism. Starting work was `daemon start
       ;; --background` and then `attach` -- two commands and one concept
       ;; before anything happened, for the case that is almost always what

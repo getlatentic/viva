@@ -21,16 +21,19 @@ step() { printf '\n== %s\n' "$*"; }
 die()  { printf '\n%s\n' "$*" >&2; exit 1; }
 
 step "SBCL"
-if ! command -v sbcl >/dev/null 2>&1; then
+# VIVA_SBCL names one outright, as it does for the launcher. Without it, a
+# person whose sbcl is somewhere unusual is told it does not exist.
+sbcl_bin=${VIVA_SBCL:-$(command -v sbcl || true)}
+if [ ! -x "$sbcl_bin" ]; then
   die "viva needs SBCL, and there is none on your PATH.
 
   macOS          brew install sbcl
   Debian/Ubuntu  sudo apt install sbcl
   Fedora         sudo dnf install sbcl
 
-Then run this again."
+Then run this again, or name one: VIVA_SBCL=/path/to/sbcl sh install.sh"
 fi
-say "  $(sbcl --version)"
+say "  $("$sbcl_bin" --version)"
 
 step "Quicklisp"
 if [ -f "$HOME/quicklisp/setup.lisp" ]; then
@@ -40,7 +43,7 @@ else
   tmp=$(mktemp -d)
   curl -fsSL -o "$tmp/quicklisp.lisp" https://beta.quicklisp.org/quicklisp.lisp \
     || die "could not download Quicklisp. Check your network and run this again."
-  sbcl --non-interactive --load "$tmp/quicklisp.lisp" \
+  "$sbcl_bin" --non-interactive --load "$tmp/quicklisp.lisp" \
        --eval '(quicklisp-quickstart:install)' >/dev/null 2>&1 \
     || die "Quicklisp would not install. Try it by hand:
   curl -O https://beta.quicklisp.org/quicklisp.lisp
@@ -72,7 +75,7 @@ step "package ordering"
 # the load: a local nickname pointing at a package defined below it. Both
 # obvious homes for this check are dead -- the suite never runs, and
 # `viva check` dies in the loader -- so it is a script that reads text.
-sbcl --script "$root/tools/check-package-order.lisp" || exit 1
+"$sbcl_bin" --script "$root/tools/check-package-order.lisp" || exit 1
 
 step "compiling, and running the tests"
 say "  the first run fetches dependencies and takes a few minutes"
@@ -86,20 +89,27 @@ step "putting viva on your PATH"
 "$root/bin/viva" install | sed 's/^/  /'
 
 step "credentials"
-if [ -f "$VIVA_HOME/.env" ]; then
-  say "  $VIVA_HOME/.env is already there; leaving it alone"
+if [ -f "$VIVA_HOME/auth.json" ]; then
+  say "  $VIVA_HOME/auth.json is already there; leaving it alone"
 else
   mkdir -p "$VIVA_HOME"
-  cp "$root/.env.example" "$VIVA_HOME/.env"
-  chmod 600 "$VIVA_HOME/.env"
-  say "  wrote $VIVA_HOME/.env from the example -- open it and fill in ONE key"
+  # Written here rather than copied from a committed example: a file of
+  # placeholders in the repository is a file somebody eventually pastes a real
+  # key into, and that one is tracked.
+  cat > "$VIVA_HOME/auth.json" <<'JSON'
+{
+  "deepseek": { "apiKey": "" }
+}
+JSON
+  chmod 600 "$VIVA_HOME/auth.json"
+  say "  wrote $VIVA_HOME/auth.json -- open it and fill in ONE key"
 fi
 
 cat <<EOF
 
 Done. Next:
 
-  1. put a provider key in $VIVA_HOME/.env
+  1. put a provider key in $VIVA_HOME/auth.json
   2. cd into any project and run:  viva
   3. see what it has learned:      viva learned
   4. watch it learn something:     $root/demo/retention

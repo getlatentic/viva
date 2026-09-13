@@ -33,9 +33,11 @@ nothing itself and holds no new authority.
 1. **Through existing doors only.** Reflection retains via `remember` and
    by writing files — no verb the policy invented, no authority it holds.
    The compile channel it originally named (`create_capability` and friends)
-   was removed once KC6 killed it: that path lost 0/6 and, fatally for a
-   *retention* policy, evaporated when the process exited. Its replacement
-   needs no new tool at all — a script and a manifest, written with the file
+   is not one of them: it lost 0/6 in KC6, and the score is what removed it.
+   A promoted capability survives the process now -- its source is written to
+   `~/.viva/capabilities/` and compiled again at the next daemon start -- so
+   durability is no longer an argument against that channel. The result still
+   is, and nothing has re-run it. Its replacement needs no new tool at all — a script and a manifest, written with the file
    tools every agent already has, loaded by the registry
    (`docs/tool-registry.md`) and callable by name in later tasks. The policy adds no writer, no new authority, no
    bypass. A retention the evolution table would refuse is refused.

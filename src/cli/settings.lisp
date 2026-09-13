@@ -84,7 +84,7 @@ editing a file that was never being read."
             (config:project-config-path cwd))
     (dolist (entry config:+settings+)
       (format t "~&~14a ~a~%" (car entry) (cdr entry)))
-    (format t "~&~%Credentials are not settings: they stay in .env, which is ~
-gitignored.~%A config file is committed, and a key in a committed file is ~
-published.~%")
+    (format t "~&~%Credentials are not settings: they stay in ~a, which lives ~
+outside any repository.~%A config file is committed, and a key in a committed ~
+file is published.~%" (env:auth-path))
     0)))

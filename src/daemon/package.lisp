@@ -24,6 +24,21 @@
            #:event-sequence #:event-time #:event-data #:as-json #:from-json
            #:from-loop #:+names+ #:name-valid-p #:call-json))
 
+(defpackage #:viva.capabilities
+  (:use #:cl)
+  (:documentation "The world a capability's source is read, printed and
+compiled in.
+
+A SYMBOL READ IN ONE PACKAGE AND PRINTED IN ANOTHER IS A DIFFERENT SYMBOL, and
+a capability's source makes that round trip twice: once from the model's text
+into a compiled function, once through the store and back at the next daemon
+start. Both ends bind this package, so what the model wrote is what the next
+process compiles.
+
+It uses CL and nothing else. That is a stated contract rather than a sandbox --
+the door is not a jail, and the version this package pins is what a capability
+can name without qualifying it."))
+
 (defpackage #:viva.actor
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
@@ -40,6 +55,8 @@
                     (#:tasktree #:viva.tasktree)
                     (#:tool #:viva.tool)
                     (#:registry #:viva.registry)
+                    (#:extension #:viva.extension)
+                    (#:skill #:viva.skill)
                     (#:event #:viva.event))
   ;; Sealed. A cell is an ownership boundary, not an object with a mailbox
   ;; attached: CELL-AGENT, CELL-STATE, CELL-EVENTS and CELL-QUEUED were
@@ -56,9 +73,12 @@
            #:ensure-evolver #:create-candidate #:activate-candidate
            #:promote-candidate #:revert-component #:discard-candidate
            #:register-file-tool #:ledger-registrations
+           #:*capability-root* #:stored-capabilities #:restore-capabilities
+           #:reconcile-capabilities
            #:call-component #:resolve-component #:reconstruct-lineage
            #:evolution-registry #:*activation-box* #:*default-door*
-           #:capability-tools))
+           #:capability-tools #:capability-prompt #:promoted-capabilities
+           #:capability-record))
 
 (defpackage #:viva.daemon
   (:use #:cl)
@@ -80,6 +100,8 @@
                     (#:event #:viva.event)
                     (#:loop* #:viva.loop)
                     (#:workspace #:viva.workspace)
+                    (#:config #:viva.config)
+                    (#:extension #:viva.extension)
                     (#:actor #:viva.actor))
   (:export #:serve #:stop #:running-p #:socket-path #:connect
            #:daemon-error #:with-connection #:request #:diagnostics))

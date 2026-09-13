@@ -355,6 +355,132 @@ pub enum Focus {
     /// a session among hundreds is a different activity from talking to one,
     /// and pretending otherwise means every key has two meanings.
     Picker,
+    /// Choosing which model answers. A mode for the same reason, and because
+    /// digits have to mean `take that one` here and `type a digit` everywhere
+    /// else.
+    Models,
+}
+
+/// One model the daemon can reach.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct ModelOffer {
+    /// `provider/id`, which is what you ask for.
+    pub label: String,
+    /// What reaches the provider. Shown because a session records this, so
+    /// somebody reading a transcript has only this to match against.
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub endpoint: String,
+}
+
+/// Choosing a model, over everything else.
+///
+/// THE RULES HERE ARE BORROWED, from a selector that had already been argued
+/// out properly:
+///
+///   - digits take a row immediately, so the search must never own the first
+///     keystroke and is not itself a row in the list
+///   - the viewport is bounded and says when there is more, rather than
+///     silently ending at the height of the box
+///   - a row that is already in force says so, rather than being marked with
+///     something only its author can read
+///   - an empty filter says `no matches`, which is not the same answer as an
+///     empty catalogue
+///   - a refresh keeps the selection where it was, by name, because the list
+///     it lands in is nearly the same list
+#[derive(Debug, Default)]
+pub struct Models {
+    pub query: String,
+    pub offers: Vec<ModelOffer>,
+    pub selection: usize,
+    /// True while a refresh is out, so an empty list can say `asking` rather
+    /// than `nothing`.
+    pub refreshing: bool,
+}
+
+impl Models {
+    /// Rows visible at once. Bounded on purpose: a list of every model behind
+    /// every endpoint is long, and a box that grows to fit it stops being a
+    /// box over the transcript and becomes the whole screen.
+    pub const VISIBLE: usize = 6;
+
+    /// The offers the query allows, in catalogue order.
+    ///
+    /// Case-insensitive, over the label and the model id both -- somebody who
+    /// types `oss` means the same thing whichever of the two carries it.
+    pub fn matching(&self) -> Vec<&ModelOffer> {
+        if self.query.is_empty() {
+            return self.offers.iter().collect();
+        }
+        let wanted = self.query.to_lowercase();
+        self.offers
+            .iter()
+            .filter(|offer| {
+                offer.label.to_lowercase().contains(&wanted)
+                    || offer.id.to_lowercase().contains(&wanted)
+            })
+            .collect()
+    }
+
+    pub fn move_selection(&mut self, step: isize) {
+        let count = self.matching().len() as isize;
+        if count == 0 {
+            self.selection = 0;
+            return;
+        }
+        self.selection = (self.selection as isize + step).rem_euclid(count) as usize;
+    }
+
+    pub fn selected(&self) -> Option<ModelOffer> {
+        self.matching().get(self.selection).map(|offer| (*offer).clone())
+    }
+
+    /// The row a digit names, counted from what is on screen.
+    ///
+    /// VIEWPORT-RELATIVE, because the numbers are drawn beside the rows and a
+    /// digit that meant an index into the whole list would pick something the
+    /// person cannot see.
+    pub fn at_digit(&self, digit: usize) -> Option<ModelOffer> {
+        // BOUNDED BY THE WINDOW, not by the list. Without this a digit past the
+        // last drawn row still took one, so `7` opened a session on a model the
+        // person could not see -- which is worse than the key doing nothing.
+        if digit == 0 || digit > Self::VISIBLE {
+            return None;
+        }
+        let visible = self.matching();
+        visible.get(self.first_visible() + digit - 1).map(|offer| (*offer).clone())
+    }
+
+    /// Where the window starts, so the selection is always inside it.
+    pub fn first_visible(&self) -> usize {
+        let count = self.matching().len();
+        if count <= Self::VISIBLE {
+            return 0;
+        }
+        let last_start = count - Self::VISIBLE;
+        self.selection.saturating_sub(Self::VISIBLE - 1).min(last_start)
+    }
+
+    /// Replace the offers, keeping the selection on the same model when that
+    /// model is still there.
+    pub fn absorb(&mut self, offers: Vec<ModelOffer>) {
+        let was = self.selected().map(|offer| offer.label);
+        self.offers = offers;
+        self.refreshing = false;
+        self.selection = was
+            .and_then(|label| {
+                self.matching().iter().position(|offer| offer.label == label)
+            })
+            .unwrap_or(0);
+    }
+
+    /// Typing a character that is not a digit seeds the search and stays in the
+    /// list: the first letter somebody types is a filter, not a lost keystroke.
+    pub fn type_into_query(&mut self, ch: char) {
+        self.query.push(ch);
+        self.selection = 0;
+    }
 }
 
 /// Finding a session among all of them, running or not.
@@ -401,6 +527,7 @@ pub struct Model {
     pub cwd: String,
     pub connected: bool,
     pub picker: Picker,
+    pub models: Models,
     /// The sessions list, shown beside the transcript. ON by default, now
     /// that it lists what each conversation is ABOUT and holds the earlier
     /// ones as well as the running ones: a column repeating the tab bar was
@@ -441,6 +568,7 @@ impl Model {
             cwd,
             connected: true,
             picker: Picker::default(),
+            models: Models::default(),
             sidebar: true,
             recent: Vec::new(),
             command_selection: 0,
@@ -871,6 +999,96 @@ fn set_task_state(conversation: &mut Conversation, event: &Event, state: TaskSta
 
 #[cfg(test)]
 mod tests {
+    use super::{ModelOffer, Models};
+
+    fn offers(labels: &[&str]) -> Vec<ModelOffer> {
+        labels
+            .iter()
+            .map(|label| ModelOffer {
+                label: (*label).to_string(),
+                id: label.rsplit('/').next().unwrap().to_string(),
+                endpoint: String::new(),
+            })
+            .collect()
+    }
+
+    fn picker(labels: &[&str]) -> Models {
+        let mut models = Models::default();
+        models.absorb(offers(labels));
+        models
+    }
+
+    #[test]
+    fn a_digit_takes_the_row_it_is_drawn_beside() {
+        // VIEWPORT-RELATIVE. The numbers are drawn next to the visible rows, so
+        // a digit that indexed the whole list would take something the person
+        // cannot see -- which is worse than doing nothing.
+        let mut models = picker(&["a/1", "a/2", "a/3", "a/4", "a/5", "a/6", "a/7", "a/8"]);
+        assert_eq!(models.at_digit(1).unwrap().label, "a/1");
+        assert_eq!(models.at_digit(6).unwrap().label, "a/6");
+        assert!(models.at_digit(7).is_none(), "a digit past the window took a row");
+        // Move the window down; the same digit now names a different row.
+        models.selection = 7;
+        assert_eq!(models.first_visible(), 2);
+        assert_eq!(models.at_digit(1).unwrap().label, "a/3");
+    }
+
+    #[test]
+    fn the_window_always_contains_the_selection() {
+        let mut models = picker(&["a/1", "a/2", "a/3", "a/4", "a/5", "a/6", "a/7", "a/8", "a/9"]);
+        for selection in 0..9 {
+            models.selection = selection;
+            let start = models.first_visible();
+            assert!(selection >= start, "selection {selection} is above the window");
+            assert!(selection < start + Models::VISIBLE,
+                    "selection {selection} is below a window starting at {start}");
+        }
+        // A short list never scrolls.
+        let short = picker(&["a/1", "a/2"]);
+        assert_eq!(short.first_visible(), 0);
+    }
+
+    #[test]
+    fn the_query_matches_the_label_or_the_id() {
+        let mut models = picker(&["bedrock/openai.gpt-oss-20b", "deepseek/deepseek-v4-flash"]);
+        models.query = "OSS".into();
+        assert_eq!(models.matching().len(), 1, "the search is case sensitive");
+        models.query = "v4-flash".into();
+        assert_eq!(models.matching().len(), 1, "the id did not match");
+        models.query = "nothing like this".into();
+        assert!(models.matching().is_empty());
+        // And an empty query is every offer, not none.
+        models.query.clear();
+        assert_eq!(models.matching().len(), 2);
+    }
+
+    #[test]
+    fn a_refresh_keeps_the_selection_on_the_same_model() {
+        // The list a refresh lands in is nearly the same list, so moving the
+        // highlight is a surprise with no cause.
+        let mut models = picker(&["a/1", "a/2", "a/3"]);
+        models.selection = 2;
+        models.absorb(offers(&["a/0", "a/1", "a/2", "a/3"]));
+        assert_eq!(models.selected().unwrap().label, "a/3", "the selection moved");
+        // A model that has gone falls back to the first rather than off the end.
+        models.absorb(offers(&["a/9"]));
+        assert_eq!(models.selection, 0);
+        assert_eq!(models.selected().unwrap().label, "a/9");
+    }
+
+    #[test]
+    fn moving_wraps_and_survives_an_empty_list() {
+        let mut models = picker(&["a/1", "a/2"]);
+        models.move_selection(-1);
+        assert_eq!(models.selection, 1, "moving up from the first did not wrap");
+        models.move_selection(1);
+        assert_eq!(models.selection, 0);
+        let mut empty = picker(&[]);
+        empty.move_selection(1);
+        assert_eq!(empty.selection, 0);
+        assert!(empty.selected().is_none());
+    }
+
     use super::*;
     use serde_json::json;
 

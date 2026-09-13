@@ -316,12 +316,25 @@ noise, not a result.~%")
   ;; OPTION, not FLAG: a setting may come from this project's config, the
   ;; machine's, or the environment, and a person who set a model once should
   ;; not type --model on every command for the rest of time.
-  (list :model (option parsed "model")
+  ;; OPTION, NOT FLAG. `flag` reads the command line alone, so `capabilities =
+  ;; on` in ~/.viva/config was listed by `viva config` and ignored by every run
+  ;; that went through here -- while the daemon honoured it. One setting, two
+  ;; surfaces, and only one of them reading it is the same fault the resolved
+  ;; model already has a test for.
+  (multiple-value-bind (names files)
+      (extension:declared (option parsed "capabilities" "off"))
+   (multiple-value-bind (extra-tools extra-prompts complaints)
+      (extension:contributions names)
+    (dolist (complaint complaints)
+      (format *error-output* "~&! capabilities: ~a~%" complaint))
+    (list :model (option parsed "model")
         :cwd (a:when-let ((cwd (flag parsed "cwd"))) (namestring (truename cwd)))
         :root (a:when-let ((root (option parsed "root"))) (namestring (truename root)))
         ;; Appended rather than replacing, so a condition that adds one line to
-        ;; the prompt differs from the default by exactly that line.
-        :extra-prompt (flag parsed "append")
+        ;; the prompt differs from the default by exactly that line. The
+        ;; capability block rides here too, as a function: what the organism
+        ;; has promoted changes during a run, and a string fixed at startup
+        ;; would name what was true before the work began.
         :extension-directories (a:when-let ((given (flag parsed "extension")))
                                  (list (namestring (truename given))))
         :resume (a:when-let ((given (flag parsed "resume")))
@@ -333,18 +346,30 @@ noise, not a result.~%")
         ;;   --capabilities on  --door open     arm A, the organism
         ;;   --capabilities on  --door closed   arm B, the same tools refused
         ;;   --capabilities off                 arm C, no live compile at all
-        :extra-tools (when (string= "on" (flag parsed "capabilities" "off"))
-                       (actor:capability-tools))))
+        ;;
+        ;; NEITHER HALF IS ASSEMBLED HERE ANY MORE. A capability contributes its
+        ;; own tools and its own prompt, so an entry point cannot enable one and
+        ;; forget to say so -- which is what happened to the door for a while.
+        :extra-tools extra-tools
+        :extension-files files
+        :extra-prompt (append (a:ensure-list (flag parsed "append")) extra-prompts)))))
 
 (defun apply-journal-flag (parsed)
-  "Point this run's journal -- and so its evolution ledger -- somewhere of its
-own. KC6's analysis is a program over one run's ledger, and the checker refuses
-a file holding two arms rather than blending them, so a battery sharing the
-home journal would produce one unreadable ledger and no results."
+  "Point this run's journal -- its evolution ledger, and the capability store
+that ledger accounts for -- somewhere of its own. KC6's analysis is a program
+over one run's ledger, and the checker refuses a file holding two arms rather
+than blending them, so a battery sharing the home journal would produce one
+unreadable ledger and no results.
+
+BOTH, TOGETHER. The ledger says what was promoted and the store holds what was
+promoted; a run that moved one and not the other would start by restoring
+another run\'s capabilities under its own account of them."
   (a:when-let ((given (flag parsed "journal-dir")))
     (let ((directory (if (a:ends-with #\/ given) given (concatenate 'string given "/"))))
       (ensure-directories-exist directory)
-      (setf actor:*journal-root* (namestring (truename directory)))))
+      (let ((root (namestring (truename directory))))
+        (setf actor:*journal-root* root
+              actor:*capability-root* (concatenate 'string root "capabilities/")))))
   t)
 
 (defun apply-door-flag (parsed)
@@ -488,6 +513,26 @@ it finds nobody home."
            (progn (format t "~&not running~%") 1)))
       (t (format t "~&usage: viva daemon [status|start|stop|restart]~%") 1))))
 
+(defun own-launcher (&optional (runtime sb-ext:*runtime-pathname*)
+                              (core sb-ext:*core-pathname*))
+  "The program to start a daemon with: THIS one, when this is one file.
+
+A STANDALONE BUILD MUST SPAWN ITSELF. The alternative was a path into the
+checkout the image happened to be built in, which is a path that need not exist
+on the machine somebody copied the executable to -- and a detached daemon is
+the one thing that cannot fall back on the caller, because the caller exits.
+
+A saved executable is its own runtime and its own core; under `sbcl --script`
+those are the SBCL binary and sbcl.core, which are not a launcher. So the
+question `am I one file?` is exactly the question `can I spawn myself?`.
+
+It is also the difference between one image load and two: starting detached
+used to pay this image for the command and the repository's source load for the
+daemon, which is most of what a cold start costs."
+  (if (equal runtime core)
+      (namestring runtime)
+      (namestring (merge-pathnames "bin/viva" (repository-root)))))
+
 (defun launch-daemon ()
   "Start a daemon in a process of its own and wait for it to answer.
 
@@ -499,8 +544,7 @@ It printed `listening on ...` and left nothing listening. SERVE's own
 :BACKGROUND is still right for a caller that IS the long-lived process, which
 is how the suite and the soak use it."
   (unless (daemon:running-p)
-    (uiop:launch-program (list (namestring (merge-pathnames "bin/viva" (repository-root)))
-                               "daemon" "start")
+    (uiop:launch-program (list (own-launcher) "daemon" "start")
                          :output nil :error-output nil)
     (loop repeat 100
           until (daemon:running-p)

@@ -25,8 +25,12 @@ repository keeps the negative results beside the positive ones.
 - A thread each is the ceiling: it answers at 500 sessions and stops near 750.
 - Full-text search spans every session recorded, in every directory.
 - A session spawns scoped child agents that cannot outlive it.
-- Live-image modification is off by default.
-- `viva shell --capabilities on` enables it for the shell harness.
+- Live-image modification is off by default. It is a named capability:
+  `capabilities = self-modify` in `~/.viva/config` asks for it.
+- An entry in that list is a name this build offers or a path to a file you
+  wrote. A file inside a project loads only once you have run `viva trust`.
+- `viva shell --capabilities on` enables it for one run. `capabilities = on`
+  in `~/.viva/config` enables it for the sessions the daemon starts.
 - `viva trust` gates a project's own tools before a later session can call them.
 
 ## What persists
@@ -83,17 +87,18 @@ and it goes through workspace files.
 ## Install
 
 ```bash
-sh install.sh     # needs SBCL; installs Quicklisp if it is absent
+curl -fsSL https://raw.githubusercontent.com/getlatentic/viva/main/get.sh | sh
 viva              # opens this directory's session, or starts one
 ```
 
-Or take the binaries. CI builds `viva-macos-arm64` and `viva-linux-x86_64`,
-which need neither SBCL nor Quicklisp nor a checkout. Put `viva` and `viva-tui`
-in one directory on your `PATH`: `viva` finds the full-screen client beside it.
+A released binary for macOS on Apple silicon and Linux on x86_64. Re-run it to
+upgrade.
+
+Anywhere else, build from source. This needs SBCL:
 
 ```bash
-install -m 755 viva-macos-arm64 ~/.local/bin/viva
-install -m 755 viva-tui ~/.local/bin/viva-tui
+brew install sbcl        # or: apt install sbcl
+sh install.sh
 ```
 
 ### A provider key
@@ -102,6 +107,7 @@ install -m 755 viva-tui ~/.local/bin/viva-tui
 mkdir -p ~/.viva && cat > ~/.viva/auth.json <<'JSON'
 { "deepseek": { "apiKey": "sk-..." } }
 JSON
+chmod 600 ~/.viva/auth.json
 ```
 
 Three places, tried in this order. A flag names one key for one run. The file
@@ -114,8 +120,25 @@ happened to export.
 | `~/.viva/auth.json` | `deepseek`, `openai`, `openrouter`, `bedrock` |
 | `DEEPSEEK_API_KEY` and friends | the environment |
 
+One key per provider, and the models it serves listed under it. `endpoint`
+reaches a deployment in another region. `models` replaces the built-in list, so
+a provider that adds a model does not wait for a release. `model` says what the
+provider's own name means.
+
+```json
+{ "deepseek": { "apiKey": "sk-...",
+                "models": ["deepseek-v4-flash", "deepseek-v4-pro"] },
+  "bedrock":  { "apiKey": "...",
+                "endpoint": "https://bedrock-mantle.eu-west-1.api.aws/v1/chat/completions",
+                "model": "openai.gpt-oss-120b" } }
+```
+
+Every model answers to `provider/id` — `viva --model deepseek/deepseek-v4-pro`.
+A provider's own name resolves to whichever model it pins, or the first it
+lists.
+
 Keys are not settings: `config` is a file people copy into projects and commit,
-and `auth.json` is not.
+and `auth.json` is not. Nothing sources a file of shell exports.
 
 ### Windows
 
@@ -155,6 +178,7 @@ Keys inside the full screen client. Press `/` for the commands.
 | `Ctrl-O` | show all of a tool's output, or the first three lines again |
 | `Ctrl-L` | what this session has learned |
 | `Ctrl-B` | put the sessions column away, or bring it back |
+| `/models` | choose which model answers; a digit takes that row |
 | `!` | run a shell command here; the model does not see it |
 | `Ctrl-C` | stop the running turn; leave when there is none |
 
@@ -165,13 +189,26 @@ Keys inside the full screen client. Press `/` for the commands.
 | note | `.viva/MEMORY.md` | prompt text |
 | skill | `.viva/skills/<name>/SKILL.md` | prompt text |
 | tool | `.viva/tools/<name>/tool.json` | the tool list, and MCP |
+| capability | `~/.viva/capabilities/<version>.lisp` | prompt text, and `call_capability` |
 
 Everything viva keeps for itself is under `~/.viva/`: `auth.json`, `config`,
-`sessions/`, `journal/`, `trusted.sexp`. `VIVA_HOME` names that directory
-outright.
+`sessions/`, `journal/`, `capabilities/`, `trusted.sexp`. `VIVA_HOME` names
+that directory outright.
 
 A fact becomes a note. Code becomes a skill. Code the agent has already wanted
-twice becomes a tool it calls by name. The agent writes these with the ordinary
+twice becomes a tool it calls by name.
+
+`/models` lists every model this daemon can reach, marks the one already
+answering, and opens a session on whichever you pick. Press `Ctrl-R` there to
+ask the local servers again: they serve whatever you pulled onto the machine.
+
+A capability is the fourth tier, and the only one that is not a file the model
+writes. It is a Lisp function the agent compiles into the running process, so a
+call costs no subprocess. One capability can call another by name. Promotion
+writes the source down, and the next daemon start compiles it again at the same
+version number. Reversion moves that file
+aside, so what the agent takes back stays taken back. The tier needs
+`--capabilities on`. The agent writes these with the ordinary
 `write` tool, and you can author one by hand in the same format. `~/.viva/`
 applies to every directory, and the project directory wins on a name clash.
 
@@ -196,16 +233,18 @@ Where the answer stands today. Each entry links to the run that produced it.
   no `MEMORY.md`. Re-running under explicit framing did not move it.
 - [ ] **Composition** — does a capability that calls another capability beat a
   text skill re-derived each time? This needs both retention and live
-  execution in one harness, which is why it is testable here.
-  [Pre-registration](docs/b15-preregistration.md).
+  execution in one harness, which is why it is testable here. The compiled
+  path composes and survives a restart. The pre-registration measures the
+  file-backed one. [Pre-registration](docs/b15-preregistration.md).
 - [ ] **A Lisp-fluent model.** 19 of 59 self-modification attempts failed to
   compile, which measures the model rather than the mechanism. The current
   pin forbids the probe.
 - [ ] **Ergonomics on the door** — shipping an idiom guide in the tool
   descriptions, since a door's ergonomics include its language.
-- [ ] **Rehydrating a live capability** — does reconstructing a minted
-  function after a restart beat simply reloading the file-backed tool? Held
-  until a result gives a reason to build it.
+- [ ] **Rehydrating a live capability** — a promoted capability compiles back
+  from disk when the daemon starts, so the comparison is buildable: does a
+  reconstructed minted function beat reloading the file-backed tool? The
+  mechanism is in, the measurement is not.
 
 What the record supports so far: **retention pays where the work is mechanical
 and recurs, and costs where the work is judgment.** The round trip is the

@@ -26,6 +26,12 @@
       (format nil "/tmp/viva-test-journal-~36r/"
               (random (expt 2 40) (make-random-state t))))
 
+;; And the store the ledger accounts for. A suite that promoted a capability
+;; wrote its source into the real home, and the next real daemon start
+;; compiled a test fixture into itself.
+(setf actor:*capability-root*
+      (concatenate 'string actor:*journal-root* "capabilities/"))
+
 (defvar *suite-watchdog* nil)
 (defvar *suite-beat* 0)
 
@@ -1773,6 +1779,502 @@ class, and the class overrides the pacing initforms."))
           (is eql v1 (viva.evolution:current-promoted
                       (actor:evolution-registry) "durable")))))))
 
+;;; ---------------------------------------------------------------------------
+;;; Durability: what a promoted capability is after the process that wrote it
+;;;
+;;; The registry is image state and the image is mortal, and until these the
+;;; only thing that survived a restart was the ACCOUNT of what the organism
+;;; had done to itself. The ledger said "promoted version 4" and version 4 was
+;;; a function object COMPILE had kept nothing of: the lineage reconstructed,
+;;; the capability did not. Self-modification that cannot outlive one process
+;;; is a session feature wearing the word.
+;;; ---------------------------------------------------------------------------
+
+(defmacro with-own-store ((root) &body body)
+  "Run BODY over a capability store nobody else writes to, bound to ROOT.
+
+SETF and restore, never LET. The owner thread reads this special and SBCL
+threads inherit no dynamic context, so a LET would leave every write from the
+owner going to the real home while the test read an empty temporary."
+  `(let ((,root (format nil "/tmp/viva-test-capabilities-~36r/"
+                        (random (expt 2 40) (make-random-state t))))
+         (previous viva.actor::*capability-root*))
+     (unwind-protect
+          (progn (setf viva.actor::*capability-root* ,root) ,@body)
+       (setf viva.actor::*capability-root* previous)
+       (ignore-errors (uiop:delete-directory-tree (pathname ,root) :validate t)))))
+
+(defmacro with-restarted-owner (&body body)
+  "Stop this owner and start another over the same store, which is what
+stopping and starting the daemon does. The suite's own owner goes back
+afterwards: its registry is every candidate the rest of the suite created."
+  `(let ((displaced viva.actor::*evolver*))
+     (unwind-protect
+          (progn (setf viva.actor::*evolver* nil)
+                 (viva.actor::ensure-evolver)
+                 ,@body)
+       (alexandria:when-let ((mine viva.actor::*evolver*))
+         (unless (eq mine displaced)
+           (sb-concurrency:send-message (viva.actor::evolver-mailbox mine)
+                                        (list :shutdown))))
+       (setf viva.actor::*evolver* displaced))))
+
+(defun tool-refuses-smuggled ()
+  "Whether CALL-COMPONENT refuses \"smuggled\". The door is the only way in, so
+a version the door never promoted must not be callable through it either."
+  (nth-value 1 (ignore-errors (actor:call-component "smuggled" "x"))))
+
+(defun last-ledger-field (event field &optional (path (viva.actor::evolution-ledger-path)))
+  "The FIELD of the last EVENT the ledger recorded, or NIL. The ledger is
+append-only and the suite runs serially, so the last one is the caller\'s."
+  (when (probe-file path)
+    (with-open-file (in path :external-format :utf-8)
+      (loop with found = nil
+            for line = (read-line in nil nil)
+            while line
+            for table = (ignore-errors (com.inuoe.jzon:parse line))
+            for data = (and (hash-table-p table)
+                            (equal event (gethash "event" table))
+                            (gethash "data" table))
+            when (hash-table-p data) do (setf found (gethash field data))
+            finally (return found)))))
+
+(defun promotion-kept (version &optional (path (viva.actor::evolution-ledger-path)))
+  "What the ledger says the promotion of VERSION kept: \"yes\", \"no\", or NIL
+when it recorded no promotion at all."
+  (when (probe-file path)
+    (with-open-file (in path :external-format :utf-8)
+      (loop for line = (read-line in nil nil)
+            while line
+            for table = (ignore-errors (com.inuoe.jzon:parse line))
+            for data = (and (hash-table-p table)
+                            (equal "improvement.promoted" (gethash "event" table))
+                            (gethash "data" table))
+            when (and (hash-table-p data) (eql version (gethash "version" data)))
+              return (gethash "kept" data)))))
+
+(define-test "promotion writes the source down and a candidate is not written"
+  ;; A candidate is task-local by proven law and dies with its task. Writing
+  ;; one down would durably record a decision the organism never made.
+  (with-own-store (root)
+    (let ((candidate (actor:create-candidate "kept" '(lambda (input) input)))
+          (promoted (actor:create-candidate "kept" '(lambda (input) (string-upcase input)))))
+      (true (integerp candidate) "no candidate was minted")
+      (actor:promote-candidate promoted)
+      (let ((stored (actor:stored-capabilities root)))
+        (is = 1 (length stored) "the store holds ~s" stored)
+        (is eql promoted (first (first stored)) "the wrong version was written")
+        (is equal "kept" (second (first stored)) "the file lost its component")))))
+
+(define-test "a promoted capability comes back after a restart, and runs"
+  (with-own-store (root)
+    (let ((id (actor:create-candidate
+               "restarts" '(lambda (input) (concatenate 'string "v1:" input)))))
+      (actor:promote-candidate id)
+      (with-restarted-owner
+        (is eql id (viva.evolution:current-promoted (actor:evolution-registry) "restarts")
+            "the new owner does not resolve what the old one promoted")
+        (is equal "v1:x" (actor:call-component "restarts" "x")
+            "the restored capability did not run")))))
+
+(define-test "a restart does not mint an identity the ledger already spent"
+  ;; The store holds promoted versions only, and a run mints far more than it
+  ;; promotes. Counting from the store alone would hand the next candidate an
+  ;; id the ledger already spent on something else.
+  (with-own-store (root)
+    (let ((promoted (actor:create-candidate "identity" '(lambda (input) input))))
+      (actor:promote-candidate promoted)
+      (actor:create-candidate "identity" '(lambda (input) input))
+      (let ((spent (actor:create-candidate "identity" '(lambda (input) input))))
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
+        (with-restarted-owner
+          (let ((next (actor:create-candidate "identity" '(lambda (input) input))))
+            (true (> next spent)
+                  "version ~d was minted a second time, over ~d" next spent)))))))
+
+(define-test "a reverted capability does not come back"
+  ;; The worst failure this whole file exists to prevent: an organism that
+  ;; cannot take back a change it made. Reversion drops the version from the
+  ;; lineage for good, so the file stops being restored -- and stays readable,
+  ;; because the judgment is worth more with the work beside it.
+  (with-own-store (root)
+    (let ((v1 (actor:create-candidate
+               "reverts" '(lambda (input) (concatenate 'string "one:" input)))))
+      (actor:promote-candidate v1)
+      (let ((v2 (actor:create-candidate
+                 "reverts" '(lambda (input) (concatenate 'string "two:" input)))))
+        (actor:promote-candidate v2)
+        (is = 2 (length (actor:stored-capabilities root)) "both promotions were not kept")
+        (actor:revert-component "reverts")
+        (is = 1 (length (actor:stored-capabilities root))
+            "the withdrawn version is still restorable")
+        (true (probe-file (viva.actor::capability-path v2 :retracted t))
+              "the withdrawn version was deleted rather than set aside")
+        (with-restarted-owner
+          (is eql v1 (viva.evolution:current-promoted (actor:evolution-registry) "reverts")
+              "the restart brought back a version the organism withdrew")
+          (is equal "one:x" (actor:call-component "reverts" "x")))))))
+
+(define-test "a source that will not compile costs one capability, not the start"
+  ;; A macro that moved, an SBCL that changed underneath: the ledger accounts
+  ;; for the version, the file reads, and the compiler refuses it. The
+  ;; organism starts with one fewer capability and says so, rather than
+  ;; failing to start at all.
+  (with-own-store (root)
+    (let ((good (actor:create-candidate "survives" '(lambda (input) input)))
+          (rotten (actor:create-candidate "rots" '(lambda (input) input))))
+      (actor:promote-candidate good)
+      (actor:promote-candidate rotten)
+      (true (viva.actor::journal-sync) "the ledger never confirmed")
+      (viva.actor::write-capability rotten "rots" '(lambda "not a lambda list" x))
+      (with-restarted-owner
+        (is eql good (viva.evolution:current-promoted (actor:evolution-registry) "survives")
+            "one bad file took the others with it")
+        (false (viva.evolution:current-promoted (actor:evolution-registry) "rots")
+               "a capability that will not compile was restored anyway")))))
+
+(define-test "a withdrawal survives a rename that did not happen"
+  ;; THE COMPENSATION QUESTION, answered by not needing one. Reversion moves
+  ;; the file out of what a restart restores. That move can fail after the
+  ;; registry has already moved, and a restart reading the store alone would
+  ;; bring back the version the organism took back -- as its own default, for
+  ;; every future task. Nothing compensates here; the restart consults the
+  ;; ledger, which recorded the judgment, and the stale file cannot speak.
+  (with-own-store (root)
+    (let ((v1 (actor:create-candidate
+               "survives-revert" '(lambda (input) (concatenate 'string "one:" input)))))
+      (actor:promote-candidate v1)
+      (let ((v2 (actor:create-candidate
+                 "survives-revert" '(lambda (input) (concatenate 'string "two:" input)))))
+        (actor:promote-candidate v2)
+        (actor:revert-component "survives-revert")
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
+        ;; The rename never took: the file is exactly where promotion left it.
+        (rename-file (viva.actor::capability-path v2 :retracted t)
+                     (viva.actor::capability-path v2))
+        (true (probe-file (viva.actor::capability-path v2)) "the setup did not stage the failure")
+        (with-restarted-owner
+          (is eql v1 (viva.evolution:current-promoted (actor:evolution-registry) "survives-revert")
+              "a restart brought back a version the organism had withdrawn")
+          (is equal "one:x" (actor:call-component "survives-revert" "x")))))))
+
+(define-test "a file nobody minted is not a capability"
+  ;; Promotion has one door. The store is where a promoted version's source
+  ;; lands, not a second way in: a file written into that directory carries no
+  ;; line in the ledger saying where it came from, and a restart that compiled
+  ;; it would make every future task resolve to something the organism never
+  ;; decided.
+  (with-own-store (root)
+    (viva.actor::write-capability 90210 "smuggled" '(lambda (input) input))
+    (with-restarted-owner
+      (false (viva.evolution:current-promoted (actor:evolution-registry) "smuggled")
+             "a file with no ledger entry became the promoted default")
+      (true (tool-refuses-smuggled) "the smuggled version was callable")
+      (let ((findings (actor:reconcile-capabilities (actor:ensure-evolver))))
+        (true (find 90210 findings :key (lambda (each) (getf each :unaccounted)))
+              "the store held what no lineage names and reconciliation said nothing: ~s"
+              findings)))))
+
+(define-test "a restart restores enough lineage to revert into"
+  ;; The whole lineage comes back, not only its head. Reversion steps to the
+  ;; version before, and a head restored on its own has nothing to step to.
+  (with-own-store (root)
+    (let ((v1 (actor:create-candidate
+               "steps-back" '(lambda (input) (concatenate 'string "one:" input)))))
+      (actor:promote-candidate v1)
+      (let ((v2 (actor:create-candidate
+                 "steps-back" '(lambda (input) (concatenate 'string "two:" input)))))
+        (actor:promote-candidate v2)
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
+        (with-restarted-owner
+          (is equal "two:x" (actor:call-component "steps-back" "x"))
+          (actor:revert-component "steps-back")
+          (is eql v1 (viva.evolution:current-promoted (actor:evolution-registry) "steps-back"))
+          (is equal "one:x" (actor:call-component "steps-back" "x")
+              "the restart left a head with nothing behind it"))))))
+
+(define-test "the ledger tells a promotion with nothing to keep from one that failed"
+  ;; Both leave the store empty and only one is a fault. A single word for the
+  ;; pair would file the fault where nobody looks, which is the shape B12
+  ;; named: a report that cannot distinguish what it is reporting.
+  (with-own-store (root)
+    ;; COMPILE keeps nothing of a live function object, so there is no source.
+    (let ((opaque (actor:create-candidate "opaque" (lambda (input) input))))
+      (actor:promote-candidate opaque)
+      (true (viva.actor::journal-sync) "the ledger never confirmed")
+      (false (actor:stored-capabilities root) "a function object was written down")
+      (is equal "no source" (promotion-kept opaque)
+          "version ~d had nothing to keep and the ledger does not say so" opaque))
+    ;; A source that cannot be written is a promoted default with no code.
+    (let ((previous viva.actor::*capability-root*))
+      (unwind-protect
+           (progn
+             (setf viva.actor::*capability-root* "/dev/null/no-such-place/")
+             (let ((lost (actor:create-candidate "lost" '(lambda (input) input))))
+               (actor:promote-candidate lost)
+               (true (viva.actor::journal-sync) "the ledger never confirmed")
+               (is equal "failed" (promotion-kept lost)
+                   "a write that failed reads as a promotion with nothing to keep")))
+        (setf viva.actor::*capability-root* previous)))))
+
+(define-test "a withdrawal that did not happen is found by looking"
+  ;; B12, as a test. Cordis reported a clean unload for every failure mode
+  ;; viva actually has, because what it reported was what it had asked for.
+  ;; Take the file away behind a promoted capability and every transition
+  ;; still says promoted -- only a look at the disk disagrees.
+  ;;
+  ;; A FRESH OWNER over the test's own store. The suite's owner carries source
+  ;; for versions promoted into other temporary stores, and each of those is a
+  ;; true disagreement about a directory this test is not asking about.
+  (with-own-store (root)
+    (with-restarted-owner
+      (let ((id (actor:create-candidate "watched" '(lambda (input) input))))
+        (actor:promote-candidate id)
+        (false (actor:reconcile-capabilities (actor:ensure-evolver))
+               "the accounts disagree straight after a promotion")
+        (delete-file (viva.actor::capability-path id))
+        (let ((findings (actor:reconcile-capabilities (actor:ensure-evolver))))
+          (is = 1 (length findings) "a capability that vanished reconciled clean: ~s" findings)
+          (is equal "watched" (getf (first findings) :component))
+          (is eql id (getf (first findings) :resolves))
+          (false (getf (first findings) :restores)
+                 "the store was reported to hold what it does not"))))))
+
+(define-test "the ledger records what was true after the organism moved its default"
+  ;; Every lifecycle verb before this published what it DECIDED. Only this one
+  ;; publishes what is true afterwards, which is the half an audit can use.
+  (with-own-store (root)
+    (with-restarted-owner
+      (let ((first-id (actor:create-candidate "announced" '(lambda (input) input))))
+        (actor:promote-candidate first-id)
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
+        (is equal "yes" (last-ledger-field "improvement.reconciled" "agree")
+            "a promotion that kept its source reported a disagreement")
+        ;; Now break the store behind it and move a different default. The
+        ;; look is over the whole organism, so the damage is found by the next
+        ;; move rather than by whoever eventually restarts the daemon.
+        (delete-file (viva.actor::capability-path first-id))
+        (let ((second-id (actor:create-candidate "also-announced" '(lambda (input) input))))
+          (actor:promote-candidate second-id)
+          (true (viva.actor::journal-sync) "the ledger never confirmed")
+          (is equal "no" (last-ledger-field "improvement.reconciled" "agree")
+              "a missing capability was reported as agreement")
+          (true (search "announced" (or (last-ledger-field "improvement.reconciled" "detail") ""))
+                "the disagreement did not say which capability"))))))
+
+(define-test "the ledger's account and the registry never disagree"
+  ;; EVERYTHING ABOVE RESTS ON THIS. The registry is what a running process
+  ;; decides by; the ledger is what a restart rebuilds from. If any sequence of
+  ;; lifecycle moves can drive the two apart, a restart resolves to something
+  ;; the organism never promoted, and no amount of care in the restore path
+  ;; would find it -- the restore path would be faithfully rebuilding a wrong
+  ;; account.
+  ;;
+  ;; Driven through the real owner and read back off the real ledger, because
+  ;; a fold tested against events the test wrote itself only proves the test
+  ;; and the fold agree.
+  (with-own-store (root)
+    (let* ((tag (format nil "fold-~36r" (random (expt 2 30) (make-random-state t))))
+           (names (loop for index below 3 collect (format nil "~a-~d" tag index)))
+           (minted '()))
+      (dotimes (step 60)
+        (let ((component (alexandria:random-elt names)))
+          (case (random 4)
+            (0 (alexandria:when-let
+                   ((id (actor:create-candidate component '(lambda (input) input))))
+                 (push id minted)))
+            ((1 2) (when minted (actor:promote-candidate (alexandria:random-elt minted))))
+            (3 (actor:revert-component component)))))
+      (true (viva.actor::journal-sync) "the ledger never confirmed")
+      (let ((registry (actor:evolution-registry))
+            (lineages (actor:reconstruct-lineage)))
+        (dolist (component names)
+          (is equal (viva.evolution:lineage-of registry component)
+              (cdr (assoc component lineages :test #'equal))
+              "~a: the registry and the ledger tell different stories" component))
+        ;; And what a restart would restore is what this process resolves.
+        ;; This test's own components only: the suite shares one owner across
+        ;; tests that each point the store somewhere of their own, so versions
+        ;; promoted into a directory that no longer exists are a true finding
+        ;; about a directory nobody is asking about.
+        (let ((findings (remove-if-not
+                         (lambda (each) (member (getf each :component) names :test #'equal))
+                         (actor:reconcile-capabilities (actor:ensure-evolver)))))
+          (false findings "sixty lifecycle moves left the two accounts disagreeing: ~s"
+                 findings))))))
+
+(defun session-tool-names (stream root)
+  "The tool names an agent the DAEMON built is holding."
+  (multiple-value-bind (reply events)
+      (daemon:request stream "type" "session.start" "cwd" root)
+    (declare (ignore events))
+    (true (gethash "success" reply) "~a" (gethash "error" reply))
+    (let* ((id (gethash "id" (gethash "session" reply)))
+           (agent (viva.actor::cell-agent (actor:find-cell id))))
+      (values (mapcar #'tool:tool-name (viva.agent:tools agent))
+              (viva.agent:system-prompt agent)))))
+
+(define-test "a daemon session can reach the door its config opened"
+  ;; THE ONE PROCESS WHOSE PREMISE IS OUTLIVING ITS CLIENTS was the one process
+  ;; that could not modify itself. Every capability tool was reachable from
+  ;; `viva shell --capabilities on` and from nothing the daemon started, so the
+  ;; durable half was built for a surface that never opened it.
+  (with-repository (environment)
+    (let ((root (env:env-cwd environment))
+          (previous viva.daemon::*declared*))
+      (unwind-protect
+           (with-own-store (store)
+             (with-restarted-owner
+               (let ((id (actor:create-candidate "in-a-daemon-session"
+                                                 '(lambda (input) input)
+                                                 :note "reached from a session")))
+                 (actor:promote-candidate id))
+               (with-daemon (path)
+                 (let ((stream (daemon:connect path)))
+                   (unwind-protect
+                        (progn
+                          (read-line stream nil nil)
+                          (setf viva.daemon::*declared* '())
+                          (let ((closed (session-tool-names stream root)))
+                            (false (member "create_capability" closed :test #'string=)
+                                   "a door nobody opened was open"))
+                          ;; BY NAME. The daemon is asked for a capability
+                          ;; rather than switched on, so this is the same
+                          ;; sentence a config file writes.
+                          (setf viva.daemon::*declared* (list "self-modify"))
+                          (multiple-value-bind (open prompt) (session-tool-names stream root)
+                            (dolist (verb '("create_capability" "call_capability"
+                                            "show_capability" "promote_capability"))
+                              (true (member verb open :test #'string=)
+                                    "~a is not reachable from a daemon session" verb))
+                            (true (search "in-a-daemon-session" prompt)
+                                  "the session was given the tools and told nothing")))
+                     (ignore-errors (close stream)))))))
+        (setf viva.daemon::*declared* previous)))))
+
+(define-test "the daemon installs the hook its own ledger depends on"
+  ;; LEDGER-REGISTRATIONS says in its own docstring that the daemon installs
+  ;; it, and no daemon did. A registry tool minted in a session left no line in
+  ;; the ledger, so its lineage did not survive a restart -- which is the one
+  ;; thing promotion is for.
+  (let ((previous viva.registry:*on-register*))
+    (unwind-protect
+         (progn (setf viva.registry:*on-register* nil)
+                (viva.daemon::wire-evolution)
+                (true viva.registry:*on-register*
+                      "a daemon started without the hook that reaches its ledger"))
+      (setf viva.registry:*on-register* previous))))
+
+(define-test "a request that fails answers the request that asked"
+  ;; The outer guard replied WITHOUT AN ID, and a client matches replies to
+  ;; requests by id -- so the answer was unmatchable and the caller waited out
+  ;; its own timeout instead. Measured before this: a session.start on a daemon
+  ;; with no model configured never appeared to reply at all, and the client sat
+  ;; for thirty seconds before drawing a frame. The message was correct and
+  ;; nobody could receive it.
+  (with-daemon (path)
+    (let ((stream (daemon:connect path)))
+      (unwind-protect
+           (progn
+             (read-line stream nil nil)
+             ;; AN ID ON PURPOSE. The Lisp helper matches replies by type, so
+             ;; only a caller that sends one can observe that it comes back --
+             ;; and the Rust client, which matches by id, is the one that sat
+             ;; through its own timeout when it did not.
+             (let ((reply (daemon:request stream "type" "session.start"
+                                                 "id" 4242
+                                                 "cwd" "/tmp"
+                                                 "model" "no-such-model-anywhere")))
+               (false (gethash "success" reply) "an unknown model started a session")
+               (is eql 4242 (gethash "id" reply)
+                   "the failure came back with ~s instead of the id that asked"
+                   (gethash "id" reply))
+               (true (search "no-such-model-anywhere" (or (gethash "error" reply) ""))
+                     "the failure did not say what was wrong: ~s" (gethash "error" reply))))
+        (ignore-errors (close stream))))))
+
+(define-test "a later session finds what an earlier one promoted"
+  ;; RETENTION A LATER SESSION CANNOT FIND IS RETENTION THAT NEVER PAYS. The
+  ;; store restored two capabilities into a fresh image and the agent that
+  ;; asked what it had was told "nothing is in force for this task", which was
+  ;; true and useless. The whole point of writing them down is the session
+  ;; after the one that wrote them.
+  (with-own-store (root)
+    (let ((id (actor:create-candidate "found-later" '(lambda (input) input)
+                                      :note "what a later session reads")))
+      (actor:promote-candidate id)
+      (true (viva.actor::journal-sync) "the ledger never confirmed")
+      (with-restarted-owner
+        (let* ((promoted (actor:promoted-capabilities))
+               (entry (assoc "found-later" promoted :test #'equal)))
+          (true entry "the restored capability is not listed: ~s" promoted)
+          (is eql id (second entry) "listed at the wrong version")
+          (is equal "what a later session reads" (third entry)
+              "the note did not survive the restart"))))))
+
+(define-test "the prompt names what the organism can already call"
+  ;; A listing tool the model has to think of calling is not discovery. What
+  ;; an earlier session promoted has to be in front of this one without it
+  ;; asking, the way a skill is.
+  (with-own-store (root)
+    (with-restarted-owner
+      (false (actor:capability-prompt)
+             "a fresh organism advertised capabilities it does not have")
+      (let ((id (actor:create-candidate "named-in-prompt" '(lambda (input) input)
+                                        :note "one line & a <tag>")))
+        (actor:promote-candidate id)
+        (let ((said (actor:capability-prompt)))
+          (true said "nothing was said about a promoted capability")
+          (true (search "named-in-prompt" said) "the block does not name it")
+          (true (search "call_capability" said) "the block does not say how to call it")
+          (true (search "&amp; a &lt;tag&gt;" said)
+                "a note reached the block unescaped: ~a" said))))))
+
+(define-test "a registry tool is not described twice"
+  ;; A file-backed tool is a promoted version too, and it already reaches a
+  ;; model through the tool list. Naming it again in a second vocabulary
+  ;; leaves a reader no way to tell the two entries are one thing.
+  (with-own-store (root)
+    (with-restarted-owner
+      (let ((id (actor:register-file-tool "a-registry-tool")))
+        (true (integerp id) "the registry tool was not promoted")
+        (false (assoc "a-registry-tool" (actor:promoted-capabilities) :test #'equal)
+               "a file-backed tool was listed as a compiled capability")))))
+
+(define-test "an appended line and the capability block both reach the prompt"
+  ;; They are different things arriving at the same slot. The first version of
+  ;; this wiring put both under one key, where the plist's first entry won and
+  ;; the other was silently dropped.
+  (with-own-store (root)
+    (with-restarted-owner
+      (let ((id (actor:create-candidate "in-the-prompt" '(lambda (input) input))))
+        (actor:promote-candidate id)
+        (let* ((agent (viva.harness:make-workspace-agent
+                       :extra-tools (actor:capability-tools)
+                       :extra-prompt (list "a line from --append"
+                                           #'actor:capability-prompt)))
+               (prompt (viva.agent:system-prompt agent)))
+          (true (search "a line from --append" prompt) "the appended line is gone")
+          (true (search "in-the-prompt" prompt) "the capability block is gone"))))))
+
+(define-test "a task that holds the only pin releases it when it ends"
+  ;; REBUILD defaulted every slot with OR, so an empty slot fell back to the
+  ;; old value. Dropping the last task's pins kept them: the version it pinned
+  ;; stayed pinned by a task that had ended, and :DISCARD was refused for the
+  ;; life of the process.
+  (let ((registry (viva.kernel:replay-trace
+                   #'viva.evolution:evolution-transition
+                   (viva.evolution:empty-registry)
+                   '(((:create-candidate "only"))
+                     ((:activate "task-a" 1))
+                     ((:task-ended "task-a"))))))
+    (false (viva.evolution:pins-of registry "task-a") "the ended task still pins")
+    (multiple-value-bind (next effects)
+        (viva.evolution:evolution-transition registry '(:discard 1))
+      (declare (ignore next))
+      (is eq :improvement.discarded (second (first effects))
+          "discard was refused by a pin nobody holds"))))
+
 (define-test "a predecessor's late death restarts nothing, by the table"
   ;; Hardening item one, retired: the journal supervisor's decisions now go
   ;; through KERNEL:JOURNAL-TRANSITION, whose stale-generation clause is the
@@ -2069,6 +2571,174 @@ bind it is testing nothing the agent loop does."
                  :timeout 15)
                 "the agent ran its own capability and the ledger recorded no use"))))))
 
+(define-test "a session reads what it inherited before improving it"
+  ;; THE LOOP CLOSES HERE. The prompt tells an agent to improve a capability by
+  ;; writing a new version under the same name, and until it can read the one
+  ;; it has, improving is replacing -- blind, over a version that was promoted
+  ;; because it worked.
+  (with-own-store (root)
+    (with-restarted-owner
+      (let ((v1 (actor:create-candidate
+                 "kc6-read" (viva.actor::capability-source "(lambda (input) (string-capitalize input))")
+                 :note "capitalises each word")))
+        (actor:promote-candidate v1)
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
+        (with-paced-cell (cell agent :pause 0.01 :limit 1)
+          (with-capability-agent (agent)
+            (let* ((result (run-capability-tool "show_capability" "name" "kc6-read"))
+                   (output (tool:tool-result-output result)))
+              (false (tool:tool-result-error-p result) "show refused: ~a" output)
+              (true (search "string-capitalize" output)
+                    "the source is not in the report: ~a" output)
+              (true (search "capitalises each word" output)
+                    "the note is not in the report: ~a" output)
+              ;; Lower case, because a model reading (LAMBDA (INPUT) ...) back
+              ;; is reading something it did not write.
+              (false (search "LAMBDA" output) "the source was shouted back: ~a" output))
+            ;; A second version, and the report says what stands behind it.
+            (let ((v2 (actor:create-candidate
+                       "kc6-read"
+                       (viva.actor::capability-source "(lambda (input) (string-upcase input))"))))
+              (actor:promote-candidate v2)
+              (let ((output (tool:tool-result-output
+                             (run-capability-tool "show_capability" "name" "kc6-read"))))
+                (true (search (format nil "version ~d" v2) output)
+                      "the report does not name the version it read: ~a" output)
+                (true (search (format nil "Earlier versions: ~d" v1) output)
+                      "the report does not say what is behind it: ~a" output)))))))))
+
+(define-test "show_capability reaches no further than resolution does"
+  ;; A candidate another task pinned is that task's own. A tool that could read
+  ;; those would be a way around the isolation law rather than a window onto
+  ;; what this task can already run.
+  (with-own-store (root)
+    (with-paced-cell (cell agent :pause 0.01 :limit 1)
+      (let ((mine (viva.harness:make-workspace-agent
+                   :extra-tools (actor:capability-tools))))
+        (let ((hidden (with-capability-agent (agent)
+                        (let ((id (actor:create-candidate
+                                   "kc6-private"
+                                   (viva.actor::capability-source "(lambda (input) input)"))))
+                          (run-capability-tool "activate_capability" "version" id)
+                          id))))
+          (with-capability-agent (agent)
+            (false (tool:tool-result-error-p
+                    (run-capability-tool "show_capability" "name" "kc6-private"
+                                                           "version" hidden))
+                   "a task could not read the version it had in force"))
+          (with-capability-agent (mine)
+            (let ((result (run-capability-tool "show_capability" "name" "kc6-private"
+                                                                 "version" hidden)))
+              (true (tool:tool-result-error-p result)
+                    "another task's candidate was readable: ~a"
+                    (tool:tool-result-output result)))))))))
+
+(define-test "an agent takes back a promotion through the tools"
+  ;; Retraction that only a person can reach is supervised modification. The
+  ;; lifecycle had REVERT from the day the table was proven and no tool
+  ;; reached it: the organism could promote into every future task and had no
+  ;; verb for finding out it was wrong.
+  (with-own-store (root)
+    (with-paced-cell (cell agent :pause 0.01 :limit 1)
+      (with-capability-agent (agent)
+        (flet ((promoted (source)
+                 (let ((version (created-version
+                                 (run-capability-tool "create_capability"
+                                                      "name" "kc6-undo"
+                                                      "source" source))))
+                   (run-capability-tool "promote_capability" "version" version)
+                   version)))
+          (let* ((v1 (promoted "(lambda (input) (concatenate 'string \"one:\" input))"))
+                 (v2 (promoted "(lambda (input) (concatenate 'string \"two:\" input))")))
+            (is eql v2 (viva.evolution:current-promoted (actor:evolution-registry) "kc6-undo")
+                "the second promotion did not take")
+            (let ((reverted (run-capability-tool "revert_capability" "name" "kc6-undo")))
+              (false (tool:tool-result-error-p reverted)
+                     "revert refused: ~a" (tool:tool-result-output reverted))
+              (true (search (princ-to-string v1) (tool:tool-result-output reverted))
+                    "the agent was not told what it is back to: ~a"
+                    (tool:tool-result-output reverted)))
+            (is eql v1 (viva.evolution:current-promoted (actor:evolution-registry) "kc6-undo"))
+            ;; Durable, not only in this image: the whole point of a withdrawal.
+            (is = 1 (length (actor:stored-capabilities root))
+                "the withdrawn version is still restorable")
+            ;; And the bottom of a lineage refuses, with a reason the model reads.
+            (let ((floor (run-capability-tool "revert_capability" "name" "kc6-undo")))
+              (true (tool:tool-result-error-p floor)
+                    "the organism reverted past the first version it ever promoted")
+              (true (search "refused" (string-downcase (tool:tool-result-output floor)))
+                    "the refusal did not say it was refused"))))))))
+
+(define-test "a capability composes another, and the composition resolves through the door"
+  ;; The composition claim needs the composed call to be a RESOLUTION and not
+  ;; a function reference. A capability that captured its collaborator would
+  ;; keep calling the version that was promoted when it was compiled, and the
+  ;; isolation law -- your pin is yours, and nobody else sees it -- would end
+  ;; at the first composition.
+  (with-own-store (root)
+    (with-paced-cell (cell agent :pause 0.01 :limit 1)
+      (with-capability-agent (agent)
+        (flet ((mint (name source)
+                 (let ((result (run-capability-tool "create_capability"
+                                                    "name" name "source" source)))
+                   (false (tool:tool-result-error-p result)
+                          "~a refused: ~a" name (tool:tool-result-output result))
+                   (created-version result)))
+               (ran (input)
+                 (let ((result (run-capability-tool "call_capability"
+                                                    "name" "kc6-outer" "input" input)))
+                   (false (tool:tool-result-error-p result)
+                          "call failed: ~a" (tool:tool-result-output result))
+                   (tool:tool-result-output result))))
+          (let ((base (mint "kc6-inner" "(lambda (input) (concatenate 'string \"base:\" input))")))
+            (run-capability-tool "promote_capability" "version" base)
+            (let ((outer (mint "kc6-outer"
+                               "(lambda (input) (string-upcase (call-capability \"kc6-inner\" input)))")))
+              (run-capability-tool "promote_capability" "version" outer)
+              (is string= "BASE:X" (ran "x") "the composed call did not reach the promoted default")
+              ;; Now put a different inner in force for this task alone. The
+              ;; outer capability is untouched and must follow the pin.
+              (let ((pinned (mint "kc6-inner" "(lambda (input) (concatenate 'string \"pinned:\" input))")))
+                (run-capability-tool "activate_capability" "version" pinned)
+                (is string= "PINNED:X" (ran "x")
+                    "the composed call ignored the version in force for this task")))))))))
+
+(define-test "a composed capability still composes after a restart"
+  (with-own-store (root)
+    (let ((inner (actor:create-candidate
+                  "composes-inner"
+                  (viva.actor::capability-source "(lambda (input) (string-trim \" \" input))"))))
+      (actor:promote-candidate inner)
+      (let ((outer (actor:create-candidate
+                    "composes-outer"
+                    (viva.actor::capability-source
+                     "(lambda (input) (string-upcase (call-capability \"composes-inner\" input)))"))))
+        (actor:promote-candidate outer)
+        (is equal "HELLO" (actor:call-component "composes-outer" "  hello  "))
+        (true (viva.actor::journal-sync) "the ledger never confirmed")
+        (with-restarted-owner
+          (is equal "HELLO" (actor:call-component "composes-outer" "  hello  ")
+              "the restored capability lost its collaborator"))))))
+
+(define-test "an agent abandons a candidate through the tools"
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (with-capability-agent (agent)
+      (flet ((minted ()
+               (created-version (run-capability-tool "create_capability"
+                                                     "name" "kc6-abandon"
+                                                     "source" "(lambda (input) input)"))))
+        (let ((tried (minted)))
+          (run-capability-tool "activate_capability" "version" tried)
+          (let ((refused (run-capability-tool "discard_capability" "version" tried)))
+            (true (tool:tool-result-error-p refused)
+                  "a version in force was abandoned underneath the task running it")))
+        (let* ((spare (minted))
+               (discarded (run-capability-tool "discard_capability" "version" spare)))
+          (false (tool:tool-result-error-p discarded)
+                 "discard refused: ~a" (tool:tool-result-output discarded))
+          (is eq :discarded (viva.evolution:version-status (actor:evolution-registry) spare)
+              "the judgment was reported and not recorded"))))))
+
 (define-test "the closed door refuses the model, and says so in words it can act on"
   ;; Arm B, through the tools rather than through the Lisp API: the agent may
   ;; still create -- it pays the same cost for the same attempt, which is the
@@ -2289,7 +2959,14 @@ it reports nothing, and the suite has to be killed to find out why."
   (with-daemon (path)
     (with-paced-cell (cell agent :pause 0.01 :limit 6)
       (actor:submit cell "go")
-      (true (daemon-wait (lambda () (not (viva.actor::busy-p cell))) :timeout 30))
+      ;; The TERMINAL EVENT, not BUSY-P. A cell commits its state machine
+      ;; before running the effects that publish, so BUSY-P goes false one step
+      ;; ahead of turn.completed reaching the ring. A snapshot taken in that
+      ;; window is one event short of what the replay then delivers, and this
+      ;; test failed roughly once in ten full-suite runs and never on its own.
+      (true (daemon-wait (lambda () (plusp (terminal-count (cell-event-names cell))))
+                         :timeout 30)
+            "the turn never reached a terminal event")
       (let ((before (length (actor:since cell 0))))
         (true (plusp before) "the session produced no events to replay")
         (let ((stream (daemon:connect path)))

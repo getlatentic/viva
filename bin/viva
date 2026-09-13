@@ -1,7 +1,7 @@
 #!/bin/sh
-# One entry point for every run. Loads .env itself so no run depends on the
-# caller having sourced it -- forgetting to was a repeated cost while building
-# the task set.
+# One entry point for every run. It sources no key file: credentials live in
+# ~/.viva/auth.json and the engine reads them itself, so no run depends on this
+# script having exported anything -- which a standalone build never could.
 set -eu
 
 # Follow symlinks to find the REPOSITORY, not the link. `viva install`
@@ -27,18 +27,11 @@ root=$(cd "$(dirname "$target")/.." && pwd)
 # Where viva keeps its own files. The engine resolves it the same way.
 viva_home="${VIVA_HOME:-${HOME:-}/.viva}"
 
-# Credentials, machine first and repository second, so the repository wins for
-# a run made from inside it. Settings live in the machine directory and keys
-# used to stay in the clone, which meant half the setup lived somewhere you
-# might never open again -- and a second checkout had none of it.
+# NO KEY FILE IS SOURCED HERE. Credentials live in ~/.viva/auth.json, read by
+# the engine itself, so a run does not depend on the launcher having exported
+# anything -- which is what a standalone build never had. A shell that exports
+# a key still wins: the engine puts the environment above the file.
 #
-# Keys are not settings and stay out of the config file: that one is meant to
-# be copied into projects and committed. This one is not.
-set -a
-[ -f "$viva_home/.env" ] && . "$viva_home/.env"
-[ -f "$root/.env" ] && . "$root/.env"
-set +a
-
 # The full-screen client is a separate binary, and this is where it is reached
 # -- BEFORE sbcl, not from inside it. Routing to it from the Lisp CLI worked
 # and cost the whole system load first: a minute of quickload to hand the
@@ -67,7 +60,12 @@ case "${1:-}" in
     do
       if [ -x "$candidate" ]; then
         shift
-        VIVA_BIN="$root/bin/viva" exec "$candidate" "$@"
+        # ONLY IF NOBODY SAID OTHERWISE. The client starts a daemon with
+        # $VIVA_BIN, so clobbering it here forced every cold start through this
+        # script -- one source load for the command and another for the daemon
+        # it spawns, about 2.9s of the 3.1s a cold start cost. A guess must
+        # never beat an instruction, which is already the rule for VIVA_TUI.
+        VIVA_BIN="${VIVA_BIN:-$root/bin/viva}" exec "$candidate" "$@"
       fi
     done
     if [ "${1:-}" = "tui" ]; then
@@ -78,4 +76,7 @@ case "${1:-}" in
     ;;
 esac
 
-exec sbcl --script "$root/bin/entry.lisp" "$@"
+# SBCL, wherever it is -- resolved in one place, shared with the image build.
+. "$root/tools/sbcl.sh"
+
+exec "$sbcl_bin" --script "$root/bin/entry.lisp" "$@"

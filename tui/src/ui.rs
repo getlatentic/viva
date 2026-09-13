@@ -6,7 +6,7 @@
 //! arrangement.
 
 use crate::markdown;
-use crate::model::{Entry, Focus, Listed, Model, Outcome, Role, TaskState};
+use crate::model::{Entry, Focus, Listed, Model, Models, Outcome, Role, TaskState};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wrap};
 
@@ -313,6 +313,8 @@ pub fn draw(frame: &mut Frame, model: &mut Model, rendered: &mut Rendered) -> Hi
         draw_learned(frame, area, model);
     } else if model.focus == Focus::Picker {
         draw_picker(frame, area, model, &mut hits);
+    } else if model.focus == Focus::Models {
+        draw_models(frame, area, model);
     } else {
         draw_command_menu(frame, rows[2], model, &mut hits);
     }
@@ -433,6 +435,110 @@ fn draw_picker(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes
         lines.push(Line::from(Span::styled(message, Style::default().fg(DIM))));
     }
     frame.render_widget(Paragraph::new(lines), rows[1]);
+}
+
+/// The models on offer, over everything else.
+///
+/// A BOUNDED WINDOW with a count above and below it, rather than a list that
+/// stops wherever the box happens to end. Every row carries the number that
+/// takes it, the label you would type, and the id that reaches the provider --
+/// and the one already answering here says so, because a marker only its author
+/// can read is not an answer.
+fn draw_models(frame: &mut Frame, area: Rect, model: &Model) {
+    let width = area.width.saturating_sub(8).min(86).max(24);
+    let height = (Models::VISIBLE as u16 + 6).min(area.height.saturating_sub(4)).max(8);
+    let box_area = Rect::new(
+        area.x + (area.width.saturating_sub(width)) / 2,
+        area.y + (area.height.saturating_sub(height)) / 2,
+        width,
+        height,
+    );
+    frame.render_widget(Clear, box_area);
+    let block = pane("which model answers", true);
+    let inner = block.inner(box_area);
+    frame.render_widget(block, box_area);
+
+    let rows = Layout::vertical([
+        Constraint::Length(2),
+        Constraint::Min(1),
+        Constraint::Length(1),
+    ])
+    .split(inner);
+
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("search ", Style::default().fg(DIM)),
+            Span::styled(
+                model.models.query.clone(),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("_", Style::default().fg(ACCENT)),
+        ])),
+        rows[0],
+    );
+
+    let here = model
+        .sessions
+        .iter()
+        .find(|session| session.id == model.current)
+        .map(|session| session.model.clone())
+        .unwrap_or_default();
+    let matching = model.models.matching();
+    let start = model.models.first_visible();
+    let mut lines: Vec<Line> = Vec::new();
+    if start > 0 {
+        lines.push(Line::from(Span::styled(
+            format!("  ↑ {start} more"),
+            Style::default().fg(DIM),
+        )));
+    }
+    for (offset, offer) in matching.iter().skip(start).take(Models::VISIBLE).enumerate() {
+        let index = start + offset;
+        let chosen = index == model.models.selection;
+        let label = Style::default()
+            .fg(if chosen { ACCENT } else { Color::Indexed(252) })
+            .add_modifier(if chosen { Modifier::BOLD } else { Modifier::empty() });
+        let mut spans = vec![
+            Span::styled(format!(" ({}) ", offset + 1), Style::default().fg(DIM)),
+            Span::styled(format!("{:<34}", clip(&offer.label, 34)), label),
+            Span::styled(format!(" {}", clip(&offer.id, 30)), Style::default().fg(DIM)),
+        ];
+        // THE ONE ALREADY ANSWERING, said in words. A session records the model
+        // id, so that is what matches -- the label it was chosen by is not
+        // written down anywhere.
+        if !here.is_empty() && offer.id == here {
+            spans.push(Span::styled("  (current)", Style::default().fg(ACCENT)));
+        }
+        lines.push(Line::from(spans));
+    }
+    let shown = matching.len().saturating_sub(start).min(Models::VISIBLE);
+    let below = matching.len().saturating_sub(start + shown);
+    if below > 0 {
+        lines.push(Line::from(Span::styled(
+            format!("  ↓ {below} more"),
+            Style::default().fg(DIM),
+        )));
+    }
+    if matching.is_empty() {
+        // `asking` and `no matches` and `nothing configured` are three answers,
+        // and a picker that gives the wrong one teaches people it is broken.
+        let message = if model.models.refreshing {
+            "asking the providers…"
+        } else if model.models.offers.is_empty() {
+            "no model is configured — put a key in ~/.viva/auth.json"
+        } else {
+            "no matches"
+        };
+        lines.push(Line::from(Span::styled(message, Style::default().fg(DIM))));
+    }
+    frame.render_widget(Paragraph::new(lines), rows[1]);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            " enter or a digit opens a session · ctrl-r asks again · esc closes",
+            Style::default().fg(DIM),
+        ))),
+        rows[2],
+    );
 }
 
 fn pane(title: &str, focused: bool) -> Block<'_> {
@@ -1068,6 +1174,14 @@ fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
 /// short form for when the long one does not fit beside long facts -- a
 /// provider-prefixed model and a branch with a slash in it leave a quarter
 /// of a hundred-column screen for everything else.
+/// The first sentence, for a slot one sentence wide.
+fn first_sentence(text: &str) -> &str {
+    match text.find(". ") {
+        Some(stop) => &text[..=stop],
+        None => text,
+    }
+}
+
 fn status_text(model: &Model) -> (Vec<String>, Vec<(String, String)>) {
     let following = model
         .current_conversation()
@@ -1079,7 +1193,12 @@ fn status_text(model: &Model) -> (Vec<String>, Vec<(String, String)>) {
     // The status carries what went wrong -- a closed connection, a refused
     // request -- so it is never replaced by the facts.
     if !model.status.is_empty() {
-        notes.push(note(&model.status, &model.status));
+        // A SHORT FORM THAT IS ACTUALLY SHORT. Both halves used to be the whole
+        // status, so an error written for a shell -- the one naming the auth
+        // file runs to about five hundred characters -- fitted neither slot and
+        // was dropped. A person with no provider key saw `starting a session…`
+        // and no reason at all.
+        notes.push(note(&model.status, first_sentence(&model.status)));
     }
     if !model.connected {
         notes.push(note("daemon gone", "daemon gone"));
@@ -1119,6 +1238,15 @@ fn status_text(model: &Model) -> (Vec<String>, Vec<(String, String)>) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_status_written_for_a_shell_has_a_short_form_that_fits() {
+        let long = "No model is configured. Put a key in ~/.viva/auth.json, \
+shaped like: { \"deepseek\": { \"apiKey\": \"sk-...\" } }";
+        assert_eq!(super::first_sentence(long), "No model is configured.");
+        // Nothing to cut is left alone rather than emptied.
+        assert_eq!(super::first_sentence("daemon gone"), "daemon gone");
+    }
+
     use super::*;
     use crate::model::Model;
     use crate::protocol::{Event, SessionInfo};

@@ -32,15 +32,38 @@
          (usocket:socket-close socket)
          t)))))
 
+(defun answering-p (choice)
+  "Would this choice's server answer?
+
+ONLY THE KEYLESS ONES are probed, because those are the servers on this machine
+-- a hosted endpoint being unreachable is a network fault to report, not a
+provider to drop. A configured local endpoint with nothing behind it produced a
+whole column of `err` in one sweep, which costs an attempt per cell and reads
+like a model failing rather than a server that is not running."
+  (or (not (models:choice-keyless choice))
+      (listening-p (provider:provider-endpoint (models:choice-provider choice)))))
+
 (defparameter +arm-labels+
   '(("openrouter" . "gpt-oss-120b") ("deepseek" . "deepseek-flash"))
   "Experiment-facing names for catalogue entries. The results files and the
 write-ups already say `gpt-oss-120b`, and renaming a column silently is how two
 sweeps stop being comparable.")
 
-(defun arm-for (choice)
-  (make-arm :label (or (cdr (assoc (models:choice-label choice) +arm-labels+ :test #'string=))
-                       (models:choice-label choice))
+(defun arm-name (choice default)
+  "What a results column is called.
+
+A DEFAULT is named by its provider, because that is what the written-up files
+already say and renaming a column silently is how two sweeps stop being
+comparable. A model asked for BY NAME carries its own `provider/id`, so two
+models from one provider are two columns and not one twice."
+  (if default
+      (or (cdr (assoc (models:choice-endpoint-label choice) +arm-labels+ :test #'equal))
+          (models:choice-endpoint-label choice)
+          (models:choice-label choice))
+      (models:choice-label choice)))
+
+(defun arm-for (choice &key default)
+  (make-arm :label (arm-name choice default)
             :provider (models:choice-provider choice)
             :model (models:choice-model choice)
             :effort (models:choice-effort choice)))
@@ -54,19 +77,26 @@ probe stays here: a configured endpoint with nothing behind it produced a whole
 column of `err` in one sweep, which costs an attempt per cell and reads like a
 model failing rather than a missing one."
   (remove nil (mapcar (lambda (choice)
-                        (if (and (string= "local" (models:choice-label choice))
-                                 (not (listening-p (env "VIVA_LOCAL_ENDPOINT"))))
-                            nil
-                            (arm-for choice)))
-                      (models:available-models))))
+                        (if (answering-p choice) (arm-for choice :default t) nil))
+                      ;; ONE PER ENDPOINT. An arm is an experimental condition
+                      ;; and a sweep over `every arm` is a bill; Bedrock serving
+                      ;; eight models must not turn one battery into eight.
+                      ;; ARMS-NAMED still reaches any of them by name.
+                      (models:endpoint-defaults (models:available-models)))))
 
 (defun arms-named (names)
-  "NAMES is NIL for every available arm, or a list of labels."
+  "NAMES is NIL for every available arm, or a list of labels.
+
+A NAME REACHES THE WHOLE CATALOGUE, not only the defaults a bare sweep runs.
+Asking for one model deliberately is the case where an endpoint's eighth model
+is exactly what somebody wants."
   (let ((available (available-arms)))
     (if (null names)
         available
         (mapcar (lambda (name)
                   (or (find name available :key #'arm-label :test #'string-equal)
+                      (a:when-let ((choice (ignore-errors (models:resolve-model name))))
+                        (arm-for choice))
                       (error "No arm called ~s. Available: ~{~a~^, ~}"
                              name (mapcar #'arm-label available))))
                 names))))

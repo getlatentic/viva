@@ -199,3 +199,127 @@ Trust it to enable its extensions." directory project)
                  (when (a:ends-with-subseq ".lisp" (env:info-name info))
                    (a:when-let ((complaint (load-file-safely (env:info-path info))))
                      (push complaint complaints))))))))))
+
+;;; Declared rather than discovered
+;;;
+;;; A DIRECTORY SCAN IS NOT A DECLARATION. Everything above loads whatever it
+;;; finds, which is the right shape for a directory a person keeps their own
+;;; files in and the wrong one for saying what this installation is. Nothing can
+;;; name a capability, disable one, or refer to something already in the binary.
+;;;
+;;; So a capability registers itself under a name, and `config` says which names
+;;; are active. A built-in and a file somebody wrote are then the same kind of
+;;; thing, differing only in where the code came from -- which is the whole
+;;; point: the bare harness is the baseline, and everything past it is something
+;;; the configuration asked for.
+;;;
+;;; A CONTRIBUTION IS TOOLS AND PROMPT, and deliberately no more. Those two are
+;;; what the agent surface already takes, so this adds a way to select what is
+;;; there rather than a second way to reach it. A capability needing more than
+;;; the two is the signal to widen this on purpose.
+
+(defvar *builtins* '()
+  "NAME -> (DESCRIPTION . CONTRIBUTE). CONTRIBUTE is called at request-assembly
+time and returns a plist of :TOOLS and :PROMPT.
+
+CALLED LATE, not at registration: what a capability offers can depend on what
+the organism has done to itself since it started, and a list captured at load
+time would be the list before any of that.")
+
+(defun register-builtin (name contribute &key (description ""))
+  "Offer NAME as a capability this build can be asked for."
+  (setf *builtins* (cons (cons name (cons description contribute))
+                         (remove name *builtins* :key #'car :test #'equal)))
+  name)
+
+(defun builtin-names ()
+  (sort (mapcar #'car *builtins*) #'string<))
+
+(defun builtin-description (name)
+  (a:when-let ((found (assoc name *builtins* :test #'equal)))
+    (second found)))
+
+(defun path-entry-p (entry)
+  "Is this entry a file somebody wrote, rather than the name of a built-in?
+
+A NAME IS A WORD. Anything carrying a directory separator or ending in `.lisp`
+is a path, and the two cannot be mistaken for each other because a capability
+called `a/b` would be unreadable in a config line anyway."
+  (or (find #\/ entry) (a:ends-with-subseq ".lisp" entry)))
+
+(defun expanded (path)
+  "PATH with a leading `~` resolved, because a config file is written by hand."
+  (if (a:starts-with-subseq "~/" path)
+      (concatenate 'string (uiop:native-namestring (user-homedir-pathname)) (subseq path 2))
+      path))
+
+(defun declared (setting)
+  "What SETTING asks for, as (values NAMES FILES).
+
+TWO KINDS, ONE DECLARATION. A name resolves to a capability already in this
+build; a path resolves to a file somebody wrote. They are the same kind of
+REQUEST and not the same kind of code, which is why they come back separated --
+a built-in contributes tools directly and a file has to be loaded first, under
+the trust gate that loading anything executable needs.
+
+`on` AND `off` STILL WORK. KC6's three arms are written in them and its results
+name them, so the words that produced published numbers keep meaning what they
+meant: `on` is the self-modification door, `off` is nothing at all."
+  (let ((given (string-trim " " (or setting ""))))
+    (cond ((or (zerop (length given)) (string-equal "off" given)) (values '() '()))
+          ((string-equal "on" given) (values (list "self-modify") '()))
+          (t (let ((entries (remove ""
+                                    (mapcar (lambda (part) (string-trim " " part))
+                                            (uiop:split-string given :separator ","))
+                                    :test #'equal)))
+               (values (remove-if #'path-entry-p entries)
+                       (mapcar #'expanded (remove-if-not #'path-entry-p entries))))))))
+
+(defun load-declared-file (environment path)
+  "Load one declared extension file. Returns a complaint, or NIL.
+
+THE SAME TRUST GATE THE DIRECTORIES HAVE. Loading a file runs it, and a path
+inside the working tree is a path the repository controls -- so naming one in a
+project's own `.viva/config` would otherwise be a way for a clone to run code by
+being opened. A file in the machine's own directory is the person's own."
+  ;; TRUST:PERMITTED-P, not a prefix test written again here. It canonicalises
+  ;; both sides, and the first version of this did not -- on macOS `/tmp` is a
+  ;; link to `/private/tmp`, so a file inside the project named by the short
+  ;; spelling walked straight past the gate. The registry loader already asks
+  ;; this question with this function.
+  (let ((project (env:env-cwd environment)))
+    (cond ((not (env:path-exists-p environment path))
+           (format nil "~a was not loaded: no such file." path))
+          ((not (trust:permitted-p environment path project))
+           (format nil "~a was not loaded: ~a is not a trusted project. ~
+Trust it to enable its extensions." path project))
+          (t (load-file-safely path)))))
+
+(defun load-declared-files (environment paths)
+  "Load every declared file. Returns complaints, in the order they were asked
+for, so a person reads them beside the config line that caused them."
+  (loop for path in paths
+        for complaint = (load-declared-file environment path)
+        when complaint collect it))
+
+(defun contributions (names)
+  "What NAMES contribute, as (values TOOLS PROMPTS COMPLAINTS).
+
+A NAME NOBODY REGISTERED IS A COMPLAINT, not a silence. A configuration that
+asks for a capability and gets none has been misread, and the only thing worse
+than a setting that does nothing is one that does nothing quietly."
+  (let ((tools '()) (prompts '()) (complaints '()))
+    (dolist (name names)
+      (a:if-let ((found (assoc name *builtins* :test #'equal)))
+        (let ((offered (handler-case (funcall (cddr found))
+                         (error (condition)
+                           (push (format nil "~a could not be enabled: ~a" name condition)
+                                 complaints)
+                           '()))))
+          (setf tools (append tools (getf offered :tools)))
+          (a:when-let ((prompt (getf offered :prompt)))
+            (setf prompts (append prompts (list prompt)))))
+        (push (format nil "no capability called ~s. This build offers: ~{~a~^, ~}"
+                      name (or (builtin-names) (list "none")))
+              complaints)))
+    (values tools prompts (nreverse complaints))))

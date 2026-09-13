@@ -19,7 +19,7 @@ say so.
 
 ## What is real, and what it does
 
-`~/workspace/viva` — 424 tests green, SBCL 2.6.7 / macOS ARM64. Five ASDF
+`~/workspace/viva` — 2,197 tests green, SBCL 2.6.7 / macOS ARM64. Five ASDF
 systems with dependencies pointing inward:
 
 | system | what it is |

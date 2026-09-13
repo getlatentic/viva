@@ -44,6 +44,15 @@
   ;; version id -> function object. The registry holds identity and
   ;; lifecycle; this holds what a resolution can actually call.
   (functions (make-hash-table))
+  ;; version id -> what was written down about it: the form it was compiled
+  ;; from, and the line the model said it was for.
+  ;;
+  ;; COMPILE keeps nothing of its argument, so a capability was a callable and
+  ;; no more: unreadable, unwritable, and gone with the process. Keeping the
+  ;; form is what lets a promoted capability be written down, read back by a
+  ;; person, and compiled again by the next daemon. Keeping the note is what
+  ;; lets a later session tell what it is for without reading the lambda.
+  (sources (make-hash-table))
   ;; task -> (:box BOX :cell CELL). BOX is a one-cell cons whose CAR is the
   ;; task's immutable snapshot; this owner is its only writer.
   (rigging (make-hash-table :test #'equal))
@@ -51,6 +60,12 @@
   ;; else, because SBCL threads inherit no dynamic context -- the same law
   ;; that makes the box a box.
   (door :open))
+
+(defstruct (kept (:conc-name kept-))
+  "What is written down about a version. A capability nobody can describe is
+one a later session reads a lambda to understand, and then rewrites."
+  (source nil)
+  (note nil))
 
 (defvar *evolver* nil)
 (defvar *evolver-lock* (bt:make-lock "viva.evolver-start"))
@@ -63,6 +78,7 @@ any owner exists; KC6's arm B sets it to :CLOSED and never moves it.")
   (bt:with-lock-held (*evolver-lock*)
     (or *evolver*
         (let ((evolver (make-evolver :door *default-door*)))
+          (restore-capabilities evolver)
           (setf (evolver-thread evolver)
                 (bt:make-thread (lambda () (run-evolver evolver))
                                 :name "viva-evolution"))
@@ -85,30 +101,66 @@ any owner exists; KC6's arm B sets it to :CLOSED and never moves it.")
 ;;; thread, a worker -- so a source that will not compile is the caller's
 ;;; rejected candidate, never the owner's death.
 
-(defun create-candidate (component function-or-source &key cell)
-  "Returns (values VERSION-ID nil) or (values NIL CONDITION)."
+(defun capability-form (form)
+  "The model's lambda, in the world a capability runs in.
+
+ONE THING A LAMBDA CANNOT SAY: how to reach another capability. Resolution
+goes through the door -- the task's pin, else the promoted default -- so a
+capability that reached another by symbol would be calling a function instead
+of resolving a component, and the isolation law would end at the first
+composition. This binds the verb inside the lambda\'s own body, where the
+model can write it without naming a package it should not have to know.
+
+Applied at compile time and not before, so what the store holds is what the
+model wrote. A form that is not a lambda passes through untouched: its
+rejection belongs to the compiler, which words it better than a guess here."
+  (if (and (consp form) (eq 'lambda (first form)))
+      (destructuring-bind (head arguments &rest body) form
+        (declare (ignore head))
+        `(lambda ,arguments
+           (flet ((viva.capabilities::call-capability (name input)
+                    (call-component name input)))
+             (declare (ignorable #'viva.capabilities::call-capability))
+             ,@body)))
+      form))
+
+(defun compile-capability (component form)
+  "FORM as a callable, or (values NIL CONDITION).
+
+COMPILE does not signal on a malformed lambda: it returns a callable that
+fails at runtime, with FAILURE-P true -- probed, not assumed. Accepting that
+callable would ship the failure to every future caller of the component.
+
+One judge for both doors into the image: a form arriving from a model now, and
+the same form read back off disk at the next daemon start."
+  (handler-case
+      (multiple-value-bind (compiled warnings-p failure-p)
+          (compile nil (capability-form form))
+        (declare (ignore warnings-p))
+        (if (or failure-p (null compiled))
+            (values nil (make-condition
+                         'simple-error
+                         :format-control "candidate for ~a did not compile"
+                         :format-arguments (list component)))
+            (values compiled nil)))
+    (error (c) (values nil c))))
+
+(defun create-candidate (component function-or-source &key cell note)
+  "Returns (values VERSION-ID nil) or (values NIL CONDITION).
+
+The SOURCE rides along with the function when there was one. A candidate is
+never written down -- it is task-local by law and dies with its task -- but
+promotion cannot write what creation threw away."
   (multiple-value-bind (function condition)
       (etypecase function-or-source
         (function (values function-or-source nil))
-        (cons
-         ;; COMPILE does not signal on a malformed lambda: it returns a
-         ;; callable that fails at runtime, with FAILURE-P true -- probed, not
-         ;; assumed. Accepting that callable would ship the failure to every
-         ;; future caller of the component.
-         (handler-case
-             (multiple-value-bind (compiled warnings-p failure-p)
-                 (compile nil function-or-source)
-               (declare (ignore warnings-p))
-               (if (or failure-p (null compiled))
-                   (values nil (make-condition
-                                'simple-error
-                                :format-control "candidate for ~a did not compile"
-                                :format-arguments (list component)))
-                   (values compiled nil)))
-           (error (c) (values nil c)))))
+        (cons (compile-capability component function-or-source)))
     (if function
         (values (evolution-ask :create-candidate component
-                               :function function :cell cell)
+                               :function function
+                               :source (and (consp function-or-source)
+                                            function-or-source)
+                               :note note :cell cell)
                 nil)
         (values nil condition))))
 
@@ -191,6 +243,32 @@ first, and the mailbox is what orders the two."
   (let ((evolver (ensure-evolver)))
     (bt:with-lock-held ((evolver-lock evolver))
       (gethash id (evolver-functions evolver)))))
+
+(defun promoted-capabilities ()
+  "Component and version for every promoted capability this image can call,
+by component name.
+
+A REGISTRY TOOL IS A PROMOTED VERSION TOO and is not one of these. It reaches
+a model through the tool list already, and a second listing under another name
+would be one thing described twice, in two vocabularies, with no way for a
+reader to tell they were the same thing. What is left is what the organism
+compiled -- the part nothing else in a prompt mentions."
+  (let ((evolver (ensure-evolver)))
+    (bt:with-lock-held ((evolver-lock evolver))
+      (sort (loop for (component . lineage) in (viva.evolution:registry-lineages
+                                                (evolver-registry evolver))
+                  for id = (first lineage)
+                  for kept = (and (stringp component)
+                                  (gethash id (evolver-sources evolver)))
+                  when kept collect (list component id (kept-note kept)))
+            #'string< :key #'first))))
+
+(defun capability-record (id)
+  "What was written down about version ID, as (values SOURCE NOTE)."
+  (let ((evolver (ensure-evolver)))
+    (bt:with-lock-held ((evolver-lock evolver))
+      (a:when-let ((kept (gethash id (evolver-sources evolver))))
+        (values (kept-source kept) (kept-note kept))))))
 
 (defun call-component (component &rest arguments)
   "The one door. Not SYMBOL-FUNCTION: components are not fbound, so a SETF of
@@ -320,7 +398,10 @@ here if the task has never touched evolution, recorded with its owning cell."
             (let ((id (first detail)))
               (bt:with-lock-held ((evolver-lock evolver))
                 (setf (gethash id (evolver-functions evolver))
-                      (getf options :function)))
+                      (getf options :function))
+                (a:when-let ((source (getf options :source)))
+                  (setf (gethash id (evolver-sources evolver))
+                        (make-kept :source source :note (getf options :note)))))
               (evolution-publish evolver nil "improvement.created"
                                  (event::object "version" id
                                                 "component" (second detail))
@@ -340,15 +421,33 @@ here if the task has never touched evolution, recorded with its owning cell."
                                               "parent" (princ-to-string (second detail))))
             (first detail))
            (:improvement.promoted
-            (evolution-publish evolver nil "improvement.promoted"
-                               (event::object "version" (first detail))
-                               :cell (getf options :cell))
-            (first detail))
+            (let* ((id (first detail))
+                   (component (viva.evolution:version-component before id))
+                   (kept (keep-promotion evolver id component)))
+              (evolution-publish evolver nil "improvement.promoted"
+                                 (event::object "version" id
+                                                "component" component
+                                                ;; A word, never a boolean:
+                                                ;; EVENT::OBJECT drops a NIL
+                                                ;; value, and an absent field
+                                                ;; would read as an old ledger
+                                                ;; line rather than as a
+                                                ;; promotion that kept nothing.
+                                                "kept" (kept-word kept))
+                                 :cell (getf options :cell))
+              (announce-reconciliation evolver options)
+              id))
            (:improvement.reverted
-            (evolution-publish evolver nil "improvement.reverted"
-                               (event::object "component" (first detail))
-                               :cell (getf options :cell))
-            (first detail))
+            (let ((component (first detail)))
+              ;; From BEFORE: the new registry has already dropped the version
+              ;; this reverted, and that id is exactly what stops being restored.
+              (a:when-let ((withdrawn (viva.evolution:current-promoted before component)))
+                (retract-capability withdrawn))
+              (evolution-publish evolver nil "improvement.reverted"
+                                 (event::object "component" component)
+                                 :cell (getf options :cell))
+              (announce-reconciliation evolver options)
+              component))
            (:improvement.discarded
             (evolution-publish evolver nil "improvement.discarded"
                                (event::object "version" (first detail))
@@ -398,33 +497,260 @@ here if the task has never touched evolution, recorded with its owning cell."
                    reason (rest translated)))
          (list :refused reason))))))
 
-;;; Reconstruction: lineage is a durable fact about the organism.
+;;; Reconstruction: the ledger is the account, the store is a cache
+;;;
+;;; WHICH VERSIONS A COMPONENT WAS PROMOTED THROUGH, AND WHICH OF THOSE IT
+;;; TOOK BACK, ARE DECISIONS -- and a decision lives where it was recorded,
+;;; not where its side effect landed. A restart that read the store alone
+;;; trusted a side effect twice over: a reversion whose rename did not take
+;;; came back as the promoted default, and a file written into the directory
+;;; by hand became a capability every future task resolved, with no line in
+;;; the ledger saying where it came from. That is the second door the
+;;; no-back-door law forbids, opened by the durability work rather than by an
+;;; attack.
+;;;
+;;; So a restart brings back the ledger's lineage, narrowed to what the store
+;;; can supply. The store may lose a file, gain a file, or hold a stale one,
+;;; and none of those changes what the organism promotes.
 
-(defun reconstruct-lineage (&optional (path (evolution-ledger-path)))
-  "The promoted lineage per component, folded from the improvement.* ledger.
+(defstruct (account (:conc-name account-))
+  ;; component -> the ids it was promoted through, newest first. Reversion
+  ;; pops, so a version the organism took back is not in it.
+  (lineages '())
+  ;; The versions whose promotion had a source to keep, whether or not keeping
+  ;; it worked. A promotion COMPILE kept nothing of -- a file-backed registry
+  ;; tool, a version minted from a live function -- is not one, and reporting
+  ;; its absence from the store would drown the case that matters: a promoted
+  ;; default with no code behind it.
+  (sourced '())
+  ;; version id -> component, for the older ledger lines whose promotion
+  ;; recorded only a number.
+  (components '())
+  (high-water 0))
+
+(defun fold-ledger-line (account name data)
+  (let ((id (gethash "version" data)))
+    (when (and (realp id) (> id (account-high-water account)))
+      (setf (account-high-water account) (floor id))))
+  (cond ((equal name "improvement.created")
+         (push (cons (gethash "version" data) (gethash "component" data))
+               (account-components account)))
+        ((equal name "improvement.promoted")
+         (let* ((id (gethash "version" data))
+                (component (or (gethash "component" data)
+                               (cdr (assoc id (account-components account)
+                                           :test #'equal)))))
+           (when (member (gethash "kept" data) '("yes" "failed") :test #'equal)
+             (push id (account-sourced account)))
+           (push id (cdr (or (assoc component (account-lineages account) :test #'equal)
+                             (first (push (cons component '())
+                                          (account-lineages account))))))))
+        ((equal name "improvement.reverted")
+         (a:when-let ((entry (assoc (gethash "component" data)
+                                    (account-lineages account) :test #'equal)))
+           (pop (cdr entry))))))
+
+(defun ledger-account (&optional (path (evolution-ledger-path)))
+  "The improvement ledger, folded once.
+
 Pins are not reconstructed: after a restart every task is dead, and pins are
 bounded by task lifetime by proven law."
-  (let ((lineages '()) (components '()))
+  (let ((account (make-account)))
     (when (probe-file path)
       (with-open-file (in path :external-format :utf-8)
         (loop for line = (read-line in nil nil)
               while line
               do (let* ((table (ignore-errors (jzon:parse line)))
-                        (name (and table (gethash "event" table)))
-                        (data (and table (gethash "data" table))))
-                   (when name
-                     (cond ((equal name "improvement.created")
-                            (setf components
-                                  (acons (gethash "version" data)
-                                         (gethash "component" data) components)))
-                           ((equal name "improvement.promoted")
-                            (let* ((id (gethash "version" data))
-                                   (component (cdr (assoc id components :test #'equal))))
-                              (push id (cdr (or (assoc component lineages :test #'equal)
-                                                (first (push (cons component '())
-                                                             lineages)))))))
-                           ((equal name "improvement.reverted")
-                            (a:when-let ((entry (assoc (gethash "component" data)
-                                                       lineages :test #'equal)))
-                              (pop (cdr entry))))))))))
-    lineages))
+                        (name (and (hash-table-p table) (gethash "event" table)))
+                        (data (and name (gethash "data" table))))
+                   (when (hash-table-p data) (fold-ledger-line account name data))))))
+    account))
+
+(defun reconstruct-lineage (&optional (path (evolution-ledger-path)))
+  "The promoted lineage per component, folded from the improvement.* ledger."
+  (account-lineages (ledger-account path)))
+
+(defun ledger-high-water (&optional (path (evolution-ledger-path)))
+  "The largest version id the ledger has ever recorded.
+
+Identity comes from the ledger and code comes from the store, and the two
+never disagree because they answer different questions. The store holds
+promoted versions only; the ledger holds every one that was ever minted, which
+is what an id has to clear to be new."
+  (account-high-water (ledger-account path)))
+
+(defun entry-for (id stored) (find id stored :key #'first))
+(defun source-for (id stored) (third (entry-for id stored)))
+
+(defun restorable-promotion (component registry stored)
+  "The version a restart would resolve COMPONENT to: the newest one still in
+this process's lineage that the store can also supply.
+
+THE LINEAGE, not the highest id in the directory. A version the organism
+reverted is out of the lineage and must never be what a restart resolves,
+however its file came to still be there."
+  (find-if (lambda (id) (source-for id stored))
+           (viva.evolution:lineage-of registry component)))
+
+(defun reconcile-capabilities (evolver &optional (stored (stored-capabilities)))
+  "Every disagreement between what this process resolves and what a restart
+would restore. Empty means the two accounts agree. Each finding names a
+component and either what the two accounts say, or a version the store holds
+that no lineage accounts for.
+
+B12 IS WHY THIS EXISTS. Cordis reported a clean unload for every failure mode
+viva actually has, because what it reported was what it had asked for. A
+withdrawal that says it happened and did not is the one failure a
+self-modifying system cannot notice from the inside, so this looks at the
+disk instead of trusting the transition that fired.
+
+A promoted version COMPILE kept nothing of has no source to write and is not
+a disagreement -- there was never anything for the store to hold."
+  (let ((registry (evolver-registry evolver)))
+    (append (unaccounted-findings registry stored)
+            (resolution-findings evolver registry stored))))
+
+(defun unaccounted-findings (registry stored)
+  "Stored versions no lineage names: a reverted version whose file survived,
+or a file somebody wrote in. Neither is restored, and both are said out loud
+-- promotion has one door, and a store that quietly held a second one would
+be exactly the back door the table exists to close."
+  (loop for entry in stored
+        for id = (first entry)
+        for component = (second entry)
+        unless (member id (viva.evolution:lineage-of registry component))
+          collect (list :component component :unaccounted id)))
+
+(defun resolution-findings (evolver registry stored)
+  (let ((components '())
+        (findings '()))
+    (maphash (lambda (id source)
+               (declare (ignore source))
+               (a:when-let ((component (viva.evolution:version-component registry id)))
+                 (pushnew component components :test #'equal)))
+             (evolver-sources evolver))
+    (dolist (entry stored) (pushnew (second entry) components :test #'equal))
+    (dolist (component components findings)
+      (let ((resolves (viva.evolution:current-promoted registry component))
+            (restores (restorable-promotion component registry stored)))
+        (unless (or (eql resolves restores)
+                    (and (null restores)
+                         (null (gethash resolves (evolver-sources evolver)))))
+          (push (list :component component :resolves resolves :restores restores)
+                findings))))))
+
+(defun finding-text (finding)
+  (a:if-let ((unaccounted (getf finding :unaccounted)))
+    (format nil "~a has version ~a in the store and in no lineage"
+            (getf finding :component) unaccounted)
+    (format nil "~a resolves ~a, a restart restores ~a"
+            (getf finding :component)
+            (or (getf finding :resolves) "nothing")
+            (or (getf finding :restores) "nothing"))))
+
+(defun announce-reconciliation (evolver options)
+  "Look after the organism moves its own default, and say what was found.
+
+Every lifecycle verb before this published what it DECIDED. This publishes
+what is TRUE afterwards, which is the only one of the two an audit can use."
+  (let ((findings (reconcile-capabilities evolver)))
+    (evolution-publish
+     evolver nil "improvement.reconciled"
+     (event::object "agree" (if findings "no" "yes")
+                    "disagreements" (length findings)
+                    "detail" (when findings
+                               (format nil "~{~a~^; ~}" (mapcar #'finding-text findings))))
+     :cell (getf options :cell))
+    findings))
+
+(defun keep-promotion (evolver id component)
+  "Write the promoted version's source beside its ledger entry. Returns the
+path, :FAILED, or :NONE.
+
+THREE OUTCOMES, NOT TWO. A version created from a live function object has no
+source and gets no file -- COMPILE kept nothing, so there is nothing to write.
+A version whose write fails has a source and no file, and that is a promoted
+default with no code behind it. Both leave the store empty and one of them is
+a fault; a single word for the pair would put the fault where nobody could
+find it, which is the shape of the failure B12 named."
+  (a:if-let ((kept (bt:with-lock-held ((evolver-lock evolver))
+                     (gethash id (evolver-sources evolver)))))
+    (or (write-capability id component (kept-source kept) (kept-note kept)) :failed)
+    :none))
+
+(defun kept-word (outcome)
+  (case outcome (:none "no source") (:failed "failed") (t "yes")))
+
+(defun restore-version (evolver registry id component source note)
+  "Compile SOURCE and place it at ID. Returns the new registry, or NIL.
+
+A source that will not compile any more -- a macro that moved, an SBCL that
+changed under it -- costs the organism that one capability and is said out
+loud. The file stays where it is, because the next thing a person does is
+read it."
+  (multiple-value-bind (function condition) (compile-capability component source)
+    (let ((next (and function (viva.evolution:rehydrate-promoted registry id component))))
+      (cond (next (setf (gethash id (evolver-functions evolver)) function
+                        (gethash id (evolver-sources evolver))
+                        (make-kept :source source :note note))
+                  next)
+            (t (format *error-output*
+                       "~&viva capability: version ~d (~a) not restored: ~a~%"
+                       id component (or condition "the registry would not place it"))
+               nil)))))
+
+(defun restore-lineage (evolver registry component lineage stored)
+  "Bring COMPONENT's lineage back, oldest promotion first, so the same
+promotions land in the same order and leave the same head.
+
+THE WHOLE LINEAGE, not only the head: reversion steps back to the version
+before, and a version restored without its predecessors has nothing to step
+back to."
+  (let ((count 0) (missing '()))
+    (dolist (id (reverse lineage))
+      (a:if-let ((entry (entry-for id stored)))
+        (a:when-let ((next (restore-version evolver registry id component
+                                            (third entry) (fourth entry))))
+          (setf registry next)
+          (incf count))
+        (push id missing)))
+    (values registry count missing)))
+
+(defun report-missing (missing sourced)
+  "Name the promotions that had a source and whose source the store cannot
+supply. A promoted default with no code behind it steps silently back to its
+predecessor at a restart, and this is the line that says it did."
+  (a:when-let ((lost (remove-if-not (lambda (each) (member (second each) sourced)) missing)))
+    (format *error-output*
+            "~&viva capability: the ledger promotes ~d version~:p the store cannot ~
+supply: ~{~{~a ~a~}~^, ~}~%" (length lost) lost)))
+
+(defun restore-capabilities (evolver)
+  "Bring back the ledger's account of what this organism promoted, compiled
+from the store. Returns how many came back.
+
+BEFORE THE OWNER THREAD STARTS, and before this evolver is reachable through
+*EVOLVER*: nothing can observe a half-restored registry, so nothing here takes
+a lock."
+  (let* ((account (ledger-account))
+         (stored (stored-capabilities))
+         (registry (evolver-registry evolver))
+         (restored 0)
+         (missing '()))
+    (loop for (component . lineage) in (account-lineages account)
+          when (stringp component)
+            do (multiple-value-bind (next count lost)
+                   (restore-lineage evolver registry component lineage stored)
+                 (setf registry next)
+                 (incf restored count)
+                 (dolist (id lost) (push (list component id) missing))))
+    (report-missing missing (account-sourced account))
+    (report-unaccounted registry stored)
+    (setf (evolver-registry evolver)
+          (viva.evolution:reserve-identities registry (account-high-water account)))
+    restored))
+
+(defun report-unaccounted (registry stored)
+  (a:when-let ((findings (unaccounted-findings registry stored)))
+    (format *error-output* "~&viva capability: not restored -- ~{~a~^; ~}~%"
+            (mapcar #'finding-text findings))))

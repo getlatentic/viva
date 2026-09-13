@@ -84,7 +84,17 @@ when the run started -- that is what lets a mid-run change take effect here."
                        "stream" nil)))
     (when tools
       (setf (gethash "tools" payload) (map 'vector #'tool-json tools)
-            (gethash "parallel_tool_calls" payload) (agent:agent-parallel-tools-p agent)))
+            (gethash "parallel_tool_calls" payload) (agent:agent-parallel-tools-p agent)
+            ;; SPELLED OUT, because not every OpenAI-compatible endpoint defaults
+            ;; to it. OpenAI does; Bedrock's OpenAI-compatible gateway does not,
+            ;; and gpt-oss-120b there called a tool 0 times in 6 with the field
+            ;; absent against 3 in 6 with it present. A harness whose whole loop
+            ;; is tool calls cannot leave that to a default.
+            ;;
+            ;; AUTO, NOT REQUIRED. Reaching for the stronger word made it worse
+            ;; on the same measurement -- 1 in 6 -- because a model forced to
+            ;; call on a turn that wanted prose calls something irrelevant.
+            (gethash "tool_choice" payload) "auto"))
     (let ((final (provider:augment-payload (provider-for agent) payload agent)))
       ;; After AUGMENT-PAYLOAD: a provider may still change what is sent, and
       ;; observing before it would report a body that never left.

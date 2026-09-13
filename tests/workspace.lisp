@@ -2027,3 +2027,434 @@ body~%~@[~%```~a~%print(1)~%```~%~]" name (and (plusp (length language)) languag
     (true (search "\"describe\"" taught))
     (true (search "viva" registry:*describe-request*))
     (true (search "describe" registry:*describe-request*))))
+
+;;; ---------------------------------------------------------------------------
+;;; The model catalogue
+;;; ---------------------------------------------------------------------------
+
+(defmacro with-every-key (&body body)
+  "Run BODY as though every catalogue key were configured.
+
+SETF and restore rather than LET: the catalogue reads the process environment
+through SB-POSIX, which a dynamic binding does not touch."
+  `(let ((keys '("OPENAI_API_KEY" "OPENROUTER_API_KEY" "DEEPSEEK_API_KEY"
+                 "BEDROCK_API_KEY"))
+         ;; CLEARED, because the repository's own .env pins some of these and a
+         ;; test that read them would assert against whoever edited that file.
+         (pins '("OPENAI_MODEL" "OPENROUTER_MODEL" "DEEPSEEK_MODEL" "BEDROCK_MODEL"))
+         (restore '()))
+     (unwind-protect
+          (progn (dolist (name keys)
+                   (push (cons name (sb-posix:getenv name)) restore)
+                   (sb-posix:setenv name "test-key" 1))
+                 (dolist (name pins)
+                   (push (cons name (sb-posix:getenv name)) restore)
+                   (sb-posix:unsetenv name))
+                 ,@body)
+       (loop for (name . was) in restore
+             do (if was (sb-posix:setenv name was 1) (sb-posix:unsetenv name))))))
+
+(define-test "one endpoint offers many models, and every label is its own"
+  ;; TWO ARMS UNDER ONE NAME is how two sweeps stop being comparable, and the
+  ;; experiment-facing name `gpt-oss-120b` already belongs to OpenRouter's copy
+  ;; of those weights. Bedrock serves the same model under a different seller,
+  ;; so its entries carry the endpoint in the label.
+  (with-every-key
+    (let* ((available (models:available-models))
+           (labels* (mapcar #'models:choice-label available)))
+      (is = (length labels*) (length (remove-duplicates labels* :test #'string-equal))
+          "two choices answer to one name: ~s" labels*)
+      (dolist (wanted '("bedrock/openai.gpt-oss-120b" "bedrock/openai.gpt-oss-20b"
+                        "deepseek/deepseek-v4-flash"))
+        (true (find wanted available :key #'models:choice-label :test #'string=)
+              "~a is not on offer: ~s" wanted labels*))
+      ;; The endpoint's own name still resolves, to the first it offers.
+      (is string= "openai.gpt-oss-120b"
+          (models:choice-model (models:resolve-model "bedrock"))
+          "`bedrock` does not name a model any more")
+      (is string= "openai.gpt-oss-20b"
+          (models:choice-model (models:resolve-model "bedrock/openai.gpt-oss-20b")))
+      ;; And so does a raw model id, which is how a recorded session comes back.
+      (is string= "openai.gpt-oss-20b"
+          (models:choice-model (models:resolve-model "openai.gpt-oss-20b"))))))
+
+(define-test "a sweep over every arm is one per endpoint, not one per model"
+  ;; An endpoint serving eight models would otherwise turn one battery into
+  ;; eight, which is a bill rather than a default.
+  (with-every-key
+    (let* ((defaults (models:endpoint-defaults (models:available-models)))
+           (endpoints (mapcar (lambda (choice)
+                                (or (models:choice-endpoint-label choice)
+                                    (models:choice-label choice)))
+                              defaults)))
+      (is = (length endpoints) (length (remove-duplicates endpoints :test #'equal))
+          "an endpoint appears twice in the defaults: ~s" endpoints)
+      (is = 4 (length defaults) "the default sweep changed size: ~s"
+          (mapcar #'models:choice-label defaults)))))
+
+(define-test "a pinned model wins, and does not cost the endpoint its others"
+  ;; BEDROCK_MODEL names what `bedrock` means on this machine -- the repository
+  ;; pins one -- and the catalogue's own list stays reachable beside it, so a
+  ;; pin narrows the default without hiding the menu.
+  (with-every-key
+    (sb-posix:setenv "BEDROCK_MODEL" "qwen.qwen3-vl-235b-a22b-instruct" 1)
+    (unwind-protect
+         (let ((available (models:available-models)))
+           (is string= "qwen.qwen3-vl-235b-a22b-instruct"
+               (models:choice-model (models:resolve-model "bedrock"))
+               "the pin did not decide what `bedrock` means")
+           (true (find "bedrock/openai.gpt-oss-120b" available
+                       :key #'models:choice-label :test #'string=)
+                 "a pin hid the rest of the endpoint's models"))
+      (sb-posix:unsetenv "BEDROCK_MODEL"))))
+
+(define-test "a provider's models can be written down without a release"
+  ;; A provider serves a family that changes faster than this table does, and
+  ;; the key is written once above the list either way -- which is the whole
+  ;; reason models live under a provider rather than beside a key each.
+  (with-every-key
+    (let ((auth (com.inuoe.jzon:parse
+                 "{\"deepseek\": {\"apiKey\": \"k\",
+                                 \"models\": [\"deepseek-v4-pro\", \"deepseek-v4-flash\"]}}")))
+      (is equal '("deepseek-v4-pro" "deepseek-v4-flash")
+          (viva.auth:entry-list "deepseek" "models" :auth auth)
+          "the written-down list did not come back")
+      ;; REPLACES rather than merges: four ids written down means those four,
+      ;; and a merge would keep handing back a fifth they had removed.
+      (let ((entry (find "deepseek" models::+catalogue+
+                         :key (lambda (each) (getf each :label)) :test #'string=)))
+        (is equal '("deepseek-v4-pro" "deepseek-v4-flash")
+            (models::listed-models entry auth))
+        (is equal '("deepseek-v4-flash") (models::listed-models entry nil)
+            "with nothing written down, the built-in list must stand")))))
+
+(define-test "an experiment's arm names survive a relabelling of the catalogue"
+  ;; The write-ups say `gpt-oss-120b` and `deepseek-flash`, and several
+  ;; experiments look their arm up by that exact string. Model labels became
+  ;; `provider/id` and these must not have moved with them.
+  (with-every-key
+    (let ((names (mapcar #'cli:arm-label (cli:available-arms))))
+      (dolist (wanted '("gpt-oss-120b" "deepseek-flash" "bedrock" "openai"))
+        (true (member wanted names :test #'string=)
+              "the ~s arm was renamed; arms are now ~s" wanted names))
+      ;; And a model asked for by name is its own column, not the provider's.
+      (is string= "bedrock/zai.glm-5"
+          (cli:arm-label (first (cli:arms-named '("bedrock/zai.glm-5"))))
+          "a named model borrowed the provider's column name"))))
+
+(defun catalogue-entry (label)
+  (find label models::+catalogue+ :key (lambda (each) (getf each :label)) :test #'string=))
+
+(define-test "a keyless provider is configured by being named"
+  ;; A server on your own machine needs no key, so something else has to decide
+  ;; whether to offer it. Pi's rule: a keyless provider still has auth
+  ;; semantics, and what they report is whether it is configured. Without that
+  ;; it is either always offered and usually dead, or never offered at all --
+  ;; which is what happened when only a variable could configure it and the
+  ;; variable was renamed.
+  (let ((entry (catalogue-entry "local"))
+        (named (com.inuoe.jzon:parse
+                "{\"local\": {\"endpoint\": \"http://127.0.0.1:1/v1/chat/completions\"}}"))
+        (other (com.inuoe.jzon:parse "{\"deepseek\": {\"apiKey\": \"k\"}}")))
+    (true (models::configured-p entry named) "naming it did not configure it")
+    (false (models::configured-p entry other) "an unnamed local server was offered")
+    ;; And an endpoint in the environment still does it, as it always did.
+    (let ((before (sb-posix:getenv "VIVA_LOCAL_ENDPOINT")))
+      (unwind-protect
+           (progn (sb-posix:setenv "VIVA_LOCAL_ENDPOINT" "http://localhost:1/v1/chat/completions" 1)
+                  (true (models::configured-p entry other)
+                        "the environment stopped configuring a local server"))
+        (if before
+            (sb-posix:setenv "VIVA_LOCAL_ENDPOINT" before 1)
+            (sb-posix:unsetenv "VIVA_LOCAL_ENDPOINT"))))))
+
+(define-test "a provider that lists and discovers nothing offers nothing"
+  ;; A choice whose model is NIL would reach the wire as a request for "". The
+  ;; endpoint is a dead port ON PURPOSE: ollama is a dynamic provider, so a test
+  ;; that let it reach the real one would pass or fail on whether a server
+  ;; happened to be running on this machine.
+  (viva.discovery:forget)
+  (let ((entry (catalogue-entry "ollama"))
+        (bare (com.inuoe.jzon:parse
+               "{\"ollama\": {\"endpoint\": \"http://127.0.0.1:1/v1/chat/completions\"}}"))
+        (listed (com.inuoe.jzon:parse
+                 "{\"ollama\": {\"endpoint\": \"http://127.0.0.1:1/v1/chat/completions\",
+                                \"models\": [\"qwen3-coder:30b\"]}}")))
+    (true (models::configured-p entry bare) "naming it did not configure it")
+    (false (models::entry-choices entry :auth bare)
+           "a provider with nothing to offer offered something")
+    ;; A written-down list wins over asking, so a machine can narrow what a
+    ;; server would otherwise volunteer.
+    (let ((offered (models::entry-choices entry :auth listed)))
+      (is = 1 (length offered))
+      (is string= "ollama/qwen3-coder:30b" (models:choice-label (first offered)))
+      (true (models:choice-keyless (first offered)) "ollama is not keyed")))
+  (viva.discovery:forget))
+
+(define-test "only a server on this machine is probed for liveness"
+  ;; A hosted endpoint that will not answer is a network fault to report, not a
+  ;; provider to drop. A local one that is simply not running is neither.
+  (let* ((dead (com.inuoe.jzon:parse
+                "{\"local\": {\"endpoint\": \"http://127.0.0.1:1/v1/chat/completions\"}}"))
+         (local (first (models::entry-choices (catalogue-entry "local") :auth dead)))
+         (hosted (first (models::entry-choices
+                         (catalogue-entry "deepseek")
+                         :auth (com.inuoe.jzon:parse "{\"deepseek\": {\"apiKey\": \"k\"}}")))))
+    (true local "the local choice was not built")
+    (true hosted "the hosted choice was not built")
+    (false (cli::answering-p local) "a local server nothing is behind was kept")
+    (true (cli::answering-p hosted) "a hosted provider was probed and dropped")))
+
+(define-test "the no-model advice names only variables that exist"
+  ;; A keyless provider has no key to name. Mapping over every entry printed
+  ;; `BEDROCK_API_KEY, NIL, NIL` at the person who had just failed to configure
+  ;; anything, which is the worst possible audience for a NIL.
+  (let ((named (remove nil (mapcar (lambda (entry) (getf entry :key))
+                                   models::+catalogue+))))
+    (true (member "DEEPSEEK_API_KEY" named :test #'string=))
+    (dolist (each named)
+      (true (stringp each) "a catalogue entry offers ~s as a key variable" each))
+    ;; And the keyless ones are genuinely keyless, or this test proves nothing.
+    (true (find-if (lambda (entry) (getf entry :keyless)) models::+catalogue+)
+          "no keyless provider is in the catalogue any more")))
+
+(define-test "no Claude id is on the catalogue"
+  ;; Anything anthropic.* on Bedrock is sold by Anthropic through AWS
+  ;; Marketplace, and AWS promotional credits never pay for it -- the run
+  ;; succeeds and the invoice arrives a month later. Adding one has to be
+  ;; deliberate, so this fails if one appears by habit.
+  (with-every-key
+    (dolist (choice (models:available-models))
+      (false (search "anthropic." (models:choice-model choice))
+             "~a names a Marketplace-billed model: ~a"
+             (models:choice-label choice) (models:choice-model choice)))))
+
+;;; ---------------------------------------------------------------------------
+;;; Asking a server what it serves
+;;; ---------------------------------------------------------------------------
+
+(define-test "a chat endpoint names the listing beside it"
+  (is string= "http://localhost:11434/v1/models"
+      (viva.discovery:models-url "http://localhost:11434/v1/chat/completions"))
+  (is string= "http://localhost:11434"
+      (viva.discovery::base-of "http://localhost:11434/v1/chat/completions"))
+  ;; Something that is not shaped like one is left alone rather than mangled.
+  (is string= "http://elsewhere/custom"
+      (viva.discovery:models-url "http://elsewhere/custom")))
+
+(define-test "a discovered list is asked for once, then remembered"
+  ;; Resolving a model happens at every session start. A server that has stopped
+  ;; answering must cost one bounded wait rather than one per session, so a
+  ;; failure is remembered exactly as long as a success would be.
+  (viva.discovery:forget)
+  (let* ((asked 0)
+         (endpoint "http://test.invalid/v1/chat/completions")
+         (how (lambda (where) (declare (ignore where)) (incf asked) '("a" "b"))))
+    (is equal '("a" "b") (viva.discovery:models-at endpoint :how how))
+    (is equal '("a" "b") (viva.discovery:models-at endpoint :how how))
+    (is = 1 asked "the server was asked twice for one answer")
+    ;; And REFRESH means ask again.
+    (viva.discovery:models-at endpoint :how how :refresh t)
+    (is = 2 asked "refresh did not reach the server")
+    ;; A failure is remembered too, or a dead server costs a wait per session.
+    (viva.discovery:forget)
+    (let ((failures 0))
+      (flet ((dead (where) (declare (ignore where)) (incf failures) nil))
+        (false (viva.discovery:models-at endpoint :how #'dead))
+        (false (viva.discovery:models-at endpoint :how #'dead))
+        (is = 1 failures "a server that answered nothing was asked twice")))
+    (viva.discovery:forget)))
+
+(define-test "a server that will not answer is an ordinary state"
+  ;; Not a fault to propagate into a session start: a local server being off is
+  ;; the normal case, and it must not signal out of resolving a model.
+  (viva.discovery:forget)
+  (false (viva.discovery::models-at-openai "http://127.0.0.1:1/v1/chat/completions")
+         "an unreachable server signalled instead of answering nothing")
+  (viva.discovery:forget))
+
+;;; ---------------------------------------------------------------------------
+;;; Capabilities, declared rather than discovered
+;;;
+;;; The bare harness is the baseline and everything past it is something the
+;;; configuration asked for. A built-in and a file somebody wrote differ only in
+;;; where the code came from.
+;;; ---------------------------------------------------------------------------
+
+(define-test "a capability setting names capabilities"
+  (is equal '() (extension:declared "off") "off asked for something")
+  (is equal '() (extension:declared "") "an absent setting asked for something")
+  (is equal '() (extension:declared nil))
+  ;; `on` STILL MEANS THE DOOR. KC6's three arms are written in these words and
+  ;; its published results name them, so the words that produced numbers keep
+  ;; meaning what they meant.
+  (is equal '("self-modify") (extension:declared "on"))
+  (is equal '("self-modify") (extension:declared "self-modify"))
+  ;; A list, because a build offering three can be asked for two.
+  (is equal '("self-modify" "recall") (extension:declared "self-modify, recall"))
+  (is equal '("a" "b") (extension:declared " a ,  b ") "spacing was not forgiven"))
+
+(define-test "the self-modification door is a declared capability"
+  ;; THE TEST OF THE WHOLE SHAPE. The door was two keyword arguments every entry
+  ;; point had to assemble, and one of them forgot the prompt half for a while.
+  ;; If it cannot be expressed as a name in a list with nothing lost, the model
+  ;; does not hold.
+  (true (member "self-modify" (extension:builtin-names) :test #'string=)
+        "this build does not offer self-modify: ~s" (extension:builtin-names))
+  (true (plusp (length (extension:builtin-description "self-modify")))
+        "a capability nobody can read about is not discoverable")
+  (multiple-value-bind (tools prompts complaints)
+      (extension:contributions '("self-modify"))
+    (false complaints "asking for a capability this build has complained: ~s" complaints)
+    (is = 8 (length tools) "the door offers ~d tools, not the eight it has" (length tools))
+    (is = 1 (length prompts) "a door with tools and no prompt is one nothing can be told about")
+    (dolist (verb '("create_capability" "call_capability" "show_capability"
+                    "promote_capability" "revert_capability"))
+      (true (find verb tools :key #'tool:tool-name :test #'string=)
+            "~a is not among what the capability contributes" verb))))
+
+(define-test "a capability nobody registered is a complaint, not a silence"
+  ;; The only thing worse than a setting that does nothing is one that does
+  ;; nothing quietly -- and the message has to say what this build does offer,
+  ;; or the reader has no way to find the name they meant.
+  (multiple-value-bind (tools prompts complaints)
+      (extension:contributions '("no-such-capability"))
+    (false tools) (false prompts)
+    (is = 1 (length complaints))
+    (true (search "no-such-capability" (first complaints)))
+    (true (search "self-modify" (first complaints))
+          "the complaint does not say what this build offers: ~s" (first complaints)))
+  ;; And one bad name does not cost the good ones.
+  (multiple-value-bind (tools prompts complaints)
+      (extension:contributions '("self-modify" "no-such-capability"))
+    (true (plusp (length tools)) "a bad name took the working capability with it")
+    (is = 1 (length prompts))
+    (is = 1 (length complaints))))
+
+(define-test "a capability is asked what it offers at request time"
+  ;; Registered at load, CALLED LATE. What is behind the door changes while a run
+  ;; is going -- the organism promotes a capability and the next request has to
+  ;; name it -- so a list captured at registration would be the list before any
+  ;; of that happened.
+  (let ((asked 0))
+    (unwind-protect
+         (progn
+           (extension:register-builtin
+            "counts-its-askings"
+            (lambda () (incf asked) (list :tools '() :prompt "x"))
+            :description "A capability that records being asked.")
+           (is = 0 asked "registering called it")
+           (extension:contributions '("counts-its-askings"))
+           (extension:contributions '("counts-its-askings"))
+           (is = 2 asked "it was asked ~d times for two requests" asked))
+      (setf viva.extension::*builtins*
+            (remove "counts-its-askings" viva.extension::*builtins*
+                    :key #'car :test #'equal)))))
+
+;;; ---------------------------------------------------------------------------
+;;; A capability somebody wrote, named by path
+;;; ---------------------------------------------------------------------------
+
+(defun write-extension (path name tool-name)
+  "An extension file that registers one tool, so loading it is observable."
+  (ensure-directories-exist path)
+  (with-open-file (out path :direction :output :if-exists :supersede)
+    (format out "(in-package #:viva.extension)~%~
+(tool:define-tool ~a (args context)~%  :name \"~a\"~%  ~
+:description \"Proves a declared file was loaded.\"~%  :parameters ()~%  ~
+(tool:make-tool-result :output \"loaded\"))~%~
+(defextension \"~a\" :description \"Declared by path.\" (register-tool ~a))~%"
+            tool-name tool-name name tool-name))
+  path)
+
+(define-test "a capability setting tells a name from a path"
+  (true (extension:path-entry-p "~/.viva/extensions/recall.lisp"))
+  (true (extension:path-entry-p "/tmp/a.lisp"))
+  (true (extension:path-entry-p "recall.lisp") "a bare filename is still a file")
+  (false (extension:path-entry-p "self-modify") "a name was read as a path")
+  ;; The two come back apart, because a name contributes and a path must first
+  ;; be loaded -- under a gate that a name does not need.
+  (multiple-value-bind (names files)
+      (extension:declared "self-modify, /tmp/a.lisp, recall")
+    (is equal '("self-modify" "recall") names)
+    (is equal '("/tmp/a.lisp") files))
+  ;; A config file is written by hand, so `~` has to mean what it means there.
+  (multiple-value-bind (names files) (extension:declared "~/x.lisp")
+    (false names)
+    (is equal (list (concatenate 'string
+                                 (uiop:native-namestring (user-homedir-pathname))
+                                 "x.lisp"))
+        files)))
+
+(define-test "a declared file in the machine's own directory is loaded"
+  (let* ((home (throwaway-directory))
+         (file (format nil "~a/extensions/declared-here.lisp" home))
+         (before viva.trust::*trust-file*))
+    (unwind-protect
+         (progn
+           (setf viva.trust::*trust-file* (format nil "~a/trusted.sexp" home))
+           (write-extension file "declared-here" "declared_here_probe")
+           (with-repository (environment)
+             (false (extension:load-declared-file environment file)
+                    "a file in the person's own directory needed trusting")
+             (true (find "declared_here_probe" (extension:all-tools)
+                         :key #'tool:tool-name :test #'string=)
+                   "the file loaded and its tool did not arrive")))
+      (setf viva.trust::*trust-file* before)
+      (ignore-errors (uiop:delete-directory-tree
+                      (uiop:parse-native-namestring (format nil "~a/" home)) :validate t)))))
+
+(define-test "a declared file inside an untrusted project is refused"
+  ;; Naming a path in a project's own .viva/config would otherwise be a way for
+  ;; a clone to run code by being opened.
+  (with-repository (environment)
+    (let* ((project (env:env-cwd environment))
+           (file (format nil "~a/.viva/extensions/from-the-tree.lisp" project))
+           (before viva.trust::*trust-file*))
+      (unwind-protect
+           (progn
+             (setf viva.trust::*trust-file*
+                   (format nil "~a/trusted-for-this-test.sexp" (throwaway-directory)))
+             (write-extension file "from-the-tree" "from_the_tree_probe")
+             (let ((complaint (extension:load-declared-file environment file)))
+               (true complaint "an untrusted project's file was loaded")
+               (true (search "not a trusted project" complaint)
+                     "the refusal does not say why: ~s" complaint))
+             ;; Trusted, it loads -- or the gate is a wall.
+             (trust:trust environment project)
+             (false (extension:load-declared-file environment file)
+                    "a trusted project's file was still refused"))
+        (setf viva.trust::*trust-file* before)))))
+
+(define-test "the trust gate is not walked around by spelling"
+  ;; THE HOLE THIS SHIPPED WITH. The first version compared raw text, so a file
+  ;; inside the project named through a symlink did not match the project's own
+  ;; prefix and loaded anyway. On macOS /tmp is such a link, which is how it was
+  ;; found. TRUST:PERMITTED-P canonicalises both sides.
+  (with-repository (environment)
+    (let* ((project (env:env-cwd environment))
+           (file (format nil "~a/.viva/extensions/by-a-link.lisp" project))
+           (link (format nil "/tmp/viva-link-~36r" (random (expt 2 40) (make-random-state t))))
+           (before viva.trust::*trust-file*))
+      (unwind-protect
+           (progn
+             (setf viva.trust::*trust-file*
+                   (format nil "~a/trusted-for-the-link.sexp" (throwaway-directory)))
+             (write-extension file "by-a-link" "by_a_link_probe")
+             (sb-posix:symlink project link)
+             (let* ((through-the-link
+                      (format nil "~a/.viva/extensions/by-a-link.lisp" link))
+                    (complaint (extension:load-declared-file environment through-the-link)))
+               (true complaint
+                     "a file inside an untrusted project loaded when named through a link")
+               (true (search "not a trusted project" complaint))))
+        (setf viva.trust::*trust-file* before)
+        (ignore-errors (delete-file link))))))
+
+(define-test "a declared file that is not there says so"
+  (with-repository (environment)
+    (let ((complaint (extension:load-declared-file
+                      environment
+                      (format nil "~a/nothing-here.lisp" (env:env-cwd environment)))))
+      (true complaint "a missing file loaded")
+      (true (search "no such file" complaint) "the complaint does not say what is wrong"))))

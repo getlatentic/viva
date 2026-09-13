@@ -13,6 +13,18 @@ mod tests {
     use serde_json::json;
     use std::time::Instant;
 
+    /// The budget for one frame, which depends on how the crate was built.
+    ///
+    /// 16ms is a claim about the SHIPPED client at sixty frames a second.
+    /// `cargo test` builds unoptimised, where the same draw costs 3.6ms against
+    /// 0.69ms release on one machine -- so the bound passed here and failed on
+    /// a CI runner at 16.85ms, reporting the profile rather than the code.
+    /// Debug carries the same claim scaled by that measured 5.2x, which still
+    /// catches a draw that got slow without failing for being a debug build.
+    fn frame_budget_ms() -> f64 {
+        if cfg!(debug_assertions) { 16.0 * 5.2 } else { 16.0 }
+    }
+
     fn big_model(turns: usize) -> Model {
         let mut model = Model::new("/w".into());
         model.sessions = vec![SessionInfo {
@@ -72,8 +84,9 @@ mod tests {
         let (_, small) = costs[0];
         let (_, large) = costs[2];
         println!("10 turns {small:.2}ms -> 400 turns {large:.2}ms  ({:.1}x)", large / small.max(0.001));
-        assert!(large < 16.0,
-                "a token costs {large:.2}ms at 400 turns, which is longer than a frame");
+        let budget = frame_budget_ms();
+        assert!(large < budget,
+                "a token costs {large:.2}ms at 400 turns, over the {budget:.0}ms a frame has");
         // FLAT, not merely fast. An absolute bound passes on a machine quick
         // enough to hide a cost that still grows with the session, and the
         // complaint is always about the long session.
@@ -102,9 +115,10 @@ mod tests {
         let each = started.elapsed() / rounds;
         println!("draw with {} entries: {:?} per frame",
                  model.current_conversation().unwrap().entries.len(), each);
+        let budget = frame_budget_ms();
         assert!(
-            each.as_millis() < 16,
-            "a frame took {each:?}, which is longer than a frame at 60fps"
+            each.as_secs_f64() * 1000.0 < budget,
+            "a frame took {each:?}, over the {budget:.0}ms a frame has at 60fps"
         );
     }
 

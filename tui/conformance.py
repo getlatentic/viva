@@ -18,6 +18,7 @@ either invented a failure or hid one:
 import codecs
 import subprocess
 import fcntl
+import json
 import os
 import pty
 import re
@@ -276,6 +277,44 @@ def whole_frame(client):
     return input_row(client).lstrip().startswith("│›")
 
 
+def recorded_conversation(home, cwd, turns=40):
+    """Write a session transcript, the way one that has been used looks.
+
+    THE CHECK MAKES ITS OWN. Resuming and surviving a restart both need a
+    session with a conversation longer than a screen, and the only content this
+    check can produce for free is a bang line -- which runs as a tool and is
+    never written to a transcript, so the session stays empty. It borrowed one
+    from whatever the machine happened to have instead, which is why a fresh
+    machine had nothing to resume.
+    """
+    session_id = time.strftime("%Y%m%d-%H%M%S") + "-C0DE"
+    # Universal time, which is 1900-based, not 1970.
+    now = int(time.time()) + 2208988800
+    flat = cwd.strip("/").replace("/", "-") or "root"
+    directory = os.path.join(home, "sessions", flat)
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, session_id + ".jsonl")
+    with open(path, "w", encoding="utf-8") as out:
+        out.write(json.dumps({"kind": "header", "version": 2, "id": session_id,
+                              "time": now, "cwd": cwd}) + "\n")
+        # CHAINED BY PARENT. A transcript is a tree, and the conversation is the
+        # path from the leaf back up it -- so entries written without parents are
+        # all roots, and a forty-turn file read back as one message.
+        previous = None
+        for turn in range(turns):
+            for role, text in (("user", f"question {turn} in the recorded conversation"),
+                               ("assistant", f"answer {turn}, long enough to occupy a row")):
+                entry_id = f"{turn:06X}{0 if role == 'user' else 1:02X}"
+                entry = {"kind": "message", "id": entry_id, "time": now + turn,
+                         "payload": {"role": role,
+                                     "content": [{"type": "text", "text": text}]}}
+                if previous:
+                    entry["parent"] = previous
+                out.write(json.dumps(entry) + "\n")
+                previous = entry_id
+    return session_id
+
+
 def own_daemon(cwd):
     """A daemon of our own, on its own socket, stopped afterwards.
 
@@ -291,8 +330,19 @@ def own_daemon(cwd):
     # the person's own daemon.
     own = tempfile.mkdtemp()
     socket_path = os.path.join(own, "check.sock")
-    environment = dict(os.environ, VIVA_SOCKET=socket_path,
+    # VIVA_HOME TOO, and it is the one that was missing. The socket and the
+    # journal were redirected; SESSIONS were not, so every session this check
+    # started was written into the person's own store -- and the picker below
+    # was reading their real work, which is why it passed on a machine with
+    # years of it and failed on a fresh one.
+    environment = dict(os.environ, VIVA_HOME=own, VIVA_SOCKET=socket_path,
                        VIVA_JOURNAL=os.path.join(own, "journal"))
+    # A KEY THAT CANNOT WORK, because a session needs a configured model before
+    # it will open and no check here sends a prompt. Isolating the home took the
+    # person's auth.json with it, so without this the daemon has no model and
+    # every session fails to start -- and the name is the message if one ever
+    # leaves. CI has always set exactly this, which is why it caught nothing.
+    environment.setdefault("OPENROUTER_API_KEY", "conformance-nothing-is-sent-to-this")
     launcher = os.path.join(os.path.dirname(ROOT), "bin", "viva")
     process = subprocess.Popen(
         [launcher, "daemon", "start", "--background"],
@@ -322,6 +372,8 @@ def main():
             fail(f"`viva` resolves to {target}, which is not a launcher")
 
     socket_path, environment = own_daemon(cwd)
+    # Before the client connects, so the picker has something recorded to find.
+    recorded_conversation(environment["VIVA_HOME"], os.path.realpath(cwd))
     client = Client(cwd, environment=environment)
     try:
         client.wait_for("sessions", 60, "the first frame")
@@ -591,12 +643,12 @@ def main():
             print("---- frame at failure ----")
             print("\n".join(client.term.lines()))
             fail(f"the client never got back to the daemon: {still_lost[0]!r}")
-        # A TAB, not a particular one. The session with a conversation here is
-        # the one this check resumed from the picker, and that lives in
-        # whichever directory it was recorded in -- so naming the project was
-        # asserting where the picker's newest session happened to be. Which
-        # session came back is checked below, by its conversation.
-        elif not any(tab != "viva" for tab in tabs_after):
+        # A TAB, counted, not named. Element zero of that row is the brand, so
+        # anything past it is a tab. Naming one was asserting the workspace is
+        # not called `viva` -- and on CI it is exactly that, `work/viva/viva`,
+        # so the check could not pass there however well the client behaved.
+        # WHICH session came back is checked below, by its conversation.
+        elif len(tabs_after) < 2:
             fail(f"no tab survived the restart: {tabs_before!r} -> {tabs_after!r}")
         else:
             ok("the daemon restarts under a live client, and the tab is still there")
@@ -655,6 +707,51 @@ def main():
             fail("the unknown command was sent to the model as a question")
         else:
             ok("an unknown slash command is refused, not forwarded")
+
+        # The model picker. Its rules are worth an invariant each, because the
+        # ones that matter are invisible in a screenshot: a digit must name the
+        # row it is drawn beside, and the model already answering must say so.
+        tabs_before = client.term.lines()[0].count("│")
+        client.send(b"/models\r")
+        client.pump(8.0)
+        frame = client.term.text()
+        if "which model answers" not in frame:
+            print(frame)
+            fail("/models did not open the picker")
+        elif " (1) " not in frame:
+            print(frame)
+            fail("the picker offered no numbered row")
+        else:
+            ok("/models opens a picker with numbered rows")
+            rows = [line for line in client.term.lines() if re.search(r"\(\d\) ", line)]
+            if len(rows) > 6:
+                fail(f"the picker drew {len(rows)} rows past its own window")
+            elif "(current)" not in frame:
+                print(frame)
+                fail("the picker does not say which model is already answering")
+            else:
+                ok(f"the window holds {len(rows)} rows and marks the current model")
+            # Typing narrows, and a digit takes a row from what is on screen.
+            client.send(b"nothing-matches-this")
+            client.pump(2.0)
+            if "no matches" not in client.term.text():
+                print(client.term.text())
+                fail("a filter that matches nothing does not say so")
+            else:
+                ok("a filter matching nothing says `no matches`")
+            for _ in range(len("nothing-matches-this")):
+                client.send(b"\x7f")
+            client.pump(2.0)
+            client.send(b"1")
+            client.pump(12.0)
+            tabs_after = client.term.lines()[0].count("│")
+            if tabs_after != tabs_before + 1:
+                print(client.term.text())
+                fail(f"a digit opened no session: {tabs_before} tabs -> {tabs_after}")
+            elif "which model answers" in client.term.text():
+                fail("the picker stayed open after choosing")
+            else:
+                ok("a digit opens a session and closes the picker")
 
         # THE MENU. A closed set nobody can see is barely better than no set.
         client.send(b"/")

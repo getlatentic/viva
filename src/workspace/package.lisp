@@ -29,6 +29,7 @@
            #:+data-directory+
            #:auth-path #:machine-config-file #:machine-memory-file
            #:sessions-directory #:journal-directory #:trust-file
+           #:capabilities-directory
            #:project-config-file #:project-memory-file
            #:services-directory #:retired-directory
            #:read-text #:read-bytes #:write-text #:file-info
@@ -42,7 +43,8 @@
   (:local-nicknames (#:a #:alexandria)
                     (#:jzon #:com.inuoe.jzon)
                     (#:env #:viva.env))
-  (:export #:key-for #:key-from-file #:read-auth #:configured-providers #:*file-shape*))
+  (:export #:key-for #:key-from-file #:entry-setting #:entry-list #:read-auth
+           #:configured-providers #:*file-shape*))
 
 (defpackage #:viva.glob
   (:use #:cl)
@@ -80,7 +82,7 @@
   (:export #:skill #:skill-name #:skill-description #:skill-content
            #:skill-path #:skill-hidden-p #:skill-language
            #:snippet-of #:uses-of #:note-use #:last-used-of #:uses-path #:+interpreters+
-           #:load-skills #:find-skill #:prompt-block #:invocation
+           #:load-skills #:find-skill #:prompt-block #:invocation #:escape-xml
            #:parse-frontmatter #:skill-warning #:warning-message #:warning-path))
 
 (defpackage #:viva.workspace
@@ -171,6 +173,9 @@
            #:extension-commands #:extension-hooks
            #:*registry* #:defextension #:register-extension #:loaded-extensions
            #:load-extensions #:extension-directories
+           #:register-builtin #:builtin-names #:builtin-description
+           #:declared #:contributions #:path-entry-p
+           #:load-declared-file #:load-declared-files
            #:extension-description
            #:register-tool #:register-command #:register-provider #:on #:fire #:decide
            #:all-providers #:extension-providers
@@ -218,13 +223,24 @@
            #:settings-reserve #:settings-keep-recent #:threshold #:due-p
            #:retained-tail #:rough-tokens #:summarise #:render #:+instruction+))
 
+(defpackage #:viva.discovery
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:dex #:dexador)
+                    (#:jzon #:com.inuoe.jzon))
+  (:export #:models-at #:forget #:models-url
+           #:models-at-openai #:ollama-chat-models))
+
 (defpackage #:viva.models
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:auth #:viva.auth)
+                    (#:discovery #:viva.discovery)
+                    (#:env #:viva.env)
                     (#:provider #:viva.provider))
   (:export #:choice #:choice-label #:choice-provider #:choice-model #:choice-effort
-           #:available-models #:resolve-model #:+catalogue+ #:choice-context-limit))
+           #:available-models #:resolve-model #:+catalogue+ #:choice-context-limit
+           #:choice-endpoint-label #:choice-keyless #:endpoint-defaults))
 
 (defpackage #:viva.harness
   (:use #:cl)
@@ -254,7 +270,7 @@
            #:agent-prompt-tokens #:agent-completion-tokens #:note-usage
            #:agent-gate #:suspend-agent #:resume-agent #:agent-suspended-p #:cancel-agent
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
-           #:agent-extension-directories #:agent-compaction #:agent-active-tools
+           #:agent-extension-files #:agent-extension-directories #:agent-compaction #:agent-active-tools
            #:agent-last-tokens
            #:compact-now #:set-model #:set-active-tools #:apply-settings
            #:send-message #:append-custom #:navigate #:tree-lines #:close-agent
@@ -268,7 +284,7 @@
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:env #:viva.env))
-  (:export #:load-settings #:setting #:source #:+settings+
+  (:export #:load-settings #:setting #:machine-setting #:source #:+settings+
            #:machine-config-path #:project-config-path #:environment-name
            #:read-config #:credential-like-p #:+reserved-variables+))
 

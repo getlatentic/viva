@@ -1,23 +1,19 @@
 ;;;; Settings, so they are not trapped in the clone.
 ;;;;
-;;;; `bin/viva` resolves its root to the REPOSITORY and sources that
-;;;; `.env`, which was fine while the only way to run viva was from inside
-;;;; the repository. Once `viva install` puts the command on PATH, a
-;;;; person's configuration lived in a directory they might never open again,
-;;;; and there was no way to say "this project uses deepseek, that one uses the
-;;;; local server".
+;;;; Two files, and the narrower one wins, so a person can say "this project
+;;;; uses deepseek, that one uses the local server":
 ;;;;
 ;;;;     ~/.viva/config      the machine's
 ;;;;     .viva/config        this project's, and it wins
 ;;;;
-;;;; KEY=VALUE, the same shape as `.env`, deliberately. Every setting here is
-;;;; a flat scalar, so a TOML or JSON parser would be a dependency taken on for
-;;;; nesting that does not exist -- and it is the format people already
-;;;; hand-edit in this project. `#` starts a comment.
+;;;; KEY=VALUE. Every setting here is a flat scalar, so a TOML or JSON parser
+;;;; would be a dependency taken on for nesting that does not exist. `#` starts
+;;;; a comment.
 ;;;;
-;;;; NO CREDENTIALS, and that is enforced rather than advised. `.env` is
-;;;; gitignored; `.viva/config` is a file people commit, so a key in one is
-;;;; a key published. A credential-shaped name is refused by name.
+;;;; NO CREDENTIALS, and that is enforced rather than advised. Keys live in
+;;;; `~/.viva/auth.json`, outside any repository; `.viva/config` is a file
+;;;; people commit, so a key in one is a key published. A credential-shaped
+;;;; name is refused by name.
 
 (in-package #:viva.config)
 
@@ -25,6 +21,7 @@
   '(("model" . "Which model to use, by catalogue name: deepseek, openai, openrouter, bedrock, local.")
     ("limit" . "Model requests one prompt may spend.")
     ("retain" . "Run the retention policy after each task: true or false.")
+    ("capabilities" . "Which capabilities to enable, comma separated: a name this build offers, or a path to a file you wrote.")
     ("colour" . "Paint output: true, false, or unset to follow the terminal.")
     ("root" . "Refuse any path outside this directory.")
     ("context-limit" . "How much context the model will accept.")
@@ -71,8 +68,9 @@ one that is missing, because you go looking at the wrong thing."
                             (push (format nil "~a:~d is neither a comment nor NAME=VALUE" path number)
                                   complaints)))
                          ((credential-like-p name)
-                          (push (format nil "~a:~d sets ~a. Credentials belong in .env, which is ~
-gitignored -- this file is not, and a key committed is a key published."
+                          (push (format nil "~a:~d sets ~a. Credentials belong in auth.json, which ~
+lives outside any repository -- this file does not, and a key committed is a ~
+key published."
                                         path number name)
                                 complaints))
                          ((not (assoc name +settings+ :test #'string=))
@@ -110,9 +108,7 @@ at.")
 Order, weakest first: machine config, project config, environment. A flag beats
 all of them and is applied by the caller, which is the only layer this cannot
 see. The environment sits above the files because that is what every other tool
-means by an exported variable -- and because the repository's `.env` is sourced
-into it by the launcher, so a person who has always configured viva that
-way keeps working unchanged.
+means by an exported variable.
 
 Returns (values TABLE COMPLAINTS)."
   (let ((environment (env:make-local-environment :cwd cwd))
@@ -134,6 +130,21 @@ Returns (values TABLE COMPLAINTS)."
             do (setf (gethash name table)
                      (make-resolved :value from-environment :source :environment)))
     (values table complaints)))
+
+(defun machine-setting (name &optional default)
+  "One setting from the MACHINE config, or the environment, or DEFAULT.
+
+NOT THE PROJECT'S, which every other setting layers on top. Whether a
+long-lived process may change what it runs is a decision by the person running
+it, and a `.viva/config` inside a repository somebody cloned is not that
+person. This is the one setting where the narrower layer is the point."
+  (let ((environment (env:make-local-environment
+                      :cwd (uiop:native-namestring (uiop:getcwd)))))
+    (flet ((given (value) (and (stringp value) (plusp (length value)) value)))
+      (or (given (sb-posix:getenv (environment-name name)))
+          (given (cdr (assoc name (read-config environment (machine-config-path))
+                             :test #'string=)))
+          default))))
 
 (defun setting (table name &optional default)
   (a:if-let ((found (gethash name table)))
