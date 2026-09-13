@@ -13,5 +13,9 @@ case $out in
 esac
 cd "$root"
 . "$root/tools/sbcl.sh"
+# What this build IS, asked here rather than inside the image: git is a command,
+# and the checkout exists now but will not exist wherever the binary ends up.
+: "${VIVA_BUILD_VERSION:=$(git describe --tags --always --dirty 2>/dev/null || true)}"
+export VIVA_BUILD_VERSION
 "$sbcl_bin" --script tools/build-image.lisp "$target"
 printf '%s\n' "$target"

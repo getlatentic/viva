@@ -154,6 +154,47 @@ DOES rather than about what it says."
     ;; search over the whole text finds the explanation and fails on it.
     (false (search "readlink -f" (shell-code launcher)))))
 
+(define-test "asking for the version is not asking for a session"
+  ;; A flag with no command opened a session, so `viva --version` started an
+  ;; interactive agent in the current directory: the wrong answer to a question,
+  ;; and much the wrong answer to a typo one letter away from a real flag.
+  (let ((asked (cli::parse-arguments '("--version"))))
+    (true (cli::flag asked "version"))
+    (false (cli::unknown-flags asked) "--version must be an option, not a typo"))
+  ;; Every config setting is a flag too, because OPTION falls back to the table.
+  ;; Checking against only the hand-written list would refuse `--model`.
+  (dolist (setting (mapcar #'car config:+settings+))
+    (false (cli::unknown-flags (cli::parse-arguments (list (format nil "--~a" setting) "x")))
+           setting))
+  (is equal '("versoin") (cli::unknown-flags (cli::parse-arguments '("--versoin"))))
+  (is equal '("aa" "bb") (cli::unknown-flags (cli::parse-arguments '("--bb" "--aa")))))
+
+(define-test "a build says which build it is"
+  ;; A binary has no checkout to ask, and a checkout must not report a string
+  ;; baked in before the last edit. Both answers, in that order.
+  (let ((cli::*build-version* "v9.9.9"))
+    (is string= "v9.9.9" (cli::version) "a stamped build reports its stamp"))
+  (let ((cli::*build-version* nil))
+    ;; This suite runs from a checkout, so git is the answer here.
+    (true (plusp (length (cli::version))))
+    (false (string= "unknown" (cli::version))
+           "a source run in a git checkout must not report `unknown`"))
+  ;; The stamp reaches the image from the build, not from a literal in the file.
+  (let ((builder (shell-code (repository-file "tools/build-image.sh"))))
+    (true (search "VIVA_BUILD_VERSION" builder))
+    (true (search "git describe" builder)))
+  (true (search "VIVA_BUILD_VERSION" (repository-file "tools/build-image.lisp"))))
+
+(define-test "the installer says what it replaced, and what is still running"
+  (let ((code (shell-code (repository-file "get.sh"))))
+    ;; Asked BEFORE the replacement, or there is nothing to compare with.
+    (true (search "--version" code))
+    (true (search "was=" code))
+    ;; A daemon keeps the file it started from, so it serves the old build until
+    ;; it restarts. Silence there gets the new build blamed for old behaviour.
+    (true (search "daemon status" code))
+    (true (search "viva daemon restart" code))))
+
 (define-test "the curl installer reaches a release, and checks what it gets"
   (let* ((script (repository-file "get.sh"))
          (code (shell-code script))

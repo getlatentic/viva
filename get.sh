@@ -82,18 +82,43 @@ fi
 keeps happening, say so at https://github.com/$REPO/issues"
 say "  both files match $sums"
 
-# INTO PLACE ONLY AFTER CHECKING, and by rename, so an interrupted run cannot
-# leave half a binary where a working one was.
+# WHAT IS THERE NOW, asked before anything is replaced. A re-run is the normal
+# way to upgrade, and "installed" is the wrong word for it.
+was=
+if [ -x "$store/viva" ]; then
+  was=$("$store/viva" --version 2>/dev/null || true)
+fi
+
+# INTO PLACE ONLY AFTER CHECKING, and by rename: a running daemon keeps the file
+# it started from, so replacing the binary under it cannot kill it.
 step "installing into $store"
 mkdir -p "$store"
 chmod 755 "$tmp/$engine" "$tmp/$client"
 mv "$tmp/$engine" "$store/viva"
 mv "$tmp/$client" "$store/viva-tui"
-say "  viva and viva-tui"
+now=$("$store/viva" --version 2>/dev/null || true)
+if [ -z "$was" ]; then
+  say "  ${now:-viva} installed"
+elif [ "$was" = "$now" ]; then
+  say "  ${now:-viva} was already here, and has been replaced with the same"
+else
+  say "  $was -> $now"
+fi
 
 # `viva install` owns the PATH question: it refuses to replace anything it did
 # not put there, and prints the export line when it has to. It also knows to
 # link ITSELF rather than a checkout, which is what makes this work at all.
+# A DAEMON KEEPS THE CODE IT STARTED WITH. It survives the replacement, which is
+# the point of renaming rather than writing in place -- but it goes on serving
+# the previous build until somebody says otherwise, and a new client talking to
+# an old daemon is the kind of mismatch that gets blamed on the new build.
+if [ -n "$was" ] && [ "$was" != "$now" ] && "$store/viva" daemon status >/dev/null 2>&1; then
+  step "a daemon is still running $was"
+  say "  it keeps serving that until it restarts. When the work in it can stop:"
+  say ""
+  say "      viva daemon restart"
+fi
+
 step "putting viva on your PATH"
 # VIVA_PREFIX names the directory, for a machine where the guess would be
 # wrong -- and so this script can be tested without writing to a real PATH.

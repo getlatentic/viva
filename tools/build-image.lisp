@@ -21,6 +21,13 @@
 (handler-bind ((warning #'muffle-warning))
   (funcall (find-symbol "QUICKLOAD" "QL") :viva/cli :silent t))
 
+;; STAMPED NOW, because the image will not have a checkout to ask later: the
+;; whole point of it is running on a machine that never had one. A source run
+;; keeps asking git, where the working tree is the truth.
+(let ((stamp (sb-posix:getenv "VIVA_BUILD_VERSION")))
+  (when (and stamp (plusp (length stamp)))
+    (setf (symbol-value (find-symbol "*BUILD-VERSION*" "VIVA.CLI")) stamp)))
+
 ;; Collect before saving, for the same reason the launcher does it after
 ;; loading: what compiling the systems allocated is garbage by now, and an
 ;; image saved around it carries those pages into every process started from

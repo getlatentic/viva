@@ -183,6 +183,7 @@
                              (:file "settings")
                              (:file "attached")
                              (:file "commands")
+                             (:file "version")
                              (:file "install")
                              (:file "learned")
                              (:file "attend")
