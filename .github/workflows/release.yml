@@ -73,7 +73,13 @@ jobs:
             tui/target
           key: cargo-${{ matrix.name }}-${{ hashFiles('tui/Cargo.lock') }}
 
+      # THE TAG IS THE VERSION, told rather than inferred. The checkout is one
+      # commit deep, so `git describe` inside the build cannot see the tag it
+      # was triggered by, and the binary would report a bare sha as its version
+      # -- on a release, of all builds.
       - name: Build
+        env:
+          VIVA_BUILD_VERSION: ${{ inputs.tag || github.ref_name }}
         run: |
           ./tools/build-image.sh "viva-${{ matrix.name }}"
           cargo build --release --manifest-path tui/Cargo.toml
