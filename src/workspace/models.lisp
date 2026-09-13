@@ -9,6 +9,9 @@
 
 (defstruct (choice (:conc-name choice-))
   (label "" :type string)
+  ;; The endpoint this came from, kept so a person can ask for `bedrock` and
+  ;; get its default without knowing which model that is today.
+  (endpoint-label nil)
   (provider nil)
   (model "" :type string)
   (effort nil)
@@ -30,32 +33,94 @@
     ;; Bedrock through its OpenAI-compatible endpoint: a BEARER TOKEN, not
     ;; SigV4. Verified against /v1/models before this was written rather than
     ;; assumed, which is why there is no request signing anywhere in the tree.
+    ;;
+    ;; MANY MODELS, ONE ENDPOINT. Bedrock serves a catalogue behind one base
+    ;; URL, so the entry carries a list and the table still holds each
+    ;; endpoint once. The base URL is deployment-specific -- BEDROCK_ENDPOINT
+    ;; overrides it, and a deployment in another region must.
+    ;;
+    ;; EVERY ID HERE IS AWS-BILLED, so promotional credits pay for it. The
+    ;; seller of record is decided by the id and nothing in the API says
+    ;; which: `anthropic.*` -- all of Claude -- is sold by Anthropic through
+    ;; AWS Marketplace and credits NEVER apply to it. The run succeeds and the
+    ;; invoice arrives a month later, which is why no Claude id is on this
+    ;; list. Add one only deliberately.
     (:label "bedrock" :key "BEDROCK_API_KEY" :effort "low"
      :endpoint-var "BEDROCK_ENDPOINT" :endpoint "https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions"
-     :model-var "BEDROCK_MODEL" :model "google.gemma-4-31b"))
+     :model-var "BEDROCK_MODEL"
+     ;; PREFIXED, every one. `gpt-oss-120b` is already the experiment-facing
+     ;; name for OpenRouter's copy of the same weights (CLI:+ARM-LABELS+), and
+     ;; two arms answering to one name is how two sweeps stop being comparable.
+     ;; The prefix also keeps the seller visible, which is the thing that
+     ;; decides whether credits pay.
+     :models (("bedrock/gpt-oss-120b" . "openai.gpt-oss-120b")
+              ;; Good prose, weaker at holding a field format than 120b, so
+              ;; reach for it where the answer is text rather than structure.
+              ("bedrock/gpt-oss-20b" . "openai.gpt-oss-20b")
+              ("bedrock/glm-5" . "zai.glm-5")
+              ("bedrock/kimi-k2.5" . "moonshotai.kimi-k2.5")
+              ("bedrock/minimax-m2.5" . "minimax.minimax-m2.5")
+              ("bedrock/deepseek-v3.2" . "deepseek.v3.2")
+              ("bedrock/qwen3-coder" . "qwen.qwen3-coder-480b-a35b-instruct")
+              ("bedrock/nemotron-3-super" . "nvidia.nemotron-super-3-120b"))))
   "OpenAI-compatible endpoints, in preference order.")
+
+(defun equal-label (wanted found)
+  (and (stringp found) (string-equal wanted found)))
 
 (defun from-environment (name)
   (let ((value (sb-posix:getenv name)))
     (and value (plusp (length value)) value)))
 
-(defun entry-choice (entry &key (auth (auth:read-auth)))
-  "ENTRY as a usable choice, or NIL where it has no key.
+(defun entry-limit (entry)
+  (or (a:when-let ((given (from-environment "VIVA_CONTEXT_LIMIT")))
+        (parse-integer given :junk-allowed t))
+      (getf entry :context-limit 128000)))
+
+(defun entry-models (entry)
+  "The (LABEL . MODEL-ID) pairs this endpoint offers.
+
+An endpoint naming one model answers under its own name. One naming several
+answers under each model's name, and under its own for the first -- so
+`bedrock` keeps working while `gpt-oss-20b` becomes sayable."
+  (a:if-let ((listed (getf entry :models)))
+    (let ((override (from-environment (getf entry :model-var))))
+      (if override
+          (cons (cons (getf entry :label) override) listed)
+          listed))
+    (list (cons (getf entry :label)
+                (or (from-environment (getf entry :model-var)) (getf entry :model))))))
+
+(defun entry-choices (entry &key (auth (auth:read-auth)))
+  "ENTRY as usable choices, or NIL where it has no key.
 
 The auth file is read once by the caller and passed down. Reading it per
 provider would open and parse the same file for every entry in the catalogue,
 on every call that asks what is available."
   (a:when-let ((key (auth:key-for (getf entry :label) (getf entry :key) :auth auth)))
-    (make-choice :label (getf entry :label)
-                 :model (or (from-environment (getf entry :model-var)) (getf entry :model))
-                 :effort (getf entry :effort)
-                 :context-limit (or (a:when-let ((given (from-environment "VIVA_CONTEXT_LIMIT")))
-                                      (parse-integer given :junk-allowed t))
-                                    (getf entry :context-limit 128000))
-                 :provider (provider:openai-provider
-                            :endpoint (or (from-environment (getf entry :endpoint-var))
-                                          (getf entry :endpoint))
-                            :api-key key))))
+    (let ((provider (provider:openai-provider
+                     :endpoint (or (from-environment (getf entry :endpoint-var))
+                                   (getf entry :endpoint))
+                     :api-key key)))
+      (loop for (label . model) in (entry-models entry)
+            collect (make-choice :label label
+                                 :endpoint-label (getf entry :label)
+                                 :model model
+                                 :effort (getf entry :effort)
+                                 :context-limit (entry-limit entry)
+                                 :provider provider)))))
+
+(defun endpoint-defaults (choices)
+  "One choice per endpoint: the first each offers.
+
+WHAT A SWEEP MEANS BY `every arm`. An endpoint serving eight models would
+otherwise turn one battery into eight, which is a bill rather than a default.
+Naming a model explicitly still reaches every one of them."
+  (let ((seen '()))
+    (loop for choice in choices
+          for endpoint = (or (choice-endpoint-label choice) (choice-label choice))
+          unless (member endpoint seen :test #'equal)
+            do (push endpoint seen) and collect choice)))
 
 (defun local-choice ()
   "A llama.cpp server, when one is configured. Not probed here -- probing needs a
@@ -72,8 +137,8 @@ whether it is up checks before offering it."
   ;; The auth file, read once for the whole catalogue rather than once per
   ;; provider in it.
   (let ((auth (auth:read-auth)))
-    (remove nil (append (mapcar (lambda (entry) (entry-choice entry :auth auth))
-                                +catalogue+)
+    (remove nil (append (loop for entry in +catalogue+
+                              append (entry-choices entry :auth auth))
                         (list (local-choice))))))
 
 (defun resolve-model (&optional label)
@@ -90,5 +155,9 @@ environment or in .env at the repository root."
           ;; asking for that model -- which only the second form can do.
           (t (or (find label available :key #'choice-label :test #'string-equal)
                  (find label available :key #'choice-model :test #'string=)
+                 ;; THE ENDPOINT'S OWN NAME, last. `bedrock` names a catalogue
+                 ;; rather than a model, and a person who asks for it means
+                 ;; whichever of them is first.
+                 (find label available :key #'choice-endpoint-label :test #'equal-label)
                  (error "No model called ~s. Available: ~{~a~^, ~}"
                         label (mapcar #'choice-label available)))))))

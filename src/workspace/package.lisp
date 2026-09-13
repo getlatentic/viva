@@ -225,7 +225,8 @@
                     (#:auth #:viva.auth)
                     (#:provider #:viva.provider))
   (:export #:choice #:choice-label #:choice-provider #:choice-model #:choice-effort
-           #:available-models #:resolve-model #:+catalogue+ #:choice-context-limit))
+           #:available-models #:resolve-model #:+catalogue+ #:choice-context-limit
+           #:choice-endpoint-label #:endpoint-defaults))
 
 (defpackage #:viva.harness
   (:use #:cl)

@@ -2027,3 +2027,93 @@ body~%~@[~%```~a~%print(1)~%```~%~]" name (and (plusp (length language)) languag
     (true (search "\"describe\"" taught))
     (true (search "viva" registry:*describe-request*))
     (true (search "describe" registry:*describe-request*))))
+
+;;; ---------------------------------------------------------------------------
+;;; The model catalogue
+;;; ---------------------------------------------------------------------------
+
+(defmacro with-every-key (&body body)
+  "Run BODY as though every catalogue key were configured.
+
+SETF and restore rather than LET: the catalogue reads the process environment
+through SB-POSIX, which a dynamic binding does not touch."
+  `(let ((keys '("OPENAI_API_KEY" "OPENROUTER_API_KEY" "DEEPSEEK_API_KEY"
+                 "BEDROCK_API_KEY"))
+         ;; CLEARED, because the repository's own .env pins some of these and a
+         ;; test that read them would assert against whoever edited that file.
+         (pins '("OPENAI_MODEL" "OPENROUTER_MODEL" "DEEPSEEK_MODEL" "BEDROCK_MODEL"))
+         (restore '()))
+     (unwind-protect
+          (progn (dolist (name keys)
+                   (push (cons name (sb-posix:getenv name)) restore)
+                   (sb-posix:setenv name "test-key" 1))
+                 (dolist (name pins)
+                   (push (cons name (sb-posix:getenv name)) restore)
+                   (sb-posix:unsetenv name))
+                 ,@body)
+       (loop for (name . was) in restore
+             do (if was (sb-posix:setenv name was 1) (sb-posix:unsetenv name))))))
+
+(define-test "one endpoint offers many models, and every label is its own"
+  ;; TWO ARMS UNDER ONE NAME is how two sweeps stop being comparable, and the
+  ;; experiment-facing name `gpt-oss-120b` already belongs to OpenRouter's copy
+  ;; of those weights. Bedrock serves the same model under a different seller,
+  ;; so its entries carry the endpoint in the label.
+  (with-every-key
+    (let* ((available (models:available-models))
+           (labels* (mapcar #'models:choice-label available)))
+      (is = (length labels*) (length (remove-duplicates labels* :test #'string-equal))
+          "two choices answer to one name: ~s" labels*)
+      (dolist (wanted '("bedrock/gpt-oss-120b" "bedrock/gpt-oss-20b" "deepseek"))
+        (true (find wanted available :key #'models:choice-label :test #'string=)
+              "~a is not on offer: ~s" wanted labels*))
+      ;; The endpoint's own name still resolves, to the first it offers.
+      (is string= "openai.gpt-oss-120b"
+          (models:choice-model (models:resolve-model "bedrock"))
+          "`bedrock` does not name a model any more")
+      (is string= "openai.gpt-oss-20b"
+          (models:choice-model (models:resolve-model "bedrock/gpt-oss-20b")))
+      ;; And so does a raw model id, which is how a recorded session comes back.
+      (is string= "openai.gpt-oss-20b"
+          (models:choice-model (models:resolve-model "openai.gpt-oss-20b"))))))
+
+(define-test "a sweep over every arm is one per endpoint, not one per model"
+  ;; An endpoint serving eight models would otherwise turn one battery into
+  ;; eight, which is a bill rather than a default.
+  (with-every-key
+    (let* ((defaults (models:endpoint-defaults (models:available-models)))
+           (endpoints (mapcar (lambda (choice)
+                                (or (models:choice-endpoint-label choice)
+                                    (models:choice-label choice)))
+                              defaults)))
+      (is = (length endpoints) (length (remove-duplicates endpoints :test #'equal))
+          "an endpoint appears twice in the defaults: ~s" endpoints)
+      (is = 4 (length defaults) "the default sweep changed size: ~s"
+          (mapcar #'models:choice-label defaults)))))
+
+(define-test "a pinned model wins, and does not cost the endpoint its others"
+  ;; BEDROCK_MODEL names what `bedrock` means on this machine -- the repository
+  ;; pins one -- and the catalogue's own list stays reachable beside it, so a
+  ;; pin narrows the default without hiding the menu.
+  (with-every-key
+    (sb-posix:setenv "BEDROCK_MODEL" "qwen.qwen3-vl-235b-a22b-instruct" 1)
+    (unwind-protect
+         (let ((available (models:available-models)))
+           (is string= "qwen.qwen3-vl-235b-a22b-instruct"
+               (models:choice-model (models:resolve-model "bedrock"))
+               "the pin did not decide what `bedrock` means")
+           (true (find "bedrock/gpt-oss-120b" available
+                       :key #'models:choice-label :test #'string=)
+                 "a pin hid the rest of the endpoint's models"))
+      (sb-posix:unsetenv "BEDROCK_MODEL"))))
+
+(define-test "no Claude id is on the catalogue"
+  ;; Anything anthropic.* on Bedrock is sold by Anthropic through AWS
+  ;; Marketplace, and AWS promotional credits never pay for it -- the run
+  ;; succeeds and the invoice arrives a month later. Adding one has to be
+  ;; deliberate, so this fails if one appears by habit.
+  (with-every-key
+    (dolist (choice (models:available-models))
+      (false (search "anthropic." (models:choice-model choice))
+             "~a names a Marketplace-billed model: ~a"
+             (models:choice-label choice) (models:choice-model choice)))))

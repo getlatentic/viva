@@ -58,15 +58,25 @@ model failing rather than a missing one."
                                  (not (listening-p (env "VIVA_LOCAL_ENDPOINT"))))
                             nil
                             (arm-for choice)))
-                      (models:available-models))))
+                      ;; ONE PER ENDPOINT. An arm is an experimental condition
+                      ;; and a sweep over `every arm` is a bill; Bedrock serving
+                      ;; eight models must not turn one battery into eight.
+                      ;; ARMS-NAMED still reaches any of them by name.
+                      (models:endpoint-defaults (models:available-models)))))
 
 (defun arms-named (names)
-  "NAMES is NIL for every available arm, or a list of labels."
+  "NAMES is NIL for every available arm, or a list of labels.
+
+A NAME REACHES THE WHOLE CATALOGUE, not only the defaults a bare sweep runs.
+Asking for one model deliberately is the case where an endpoint's eighth model
+is exactly what somebody wants."
   (let ((available (available-arms)))
     (if (null names)
         available
         (mapcar (lambda (name)
                   (or (find name available :key #'arm-label :test #'string-equal)
+                      (a:when-let ((choice (ignore-errors (models:resolve-model name))))
+                        (arm-for choice))
                       (error "No arm called ~s. Available: ~{~a~^, ~}"
                              name (mapcar #'arm-label available))))
                 names))))
