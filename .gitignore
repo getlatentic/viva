@@ -36,3 +36,6 @@ experiments/families/__pycache__/
 tui/target/
 
 tui/__pycache__/
+
+# Coverage instrumentation drops these beside whatever ran.
+*.profraw
