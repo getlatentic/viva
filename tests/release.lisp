@@ -352,6 +352,16 @@ DOES rather than about what it says."
     (true (search "\"model\" (option parsed \"model\")" source)
           "session.start must carry the resolved model")))
 
+(define-test "the launcher does not clobber a named daemon starter"
+  ;; The client starts a daemon with $VIVA_BIN. Setting it unconditionally here
+  ;; forced every cold start through this script: one source load for the
+  ;; command and another for the daemon it spawns, measured at 2.9s of a 3.1s
+  ;; cold start. A guess must never beat an instruction, which is already the
+  ;; rule for VIVA_TUI one clause below.
+  (let ((launcher (shell-code (repository-file "bin/viva"))))
+    (true (search "VIVA_BIN=\"${VIVA_BIN:-" launcher)
+          "the launcher overrides a VIVA_BIN the caller set")))
+
 (define-test "the launcher sources no key file"
   ;; Keys come out of ~/.viva/auth.json, read by the engine. A launcher that
   ;; sourced a file of exports meant a standalone build -- one executable on a

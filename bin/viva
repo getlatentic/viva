@@ -60,7 +60,12 @@ case "${1:-}" in
     do
       if [ -x "$candidate" ]; then
         shift
-        VIVA_BIN="$root/bin/viva" exec "$candidate" "$@"
+        # ONLY IF NOBODY SAID OTHERWISE. The client starts a daemon with
+        # $VIVA_BIN, so clobbering it here forced every cold start through this
+        # script -- one source load for the command and another for the daemon
+        # it spawns, about 2.9s of the 3.1s a cold start cost. A guess must
+        # never beat an instruction, which is already the rule for VIVA_TUI.
+        VIVA_BIN="${VIVA_BIN:-$root/bin/viva}" exec "$candidate" "$@"
       fi
     done
     if [ "${1:-}" = "tui" ]; then
