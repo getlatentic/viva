@@ -27,18 +27,11 @@ root=$(cd "$(dirname "$target")/.." && pwd)
 # Where viva keeps its own files. The engine resolves it the same way.
 viva_home="${VIVA_HOME:-${HOME:-}/.viva}"
 
-# Credentials, machine first and repository second, so the repository wins for
-# a run made from inside it. Settings live in the machine directory and keys
-# used to stay in the clone, which meant half the setup lived somewhere you
-# might never open again -- and a second checkout had none of it.
+# NO KEY FILE IS SOURCED HERE. Credentials live in ~/.viva/auth.json, read by
+# the engine itself, so a run does not depend on the launcher having exported
+# anything -- which is what a standalone build never had. A shell that exports
+# a key still wins: the engine puts the environment above the file.
 #
-# Keys are not settings and stay out of the config file: that one is meant to
-# be copied into projects and committed. This one is not.
-set -a
-[ -f "$viva_home/.env" ] && . "$viva_home/.env"
-[ -f "$root/.env" ] && . "$root/.env"
-set +a
-
 # The full-screen client is a separate binary, and this is where it is reached
 # -- BEFORE sbcl, not from inside it. Routing to it from the Lisp CLI worked
 # and cost the whole system load first: a minute of quickload to hand the

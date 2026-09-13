@@ -159,11 +159,6 @@ run depends on the caller having sourced it.
   (or name (flag parsed "help") (flag parsed "h")))
 
 (defun main (tokens)
-  ;; BEFORE ANYTHING READS A KEY. A standalone build has no launcher to source
-  ;; the file for it, and a provider that finds no key fails at the first
-  ;; request rather than at startup, which reads as a broken model.
-  (handler-case (load-every-credential)
-    (error (condition) (format *error-output* "~&! credentials: ~a~%" condition)))
   (let* ((parsed (parse-arguments tokens))
          (name (first (args-positional parsed)))
          (entry (find name +commands+ :key #'first :test #'equal)))

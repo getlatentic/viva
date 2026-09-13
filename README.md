@@ -103,6 +103,7 @@ install -m 755 viva-tui ~/.local/bin/viva-tui
 mkdir -p ~/.viva && cat > ~/.viva/auth.json <<'JSON'
 { "deepseek": { "apiKey": "sk-..." } }
 JSON
+chmod 600 ~/.viva/auth.json
 ```
 
 Three places, tried in this order. A flag names one key for one run. The file
@@ -115,8 +116,17 @@ happened to export.
 | `~/.viva/auth.json` | `deepseek`, `openai`, `openrouter`, `bedrock` |
 | `DEEPSEEK_API_KEY` and friends | the environment |
 
+An entry may also carry `endpoint` and `model`, which is how a deployment in
+another region is reached and how you say what an endpoint's own name means:
+
+```json
+{ "bedrock": { "apiKey": "...",
+               "endpoint": "https://bedrock-mantle.eu-west-1.api.aws/v1/chat/completions",
+               "model": "openai.gpt-oss-120b" } }
+```
+
 Keys are not settings: `config` is a file people copy into projects and commit,
-and `auth.json` is not.
+and `auth.json` is not. Nothing sources a file of shell exports.
 
 ### Windows
 

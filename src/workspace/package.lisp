@@ -43,7 +43,8 @@
   (:local-nicknames (#:a #:alexandria)
                     (#:jzon #:com.inuoe.jzon)
                     (#:env #:viva.env))
-  (:export #:key-for #:key-from-file #:read-auth #:configured-providers #:*file-shape*))
+  (:export #:key-for #:key-from-file #:entry-setting #:read-auth
+           #:configured-providers #:*file-shape*))
 
 (defpackage #:viva.glob
   (:use #:cl)
@@ -223,6 +224,7 @@
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:auth #:viva.auth)
+                    (#:env #:viva.env)
                     (#:provider #:viva.provider))
   (:export #:choice #:choice-label #:choice-provider #:choice-model #:choice-effort
            #:available-models #:resolve-model #:+catalogue+ #:choice-context-limit

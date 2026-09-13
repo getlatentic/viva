@@ -72,24 +72,37 @@
   (let ((value (sb-posix:getenv name)))
     (and value (plusp (length value)) value)))
 
+(defun endpoint-for (entry auth)
+  "Where this provider lives: auth.json, then the environment, then the default.
+
+THE SAME ORDER AUTH:KEY-FOR USES, and for its reason: the environment is where
+a shell leaves whatever it happened to export, and the file is where somebody
+wrote something down on purpose. One file resolving its key one way and its
+endpoint the other is a rule nobody could hold."
+  (or (auth:entry-setting (getf entry :label) "endpoint" :auth auth)
+      (from-environment (getf entry :endpoint-var))
+      (getf entry :endpoint)))
+
+(defun pinned-model (entry auth)
+  "The model this machine means by the endpoint's own name, if it names one."
+  (or (auth:entry-setting (getf entry :label) "model" :auth auth)
+      (from-environment (getf entry :model-var))))
+
 (defun entry-limit (entry)
   (or (a:when-let ((given (from-environment "VIVA_CONTEXT_LIMIT")))
         (parse-integer given :junk-allowed t))
       (getf entry :context-limit 128000)))
 
-(defun entry-models (entry)
+(defun entry-models (entry auth)
   "The (LABEL . MODEL-ID) pairs this endpoint offers.
 
 An endpoint naming one model answers under its own name. One naming several
 answers under each model's name, and under its own for the first -- so
-`bedrock` keeps working while `gpt-oss-20b` becomes sayable."
-  (a:if-let ((listed (getf entry :models)))
-    (let ((override (from-environment (getf entry :model-var))))
-      (if override
-          (cons (cons (getf entry :label) override) listed)
-          listed))
-    (list (cons (getf entry :label)
-                (or (from-environment (getf entry :model-var)) (getf entry :model))))))
+`bedrock` keeps working while `bedrock/gpt-oss-20b` becomes sayable."
+  (let ((pinned (pinned-model entry auth)))
+    (a:if-let ((listed (getf entry :models)))
+      (if pinned (cons (cons (getf entry :label) pinned) listed) listed)
+      (list (cons (getf entry :label) (or pinned (getf entry :model)))))))
 
 (defun entry-choices (entry &key (auth (auth:read-auth)))
   "ENTRY as usable choices, or NIL where it has no key.
@@ -99,10 +112,9 @@ provider would open and parse the same file for every entry in the catalogue,
 on every call that asks what is available."
   (a:when-let ((key (auth:key-for (getf entry :label) (getf entry :key) :auth auth)))
     (let ((provider (provider:openai-provider
-                     :endpoint (or (from-environment (getf entry :endpoint-var))
-                                   (getf entry :endpoint))
+                     :endpoint (endpoint-for entry auth)
                      :api-key key)))
-      (loop for (label . model) in (entry-models entry)
+      (loop for (label . model) in (entry-models entry auth)
             collect (make-choice :label label
                                  :endpoint-label (getf entry :label)
                                  :model model
@@ -146,9 +158,13 @@ whether it is up checks before offering it."
 says what would make one appear."
   (let ((available (available-models)))
     (cond ((null available)
-           (error "No model is configured. Set one of ~{~a~^, ~} in the ~
-environment or in .env at the repository root."
-                  (mapcar (lambda (entry) (getf entry :key)) +catalogue+)))
+           ;; NAMES THE FILE. The old message named the environment and a file
+          ;; of shell exports, which is what people then made -- so the
+          ;; discoverable answer was the one being removed.
+          (error "No model is configured. Put a key in ~a, shaped like:~%~%~a~%~%~
+Or set one of ~{~a~^, ~} in the environment."
+                 (env:auth-path) auth:*file-shape*
+                 (mapcar (lambda (entry) (getf entry :key)) +catalogue+)))
           ((null label) (first available))
           ;; By the choice's name, or by the model it resolves to. A session
           ;; records the model it ran under, and bringing it back means

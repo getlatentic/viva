@@ -72,8 +72,9 @@ one that is missing, because you go looking at the wrong thing."
                             (push (format nil "~a:~d is neither a comment nor NAME=VALUE" path number)
                                   complaints)))
                          ((credential-like-p name)
-                          (push (format nil "~a:~d sets ~a. Credentials belong in .env, which is ~
-gitignored -- this file is not, and a key committed is a key published."
+                          (push (format nil "~a:~d sets ~a. Credentials belong in auth.json, which ~
+lives outside any repository -- this file does not, and a key committed is a ~
+key published."
                                         path number name)
                                 complaints))
                          ((not (assoc name +settings+ :test #'string=))

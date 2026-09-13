@@ -21,9 +21,17 @@
 (defparameter *file-shape*
   "{
   \"deepseek\":   { \"apiKey\": \"sk-...\" },
-  \"openrouter\": { \"apiKey\": \"sk-or-...\" }
+  \"openrouter\": { \"apiKey\": \"sk-or-...\" },
+  \"bedrock\":    { \"apiKey\": \"...\",
+                  \"endpoint\": \"https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions\",
+                  \"model\": \"openai.gpt-oss-120b\" }
 }"
-  "What auth.json holds. One object per provider, keyed by its catalogue name.")
+  "What auth.json holds. One object per provider, keyed by its catalogue name.
+
+THE KEY, AND WHAT ELSE IT TAKES TO REACH THAT PROVIDER. A deployment in
+another region has a different base URL and the same account, so an endpoint
+that could only come from the environment meant a shell export beside every
+key -- which is what a file of exports was for, and why there was one.")
 
 (defun read-auth (&optional (path (env:auth-path)))
   "The parsed auth file, or NIL.
@@ -47,6 +55,18 @@ message would be the first thing to quote a line of the file."
                       when (and (stringp found) (plusp (length found)))
                         return found))
     (t nil)))
+
+(defun entry-setting (provider field &key (auth (read-auth)))
+  "One non-secret field of PROVIDER's entry -- \"endpoint\", \"model\" -- or NIL.
+
+Beside the key rather than in `config`, because these say how to reach one
+provider and `config` is a file people copy between projects. A provider that
+is not configured has no endpoint to give."
+  (when auth
+    (a:when-let ((entry (gethash provider auth)))
+      (when (hash-table-p entry)
+        (a:when-let ((value (gethash field entry)))
+          (and (stringp value) (plusp (length value)) value))))))
 
 (defun key-from-file (provider &optional (auth (read-auth)))
   (when auth

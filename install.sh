@@ -86,20 +86,27 @@ step "putting viva on your PATH"
 "$root/bin/viva" install | sed 's/^/  /'
 
 step "credentials"
-if [ -f "$VIVA_HOME/.env" ]; then
-  say "  $VIVA_HOME/.env is already there; leaving it alone"
+if [ -f "$VIVA_HOME/auth.json" ]; then
+  say "  $VIVA_HOME/auth.json is already there; leaving it alone"
 else
   mkdir -p "$VIVA_HOME"
-  cp "$root/.env.example" "$VIVA_HOME/.env"
-  chmod 600 "$VIVA_HOME/.env"
-  say "  wrote $VIVA_HOME/.env from the example -- open it and fill in ONE key"
+  # Written here rather than copied from a committed example: a file of
+  # placeholders in the repository is a file somebody eventually pastes a real
+  # key into, and that one is tracked.
+  cat > "$VIVA_HOME/auth.json" <<'JSON'
+{
+  "deepseek": { "apiKey": "" }
+}
+JSON
+  chmod 600 "$VIVA_HOME/auth.json"
+  say "  wrote $VIVA_HOME/auth.json -- open it and fill in ONE key"
 fi
 
 cat <<EOF
 
 Done. Next:
 
-  1. put a provider key in $VIVA_HOME/.env
+  1. put a provider key in $VIVA_HOME/auth.json
   2. cd into any project and run:  viva
   3. see what it has learned:      viva learned
   4. watch it learn something:     $root/demo/retention

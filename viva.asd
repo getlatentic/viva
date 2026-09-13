@@ -180,7 +180,6 @@
                              (:file "render")
                              (:file "screen")
                              (:file "settings")
-                             (:file "credentials")
                              (:file "attached")
                              (:file "commands")
                              (:file "install")
