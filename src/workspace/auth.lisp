@@ -20,8 +20,9 @@
 
 (defparameter *file-shape*
   "{
-  \"deepseek\":   { \"apiKey\": \"sk-...\" },
   \"openrouter\": { \"apiKey\": \"sk-or-...\" },
+  \"deepseek\":   { \"apiKey\": \"sk-...\",
+                  \"models\": [\"deepseek-v4-flash\", \"deepseek-v4-pro\"] },
   \"bedrock\":    { \"apiKey\": \"...\",
                   \"endpoint\": \"https://bedrock-mantle.us-east-1.api.aws/v1/chat/completions\",
                   \"model\": \"openai.gpt-oss-120b\" }
@@ -31,7 +32,11 @@
 THE KEY, AND WHAT ELSE IT TAKES TO REACH THAT PROVIDER. A deployment in
 another region has a different base URL and the same account, so an endpoint
 that could only come from the environment meant a shell export beside every
-key -- which is what a file of exports was for, and why there was one.")
+key -- which is what a file of exports was for, and why there was one.
+
+`models` lists what to offer under this provider, replacing the built-in list.
+A provider serves a family that changes faster than a release does, and the key
+is written once above it either way.")
 
 (defun read-auth (&optional (path (env:auth-path)))
   "The parsed auth file, or NIL.
@@ -67,6 +72,19 @@ is not configured has no endpoint to give."
       (when (hash-table-p entry)
         (a:when-let ((value (gethash field entry)))
           (and (stringp value) (plusp (length value)) value))))))
+
+(defun entry-list (provider field &key (auth (read-auth)))
+  "One array field of PROVIDER's entry -- \"models\" -- as a list of strings.
+
+A provider serves a family that changes faster than a release does, so the
+models it offers are something a person can write down rather than wait for."
+  (when auth
+    (a:when-let ((entry (gethash provider auth)))
+      (when (hash-table-p entry)
+        (a:when-let ((value (gethash field entry)))
+          (let ((given (coerce value 'list)))
+            (remove-if-not (lambda (each) (and (stringp each) (plusp (length each))))
+                           given)))))))
 
 (defun key-from-file (provider &optional (auth (read-auth)))
   (when auth

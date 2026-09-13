@@ -43,7 +43,7 @@
   (:local-nicknames (#:a #:alexandria)
                     (#:jzon #:com.inuoe.jzon)
                     (#:env #:viva.env))
-  (:export #:key-for #:key-from-file #:entry-setting #:read-auth
+  (:export #:key-for #:key-from-file #:entry-setting #:entry-list #:read-auth
            #:configured-providers #:*file-shape*))
 
 (defpackage #:viva.glob

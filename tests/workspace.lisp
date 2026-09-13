@@ -2064,7 +2064,8 @@ through SB-POSIX, which a dynamic binding does not touch."
            (labels* (mapcar #'models:choice-label available)))
       (is = (length labels*) (length (remove-duplicates labels* :test #'string-equal))
           "two choices answer to one name: ~s" labels*)
-      (dolist (wanted '("bedrock/gpt-oss-120b" "bedrock/gpt-oss-20b" "deepseek"))
+      (dolist (wanted '("bedrock/openai.gpt-oss-120b" "bedrock/openai.gpt-oss-20b"
+                        "deepseek/deepseek-v4-flash"))
         (true (find wanted available :key #'models:choice-label :test #'string=)
               "~a is not on offer: ~s" wanted labels*))
       ;; The endpoint's own name still resolves, to the first it offers.
@@ -2072,7 +2073,7 @@ through SB-POSIX, which a dynamic binding does not touch."
           (models:choice-model (models:resolve-model "bedrock"))
           "`bedrock` does not name a model any more")
       (is string= "openai.gpt-oss-20b"
-          (models:choice-model (models:resolve-model "bedrock/gpt-oss-20b")))
+          (models:choice-model (models:resolve-model "bedrock/openai.gpt-oss-20b")))
       ;; And so does a raw model id, which is how a recorded session comes back.
       (is string= "openai.gpt-oss-20b"
           (models:choice-model (models:resolve-model "openai.gpt-oss-20b"))))))
@@ -2102,10 +2103,44 @@ through SB-POSIX, which a dynamic binding does not touch."
            (is string= "qwen.qwen3-vl-235b-a22b-instruct"
                (models:choice-model (models:resolve-model "bedrock"))
                "the pin did not decide what `bedrock` means")
-           (true (find "bedrock/gpt-oss-120b" available
+           (true (find "bedrock/openai.gpt-oss-120b" available
                        :key #'models:choice-label :test #'string=)
                  "a pin hid the rest of the endpoint's models"))
       (sb-posix:unsetenv "BEDROCK_MODEL"))))
+
+(define-test "a provider's models can be written down without a release"
+  ;; A provider serves a family that changes faster than this table does, and
+  ;; the key is written once above the list either way -- which is the whole
+  ;; reason models live under a provider rather than beside a key each.
+  (with-every-key
+    (let ((auth (com.inuoe.jzon:parse
+                 "{\"deepseek\": {\"apiKey\": \"k\",
+                                 \"models\": [\"deepseek-v4-pro\", \"deepseek-v4-flash\"]}}")))
+      (is equal '("deepseek-v4-pro" "deepseek-v4-flash")
+          (viva.auth:entry-list "deepseek" "models" :auth auth)
+          "the written-down list did not come back")
+      ;; REPLACES rather than merges: four ids written down means those four,
+      ;; and a merge would keep handing back a fifth they had removed.
+      (let ((entry (find "deepseek" models::+catalogue+
+                         :key (lambda (each) (getf each :label)) :test #'string=)))
+        (is equal '("deepseek-v4-pro" "deepseek-v4-flash")
+            (models::listed-models entry auth))
+        (is equal '("deepseek-v4-flash") (models::listed-models entry nil)
+            "with nothing written down, the built-in list must stand")))))
+
+(define-test "an experiment's arm names survive a relabelling of the catalogue"
+  ;; The write-ups say `gpt-oss-120b` and `deepseek-flash`, and several
+  ;; experiments look their arm up by that exact string. Model labels became
+  ;; `provider/id` and these must not have moved with them.
+  (with-every-key
+    (let ((names (mapcar #'cli:arm-label (cli:available-arms))))
+      (dolist (wanted '("gpt-oss-120b" "deepseek-flash" "bedrock" "openai"))
+        (true (member wanted names :test #'string=)
+              "the ~s arm was renamed; arms are now ~s" wanted names))
+      ;; And a model asked for by name is its own column, not the provider's.
+      (is string= "bedrock/zai.glm-5"
+          (cli:arm-label (first (cli:arms-named '("bedrock/zai.glm-5"))))
+          "a named model borrowed the provider's column name"))))
 
 (define-test "no Claude id is on the catalogue"
   ;; Anything anthropic.* on Bedrock is sold by Anthropic through AWS

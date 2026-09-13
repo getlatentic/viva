@@ -38,9 +38,21 @@
 write-ups already say `gpt-oss-120b`, and renaming a column silently is how two
 sweeps stop being comparable.")
 
-(defun arm-for (choice)
-  (make-arm :label (or (cdr (assoc (models:choice-label choice) +arm-labels+ :test #'string=))
-                       (models:choice-label choice))
+(defun arm-name (choice default)
+  "What a results column is called.
+
+A DEFAULT is named by its provider, because that is what the written-up files
+already say and renaming a column silently is how two sweeps stop being
+comparable. A model asked for BY NAME carries its own `provider/id`, so two
+models from one provider are two columns and not one twice."
+  (if default
+      (or (cdr (assoc (models:choice-endpoint-label choice) +arm-labels+ :test #'equal))
+          (models:choice-endpoint-label choice)
+          (models:choice-label choice))
+      (models:choice-label choice)))
+
+(defun arm-for (choice &key default)
+  (make-arm :label (arm-name choice default)
             :provider (models:choice-provider choice)
             :model (models:choice-model choice)
             :effort (models:choice-effort choice)))
@@ -57,7 +69,7 @@ model failing rather than a missing one."
                         (if (and (string= "local" (models:choice-label choice))
                                  (not (listening-p (env "VIVA_LOCAL_ENDPOINT"))))
                             nil
-                            (arm-for choice)))
+                            (arm-for choice :default t)))
                       ;; ONE PER ENDPOINT. An arm is an experimental condition
                       ;; and a sweep over `every arm` is a bill; Bedrock serving
                       ;; eight models must not turn one battery into eight.
