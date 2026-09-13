@@ -1068,6 +1068,14 @@ fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
 /// short form for when the long one does not fit beside long facts -- a
 /// provider-prefixed model and a branch with a slash in it leave a quarter
 /// of a hundred-column screen for everything else.
+/// The first sentence, for a slot one sentence wide.
+fn first_sentence(text: &str) -> &str {
+    match text.find(". ") {
+        Some(stop) => &text[..=stop],
+        None => text,
+    }
+}
+
 fn status_text(model: &Model) -> (Vec<String>, Vec<(String, String)>) {
     let following = model
         .current_conversation()
@@ -1079,7 +1087,12 @@ fn status_text(model: &Model) -> (Vec<String>, Vec<(String, String)>) {
     // The status carries what went wrong -- a closed connection, a refused
     // request -- so it is never replaced by the facts.
     if !model.status.is_empty() {
-        notes.push(note(&model.status, &model.status));
+        // A SHORT FORM THAT IS ACTUALLY SHORT. Both halves used to be the whole
+        // status, so an error written for a shell -- the one naming the auth
+        // file runs to about five hundred characters -- fitted neither slot and
+        // was dropped. A person with no provider key saw `starting a session…`
+        // and no reason at all.
+        notes.push(note(&model.status, first_sentence(&model.status)));
     }
     if !model.connected {
         notes.push(note("daemon gone", "daemon gone"));
@@ -1119,6 +1132,15 @@ fn status_text(model: &Model) -> (Vec<String>, Vec<(String, String)>) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_status_written_for_a_shell_has_a_short_form_that_fits() {
+        let long = "No model is configured. Put a key in ~/.viva/auth.json, \
+shaped like: { \"deepseek\": { \"apiKey\": \"sk-...\" } }";
+        assert_eq!(super::first_sentence(long), "No model is configured.");
+        // Nothing to cut is left alone rather than emptied.
+        assert_eq!(super::first_sentence("daemon gone"), "daemon gone");
+    }
+
     use super::*;
     use crate::model::Model;
     use crate::protocol::{Event, SessionInfo};

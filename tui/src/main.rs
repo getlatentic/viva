@@ -261,6 +261,13 @@ fn perform(
                 model.open_tab(&id);
                 refresh_sessions(connection, model)?;
                 attach(connection, model, &id)?;
+            } else if let Some(reply) = reply.as_ref() {
+                // A START THAT FAILED HAS TO SAY SO. This arm only ever looked
+                // for a session id, so a refusal was dropped and the pane kept
+                // saying `starting a session…` -- which is what a person with
+                // no provider key saw instead of the message naming the file to
+                // put one in.
+                take_response(model, reply);
             }
         }
         Action::CloseTab => {
@@ -587,12 +594,23 @@ fn refresh_sessions(connection: &mut Connection, model: &mut Model) -> std::io::
     Ok(())
 }
 
+/// One row's worth of a message that may have been written for a terminal.
+///
+/// THE STATUS LINE IS ONE ROW. An error composed for somebody reading a shell
+/// can carry newlines and indentation -- the one for a missing provider key
+/// prints a whole JSON shape -- and pushed into a single row it rendered as
+/// nothing at all. So a person with no key saw `starting a session…` and no
+/// reason, which is the state this collapse exists to make impossible.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn take_response(model: &mut Model, reply: &Value) {
     if reply.get("sessions").is_some() {
         take_sessions(model, reply);
     } else if reply.get("success").and_then(Value::as_bool) == Some(false) {
         if let Some(error) = reply.get("error").and_then(Value::as_str) {
-            model.status = error.to_string();
+            model.status = one_line(error);
         }
     }
 }
@@ -608,5 +626,19 @@ fn take_sessions(model: &mut Model, reply: &Value) {
     model.prune_tabs();
     if model.selection >= model.sessions.len() {
         model.selection = model.sessions.len().saturating_sub(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_message_written_for_a_shell_becomes_one_row() {
+        // The status line is one row, and an error composed for somebody reading
+        // a shell carries newlines and indentation. Pushed into a single row it
+        // rendered as nothing at all.
+        let shell = "No model is configured. Put a key in:\n\n  {\n    \"a\": 1\n  }\n";
+        assert_eq!(super::one_line(shell),
+                   "No model is configured. Put a key in: { \"a\": 1 }");
+        assert_eq!(super::one_line("already one row"), "already one row");
     }
 }
