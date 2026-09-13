@@ -1057,9 +1057,19 @@ rather than leaving it to be rediscovered a third time."
 ;;; Operations, and parallel tools
 
 (define-test "an operation runs elsewhere and is waited for by name"
-  (let* ((gate (bt:make-semaphore :count 0))
-         (op (operation:start (lambda () (bt:wait-on-semaphore gate) :finished)
+  ;; THE BODY SAYS WHEN IT HAS BEGUN. START sets :running inside the thread it
+  ;; spawns, so asking from here the instant it returns asks before that thread
+  ;; has necessarily been scheduled -- which passes on a quiet machine and fails
+  ;; on a loaded one. A thunk that has reached its first line proves the state is
+  ;; already set, and the gate holds it there.
+  (let* ((begun (bt:make-semaphore :count 0))
+         (gate (bt:make-semaphore :count 0))
+         (op (operation:start (lambda ()
+                                (bt:signal-semaphore begun)
+                                (bt:wait-on-semaphore gate)
+                                :finished)
                               :label "slow")))
+    (true (bt:wait-on-semaphore begun :timeout 10) "the operation never began")
     (is eq :running (operation:status op))
     (false (operation:finished-p op))
     (bt:signal-semaphore gate)
