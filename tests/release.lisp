@@ -154,6 +154,30 @@ DOES rather than about what it says."
     ;; search over the whole text finds the explanation and fails on it.
     (false (search "readlink -f" (shell-code launcher)))))
 
+(define-test "every script finds sbcl rather than assuming the PATH has it"
+  ;; A terminal opened from a GUI reads no login profile, so its PATH has no
+  ;; Homebrew and `exec sbcl` failed with `sbcl: not found` -- the TUI reported
+  ;; the shell's words, and a working install looked broken. One resolver, so
+  ;; the launcher and the image build cannot disagree about where sbcl lives.
+  (let ((launcher (shell-code (repository-file "bin/viva")))
+        (image (shell-code (repository-file "tools/build-image.sh")))
+        (resolver (shell-code (repository-file "tools/sbcl.sh")))
+        (installer (shell-code (repository-file "install.sh"))))
+    (false (search "exec sbcl " launcher)
+           "the launcher is back to hoping sbcl is on the PATH")
+    (false (search "sbcl --script" image)
+           "the image build is back to hoping sbcl is on the PATH")
+    (true (search "tools/sbcl.sh" launcher))
+    (true (search "tools/sbcl.sh" image))
+    ;; Named beats found, everywhere. The installer cannot source the resolver
+    ;; -- it runs from a pipe, before there is a checkout -- so it says so too.
+    (true (search "VIVA_SBCL" resolver))
+    (true (search "VIVA_SBCL" installer)
+          "the installer ignores the override the launcher honours")
+    ;; And a named one that is not there is an error, not a fallback.
+    (true (search "which is not an executable file" resolver))
+    (true (search "brew install sbcl" resolver))))
+
 (define-test "install refuses to replace something it did not put there"
   (let ((source (repository-file "src/cli/install.lisp")))
     (true (search "describe-existing" source))

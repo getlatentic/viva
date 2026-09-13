@@ -12,5 +12,6 @@ case $out in
   *)  target=$(pwd)/$out ;;
 esac
 cd "$root"
-sbcl --script tools/build-image.lisp "$target"
+. "$root/tools/sbcl.sh"
+"$sbcl_bin" --script tools/build-image.lisp "$target"
 printf '%s\n' "$target"

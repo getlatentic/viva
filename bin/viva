@@ -76,4 +76,7 @@ case "${1:-}" in
     ;;
 esac
 
-exec sbcl --script "$root/bin/entry.lisp" "$@"
+# SBCL, wherever it is -- resolved in one place, shared with the image build.
+. "$root/tools/sbcl.sh"
+
+exec "$sbcl_bin" --script "$root/bin/entry.lisp" "$@"
