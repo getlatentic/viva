@@ -109,6 +109,13 @@ pub fn ensure_daemon(path: &PathBuf) -> Result<(), String> {
         format!("no daemon on {}, and no `viva` to start one with. \
 Put it on your PATH or set VIVA_BIN.", path.display())
     })?;
+    // BEFORE THE WAIT, NOT AFTER IT. The first start of the day compiles the
+    // world, so this waits in minutes rather than seconds, and this line exists
+    // because a blank terminal that long is indistinguishable from a hang. It
+    // used to sit below `output()`, which blocks until the start command has
+    // finished -- so the reassurance arrived once the waiting was over.
+    // Measured on a warm cache: 2.6 s of nothing, then the message.
+    eprintln!("starting the viva daemon…");
     let started = std::process::Command::new(&launcher)
         .args(["daemon", "start", "--background"])
         .stdout(std::process::Stdio::null())
@@ -122,10 +129,6 @@ Put it on your PATH or set VIVA_BIN.", path.display())
             String::from_utf8_lossy(&started.stderr).trim()
         ));
     }
-    // The first start of the day compiles the world, so this waits in minutes
-    // rather than seconds -- and says what it is waiting for, because a blank
-    // terminal for four minutes is indistinguishable from a hang.
-    eprintln!("starting the viva daemon…");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
     while std::time::Instant::now() < deadline {
         if UnixStream::connect(path).is_ok() {
