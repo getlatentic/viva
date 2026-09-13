@@ -19,7 +19,8 @@ belongs to BUILD-AGENT and is forwarded.")
           append (list key value)))
 
 (defun build-agent (&key model cwd root listener (request-limit 60) (stream t)
-                      session-directory (persist t) extra-prompt extension-directories
+                      session-directory (persist t) extra-prompt
+                      extension-files extension-directories
                       extra-tools resume)
   "An agent configured from the environment. Returns (values AGENT CHOICE COMPLAINTS).
 
@@ -49,6 +50,7 @@ the last one HERE."
          :listener listener
          :session session
          :extra-prompt extra-prompt
+         :extension-files extension-files
          :extension-directories extension-directories
          ;; Passed through rather than assembled here: which tools an agent
          ;; gets beyond the standard set is the caller's decision, and KC6's

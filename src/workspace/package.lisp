@@ -174,7 +174,8 @@
            #:*registry* #:defextension #:register-extension #:loaded-extensions
            #:load-extensions #:extension-directories
            #:register-builtin #:builtin-names #:builtin-description
-           #:declared #:contributions
+           #:declared #:contributions #:path-entry-p
+           #:load-declared-file #:load-declared-files
            #:extension-description
            #:register-tool #:register-command #:register-provider #:on #:fire #:decide
            #:all-providers #:extension-providers
@@ -269,7 +270,7 @@
            #:agent-prompt-tokens #:agent-completion-tokens #:note-usage
            #:agent-gate #:suspend-agent #:resume-agent #:agent-suspended-p #:cancel-agent
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
-           #:agent-extension-directories #:agent-compaction #:agent-active-tools
+           #:agent-extension-files #:agent-extension-directories #:agent-compaction #:agent-active-tools
            #:agent-last-tokens
            #:compact-now #:set-model #:set-active-tools #:apply-settings
            #:send-message #:append-custom #:navigate #:tree-lines #:close-agent

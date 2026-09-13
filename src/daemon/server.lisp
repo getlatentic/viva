@@ -397,6 +397,7 @@ cell on the same transcript would be two writers to one file."
                  ;; capability's business to get right, once.
                  :extra-tools declared-tools
                  :extra-prompt declared-prompts
+                 :extension-files *declared-files*
                  :request-limit 60)))
     (setf (agent:agent-stream-p agent) t
           (viva.compaction:settings-context-limit (harness:agent-compaction agent))
@@ -953,6 +954,10 @@ unlink the socket the first had just bound."
       (handler-case (progn (sb-posix:lockf fd sb-posix:f-tlock 0) fd)
         (error () (ignore-errors (sb-posix:close fd)) nil)))))
 
+(defvar *declared-files* '()
+  "The extension files this daemon was configured with -- loaded per session,
+under the trust gate, because loading one runs it.")
+
 (defvar *declared* '()
   "The capability names this daemon was configured with.
 
@@ -978,7 +983,10 @@ one thing promotion is for."
   ;; THE NAMES, not a boolean. A daemon that only knew on-or-off could offer one
   ;; capability; the setting is a list, and what a session gets is whatever those
   ;; names contribute.
-  (setf *declared* (extension:declared (config:machine-setting "capabilities" "off"))))
+  (multiple-value-bind (names files)
+      (extension:declared (config:machine-setting "capabilities" "off"))
+    (setf *declared* names
+          *declared-files* files)))
 
 (defun serve (&key (path (socket-path)) (background nil) announce)
   "Listen until stopped. One thread per connection; sessions outlive all of them.

@@ -321,9 +321,10 @@ noise, not a result.~%")
   ;; that went through here -- while the daemon honoured it. One setting, two
   ;; surfaces, and only one of them reading it is the same fault the resolved
   ;; model already has a test for.
-  (multiple-value-bind (extra-tools extra-prompts complaints)
-      (extension:contributions
-       (extension:declared (option parsed "capabilities" "off")))
+  (multiple-value-bind (names files)
+      (extension:declared (option parsed "capabilities" "off"))
+   (multiple-value-bind (extra-tools extra-prompts complaints)
+      (extension:contributions names)
     (dolist (complaint complaints)
       (format *error-output* "~&! capabilities: ~a~%" complaint))
     (list :model (option parsed "model")
@@ -350,7 +351,8 @@ noise, not a result.~%")
         ;; own tools and its own prompt, so an entry point cannot enable one and
         ;; forget to say so -- which is what happened to the door for a while.
         :extra-tools extra-tools
-        :extra-prompt (append (a:ensure-list (flag parsed "append")) extra-prompts))))
+        :extension-files files
+        :extra-prompt (append (a:ensure-list (flag parsed "append")) extra-prompts)))))
 
 (defun apply-journal-flag (parsed)
   "Point this run's journal -- its evolution ledger, and the capability store

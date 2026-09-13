@@ -2350,3 +2350,111 @@ through SB-POSIX, which a dynamic binding does not touch."
       (setf viva.extension::*builtins*
             (remove "counts-its-askings" viva.extension::*builtins*
                     :key #'car :test #'equal)))))
+
+;;; ---------------------------------------------------------------------------
+;;; A capability somebody wrote, named by path
+;;; ---------------------------------------------------------------------------
+
+(defun write-extension (path name tool-name)
+  "An extension file that registers one tool, so loading it is observable."
+  (ensure-directories-exist path)
+  (with-open-file (out path :direction :output :if-exists :supersede)
+    (format out "(in-package #:viva.extension)~%~
+(tool:define-tool ~a (args context)~%  :name \"~a\"~%  ~
+:description \"Proves a declared file was loaded.\"~%  :parameters ()~%  ~
+(tool:make-tool-result :output \"loaded\"))~%~
+(defextension \"~a\" :description \"Declared by path.\" (register-tool ~a))~%"
+            tool-name tool-name name tool-name))
+  path)
+
+(define-test "a capability setting tells a name from a path"
+  (true (extension:path-entry-p "~/.viva/extensions/recall.lisp"))
+  (true (extension:path-entry-p "/tmp/a.lisp"))
+  (true (extension:path-entry-p "recall.lisp") "a bare filename is still a file")
+  (false (extension:path-entry-p "self-modify") "a name was read as a path")
+  ;; The two come back apart, because a name contributes and a path must first
+  ;; be loaded -- under a gate that a name does not need.
+  (multiple-value-bind (names files)
+      (extension:declared "self-modify, /tmp/a.lisp, recall")
+    (is equal '("self-modify" "recall") names)
+    (is equal '("/tmp/a.lisp") files))
+  ;; A config file is written by hand, so `~` has to mean what it means there.
+  (multiple-value-bind (names files) (extension:declared "~/x.lisp")
+    (false names)
+    (is equal (list (concatenate 'string
+                                 (uiop:native-namestring (user-homedir-pathname))
+                                 "x.lisp"))
+        files)))
+
+(define-test "a declared file in the machine's own directory is loaded"
+  (let* ((home (throwaway-directory))
+         (file (format nil "~a/extensions/declared-here.lisp" home))
+         (before viva.trust::*trust-file*))
+    (unwind-protect
+         (progn
+           (setf viva.trust::*trust-file* (format nil "~a/trusted.sexp" home))
+           (write-extension file "declared-here" "declared_here_probe")
+           (with-repository (environment)
+             (false (extension:load-declared-file environment file)
+                    "a file in the person's own directory needed trusting")
+             (true (find "declared_here_probe" (extension:all-tools)
+                         :key #'tool:tool-name :test #'string=)
+                   "the file loaded and its tool did not arrive")))
+      (setf viva.trust::*trust-file* before)
+      (ignore-errors (uiop:delete-directory-tree
+                      (uiop:parse-native-namestring (format nil "~a/" home)) :validate t)))))
+
+(define-test "a declared file inside an untrusted project is refused"
+  ;; Naming a path in a project's own .viva/config would otherwise be a way for
+  ;; a clone to run code by being opened.
+  (with-repository (environment)
+    (let* ((project (env:env-cwd environment))
+           (file (format nil "~a/.viva/extensions/from-the-tree.lisp" project))
+           (before viva.trust::*trust-file*))
+      (unwind-protect
+           (progn
+             (setf viva.trust::*trust-file*
+                   (format nil "~a/trusted-for-this-test.sexp" (throwaway-directory)))
+             (write-extension file "from-the-tree" "from_the_tree_probe")
+             (let ((complaint (extension:load-declared-file environment file)))
+               (true complaint "an untrusted project's file was loaded")
+               (true (search "not a trusted project" complaint)
+                     "the refusal does not say why: ~s" complaint))
+             ;; Trusted, it loads -- or the gate is a wall.
+             (trust:trust environment project)
+             (false (extension:load-declared-file environment file)
+                    "a trusted project's file was still refused"))
+        (setf viva.trust::*trust-file* before)))))
+
+(define-test "the trust gate is not walked around by spelling"
+  ;; THE HOLE THIS SHIPPED WITH. The first version compared raw text, so a file
+  ;; inside the project named through a symlink did not match the project's own
+  ;; prefix and loaded anyway. On macOS /tmp is such a link, which is how it was
+  ;; found. TRUST:PERMITTED-P canonicalises both sides.
+  (with-repository (environment)
+    (let* ((project (env:env-cwd environment))
+           (file (format nil "~a/.viva/extensions/by-a-link.lisp" project))
+           (link (format nil "/tmp/viva-link-~36r" (random (expt 2 40) (make-random-state t))))
+           (before viva.trust::*trust-file*))
+      (unwind-protect
+           (progn
+             (setf viva.trust::*trust-file*
+                   (format nil "~a/trusted-for-the-link.sexp" (throwaway-directory)))
+             (write-extension file "by-a-link" "by_a_link_probe")
+             (sb-posix:symlink project link)
+             (let* ((through-the-link
+                      (format nil "~a/.viva/extensions/by-a-link.lisp" link))
+                    (complaint (extension:load-declared-file environment through-the-link)))
+               (true complaint
+                     "a file inside an untrusted project loaded when named through a link")
+               (true (search "not a trusted project" complaint))))
+        (setf viva.trust::*trust-file* before)
+        (ignore-errors (delete-file link))))))
+
+(define-test "a declared file that is not there says so"
+  (with-repository (environment)
+    (let ((complaint (extension:load-declared-file
+                      environment
+                      (format nil "~a/nothing-here.lisp" (env:env-cwd environment)))))
+      (true complaint "a missing file loaded")
+      (true (search "no such file" complaint) "the complaint does not say what is wrong"))))

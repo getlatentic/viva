@@ -42,6 +42,10 @@ in, on a path the agent had not asked for.")
              :documentation "Called with every loop event. The shell and the IPC
 mode are both just listeners, which is why neither needs a hook of its own.")
    (extensions :initarg :extensions :initform '() :accessor agent-extensions)
+   ;; Files named one by one, as a config line names them, beside the
+   ;; directories that are scanned whole.
+   (extension-files :initarg :extension-files :initform '()
+                    :accessor agent-extension-files)
    (extension-directories :initarg :extension-directories :initform '()
                           :accessor agent-extension-directories
                           :documentation "Loaded in addition to the machine's and
@@ -575,10 +579,17 @@ the suite -- and passed, because it read them back from the same place."
 can show them: a skill that silently failed to load looks exactly like a skill
 the model chose not to use."
   (let* ((environment (agent-resource-environment agent))
-         (complaints (extension:load-extensions
-                      environment
-                      :directories (append (extension:extension-directories environment)
-                                           (agent-extension-directories agent)))))
+         (complaints (append
+                      (extension:load-extensions
+                       environment
+                       :directories (append (extension:extension-directories environment)
+                                            (agent-extension-directories agent)))
+                      ;; AFTER the directories, so a file named in config is
+                      ;; loaded last and wins where both define the same thing.
+                      ;; Naming one is more deliberate than dropping it in a
+                      ;; directory that gets scanned whole.
+                      (extension:load-declared-files
+                       environment (agent-extension-files agent)))))
     (multiple-value-bind (skills warnings) (skill:load-skills environment (skill-directories environment))
       (setf (agent-skills agent) skills
             (agent-templates agent) (template:load-templates
@@ -592,7 +603,8 @@ the model chose not to use."
 (defun make-workspace-agent (&key (cwd (uiop:native-namestring (uiop:getcwd)))
                                root provider (model *default-model*)
                                listener (request-limit 60) session
-                               extra-tools extra-prompt extension-directories
+                               extra-tools extra-prompt
+                               extension-files extension-directories
                                (load-resources t)
                                (max-tokens 8192) reasoning-effort)
   "An agent pointed at a directory, with the ordinary tool set.
@@ -611,6 +623,7 @@ never a reason to refuse to start."
                                :session session
                                :extra-tools extra-tools
                                :extra-prompt extra-prompt
+                               :extension-files extension-files
                                :extension-directories extension-directories
                                :request-limit request-limit)))
     (let ((complaints (when load-resources (refresh-resources agent))))
@@ -835,8 +848,15 @@ thread, and one that inherited the transcript would defeat itself."
                               ;; step on: a child holding the tools and told
                               ;; nothing about what they already reach would
                               ;; rebuild what its parent could see.
+                              ;;
+                              ;; AND THE DECLARED FILES. A capability the
+                              ;; configuration asked for is a property of the
+                              ;; installation, not of one agent in it -- the
+                              ;; fourth thing in this list that had to be
+                              ;; threaded by hand.
                               :extra-tools (agent-extra-tools parent)
                               :extra-prompt (agent-extra-prompt parent)
+                              :extension-files (agent-extension-files parent)
                               :request-limit request-limit)))
     (setf (agent-lane child) lane
           (agent-compaction child) (agent-compaction parent))
