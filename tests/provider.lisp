@@ -16,6 +16,31 @@
     (true (nth-value 1 (gethash "messages" payload)))
     (false (provider:supports-grammar-p (make-instance 'provider:provider)))))
 
+(define-test "a request carrying tools spells out tool_choice"
+  ;; NOT LEFT TO A DEFAULT. OpenAI defaults to `auto` when tools are present and
+  ;; not every OpenAI-compatible endpoint does: gpt-oss-120b on Bedrock's
+  ;; gateway called a tool 0 times in 6 with the field absent, 3 in 6 with it.
+  ;; A harness whose loop is tool calls cannot ship that to chance.
+  (let ((agent (make-instance 'agent:queued-agent)))
+    ;; With none, the field is absent -- a turn that offers no tools must not
+    ;; tell the server how to choose among none.
+    (let ((payload (payload-for agent)))
+      (false (nth-value 1 (gethash "tool_choice" payload))
+             "tool_choice was sent on a request with no tools")
+      (false (nth-value 1 (gethash "tools" payload))))
+    (setf (agent:tools agent)
+          (list (make-instance 'tool:function-tool
+                               :name "probe" :description "A probe."
+                               :parameters '()
+                               :body (lambda (a c) (declare (ignore a c)) "probed"))))
+    (let ((payload (payload-for agent)))
+      ;; AUTO, not REQUIRED. The stronger word measured worse on the same
+      ;; endpoint -- 1 in 6 -- because a model forced to call on a turn that
+      ;; wanted prose calls something irrelevant.
+      (is string= "auto" (gethash "tool_choice" payload)
+          "tools went out without a tool_choice")
+      (true (nth-value 1 (gethash "tools" payload))))))
+
 (define-test "llama.cpp gets a grammar and template arguments"
   (let* ((agent (make-instance 'agent:queued-agent
                                :provider (provider:llama-cpp-provider)
