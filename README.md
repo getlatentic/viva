@@ -91,13 +91,15 @@ sh install.sh     # needs SBCL; installs Quicklisp if it is absent
 viva              # opens this directory's session, or starts one
 ```
 
-Or take the binaries. CI builds `viva-macos-arm64` and `viva-linux-x86_64`,
-which need neither SBCL nor Quicklisp nor a checkout. Put `viva` and `viva-tui`
-in one directory on your `PATH`: `viva` finds the full-screen client beside it.
+Or take the binaries. Each run of CI builds `viva-macos-arm64` and
+`viva-linux-x86_64`, which need neither SBCL nor Quicklisp nor a checkout, and
+attaches them to the run for ninety days. Put `viva` and `viva-tui` in one
+directory on your `PATH`: `viva` finds the full-screen client beside it.
 
 ```bash
+gh run download --repo getlatentic/viva --name viva-macos-arm64
 install -m 755 viva-macos-arm64 ~/.local/bin/viva
-install -m 755 viva-tui ~/.local/bin/viva-tui
+install -m 755 tui/target/release/viva-tui ~/.local/bin/viva-tui
 ```
 
 ### A provider key

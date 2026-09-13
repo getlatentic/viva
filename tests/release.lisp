@@ -154,6 +154,21 @@ DOES rather than about what it says."
     ;; search over the whole text finds the explanation and fails on it.
     (false (search "readlink -f" (shell-code launcher)))))
 
+(define-test "a standalone build starts its daemon with itself"
+  ;; The path into the build machine's checkout was real: a binary from CI tried
+  ;; to exec /Users/runner/work/viva/viva/bin/viva and could not. CI cannot
+  ;; catch that -- its smoke test runs ON the runner, where that path exists --
+  ;; so the decision is tested here instead of trusted there.
+  ;;
+  ;; One file means runtime and core are the same file. The suite runs under
+  ;; `sbcl --script`, where they differ, so both cases are passed in.
+  (let ((one-file #p"/somewhere/viva"))
+    (is string= "/somewhere/viva" (cli::own-launcher one-file one-file)
+        "a standalone build must spawn itself, not a checkout")
+    (is string= (namestring (merge-pathnames "bin/viva" (cli::repository-root)))
+        (cli::own-launcher #p"/usr/bin/sbcl" #p"/usr/lib/sbcl/sbcl.core")
+        "running from source, the launcher is the thing to spawn")))
+
 (define-test "every script finds sbcl rather than assuming the PATH has it"
   ;; A terminal opened from a GUI reads no login profile, so its PATH has no
   ;; Homebrew and `exec sbcl` failed with `sbcl: not found` -- the TUI reported

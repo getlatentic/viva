@@ -513,7 +513,8 @@ it finds nobody home."
            (progn (format t "~&not running~%") 1)))
       (t (format t "~&usage: viva daemon [status|start|stop|restart]~%") 1))))
 
-(defun own-launcher ()
+(defun own-launcher (&optional (runtime sb-ext:*runtime-pathname*)
+                              (core sb-ext:*core-pathname*))
   "The program to start a daemon with: THIS one, when this is one file.
 
 A STANDALONE BUILD MUST SPAWN ITSELF. The alternative was a path into the
@@ -528,8 +529,8 @@ question `am I one file?` is exactly the question `can I spawn myself?`.
 It is also the difference between one image load and two: starting detached
 used to pay this image for the command and the repository's source load for the
 daemon, which is most of what a cold start costs."
-  (if (equal sb-ext:*runtime-pathname* sb-ext:*core-pathname*)
-      (namestring sb-ext:*runtime-pathname*)
+  (if (equal runtime core)
+      (namestring runtime)
       (namestring (merge-pathnames "bin/viva" (repository-root)))))
 
 (defun launch-daemon ()
