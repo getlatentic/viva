@@ -316,7 +316,12 @@ noise, not a result.~%")
   ;; OPTION, not FLAG: a setting may come from this project's config, the
   ;; machine's, or the environment, and a person who set a model once should
   ;; not type --model on every command for the rest of time.
-  (let ((capabilities (string= "on" (flag parsed "capabilities" "off"))))
+  ;; OPTION, NOT FLAG. `flag` reads the command line alone, so `capabilities =
+  ;; on` in ~/.viva/config was listed by `viva config` and ignored by every run
+  ;; that went through here -- while the daemon honoured it. One setting, two
+  ;; surfaces, and only one of them reading it is the same fault the resolved
+  ;; model already has a test for.
+  (let ((capabilities (string= "on" (option parsed "capabilities" "off"))))
     (list :model (option parsed "model")
         :cwd (a:when-let ((cwd (flag parsed "cwd"))) (namestring (truename cwd)))
         :root (a:when-let ((root (option parsed "root"))) (namestring (truename root)))
