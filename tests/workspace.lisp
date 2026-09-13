@@ -2205,6 +2205,19 @@ through SB-POSIX, which a dynamic binding does not touch."
     (false (cli::answering-p local) "a local server nothing is behind was kept")
     (true (cli::answering-p hosted) "a hosted provider was probed and dropped")))
 
+(define-test "the no-model advice names only variables that exist"
+  ;; A keyless provider has no key to name. Mapping over every entry printed
+  ;; `BEDROCK_API_KEY, NIL, NIL` at the person who had just failed to configure
+  ;; anything, which is the worst possible audience for a NIL.
+  (let ((named (remove nil (mapcar (lambda (entry) (getf entry :key))
+                                   models::+catalogue+))))
+    (true (member "DEEPSEEK_API_KEY" named :test #'string=))
+    (dolist (each named)
+      (true (stringp each) "a catalogue entry offers ~s as a key variable" each))
+    ;; And the keyless ones are genuinely keyless, or this test proves nothing.
+    (true (find-if (lambda (entry) (getf entry :keyless)) models::+catalogue+)
+          "no keyless provider is in the catalogue any more")))
+
 (define-test "no Claude id is on the catalogue"
   ;; Anything anthropic.* on Bedrock is sold by Anthropic through AWS
   ;; Marketplace, and AWS promotional credits never pay for it -- the run

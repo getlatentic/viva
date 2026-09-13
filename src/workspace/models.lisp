@@ -251,7 +251,11 @@ says what would make one appear."
           (error "No model is configured. Put a key in ~a, shaped like:~%~%~a~%~%~
 Or set one of ~{~a~^, ~} in the environment."
                  (env:auth-path) auth:*file-shape*
-                 (mapcar (lambda (entry) (getf entry :key)) +catalogue+)))
+                 ;; ONLY THE ONES THAT HAVE A VARIABLE. A keyless provider has
+                 ;; no key to name, and mapping over every entry printed
+                 ;; `BEDROCK_API_KEY, NIL, NIL` at the person who had just
+                 ;; failed to configure anything.
+                 (remove nil (mapcar (lambda (entry) (getf entry :key)) +catalogue+))))
           ((null label) (first available))
           ;; By the choice's name, or by the model it resolves to. A session
           ;; records the model it ran under, and bringing it back means
