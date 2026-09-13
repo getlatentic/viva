@@ -154,6 +154,23 @@ DOES rather than about what it says."
     ;; search over the whole text finds the explanation and fails on it.
     (false (search "readlink -f" (shell-code launcher)))))
 
+(define-test "a standalone build installs itself, not a checkout"
+  ;; `install` linked bin/viva resolved from the ASDF source directory and
+  ;; reported success. Run from a downloaded binary that is a path into the
+  ;; machine it was BUILT on, so `viva` dangled on every other machine -- the
+  ;; same fault as spawning a daemon, in the other function that asks where the
+  ;; program is. One answer for both.
+  (let ((one-file #p"/downloads/viva-macos-arm64"))
+    (is string= "/downloads/viva-macos-arm64"
+        (cli::own-launcher one-file one-file))
+    ;; And a link to exactly this program is ours to replace, which is the only
+    ;; claim a standalone binary can make: it has no checkout to compare with.
+    (true (search "(string= (install-source) link)"
+                  (repository-file "src/cli/install.lisp"))
+          "install cannot recognise its own link, so re-installing refuses")
+    (true (search "(own-launcher)" (repository-file "src/cli/install.lisp"))
+          "install is back to linking a checkout it may not have")))
+
 (define-test "a standalone build starts its daemon with itself"
   ;; The path into the build machine's checkout was real: a binary from CI tried
   ;; to exec /Users/runner/work/viva/viva/bin/viva and could not. CI cannot

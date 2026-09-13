@@ -54,6 +54,15 @@ one a package manager will not fight over.")
 (defun launcher-path ()
   (namestring (merge-pathnames "bin/viva" (repository-root))))
 
+(defun install-source ()
+  "The program to put on PATH: THIS one, when this is one file.
+
+A standalone binary installed a link to the checkout it was BUILT in and said
+`installed`. On the build machine that path exists, so it looked right; on the
+machine somebody downloaded the binary to, `viva` dangled. OWN-LAUNCHER already
+answers this question for spawning a daemon, and the answer is the same one."
+  (own-launcher))
+
 (defun launcher-shaped-p (path)
   "Does PATH look like a checkout's launcher: <something>/bin/<our name>?"
   (and (string= (env:base-name (launcher-path)) (env:base-name path))
@@ -65,7 +74,10 @@ that has since moved or gone?
 
 Two ways to be ours, and neither matches on the launcher's past names.
 
-It points into THIS checkout's bin. That covers a link made before the
+It points at exactly this program, which is the only thing a standalone binary
+can claim: it has no checkout to reason about.
+
+Or it points into THIS checkout's bin. That covers a link made before the
 launcher file was renamed: it points at a path that no longer exists, so
 PROBE-FILE reports nothing installed while the link is still in the way.
 
@@ -75,7 +87,8 @@ not anybody's any more. A live link belonging to somebody else is still
 refused -- only a link that resolves to nothing can be taken over, and a
 dangling link nothing can run is not a thing worth protecting."
   (and link
-       (or (string= (env:parent-path (launcher-path)) (env:parent-path link))
+       (or (string= (install-source) link)
+           (string= (env:parent-path (launcher-path)) (env:parent-path link))
            (and (null (probe-file link)) (launcher-shaped-p link)))
        t))
 
@@ -106,7 +119,7 @@ Refuses to replace anything it did not put there. Overwriting a stranger's
 binary because it happens to share a name is not a thing an installer gets to
 decide, and `already installed` and `something else is called viva` are
 different answers that must not look alike."
-  (let ((launcher (launcher-path)))
+  (let ((launcher (install-source)))
     (multiple-value-bind (directory why) (install-directory (flag parsed "prefix"))
       (handler-case (ensure-directories-exist (uiop:ensure-directory-pathname directory))
         (error (condition)
