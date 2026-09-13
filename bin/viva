@@ -1,7 +1,7 @@
 #!/bin/sh
-# One entry point for every run. Loads .env itself so no run depends on the
-# caller having sourced it -- forgetting to was a repeated cost while building
-# the task set.
+# One entry point for every run. It sources no key file: credentials live in
+# ~/.viva/auth.json and the engine reads them itself, so no run depends on this
+# script having exported anything -- which a standalone build never could.
 set -eu
 
 # Follow symlinks to find the REPOSITORY, not the link. `viva install`

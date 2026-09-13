@@ -109,7 +109,7 @@ ledger is the whole report."
   (let* ((arm (first (arms-named (a:when-let ((m (flag parsed "model"))) (list m)))))
          (renderers (attend-renderers parsed (session-backend session))))
     (unless arm
-      (format t "~&No arm available. Set a key in .env.~%")
+      (format t "~&No arm available. Put a key in ~a.~%" (env:auth-path))
       (return-from attend-session 1))
     (let ((agent (make-instance 'attending-agent
                                 :renderers renderers

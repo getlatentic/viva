@@ -1,23 +1,19 @@
 ;;;; Settings, so they are not trapped in the clone.
 ;;;;
-;;;; `bin/viva` resolves its root to the REPOSITORY and sources that
-;;;; `.env`, which was fine while the only way to run viva was from inside
-;;;; the repository. Once `viva install` puts the command on PATH, a
-;;;; person's configuration lived in a directory they might never open again,
-;;;; and there was no way to say "this project uses deepseek, that one uses the
-;;;; local server".
+;;;; Two files, and the narrower one wins, so a person can say "this project
+;;;; uses deepseek, that one uses the local server":
 ;;;;
 ;;;;     ~/.viva/config      the machine's
 ;;;;     .viva/config        this project's, and it wins
 ;;;;
-;;;; KEY=VALUE, the same shape as `.env`, deliberately. Every setting here is
-;;;; a flat scalar, so a TOML or JSON parser would be a dependency taken on for
-;;;; nesting that does not exist -- and it is the format people already
-;;;; hand-edit in this project. `#` starts a comment.
+;;;; KEY=VALUE. Every setting here is a flat scalar, so a TOML or JSON parser
+;;;; would be a dependency taken on for nesting that does not exist. `#` starts
+;;;; a comment.
 ;;;;
-;;;; NO CREDENTIALS, and that is enforced rather than advised. `.env` is
-;;;; gitignored; `.viva/config` is a file people commit, so a key in one is
-;;;; a key published. A credential-shaped name is refused by name.
+;;;; NO CREDENTIALS, and that is enforced rather than advised. Keys live in
+;;;; `~/.viva/auth.json`, outside any repository; `.viva/config` is a file
+;;;; people commit, so a key in one is a key published. A credential-shaped
+;;;; name is refused by name.
 
 (in-package #:viva.config)
 
@@ -112,9 +108,7 @@ at.")
 Order, weakest first: machine config, project config, environment. A flag beats
 all of them and is applied by the caller, which is the only layer this cannot
 see. The environment sits above the files because that is what every other tool
-means by an exported variable -- and because the repository's `.env` is sourced
-into it by the launcher, so a person who has always configured viva that
-way keeps working unchanged.
+means by an exported variable.
 
 Returns (values TABLE COMPLAINTS)."
   (let ((environment (env:make-local-environment :cwd cwd))

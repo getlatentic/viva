@@ -150,8 +150,8 @@ EXPERIMENTS
       --file prompt.txt       read the prompt from a file, or pipe it on stdin
   compare <before> <after>    how many cells moved between two sweeps
 
-Credentials are read from .env at the repository root by bin/viva, so no
-run depends on the caller having sourced it.
+Credentials are read from ~/.viva/auth.json by the engine itself, so no run
+depends on the caller having exported anything.
 ")
 
 (defun help-wanted-p (parsed name)
