@@ -86,20 +86,22 @@ and it goes through workspace files.
 
 ## Install
 
+A released binary, which needs no SBCL, no Quicklisp and no checkout. macOS on
+Apple silicon and Linux on x86_64.
+
 ```bash
-sh install.sh     # needs SBCL; installs Quicklisp if it is absent
+curl -fsSL https://raw.githubusercontent.com/getlatentic/viva/main/get.sh | sh
 viva              # opens this directory's session, or starts one
 ```
 
-Or take the binaries. Each run of CI builds `viva-macos-arm64` and
-`viva-linux-x86_64`, which need neither SBCL nor Quicklisp nor a checkout, and
-attaches them to the run for ninety days. Put `viva` and `viva-tui` in one
-directory on your `PATH`: `viva` finds the full-screen client beside it.
+It puts the engine and the full-screen client in `~/.viva/bin`, checks both
+against the release's checksums, and links `viva` onto your `PATH`.
+`VIVA_VERSION` pins a tag and `VIVA_PREFIX` names the directory to link into.
+
+To build from source instead, or to work on viva:
 
 ```bash
-gh run download --repo getlatentic/viva --name viva-macos-arm64
-install -m 755 viva-macos-arm64 ~/.local/bin/viva
-install -m 755 tui/target/release/viva-tui ~/.local/bin/viva-tui
+sh install.sh     # needs SBCL; installs Quicklisp if it is absent
 ```
 
 ### A provider key

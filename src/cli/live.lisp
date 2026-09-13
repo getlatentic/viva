@@ -293,17 +293,24 @@ terminal it was invited into.")
 
 ;;; The Rust client, from a build that may not be a checkout
 
-(defun beside-me (name)
+(defun beside-me (name &optional (self (or (first sb-ext:*posix-argv*) ""))
+                                 (runtime sb-ext:*runtime-pathname*))
   "NAME in the directory this executable is in, or NIL.
 
 A standalone build is one file somebody copied onto their PATH, and the client
 CI builds beside it travels the same way. Looking next to ourselves is what
 makes `viva` and `viva-tui` in one directory a working install rather than two
-files that have to be told about each other."
-  (a:when-let* ((self (or (first sb-ext:*posix-argv*) ""))
-                (here (env:parent-path (or (ignore-errors
-                                            (namestring (truename self)))
-                                           (namestring sb-ext:*runtime-pathname*)))))
+files that have to be told about each other.
+
+THROUGH THE SYMLINK, because installing makes one. Typing the name leaves argv0
+a bare `viva`, which TRUENAME resolves against the working directory and so not
+at all; the runtime path is then the link rather than what it points at, and the
+directory looked in is the one on PATH, where only the link lives. A standalone
+binary quietly fell back to the Lisp client for exactly this reason."
+  (a:when-let ((here (env:parent-path
+                      (or (ignore-errors (namestring (truename self)))
+                          (ignore-errors (namestring (truename runtime)))
+                          (namestring runtime)))))
     (let ((candidate (env:join-path here name)))
       (when (probe-file candidate) candidate))))
 

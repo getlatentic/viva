@@ -154,6 +154,63 @@ DOES rather than about what it says."
     ;; search over the whole text finds the explanation and fails on it.
     (false (search "readlink -f" (shell-code launcher)))))
 
+(define-test "the curl installer reaches a release, and checks what it gets"
+  (let* ((script (repository-file "get.sh"))
+         (code (shell-code script))
+         (workflow (repository-file ".github/workflows/release.yml")))
+    ;; A RELEASE ASSET, NOT A WORKFLOW ARTIFACT. Artifacts answer 401 without a
+    ;; token and expire after ninety days, so `curl | sh` cannot use them --
+    ;; which is the whole reason the release workflow exists alongside `check`.
+    (true (search "/releases/latest/download" code))
+    (false (search "/actions/artifacts" code)
+           "the installer is back to an artifact no anonymous curl can fetch")
+    ;; It never leaves half a binary where a working one was: check, then move.
+    (true (search "SHA256SUMS" code))
+    (true (search "mktemp -d" code))
+    (true (search "-c" code))
+    ;; And the PATH question belongs to `viva install`, which already refuses to
+    ;; replace a stranger's binary and knows to link itself.
+    (true (search "\"$store/viva\" install" code))
+    ;; A machine with no binary is told the one thing that works there.
+    (true (search "sh install.sh" script))
+    ;; The workflow has to prove the binary stands alone, because the fault it
+    ;; guards against -- needing the directory it was built in -- looks fine on
+    ;; the machine that built it.
+    (true (search "Prove the binary stands alone" workflow))
+    (true (search "gh release upload" workflow))))
+
+(define-test "a binary on PATH finds the client through its own symlink"
+  ;; Installing makes a symlink, so this is the normal case, not an edge one.
+  ;; Typing the name leaves argv0 a bare `viva` that TRUENAME cannot resolve,
+  ;; and the runtime path is then the LINK: looking beside that is looking in
+  ;; the PATH directory, where only the link lives. Every standalone install
+  ;; quietly fell back to the Lisp client.
+  (let* ((root (uiop:ensure-directory-pathname
+                (format nil "~a/viva-beside-~a" (uiop:temporary-directory) (random 100000))))
+         (store (merge-pathnames "store/" root))
+         (path (merge-pathnames "path/" root)))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist store)
+           (ensure-directories-exist path)
+           (let ((binary (namestring (merge-pathnames "viva" store)))
+                 (client (namestring (merge-pathnames "viva-tui" store)))
+                 (link (namestring (merge-pathnames "viva" path))))
+             (with-open-file (out binary :direction :output) (write-line "binary" out))
+             (with-open-file (out client :direction :output) (write-line "client" out))
+             (sb-posix:symlink binary link)
+             ;; Compared as TRUENAMEs: what comes back is resolved, and on a
+             ;; mac /var is itself a link to /private/var.
+             (let ((want (namestring (truename client))))
+               ;; argv0 is a bare name, as it is when somebody types `viva`.
+               (is string= want (cli::beside-me "viva-tui" "viva" link)
+                   "the client beside the real binary must be found through the link")
+               ;; And the direct case still holds.
+               (is string= want (cli::beside-me "viva-tui" binary binary)))
+             ;; A name that is not there is still NIL, not an error.
+             (false (cli::beside-me "viva-nothing" "viva" link))))
+      (ignore-errors (uiop:delete-directory-tree root :validate t)))))
+
 (define-test "a standalone build installs itself, not a checkout"
   ;; `install` linked bin/viva resolved from the ASDF source directory and
   ;; reported success. Run from a downloaded binary that is a path into the

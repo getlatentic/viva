@@ -1,0 +1,123 @@
+# Build the binaries a person can install without SBCL, and attach them to the
+# tag.
+#
+# `check` already builds these on every push, but it uploads them as workflow
+# artifacts: those need a GitHub token to download and expire after ninety
+# days, so `curl | sh` cannot reach them. A release asset is a public URL that
+# stays, which is the whole reason this file exists separately.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # So the assets can be produced for a tag that already exists, and so this
+  # can be proved to work before anybody depends on it.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to attach binaries to"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  binaries:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macos-arm64
+          - os: ubuntu-latest
+            name: linux-x86_64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: SBCL and ncurses
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew install sbcl
+          else
+            sudo apt-get update
+            sudo apt-get install -y sbcl libncurses-dev
+          fi
+
+      - name: Cache Quicklisp
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/quicklisp
+            ~/.cache/common-lisp
+          key: quicklisp-${{ matrix.name }}-${{ hashFiles('viva.asd') }}
+          restore-keys: quicklisp-${{ matrix.name }}-
+
+      - name: Install Quicklisp
+        run: |
+          if [ ! -f "$HOME/quicklisp/setup.lisp" ]; then
+            curl -sSLO https://beta.quicklisp.org/quicklisp.lisp
+            sbcl --non-interactive --load quicklisp.lisp \
+                 --eval '(quicklisp-quickstart:install)'
+          fi
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tui/target
+          key: cargo-${{ matrix.name }}-${{ hashFiles('tui/Cargo.lock') }}
+
+      - name: Build
+        run: |
+          ./tools/build-image.sh "viva-${{ matrix.name }}"
+          cargo build --release --manifest-path tui/Cargo.toml
+          cp tui/target/release/viva-tui "viva-tui-${{ matrix.name }}"
+
+      # IT HAS TO SERVE, not merely start, and it has to do it with no checkout
+      # in the picture: a binary that needs the directory it was built in is
+      # the one fault this whole file exists to avoid shipping.
+      - name: Prove the binary stands alone
+        env:
+          VIVA_SOCKET: ${{ runner.temp }}/release.sock
+          VIVA_JOURNAL: ${{ runner.temp }}/release-journal
+          VIVA_HOME: ${{ runner.temp }}/release-home
+        run: |
+          install -m 755 "viva-${{ matrix.name }}" "$RUNNER_TEMP/viva"
+          install -m 755 "viva-tui-${{ matrix.name }}" "$RUNNER_TEMP/viva-tui"
+          cd "$RUNNER_TEMP"
+          ./viva daemon start --background
+          ./viva daemon status
+          ./viva sessions
+          ./viva daemon stop
+
+      # One file per platform rather than one for the release: two jobs cannot
+      # append to the same asset, and a checksum written by whichever finished
+      # last is worse than none.
+      - name: Checksums
+        run: |
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "viva-${{ matrix.name }}" "viva-tui-${{ matrix.name }}" \
+              > "SHA256SUMS-${{ matrix.name }}"
+          else
+            shasum -a 256 "viva-${{ matrix.name }}" "viva-tui-${{ matrix.name }}" \
+              > "SHA256SUMS-${{ matrix.name }}"
+          fi
+          cat "SHA256SUMS-${{ matrix.name }}"
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --title "$TAG" --generate-notes
+          gh release upload "$TAG" --clobber \
+            "viva-${{ matrix.name }}" \
+            "viva-tui-${{ matrix.name }}" \
+            "SHA256SUMS-${{ matrix.name }}"
