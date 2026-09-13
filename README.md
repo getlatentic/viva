@@ -116,14 +116,22 @@ happened to export.
 | `~/.viva/auth.json` | `deepseek`, `openai`, `openrouter`, `bedrock` |
 | `DEEPSEEK_API_KEY` and friends | the environment |
 
-An entry may also carry `endpoint` and `model`, which is how a deployment in
-another region is reached and how you say what an endpoint's own name means:
+One key per provider, and the models it serves listed under it. `endpoint`
+reaches a deployment in another region. `models` replaces the built-in list, so
+a provider that adds a model does not wait for a release. `model` says what the
+provider's own name means.
 
 ```json
-{ "bedrock": { "apiKey": "...",
-               "endpoint": "https://bedrock-mantle.eu-west-1.api.aws/v1/chat/completions",
-               "model": "openai.gpt-oss-120b" } }
+{ "deepseek": { "apiKey": "sk-...",
+                "models": ["deepseek-v4-flash", "deepseek-v4-pro"] },
+  "bedrock":  { "apiKey": "...",
+                "endpoint": "https://bedrock-mantle.eu-west-1.api.aws/v1/chat/completions",
+                "model": "openai.gpt-oss-120b" } }
 ```
+
+Every model answers to `provider/id` — `viva --model deepseek/deepseek-v4-pro`.
+A provider's own name resolves to whichever model it pins, or the first it
+lists.
 
 Keys are not settings: `config` is a file people copy into projects and commit,
 and `auth.json` is not. Nothing sources a file of shell exports.
