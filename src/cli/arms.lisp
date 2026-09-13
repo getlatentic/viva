@@ -32,6 +32,17 @@
          (usocket:socket-close socket)
          t)))))
 
+(defun answering-p (choice)
+  "Would this choice's server answer?
+
+ONLY THE KEYLESS ONES are probed, because those are the servers on this machine
+-- a hosted endpoint being unreachable is a network fault to report, not a
+provider to drop. A configured local endpoint with nothing behind it produced a
+whole column of `err` in one sweep, which costs an attempt per cell and reads
+like a model failing rather than a server that is not running."
+  (or (not (models:choice-keyless choice))
+      (listening-p (provider:provider-endpoint (models:choice-provider choice)))))
+
 (defparameter +arm-labels+
   '(("openrouter" . "gpt-oss-120b") ("deepseek" . "deepseek-flash"))
   "Experiment-facing names for catalogue entries. The results files and the
@@ -66,10 +77,7 @@ probe stays here: a configured endpoint with nothing behind it produced a whole
 column of `err` in one sweep, which costs an attempt per cell and reads like a
 model failing rather than a missing one."
   (remove nil (mapcar (lambda (choice)
-                        (if (and (string= "local" (models:choice-label choice))
-                                 (not (listening-p (env "VIVA_LOCAL_ENDPOINT"))))
-                            nil
-                            (arm-for choice :default t)))
+                        (if (answering-p choice) (arm-for choice :default t) nil))
                       ;; ONE PER ENDPOINT. An arm is an experimental condition
                       ;; and a sweep over `every arm` is a bill; Bedrock serving
                       ;; eight models must not turn one battery into eight.

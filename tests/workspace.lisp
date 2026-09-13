@@ -2142,6 +2142,59 @@ through SB-POSIX, which a dynamic binding does not touch."
           (cli:arm-label (first (cli:arms-named '("bedrock/zai.glm-5"))))
           "a named model borrowed the provider's column name"))))
 
+(defun catalogue-entry (label)
+  (find label models::+catalogue+ :key (lambda (each) (getf each :label)) :test #'string=))
+
+(define-test "a keyless provider is configured by being named"
+  ;; A server on your own machine needs no key, so something else has to decide
+  ;; whether to offer it. Pi's rule: a keyless provider still has auth
+  ;; semantics, and what they report is whether it is configured. Without that
+  ;; it is either always offered and usually dead, or never offered at all --
+  ;; which is what happened when only a variable could configure it and the
+  ;; variable was renamed.
+  (let ((entry (catalogue-entry "local"))
+        (named (com.inuoe.jzon:parse "{\"local\": {}}"))
+        (other (com.inuoe.jzon:parse "{\"deepseek\": {\"apiKey\": \"k\"}}")))
+    (true (models::configured-p entry named) "naming it did not configure it")
+    (false (models::configured-p entry other) "an unnamed local server was offered")
+    ;; And an endpoint in the environment still does it, as it always did.
+    (let ((before (sb-posix:getenv "VIVA_LOCAL_ENDPOINT")))
+      (unwind-protect
+           (progn (sb-posix:setenv "VIVA_LOCAL_ENDPOINT" "http://localhost:1/v1/chat/completions" 1)
+                  (true (models::configured-p entry other)
+                        "the environment stopped configuring a local server"))
+        (if before
+            (sb-posix:setenv "VIVA_LOCAL_ENDPOINT" before 1)
+            (sb-posix:unsetenv "VIVA_LOCAL_ENDPOINT"))))))
+
+(define-test "a provider that lists no model offers none"
+  ;; What is pulled onto a machine is unknowable from here, so ollama ships no
+  ;; list. A choice whose model is NIL would reach the wire as a request for "".
+  (let ((entry (catalogue-entry "ollama"))
+        (bare (com.inuoe.jzon:parse "{\"ollama\": {}}"))
+        (listed (com.inuoe.jzon:parse "{\"ollama\": {\"models\": [\"qwen3-coder:30b\"]}}")))
+    (true (models::configured-p entry bare) "naming it did not configure it")
+    (false (models::entry-choices entry :auth bare)
+           "a provider with no model offered one anyway")
+    (let ((offered (models::entry-choices entry :auth listed)))
+      (is = 1 (length offered))
+      (is string= "ollama/qwen3-coder:30b" (models:choice-label (first offered)))
+      (true (models:choice-keyless (first offered)) "ollama is not keyed"))))
+
+(define-test "only a server on this machine is probed for liveness"
+  ;; A hosted endpoint that will not answer is a network fault to report, not a
+  ;; provider to drop. A local one that is simply not running is neither.
+  (let* ((dead (com.inuoe.jzon:parse
+                "{\"local\": {\"endpoint\": \"http://127.0.0.1:1/v1/chat/completions\"}}"))
+         (local (first (models::entry-choices (catalogue-entry "local") :auth dead)))
+         (hosted (first (models::entry-choices
+                         (catalogue-entry "deepseek")
+                         :auth (com.inuoe.jzon:parse "{\"deepseek\": {\"apiKey\": \"k\"}}")))))
+    (true local "the local choice was not built")
+    (true hosted "the hosted choice was not built")
+    (false (cli::answering-p local) "a local server nothing is behind was kept")
+    (true (cli::answering-p hosted) "a hosted provider was probed and dropped")))
+
 (define-test "no Claude id is on the catalogue"
   ;; Anything anthropic.* on Bedrock is sold by Anthropic through AWS
   ;; Marketplace, and AWS promotional credits never pay for it -- the run
