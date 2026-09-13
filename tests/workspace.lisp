@@ -2272,3 +2272,81 @@ through SB-POSIX, which a dynamic binding does not touch."
   (false (viva.discovery::models-at-openai "http://127.0.0.1:1/v1/chat/completions")
          "an unreachable server signalled instead of answering nothing")
   (viva.discovery:forget))
+
+;;; ---------------------------------------------------------------------------
+;;; Capabilities, declared rather than discovered
+;;;
+;;; The bare harness is the baseline and everything past it is something the
+;;; configuration asked for. A built-in and a file somebody wrote differ only in
+;;; where the code came from.
+;;; ---------------------------------------------------------------------------
+
+(define-test "a capability setting names capabilities"
+  (is equal '() (extension:declared "off") "off asked for something")
+  (is equal '() (extension:declared "") "an absent setting asked for something")
+  (is equal '() (extension:declared nil))
+  ;; `on` STILL MEANS THE DOOR. KC6's three arms are written in these words and
+  ;; its published results name them, so the words that produced numbers keep
+  ;; meaning what they meant.
+  (is equal '("self-modify") (extension:declared "on"))
+  (is equal '("self-modify") (extension:declared "self-modify"))
+  ;; A list, because a build offering three can be asked for two.
+  (is equal '("self-modify" "recall") (extension:declared "self-modify, recall"))
+  (is equal '("a" "b") (extension:declared " a ,  b ") "spacing was not forgiven"))
+
+(define-test "the self-modification door is a declared capability"
+  ;; THE TEST OF THE WHOLE SHAPE. The door was two keyword arguments every entry
+  ;; point had to assemble, and one of them forgot the prompt half for a while.
+  ;; If it cannot be expressed as a name in a list with nothing lost, the model
+  ;; does not hold.
+  (true (member "self-modify" (extension:builtin-names) :test #'string=)
+        "this build does not offer self-modify: ~s" (extension:builtin-names))
+  (true (plusp (length (extension:builtin-description "self-modify")))
+        "a capability nobody can read about is not discoverable")
+  (multiple-value-bind (tools prompts complaints)
+      (extension:contributions '("self-modify"))
+    (false complaints "asking for a capability this build has complained: ~s" complaints)
+    (is = 8 (length tools) "the door offers ~d tools, not the eight it has" (length tools))
+    (is = 1 (length prompts) "a door with tools and no prompt is one nothing can be told about")
+    (dolist (verb '("create_capability" "call_capability" "show_capability"
+                    "promote_capability" "revert_capability"))
+      (true (find verb tools :key #'tool:tool-name :test #'string=)
+            "~a is not among what the capability contributes" verb))))
+
+(define-test "a capability nobody registered is a complaint, not a silence"
+  ;; The only thing worse than a setting that does nothing is one that does
+  ;; nothing quietly -- and the message has to say what this build does offer,
+  ;; or the reader has no way to find the name they meant.
+  (multiple-value-bind (tools prompts complaints)
+      (extension:contributions '("no-such-capability"))
+    (false tools) (false prompts)
+    (is = 1 (length complaints))
+    (true (search "no-such-capability" (first complaints)))
+    (true (search "self-modify" (first complaints))
+          "the complaint does not say what this build offers: ~s" (first complaints)))
+  ;; And one bad name does not cost the good ones.
+  (multiple-value-bind (tools prompts complaints)
+      (extension:contributions '("self-modify" "no-such-capability"))
+    (true (plusp (length tools)) "a bad name took the working capability with it")
+    (is = 1 (length prompts))
+    (is = 1 (length complaints))))
+
+(define-test "a capability is asked what it offers at request time"
+  ;; Registered at load, CALLED LATE. What is behind the door changes while a run
+  ;; is going -- the organism promotes a capability and the next request has to
+  ;; name it -- so a list captured at registration would be the list before any
+  ;; of that happened.
+  (let ((asked 0))
+    (unwind-protect
+         (progn
+           (extension:register-builtin
+            "counts-its-askings"
+            (lambda () (incf asked) (list :tools '() :prompt "x"))
+            :description "A capability that records being asked.")
+           (is = 0 asked "registering called it")
+           (extension:contributions '("counts-its-askings"))
+           (extension:contributions '("counts-its-askings"))
+           (is = 2 asked "it was asked ~d times for two requests" asked))
+      (setf viva.extension::*builtins*
+            (remove "counts-its-askings" viva.extension::*builtins*
+                    :key #'car :test #'equal)))))

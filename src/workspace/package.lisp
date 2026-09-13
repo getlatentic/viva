@@ -173,6 +173,8 @@
            #:extension-commands #:extension-hooks
            #:*registry* #:defextension #:register-extension #:loaded-extensions
            #:load-extensions #:extension-directories
+           #:register-builtin #:builtin-names #:builtin-description
+           #:declared #:contributions
            #:extension-description
            #:register-tool #:register-command #:register-provider #:on #:fire #:decide
            #:all-providers #:extension-providers

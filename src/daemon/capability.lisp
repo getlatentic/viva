@@ -227,6 +227,23 @@ resolves, and whatever you have put in force for this one."
                          (loop for (name . id) in pins append (list name id)))
                  "Nothing is in force for this task, so the promoted defaults resolve.")))))
 
+;;; Declared, like anything else
+;;;
+;;; THE DOOR IS NOT A SPECIAL CASE IN THE CLI ANY MORE. It used to be two
+;;; keyword arguments assembled by whoever was building an agent, which meant
+;;; every entry point had to remember both halves and one of them forgot the
+;;; prompt for a while. It registers itself under a name now, and `config` asks
+;;; for that name -- the same way it will ask for a file somebody wrote.
+;;;
+;;; REGISTERED AT LOAD TIME, CALLED AT REQUEST TIME. What is behind the door
+;;; changes while a run is going: the organism promotes a capability and the next
+;;; request has to name it. A list captured here would be the list before any of
+;;; that happened.
+(extension:register-builtin
+ "self-modify"
+ (lambda () (list :tools (capability-tools) :prompt #'capability-prompt))
+ :description "Compile, keep, run and take back capability of its own.")
+
 (defun capability-prompt ()
   "The promoted capabilities, for the system prompt, or \"\" when there are none.
 

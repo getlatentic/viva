@@ -199,3 +199,78 @@ Trust it to enable its extensions." directory project)
                  (when (a:ends-with-subseq ".lisp" (env:info-name info))
                    (a:when-let ((complaint (load-file-safely (env:info-path info))))
                      (push complaint complaints))))))))))
+
+;;; Declared rather than discovered
+;;;
+;;; A DIRECTORY SCAN IS NOT A DECLARATION. Everything above loads whatever it
+;;; finds, which is the right shape for a directory a person keeps their own
+;;; files in and the wrong one for saying what this installation is. Nothing can
+;;; name a capability, disable one, or refer to something already in the binary.
+;;;
+;;; So a capability registers itself under a name, and `config` says which names
+;;; are active. A built-in and a file somebody wrote are then the same kind of
+;;; thing, differing only in where the code came from -- which is the whole
+;;; point: the bare harness is the baseline, and everything past it is something
+;;; the configuration asked for.
+;;;
+;;; A CONTRIBUTION IS TOOLS AND PROMPT, and deliberately no more. Those two are
+;;; what the agent surface already takes, so this adds a way to select what is
+;;; there rather than a second way to reach it. A capability needing more than
+;;; the two is the signal to widen this on purpose.
+
+(defvar *builtins* '()
+  "NAME -> (DESCRIPTION . CONTRIBUTE). CONTRIBUTE is called at request-assembly
+time and returns a plist of :TOOLS and :PROMPT.
+
+CALLED LATE, not at registration: what a capability offers can depend on what
+the organism has done to itself since it started, and a list captured at load
+time would be the list before any of that.")
+
+(defun register-builtin (name contribute &key (description ""))
+  "Offer NAME as a capability this build can be asked for."
+  (setf *builtins* (cons (cons name (cons description contribute))
+                         (remove name *builtins* :key #'car :test #'equal)))
+  name)
+
+(defun builtin-names ()
+  (sort (mapcar #'car *builtins*) #'string<))
+
+(defun builtin-description (name)
+  (a:when-let ((found (assoc name *builtins* :test #'equal)))
+    (second found)))
+
+(defun declared (setting)
+  "The capability names SETTING asks for.
+
+`on` AND `off` STILL WORK. KC6's three arms are written in them and its results
+name them, so the words that produced published numbers keep meaning what they
+meant: `on` is the self-modification door, `off` is nothing at all."
+  (let ((given (string-trim " " (or setting ""))))
+    (cond ((or (zerop (length given)) (string-equal "off" given)) '())
+          ((string-equal "on" given) (list "self-modify"))
+          (t (remove ""
+                     (mapcar (lambda (part) (string-trim " " part))
+                             (uiop:split-string given :separator ","))
+                     :test #'equal)))))
+
+(defun contributions (names)
+  "What NAMES contribute, as (values TOOLS PROMPTS COMPLAINTS).
+
+A NAME NOBODY REGISTERED IS A COMPLAINT, not a silence. A configuration that
+asks for a capability and gets none has been misread, and the only thing worse
+than a setting that does nothing is one that does nothing quietly."
+  (let ((tools '()) (prompts '()) (complaints '()))
+    (dolist (name names)
+      (a:if-let ((found (assoc name *builtins* :test #'equal)))
+        (let ((offered (handler-case (funcall (cddr found))
+                         (error (condition)
+                           (push (format nil "~a could not be enabled: ~a" name condition)
+                                 complaints)
+                           '()))))
+          (setf tools (append tools (getf offered :tools)))
+          (a:when-let ((prompt (getf offered :prompt)))
+            (setf prompts (append prompts (list prompt)))))
+        (push (format nil "no capability called ~s. This build offers: ~{~a~^, ~}"
+                      name (or (builtin-names) (list "none")))
+              complaints)))
+    (values tools prompts (nreverse complaints))))

@@ -382,19 +382,21 @@ cell on the same transcript would be two writers to one file."
                       (session:reopen-session (session:summary-path earlier))
                       (session:open-session :directory (session:session-directory cwd)
                                             :cwd cwd)))
+         (declared (multiple-value-list (extension:contributions *declared*)))
+         (declared-tools (first declared))
+         (declared-prompts (second declared))
          (agent (harness:make-workspace-agent
                  :cwd cwd
                  :provider (models:choice-provider choice)
                  :model (models:choice-model choice)
                  :reasoning-effort (models:choice-effort choice)
                  :session session
-                 ;; One variable for both halves, as the CLI does it: tools the
-                 ;; model cannot be told about, or a block naming capabilities
-                 ;; it has no verb to call, are two halves of a door and
-                 ;; neither is one.
-                 :extra-tools (when *capabilities* (actor:capability-tools))
-                 :extra-prompt (when *capabilities*
-                                 (list #'actor:capability-prompt))
+                 ;; Whatever the declared capabilities contribute. Neither half
+                 ;; is named here: a capability that offered tools and no prompt
+                 ;; would be a door nothing could be told about, and that is the
+                 ;; capability's business to get right, once.
+                 :extra-tools declared-tools
+                 :extra-prompt declared-prompts
                  :request-limit 60)))
     (setf (agent:agent-stream-p agent) t
           (viva.compaction:settings-context-limit (harness:agent-compaction agent))
@@ -951,15 +953,18 @@ unlink the socket the first had just bound."
       (handler-case (progn (sb-posix:lockf fd sb-posix:f-tlock 0) fd)
         (error () (ignore-errors (sb-posix:close fd)) nil)))))
 
-(defvar *capabilities* nil
-  "Whether sessions this daemon starts may compile and keep capability of
-their own.
+(defvar *declared* '()
+  "The capability names this daemon was configured with.
 
 FROM THE MACHINE CONFIG, not from a flag. A daemon is usually started detached
 and often by a client rather than by a person at a shell, so a flag is a
 channel that mostly is not there -- which is how the door ended up reachable
-from `viva shell` and from nothing else. The one process whose whole premise
-is outliving its clients was the one process that could not modify itself.")
+from `viva shell` and from nothing else. The one process whose whole premise is
+outliving its clients was the one process that could not modify itself.
+
+NAMES, so this is a list and not a switch. What a session gets is whatever
+those names contribute, and a build that offers three capabilities can be asked
+for two of them.")
 
 (defun wire-evolution ()
   "Give this process an evolution owner that hears about registrations, and
@@ -970,7 +975,10 @@ and no daemon installed it, so a registry tool minted in a session left no
 line in the ledger and its lineage did not survive a restart -- which is the
 one thing promotion is for."
   (actor:ledger-registrations)
-  (setf *capabilities* (equal "on" (config:machine-setting "capabilities" "off"))))
+  ;; THE NAMES, not a boolean. A daemon that only knew on-or-off could offer one
+  ;; capability; the setting is a list, and what a session gets is whatever those
+  ;; names contribute.
+  (setf *declared* (extension:declared (config:machine-setting "capabilities" "off"))))
 
 (defun serve (&key (path (socket-path)) (background nil) announce)
   "Listen until stopped. One thread per connection; sessions outlive all of them.

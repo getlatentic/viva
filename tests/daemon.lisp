@@ -2121,7 +2121,7 @@ when it recorded no promotion at all."
   ;; durable half was built for a surface that never opened it.
   (with-repository (environment)
     (let ((root (env:env-cwd environment))
-          (previous viva.daemon::*capabilities*))
+          (previous viva.daemon::*declared*))
       (unwind-protect
            (with-own-store (store)
              (with-restarted-owner
@@ -2134,11 +2134,14 @@ when it recorded no promotion at all."
                    (unwind-protect
                         (progn
                           (read-line stream nil nil)
-                          (setf viva.daemon::*capabilities* nil)
+                          (setf viva.daemon::*declared* '())
                           (let ((closed (session-tool-names stream root)))
                             (false (member "create_capability" closed :test #'string=)
                                    "a door nobody opened was open"))
-                          (setf viva.daemon::*capabilities* t)
+                          ;; BY NAME. The daemon is asked for a capability
+                          ;; rather than switched on, so this is the same
+                          ;; sentence a config file writes.
+                          (setf viva.daemon::*declared* (list "self-modify"))
                           (multiple-value-bind (open prompt) (session-tool-names stream root)
                             (dolist (verb '("create_capability" "call_capability"
                                             "show_capability" "promote_capability"))
@@ -2147,7 +2150,7 @@ when it recorded no promotion at all."
                             (true (search "in-a-daemon-session" prompt)
                                   "the session was given the tools and told nothing")))
                      (ignore-errors (close stream)))))))
-        (setf viva.daemon::*capabilities* previous)))))
+        (setf viva.daemon::*declared* previous)))))
 
 (define-test "the daemon installs the hook its own ledger depends on"
   ;; LEDGER-REGISTRATIONS says in its own docstring that the daemon installs

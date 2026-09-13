@@ -27,6 +27,7 @@
                     (#:mcp #:viva.mcp)
                     (#:workspace #:viva.workspace)
                     (#:env #:viva.env)
+                    (#:extension #:viva.extension)
                     (#:session #:viva.session)
                     (#:trust #:viva.trust)
                     (#:germline #:viva.germline)

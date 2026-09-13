@@ -321,7 +321,11 @@ noise, not a result.~%")
   ;; that went through here -- while the daemon honoured it. One setting, two
   ;; surfaces, and only one of them reading it is the same fault the resolved
   ;; model already has a test for.
-  (let ((capabilities (string= "on" (option parsed "capabilities" "off"))))
+  (multiple-value-bind (extra-tools extra-prompts complaints)
+      (extension:contributions
+       (extension:declared (option parsed "capabilities" "off")))
+    (dolist (complaint complaints)
+      (format *error-output* "~&! capabilities: ~a~%" complaint))
     (list :model (option parsed "model")
         :cwd (a:when-let ((cwd (flag parsed "cwd"))) (namestring (truename cwd)))
         :root (a:when-let ((root (option parsed "root"))) (namestring (truename root)))
@@ -342,12 +346,11 @@ noise, not a result.~%")
         ;;   --capabilities on  --door closed   arm B, the same tools refused
         ;;   --capabilities off                 arm C, no live compile at all
         ;;
-        ;; ONE VARIABLE FOR BOTH. Tools the model cannot be told about, or a
-        ;; block naming capabilities it has no verb to call, are two halves of
-        ;; a door and neither is one.
-        :extra-tools (when capabilities (actor:capability-tools))
-        :extra-prompt (append (a:ensure-list (flag parsed "append"))
-                              (when capabilities (list #'actor:capability-prompt))))))
+        ;; NEITHER HALF IS ASSEMBLED HERE ANY MORE. A capability contributes its
+        ;; own tools and its own prompt, so an entry point cannot enable one and
+        ;; forget to say so -- which is what happened to the door for a while.
+        :extra-tools extra-tools
+        :extra-prompt (append (a:ensure-list (flag parsed "append")) extra-prompts))))
 
 (defun apply-journal-flag (parsed)
   "Point this run's journal -- its evolution ledger, and the capability store
