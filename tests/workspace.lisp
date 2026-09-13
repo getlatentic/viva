@@ -2153,7 +2153,8 @@ through SB-POSIX, which a dynamic binding does not touch."
   ;; which is what happened when only a variable could configure it and the
   ;; variable was renamed.
   (let ((entry (catalogue-entry "local"))
-        (named (com.inuoe.jzon:parse "{\"local\": {}}"))
+        (named (com.inuoe.jzon:parse
+                "{\"local\": {\"endpoint\": \"http://127.0.0.1:1/v1/chat/completions\"}}"))
         (other (com.inuoe.jzon:parse "{\"deepseek\": {\"apiKey\": \"k\"}}")))
     (true (models::configured-p entry named) "naming it did not configure it")
     (false (models::configured-p entry other) "an unnamed local server was offered")
@@ -2167,19 +2168,28 @@ through SB-POSIX, which a dynamic binding does not touch."
             (sb-posix:setenv "VIVA_LOCAL_ENDPOINT" before 1)
             (sb-posix:unsetenv "VIVA_LOCAL_ENDPOINT"))))))
 
-(define-test "a provider that lists no model offers none"
-  ;; What is pulled onto a machine is unknowable from here, so ollama ships no
-  ;; list. A choice whose model is NIL would reach the wire as a request for "".
+(define-test "a provider that lists and discovers nothing offers nothing"
+  ;; A choice whose model is NIL would reach the wire as a request for "". The
+  ;; endpoint is a dead port ON PURPOSE: ollama is a dynamic provider, so a test
+  ;; that let it reach the real one would pass or fail on whether a server
+  ;; happened to be running on this machine.
+  (viva.discovery:forget)
   (let ((entry (catalogue-entry "ollama"))
-        (bare (com.inuoe.jzon:parse "{\"ollama\": {}}"))
-        (listed (com.inuoe.jzon:parse "{\"ollama\": {\"models\": [\"qwen3-coder:30b\"]}}")))
+        (bare (com.inuoe.jzon:parse
+               "{\"ollama\": {\"endpoint\": \"http://127.0.0.1:1/v1/chat/completions\"}}"))
+        (listed (com.inuoe.jzon:parse
+                 "{\"ollama\": {\"endpoint\": \"http://127.0.0.1:1/v1/chat/completions\",
+                                \"models\": [\"qwen3-coder:30b\"]}}")))
     (true (models::configured-p entry bare) "naming it did not configure it")
     (false (models::entry-choices entry :auth bare)
-           "a provider with no model offered one anyway")
+           "a provider with nothing to offer offered something")
+    ;; A written-down list wins over asking, so a machine can narrow what a
+    ;; server would otherwise volunteer.
     (let ((offered (models::entry-choices entry :auth listed)))
       (is = 1 (length offered))
       (is string= "ollama/qwen3-coder:30b" (models:choice-label (first offered)))
-      (true (models:choice-keyless (first offered)) "ollama is not keyed"))))
+      (true (models:choice-keyless (first offered)) "ollama is not keyed")))
+  (viva.discovery:forget))
 
 (define-test "only a server on this machine is probed for liveness"
   ;; A hosted endpoint that will not answer is a network fault to report, not a
@@ -2205,3 +2215,47 @@ through SB-POSIX, which a dynamic binding does not touch."
       (false (search "anthropic." (models:choice-model choice))
              "~a names a Marketplace-billed model: ~a"
              (models:choice-label choice) (models:choice-model choice)))))
+
+;;; ---------------------------------------------------------------------------
+;;; Asking a server what it serves
+;;; ---------------------------------------------------------------------------
+
+(define-test "a chat endpoint names the listing beside it"
+  (is string= "http://localhost:11434/v1/models"
+      (viva.discovery:models-url "http://localhost:11434/v1/chat/completions"))
+  (is string= "http://localhost:11434"
+      (viva.discovery::base-of "http://localhost:11434/v1/chat/completions"))
+  ;; Something that is not shaped like one is left alone rather than mangled.
+  (is string= "http://elsewhere/custom"
+      (viva.discovery:models-url "http://elsewhere/custom")))
+
+(define-test "a discovered list is asked for once, then remembered"
+  ;; Resolving a model happens at every session start. A server that has stopped
+  ;; answering must cost one bounded wait rather than one per session, so a
+  ;; failure is remembered exactly as long as a success would be.
+  (viva.discovery:forget)
+  (let* ((asked 0)
+         (endpoint "http://test.invalid/v1/chat/completions")
+         (how (lambda (where) (declare (ignore where)) (incf asked) '("a" "b"))))
+    (is equal '("a" "b") (viva.discovery:models-at endpoint :how how))
+    (is equal '("a" "b") (viva.discovery:models-at endpoint :how how))
+    (is = 1 asked "the server was asked twice for one answer")
+    ;; And REFRESH means ask again.
+    (viva.discovery:models-at endpoint :how how :refresh t)
+    (is = 2 asked "refresh did not reach the server")
+    ;; A failure is remembered too, or a dead server costs a wait per session.
+    (viva.discovery:forget)
+    (let ((failures 0))
+      (flet ((dead (where) (declare (ignore where)) (incf failures) nil))
+        (false (viva.discovery:models-at endpoint :how #'dead))
+        (false (viva.discovery:models-at endpoint :how #'dead))
+        (is = 1 failures "a server that answered nothing was asked twice")))
+    (viva.discovery:forget)))
+
+(define-test "a server that will not answer is an ordinary state"
+  ;; Not a fault to propagate into a session start: a local server being off is
+  ;; the normal case, and it must not signal out of resolving a model.
+  (viva.discovery:forget)
+  (false (viva.discovery::models-at-openai "http://127.0.0.1:1/v1/chat/completions")
+         "an unreachable server signalled instead of answering nothing")
+  (viva.discovery:forget))

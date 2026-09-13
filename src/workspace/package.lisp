@@ -220,10 +220,19 @@
            #:settings-reserve #:settings-keep-recent #:threshold #:due-p
            #:retained-tail #:rough-tokens #:summarise #:render #:+instruction+))
 
+(defpackage #:viva.discovery
+  (:use #:cl)
+  (:local-nicknames (#:a #:alexandria)
+                    (#:dex #:dexador)
+                    (#:jzon #:com.inuoe.jzon))
+  (:export #:models-at #:forget #:models-url
+           #:models-at-openai #:ollama-chat-models))
+
 (defpackage #:viva.models
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
                     (#:auth #:viva.auth)
+                    (#:discovery #:viva.discovery)
                     (#:env #:viva.env)
                     (#:provider #:viva.provider))
   (:export #:choice #:choice-label #:choice-provider #:choice-model #:choice-effort

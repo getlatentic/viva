@@ -46,6 +46,7 @@
                 :components ((:file "package")
                              (:file "env")
                              (:file "auth")
+                             (:file "discovery")
                              (:file "config")
                              (:file "glob")
                              (:file "bound")

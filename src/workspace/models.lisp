@@ -82,15 +82,17 @@
     ;; exposes a seed, full sampler control, parallel slots and GBNF, and
     ;; scored work needs the first and the last of those. Nothing hosted offers
     ;; them.
-    (:label "local" :keyless t :kind :llama-cpp :effort "low"
+    (:label "local" :keyless t :kind :llama-cpp :effort "low" :dynamic :openai
      :endpoint-var "VIVA_LOCAL_ENDPOINT"
      :endpoint "http://localhost:8099/v1/chat/completions"
      :model-var "VIVA_LOCAL_MODEL"
      :models ("gpt-oss-20b"))
-    ;; Ollama speaks the same OpenAI shape on its own port. NO MODELS LISTED:
-    ;; what is pulled onto a machine is unknowable from here, and a guess would
-    ;; be a 404 wearing a default. `models` in auth.json is how it gets some.
-    (:label "ollama" :keyless t :kind :openai
+    ;; Ollama speaks the same OpenAI shape on its own port. NO MODELS LISTED and
+    ;; none needed: it is asked what it serves, because what is pulled onto a
+    ;; machine is unknowable from here and a guess would be a 404 wearing a
+    ;; default. `models` in auth.json still overrides, for a machine that serves
+    ;; more than somebody wants offered.
+    (:label "ollama" :keyless t :kind :openai :dynamic :ollama
      :endpoint-var "OLLAMA_ENDPOINT"
      :endpoint "http://localhost:11434/v1/chat/completions"
      :model-var "OLLAMA_MODEL"
@@ -130,17 +132,25 @@ endpoint the other is a rule nobody could hold."
         (parse-integer given :junk-allowed t))
       (getf entry :context-limit 128000)))
 
-(defun listed-models (entry auth)
-  "The model ids this provider offers: auth.json's list, else the built-in one.
+(defun listed-models (entry auth &key refresh)
+  "The model ids this provider offers.
 
-AUTH.JSON WINS OUTRIGHT rather than merging. A provider serves a family that
-changes faster than this table does, and somebody who wrote down four ids
-means those four -- a merge would keep handing back a fifth they had removed."
-  (or (a:when-let ((named (auth:entry-list (getf entry :label) "models" :auth auth)))
-        named)
+Written down, then asked for, then built in. AUTH.JSON WINS OUTRIGHT rather
+than merging: somebody who wrote down four ids means those four, and a merge
+would keep handing back a fifth they had removed. Below that, a DYNAMIC
+provider is asked what it serves -- a local server's list is whatever was
+pulled onto the machine, which no table can know. The built-in list is the
+floor."
+  (or (auth:entry-list (getf entry :label) "models" :auth auth)
+      (a:when-let ((how (getf entry :dynamic)))
+        (discovery:models-at (endpoint-for entry auth)
+                             :refresh refresh
+                             :how (ecase how
+                                    (:openai #'discovery:models-at-openai)
+                                    (:ollama #'discovery:ollama-chat-models))))
       (getf entry :models)))
 
-(defun entry-models (entry auth)
+(defun entry-models (entry auth &key refresh)
   "The (LABEL . MODEL-ID) pairs this provider offers.
 
 LABEL IS `provider/id`, always. `deepseek` is a provider and not a model, so a
@@ -152,7 +162,7 @@ The provider's own name still resolves, to whatever it pins or lists first, so
 `--model deepseek` keeps meaning `this provider, its usual model`."
   (let* ((label (getf entry :label))
          (pinned (pinned-model entry auth))
-         (ids (listed-models entry auth)))
+         (ids (listed-models entry auth :refresh refresh)))
     ;; NOTHING LISTED IS NOTHING OFFERED. Ollama ships no model list because
     ;; what is pulled onto a machine is unknowable from here, and a choice
     ;; whose model is NIL would reach the wire as a request for "".
@@ -191,7 +201,7 @@ something still has to decide whether to offer it."
                    :endpoint endpoint
                    :output-prefix provider:+harmony-output-prefix+)))))
 
-(defun entry-choices (entry &key (auth (auth:read-auth)))
+(defun entry-choices (entry &key (auth (auth:read-auth)) refresh)
   "ENTRY as usable choices, or NIL where it has no key.
 
 The auth file is read once by the caller and passed down. Reading it per
@@ -200,7 +210,7 @@ on every call that asks what is available."
   (multiple-value-bind (configured key) (configured-p entry auth)
     (when configured
       (let ((provider (entry-provider entry key auth)))
-        (loop for (label . model) in (entry-models entry auth)
+        (loop for (label . model) in (entry-models entry auth :refresh refresh)
               collect (make-choice :label label
                                    :endpoint-label (getf entry :label)
                                    :keyless (and (getf entry :keyless) t)
@@ -221,12 +231,14 @@ Naming a model explicitly still reaches every one of them."
           unless (member endpoint seen :test #'equal)
             do (push endpoint seen) and collect choice)))
 
-(defun available-models ()
+(defun available-models (&key refresh)
+  "Every model this machine can reach. REFRESH asks the dynamic providers again
+rather than trusting what they last said."
   ;; The auth file, read once for the whole catalogue rather than once per
   ;; provider in it.
   (let ((auth (auth:read-auth)))
     (loop for entry in +catalogue+
-          append (entry-choices entry :auth auth))))
+          append (entry-choices entry :auth auth :refresh refresh))))
 
 (defun resolve-model (&optional label)
   "The named choice, or the first available one. Signals when there is none, and
