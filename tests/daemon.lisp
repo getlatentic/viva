@@ -82,6 +82,25 @@ fork a multithreaded image."
                  ,@body)
        (daemon:stop))))
 
+(define-test "stopping the daemon ends its accept loop"
+  ;; ON LINUX, CLOSING THE LISTENER WOKE NOTHING. The accept blocked in it kept
+  ;; the socket alive and kept waiting, so SERVE never returned in the
+  ;; foreground daemon, the journal was never closed, and `daemon stop` found
+  ;; the process still there. macOS wakes that accept on close alone, which is
+  ;; why the fix needs this test on both.
+  (let ((path (daemon-test-path)))
+    (ensure-suite-watchdog)
+    (unwind-protect
+         (progn (daemon:serve :path path :background t)
+                (loop repeat 100 until (daemon:running-p path) do (sleep 0.01))
+                (let ((accepting (find "vivad" (bt:all-threads)
+                                       :key #'bt:thread-name :test #'equal)))
+                  (true accepting)
+                  (daemon:stop)
+                  (ignore-errors (sb-thread:join-thread accepting :default nil :timeout 2))
+                  (false (bt:thread-alive-p accepting) "the accept loop outlived the stop")))
+      (daemon:stop))))
+
 (defun daemon-greeting (path)
   "Connect, read the greeting, and return the pid in it -- or why there was none.
 

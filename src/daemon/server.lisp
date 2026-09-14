@@ -927,6 +927,12 @@ does it before binding."
 
 (defun %stop (instance)
   "Tear down INSTANCE. Callers hold *LOCK* and have checked it is current."
+  ;; SHUTDOWN BEFORE CLOSE. On Linux, closing a listening socket from another
+  ;; thread wakes nothing: the accept blocked in it keeps the socket alive and
+  ;; keeps waiting, so SERVE never returned and the process never left.
+  ;; Shutdown ends that accept with EINVAL on Linux, and is ENOTCONN on
+  ;; macOS, where the close alone had always been enough.
+  (ignore-errors (sockets:socket-shutdown (instance-socket instance) :direction :io))
   (ignore-errors (sockets:socket-close (instance-socket instance)))
   ;; The path THIS generation bound: a daemon on a second socket once deleted
   ;; the first one's file on the way out and left its own behind.
