@@ -26,10 +26,11 @@ repository keeps the negative results beside the positive ones.
 - Full-text search spans every session recorded, in every directory.
 - A session spawns scoped child agents that cannot outlive it.
 - Live-image modification is off by default. It is a named capability:
-  `capabilities = self-modify` in `~/.viva/config` asks for it.
+  `capabilities = self-modify` in `~/.viva/config` asks for it, and a
+  project's own `.viva/config` may ask once `viva trust` has been run there.
 - An entry in that list is a name this build offers or a path to a file you
   wrote. A file inside a project loads only once you have run `viva trust`.
-- `viva shell --capabilities on` enables it for one run. `capabilities = on`
+- `viva do --capabilities on "..."` enables it for one run. `capabilities = on`
   in `~/.viva/config` enables it for the sessions the daemon starts.
 - `viva trust` gates a project's own tools before a later session can call them.
 

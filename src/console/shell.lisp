@@ -320,36 +320,3 @@ the last one HERE."
     (format out "  resumed ~d message(s)~%" (length restored)))
   (format out "  /help for commands, Ctrl-D to leave~%~%"))
 
-(defun run-shell (&rest options &key (in *standard-input*) (out *standard-output*)
-                  &allow-other-keys)
-  "Read prompts from IN, run them, paint the result on OUT. Returns an exit code.
-
-Everything else is BUILD-AGENT's and is passed through untouched. Re-listing
-its keywords here is what broke `viva shell` outright: `extra-tools` was
-added to BUILD-AGENT, this lambda list was not updated, and the CLI -- which
-always passes it -- died at startup with `Unknown &KEY argument`. That is the
-third time a hand-copied keyword list has dropped that one argument, so the
-copy is gone rather than corrected."
-  (let ((view (make-view :stream out))
-        (*running* t))
-    (multiple-value-bind (agent choice complaints)
-        (apply #'build-agent :listener (shell-listener view)
-               (agent-options options))
-      (banner agent choice complaints out)
-      (unwind-protect
-           (loop while *running*
-                 do (format out "~a" (paint "› " :green))
-                    (force-output out)
-                    (let ((line (read-line in nil nil)))
-                      (cond ((null line) (setf *running* nil) (terpri out))
-                            ((zerop (length (string-trim '(#\Space #\Tab) line))))
-                            ((a:starts-with #\/ line) (run-verb agent line out))
-                            ((a:starts-with #\! line)
-                             (format out "~a~%"
-                                     (workspace:with-environment ((harness:agent-environment agent))
-                                       (workspace:run-bash (subseq line 1)))))
-                            (t (handler-case (harness:ask agent line)
-                                 (error (condition)
-                                   (format out "~a~%" (paint (format nil "! ~a" condition) :red))))))))
-        (a:when-let ((s (harness:agent-session agent))) (session:close-session s)))
-      0)))

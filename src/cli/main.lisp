@@ -7,18 +7,6 @@
               "Start, stop or inspect the long-lived organism.")
         (list "attach" #'command-attach
               "Open a session inside the organism; closing leaves it running.")
-        ;; The LAUNCHER intercepts these when it is a checkout being run, and
-        ;; execs the Rust client itself. A standalone build has no launcher, so
-        ;; `tui` looks for that client too and falls back the same way. `live`
-        ;; names the Lisp one and always gets it.
-        (list "tui" #'command-tui
-              "Full screen: sessions, the running turn and tasks at once.")
-        (list "live" #'command-live
-              "The Lisp full-screen client, named explicitly.")
-        (list "shell" #'command-shell
-              "Work in a directory, interactively.")
-        (list "ipc" #'command-ipc
-              "Serve one agent over stdin and stdout, as JSON lines.")
         (list "do" #'command-do
               "One prompt, one answer, no session.")
         (list "mcp" #'command-mcp
@@ -64,44 +52,42 @@ THE ORGANISM
       --cwd DIR               where a new session works
       --since N               replay events after sequence N
 
-  tui                         full screen: sessions, the turn and tasks at once
-                              (`live` is the older name for the same thing)
-
-  `tui` starts the daemon if there is not one, rejoins a session for this
+  `viva` starts the daemon if there is not one, rejoins a session for this
   directory, or continues the most recent conversation recorded here.
-  `attach` is line-oriented: it pipes, scripts and diffs, and starts clean.
+  `attach` is the same sessions on the line: it pipes, scripts and diffs.
 
   A session outlives the terminal that started it. Closing a client removes a
   subscriber, not the work.
 
-  `attach` is line-oriented and pipes, scripts and diffs. `live` is the same
-  organism with everything on one screen. Neither replaces the other.
-
 ORDINARY WORK
 
-  shell [options]             work in a directory, interactively
+  do \"<prompt>\" [options]     one prompt, one answer, no session
+      --serve                 keep reading, as JSON lines on stdin and stdout,
+                              until end of input. For another program to drive;
+                              --limit defaults to 200 here
+      --file prompt.txt       read the prompt from a file
       --cwd DIR               where to work (default: here)
       --model NAME            which model (default: the first configured)
       --root DIR              refuse any path outside DIR
       --limit N               model requests per prompt (default 60)
       --colour false          plain output, for a log
       --resume [ID]           continue the last session here, or one by id
+      --append TEXT           add one line to the system prompt
+      --extension DIR         load extensions from DIR as well
       --capabilities on       let the agent compile new code into this image
                               and call it (off by default; see the README)
       --capabilities loop     let the agent send itself the next prompt, so
                               work carries on past the end of a turn. /stop,
-                              ctrl-c, or the agent's own `continue stop`
+                              ctrl-c, or the agent\'s own `continue stop`
                               ends it. Names combine: `on,loop`
-  ipc [options]               serve one agent over stdin/stdout as JSON lines
-      (same options; --limit defaults to 200)
-      --append TEXT           add one line to the system prompt
-      --extension DIR         load extensions from DIR as well
-  do \"<prompt>\" [options]     one prompt, one answer, no session
-      --file prompt.txt       read the prompt from a file
       --quiet                 print only the final answer
       --retain                after the task, decide what should outlive it
       --session-dir DIR       record the transcript, for counting the work done
-      --extension DIR         load extensions from DIR as well
+
+  Capabilities are a flag only here, where the agent is built in this process.
+  A session inside the daemon takes them from ~/.viva/config, and from this
+  project's .viva/config once `viva trust` has been run here.
+
   config [DIR]                every setting, its value, and where it came from
                               (~/.viva/config, then .viva/config, then
                               the environment, then a flag -- later wins)
@@ -165,6 +151,17 @@ Credentials are read from ~/.viva/auth.json by the engine itself, so no run
 depends on the caller having exported anything.
 ")
 
+(defun bare-p (parsed)
+  "Is this `viva` and nothing else?
+
+THE CLIENT READS NO ARGUMENTS, so anything given alongside would be accepted
+and dropped. `viva --cwd elsewhere` means the line client, where --cwd is read,
+rather than a full screen that silently ignored it. The launcher tests the same
+thing before it hands over, and the two must agree or the answer depends on
+whether a checkout was involved."
+  (and (null (args-positional parsed))
+       (zerop (hash-table-count (args-flags parsed)))))
+
 (defun help-wanted-p (parsed name)
   "Did they ask for the usage text, rather than just typing the command?"
   (or name (flag parsed "help") (flag parsed "h")))
@@ -197,6 +194,17 @@ away."
       ((flag parsed "version")
        (format t "~&viva ~a~%" (version))
        0)
+      ;; A FLAG THAT CANNOT REACH THE DAEMON. Sessions here are created inside a
+      ;; process that outlives this command, so a capability named on this line
+      ;; arrives after the decision. Saying where it does belong beats a flag
+      ;; that is accepted and does nothing.
+      ((and (null entry) (flag parsed "capabilities"))
+       (format *error-output* "~&viva: a session's capabilities are not set here.~%~%~
+Name them in ~~/.viva/config, or in this project's .viva/config once~%~
+`viva trust` has been run here:~%~%  capabilities = ~a~%~%~
+`viva do --capabilities ...` is the one that takes a flag, because it builds~%~
+its agent in this process.~%" (flag parsed "capabilities"))
+       1)
       ((and (null entry) (not (help-wanted-p parsed name)) (unknown-flags parsed))
        (let ((unknown (unknown-flags parsed)))
          (format *error-output* "~&viva: ~{--~a~^, ~} ~:[is not an option~;are not options~] here.~%~
@@ -205,13 +213,21 @@ Try `viva --help`.~%" unknown (rest unknown)))
       ;; Bare `viva` opens the organism. Starting work was `daemon start
       ;; --background` and then `attach` -- two commands and one concept
       ;; before anything happened, for the case that is almost always what
-      ;; somebody wants. ATTACH is called, not reimplemented, so there is one
-      ;; path into a session rather than two that can disagree.
+      ;; somebody wants.
+      ;;
+      ;; THE NAME IS THE WHOLE INTERFACE. `viva tui` was a second word for the
+      ;; thing everybody wants, and `viva` meant the line client whatever the
+      ;; terminal was -- so the usage text promised a full screen and the
+      ;; command gave a prompt. On a terminal this is the full-screen client;
+      ;; piped or redirected it is the line one, which is what a pipe can use.
+      ;; Neither is reimplemented here, so there is one path into each.
       ((and (null entry) (not (help-wanted-p parsed name)))
        (handler-case (load-cli-settings parsed)
          (error (condition) (format *error-output* "~&! config: ~a~%" condition)))
-       (handler-case (command-attach parsed)
-         (error (condition) (format *error-output* "~&attach: ~a~%" condition) 1)))
+       (handler-case (if (and (tui:terminal-p) (bare-p parsed))
+                         (command-tui parsed)
+                         (command-attach parsed))
+         (error (condition) (format *error-output* "~&viva: ~a~%" condition) 1)))
       ((null entry)
            (write-string +usage+)
            (if name 1 0))

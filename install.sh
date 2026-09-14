@@ -85,6 +85,25 @@ say "  the first run fetches dependencies and takes a few minutes"
 }
 grep -E "^(Passed|Failed):" /tmp/viva-install-test.log | sed 's/^/  /'
 
+step "the full-screen client"
+# OPPORTUNISTIC, not required. Building it needs Rust, and making a Lisp
+# project depend on a second toolchain to install at all would be a steep
+# price -- but without it `viva tui` has nothing to run, and the honest
+# alternative is `viva attach` rather than a lesser client wearing the same
+# name.
+if command -v cargo >/dev/null 2>&1; then
+  say "  building with cargo"
+  if cargo build --release --manifest-path "$root/tui/Cargo.toml" >/tmp/viva-tui-build.log 2>&1; then
+    say "  done"
+  else
+    tail -5 /tmp/viva-tui-build.log >&2
+    say '  it did not build. viva attach works without it'
+  fi
+else
+  say '  no cargo here, so viva tui will have nothing to run.'
+  say '  Install Rust and run this again, or use viva attach.'
+fi
+
 step "putting viva on your PATH"
 "$root/bin/viva" install | sed 's/^/  /'
 

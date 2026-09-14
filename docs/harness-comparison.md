@@ -291,7 +291,7 @@ anything that vendors one is telling you it does not own its agent.
 
 herdr works with every agent, including ones that do not exist yet. Its
 20 manifests are the price of a generality viva does not have and is not
-buying: `viva live` drives viva and nothing else. That is a narrower
+buying: `viva tui` drives viva and nothing else. That is a narrower
 product, and the narrowness is what buys the exact state.
 
 A person who wants Claude Code, Codex and viva in one grid wants herdr, and

@@ -101,6 +101,7 @@ can name without qualifying it."))
                     (#:loop* #:viva.loop)
                     (#:workspace #:viva.workspace)
                     (#:config #:viva.config)
+                    (#:trust #:viva.trust)
                     (#:extension #:viva.extension)
                     (#:actor #:viva.actor))
   (:export #:serve #:stop #:running-p #:socket-path #:connect
