@@ -2114,6 +2114,40 @@ when it recorded no promotion at all."
       (values (mapcar #'tool:tool-name (viva.agent:tools agent))
               (viva.agent:system-prompt agent)))))
 
+(define-test "the journal and store roots follow the environment they run in"
+  ;; A DEFVAR'S VALUE IS COMPUTED ONCE, AT LOAD, AND A SAVED IMAGE KEEPS IT. Both
+  ;; roots were, so every released binary carried the CI runner's home and
+  ;; failed its first journal write with `Can't create directory /Users/runner`.
+  ;; The suite loads from source on the machine running it, where that answer is
+  ;; right, so the check has to change the environment AFTER load.
+  (let ((actor:*journal-root* nil)
+        (actor:*capability-root* nil)
+        (journal (sb-posix:getenv "VIVA_JOURNAL"))
+        (store (sb-posix:getenv "VIVA_CAPABILITY_STORE")))
+    (unwind-protect
+         (progn
+           ;; The default: under VIVA_HOME, which the suite points at a
+           ;; temporary directory. This is the path that shipped broken.
+           (sb-posix:unsetenv "VIVA_JOURNAL")
+           (sb-posix:unsetenv "VIVA_CAPABILITY_STORE")
+           (true (alexandria:starts-with-subseq (sb-posix:getenv "VIVA_HOME") (actor:journal-root))
+                 "the journal is not under VIVA_HOME: ~a" (actor:journal-root))
+           (true (alexandria:starts-with-subseq (sb-posix:getenv "VIVA_HOME") (actor:capability-root))
+                 "the store is not under VIVA_HOME: ~a" (actor:capability-root))
+           ;; CHANGED AFTER LOAD, and followed -- the half a load-time value
+           ;; cannot pass.
+           (sb-posix:setenv "VIVA_JOURNAL" "/tmp/viva-journal-after-load" 1)
+           (sb-posix:setenv "VIVA_CAPABILITY_STORE" "/tmp/viva-store-after-load" 1)
+           (true (search "viva-journal-after-load" (actor:journal-root)))
+           (true (search "viva-store-after-load" (actor:capability-root)))
+           ;; And an override still wins, which is what tests and --session-dir use.
+           (let ((actor:*journal-root* "/tmp/viva-journal-override/"))
+             (is string= "/tmp/viva-journal-override/" (actor:journal-root))))
+      (if journal (sb-posix:setenv "VIVA_JOURNAL" journal 1) (sb-posix:unsetenv "VIVA_JOURNAL"))
+      (if store
+          (sb-posix:setenv "VIVA_CAPABILITY_STORE" store 1)
+          (sb-posix:unsetenv "VIVA_CAPABILITY_STORE")))))
+
 (define-test "a daemon session can reach the door its config opened"
   ;; THE ONE PROCESS WHOSE PREMISE IS OUTLIVING ITS CLIENTS was the one process
   ;; that could not modify itself. Every capability tool was reachable from

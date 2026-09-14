@@ -24,22 +24,31 @@
 
 (in-package #:viva.actor)
 
-(defvar *capability-root*
-  ;; VIVA_CAPABILITY_STORE, not VIVA_CAPABILITIES: the latter is what the
-  ;; `capabilities` setting resolves to, and one variable meaning both "may
-  ;; this process modify itself" and "where does it keep the source" is a
-  ;; collision nobody would find from either end.
-  (let ((given (sb-posix:getenv "VIVA_CAPABILITY_STORE")))
-    (if (and given (plusp (length given)))
-        (namestring (uiop:ensure-directory-pathname given))
-        (concatenate 'string (env:capabilities-directory) "/")))
+(defvar *capability-root* nil
+  "Where promoted source lives, when something has said so. NIL means
+CAPABILITY-ROOT decides, per call.")
+
+(defun capability-root ()
   "Where promoted capability source lives. Moves with the evolution ledger --
 they are two halves of one account, and a run whose ledger says promoted while
-its store says nothing is a run that cannot be read back.")
+its store says nothing is a run that cannot be read back.
+
+ASKED EACH TIME, for the reason JOURNAL-ROOT gives: a saved image keeps a value
+computed at load, and carries the build machine's home into every release.
+
+VIVA_CAPABILITY_STORE, not VIVA_CAPABILITIES: the latter is what the
+`capabilities` setting resolves to, and one variable meaning both `may this
+process modify itself' and `where does it keep the source' is a collision nobody
+would find from either end."
+  (or *capability-root*
+      (let ((given (sb-posix:getenv "VIVA_CAPABILITY_STORE")))
+        (if (and given (plusp (length given)))
+            (namestring (uiop:ensure-directory-pathname given))
+            (concatenate 'string (env:capabilities-directory) "/")))))
 
 (defun capability-path (id &key retracted)
   (merge-pathnames (format nil "~:[~;retracted/~]~d.lisp" retracted id)
-                   *capability-root*))
+                   (capability-root)))
 
 ;;; Printing and reading, in one syntax
 ;;;
@@ -131,7 +140,7 @@ read. NOTE is what the model said the capability was for, and may be missing."
       (format *error-output* "~&viva capability: ~a unreadable: ~a~%" path condition)
       nil)))
 
-(defun stored-capabilities (&optional (root *capability-root*))
+(defun stored-capabilities (&optional (root (capability-root)))
   "Every promoted capability on disk, oldest identity first.
 
 Ascending by id is the promotion order, so replaying in this order rebuilds

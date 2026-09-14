@@ -88,18 +88,27 @@ jobs:
       # IT HAS TO SERVE, not merely start, and it has to do it with no checkout
       # in the picture: a binary that needs the directory it was built in is
       # the one fault this whole file exists to avoid shipping.
+      # NO VIVA_JOURNAL. Setting it was what let a baked path ship: the image
+      # carried this runner's home as its journal root, the override hid that,
+      # and the first session anywhere else failed to write. A session is
+      # started because nothing short of one writes the journal.
       - name: Prove the binary stands alone
         env:
           VIVA_SOCKET: ${{ runner.temp }}/release.sock
-          VIVA_JOURNAL: ${{ runner.temp }}/release-journal
           VIVA_HOME: ${{ runner.temp }}/release-home
+          OPENROUTER_API_KEY: release-nothing-is-sent-to-this
         run: |
           install -m 755 "viva-${{ matrix.name }}" "$RUNNER_TEMP/viva"
           install -m 755 "viva-tui-${{ matrix.name }}" "$RUNNER_TEMP/viva-tui"
           cd "$RUNNER_TEMP"
           ./viva daemon start --background
           ./viva daemon status
+          printf '/detach\n' | ./viva attach --new --cwd "$RUNNER_TEMP"
           ./viva sessions
+          if [ -z "$(ls "$VIVA_HOME/journal" 2>/dev/null)" ]; then
+            echo "The journal is not under VIVA_HOME, so this binary carries a path from the machine that built it."
+            exit 1
+          fi
           ./viva daemon stop
 
       # One file per platform rather than one for the release: two jobs cannot

@@ -163,17 +163,29 @@ instants. Never PUBLISH inside: publishing takes the same lock."
 ;;; memory. Appends offered while no generation is available are dropped and
 ;;; the ring's no-evict-before-commit machinery declares the degradation.
 
-(defvar *journal-root*
-  (let ((given (sb-posix:getenv "VIVA_JOURNAL")))
-    (if (and given (plusp (length given)))
-        (namestring (uiop:ensure-directory-pathname given))
-        (concatenate 'string (env:journal-directory) "/")))
-  "Where session journals and live markers live. In-process tests point this
-at a temporary directory; they wrote 26MB into the real home before it was
-configurable. VIVA_JOURNAL does the same for a daemon started as a
-PROCESS: a check that runs its own daemon on its own socket was still writing
-into the real home, and once a daemon brings back whatever was live when the
-last one stopped, a test daemon's sessions would come back in yours.")
+(defvar *journal-root* nil
+  "Where journals live, when something has said so: a test, or `viva run
+--session-dir`. NIL means JOURNAL-ROOT decides, per call.")
+
+(defun journal-root ()
+  "Where session journals and live markers live.
+
+ASKED EACH TIME, NEVER AT LOAD. A value computed when this file loads is kept by
+a saved image, and the image is built on a machine that is not the one it runs
+on -- so every released binary carried the build runner's home and failed its
+first journal write with `Can't create directory /Users/runner`. The suite
+could not see it: it loads from source on the machine that runs it, where the
+answer is right.
+
+VIVA_JOURNAL points a daemon started as a PROCESS somewhere else, so a check
+that runs its own daemon does not write into the real home -- and once a daemon
+brings back whatever was live when the last one stopped, a test daemon's
+sessions would come back in yours."
+  (or *journal-root*
+      (let ((given (sb-posix:getenv "VIVA_JOURNAL")))
+        (if (and given (plusp (length given)))
+            (namestring (uiop:ensure-directory-pathname given))
+            (concatenate 'string (env:journal-directory) "/")))))
 
 (defstruct (journal-service (:conc-name journal-))
   (id 0 :type integer)
@@ -199,10 +211,10 @@ appends stay in the ring uncommitted, and the ring declares the degradation
 if it is ever forced to evict them.")
 
 (defun journal-path-for (id)
-  (format nil "~a~a-~d.jsonl" *journal-root* id (get-universal-time)))
+  (format nil "~a~a-~d.jsonl" (journal-root) id (get-universal-time)))
 
 (defun live-root ()
-  (merge-pathnames "live/" *journal-root*))
+  (merge-pathnames "live/" (journal-root)))
 
 (defun live-path (id)
   (merge-pathnames (format nil "~a.json" id) (live-root)))
@@ -253,7 +265,7 @@ file must not keep every other session from coming back."
     (sort found #'string< :key (lambda (table) (gethash "id" table)))))
 
 (defun evolution-ledger-path ()
-  (format nil "~aevolution.jsonl" *journal-root*))
+  (format nil "~aevolution.jsonl" (journal-root)))
 
 (defun journal-evolution (name data)
   "Promotions and reversions are durable facts about the organism: the
@@ -406,7 +418,7 @@ enforce by hand and now cannot get wrong differently from the spec."
   "The :SPAWN-OWNER effect, then :OWNER-STARTED back through the table, whose
 :REPOST-UNCOMMITTED effect heals what the corpse left unconfirmed."
   (let ((service (make-journal-service :id generation)))
-    (ensure-directories-exist *journal-root*)
+    (ensure-directories-exist (journal-root))
     (setf (journal-thread service)
           (bt:make-thread (lambda () (run-journal-owner service))
                           :name (format nil "viva-journal-~d" generation)))
@@ -429,7 +441,7 @@ none is available."
               bootstrap *journal-generation*)))
     (when bootstrap
       (let ((service (make-journal-service :id bootstrap)))
-        (ensure-directories-exist *journal-root*)
+        (ensure-directories-exist (journal-root))
         (setf (journal-thread service)
               (bt:make-thread (lambda () (run-journal-owner service))
                               :name (format nil "viva-journal-~d" bootstrap)))
