@@ -402,6 +402,8 @@ which is what a person redirecting output in a pane will already have set."
 `start` runs in the foreground so a supervisor can own it; `--background`
 detaches the accept loop and returns, which is what `viva attach` uses when
 it finds nobody home."
+  ;; Before STATUS, which reports any failure to connect as `not running`.
+  (daemon:check-socket-path (daemon:socket-path))
   (let ((verb (or (first (args-positional parsed)) "status")))
     (cond
       ;; No RUNNING-P first: the connection is the question. Asking twice was
@@ -517,7 +519,7 @@ daemon, which is most of what a cold start costs."
       (namestring runtime)
       (namestring (merge-pathnames "bin/viva" (repository-root)))))
 
-(defun launch-daemon ()
+(defun launch-daemon (&key (command (list (own-launcher) "daemon" "start")) (within 10))
   "Start a daemon in a process of its own and wait for it to answer.
 
 A SEPARATE PROCESS, not a thread. A background daemon has to outlive the shell
@@ -526,14 +528,30 @@ SERVE with :BACKGROUND T, which detaches the accept loop into a thread and
 returns -- whereupon the CLI exits, taking the thread and the socket with it.
 It printed `listening on ...` and left nothing listening. SERVE's own
 :BACKGROUND is still right for a caller that IS the long-lived process, which
-is how the suite and the soak use it."
+is how the suite and the soak use it.
+
+A CHILD THAT NEVER ANSWERS IS STOPPED. Reporting `could not start a daemon`
+while it runs on leaves a process nobody can reach holding the instance lock,
+and every later start is refused on its account."
+  (daemon:check-socket-path (daemon:socket-path))
   (unless (daemon:running-p)
-    (uiop:launch-program (list (own-launcher) "daemon" "start")
-                         :output nil :error-output nil)
-    (loop repeat 100
-          until (daemon:running-p)
-          do (sleep 0.1)))
+    (let ((child (uiop:launch-program command :output nil :error-output nil)))
+      (loop repeat (round within 0.1)
+            until (daemon:running-p)
+            do (sleep 0.1))
+      (unless (daemon:running-p)
+        (stop-child child))))
   (daemon:running-p))
+
+(defun stop-child (child)
+  "End CHILD and reap it. SIGTERM first, so a daemon's unwind removes the socket
+and releases the lock it took; SIGKILL if exiting waits on its threads."
+  (when (uiop:process-alive-p child)
+    (uiop:terminate-process child)
+    (loop repeat 50 while (uiop:process-alive-p child) do (sleep 0.1))
+    (when (uiop:process-alive-p child)
+      (uiop:terminate-process child :urgent t)))
+  (uiop:wait-process child))
 
 (defun ensure-daemon ()
   "Start the organism if it is not already there, and wait for it to answer."

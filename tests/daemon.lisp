@@ -72,9 +72,16 @@ fork a multithreaded image."
 (defun daemon-test-path ()
   (format nil "/tmp/viva-daemond-~36r.sock" (random (expt 2 48) (make-random-state t))))
 
-(defmacro with-daemon ((path) &body body)
+(defun daemon-test-path-of (bytes)
+  "A fresh socket path exactly BYTES long."
+  (let ((stem (daemon-test-path)))
+    (concatenate 'string (subseq stem 0 (- (length stem) 5))
+                 (make-string (- bytes (length stem)) :initial-element #\x)
+                 ".sock")))
+
+(defmacro with-daemon ((path &optional (where '(daemon-test-path))) &body body)
   "A daemon of our own, on its own socket, stopped afterwards whatever happens."
-  `(let ((,path (daemon-test-path)))
+  `(let ((,path ,where))
      (ensure-suite-watchdog)
      (unwind-protect
           (progn (daemon:serve :path ,path :background t)
@@ -759,6 +766,60 @@ checkpoint."))
   (with-daemon (path)
     (true (daemon:running-p path))
     (fail (daemon:serve :path (daemon-test-path) :background t) 'daemon:daemon-error)))
+
+(define-test "a socket path longer than sun_path is refused before anything is made"
+  ;; SB-BSD-SOCKETS bound the truncated prefix of a longer name, so the daemon
+  ;; listened where no client looked. OVER is FITS plus one byte: its truncated
+  ;; prefix is exactly FITS, which is where that daemon would have bound.
+  (let* ((limit (1- viva.daemon::+sun-path-bytes+))
+         (fits (daemon-test-path-of limit))
+         (over (concatenate 'string fits "k"))
+         (refusal (handler-case (progn (daemon:serve :path over :background t)
+                                       (daemon:stop)
+                                       nil)
+                    (daemon:daemon-error (condition) (princ-to-string condition)))))
+    (true refusal "an over-long path was served")
+    (true (search over refusal) "the refusal does not name the path")
+    (true (search (format nil "at most ~d" limit) refusal)
+          "the refusal does not name the limit")
+    (false (probe-file fits) "the truncated prefix was bound")
+    (false (probe-file (concatenate 'string over ".lock"))
+           "a lock was taken for a path that cannot be served")
+    (fail (daemon:connect over) 'daemon:daemon-error)
+    (false (daemon:running-p over))
+    (with-daemon (path fits)
+      (true (gethash "success" (daemon-ask path "type" "ping"))
+            "a path at the limit does not serve"))))
+
+(defun call-with-socket-variable (value function)
+  (let ((before (sb-posix:getenv "VIVA_SOCKET")))
+    (unwind-protect
+         (progn (sb-posix:setenv "VIVA_SOCKET" value 1)
+                (funcall function))
+      (if before
+          (sb-posix:setenv "VIVA_SOCKET" before 1)
+          (sb-posix:unsetenv "VIVA_SOCKET")))))
+
+(define-test "the launcher leaves no daemon behind that it could not reach"
+  ;; `daemon start --background` said `could not start a daemon` while the
+  ;; child it spawned served on, unreachable, holding the instance lock.
+  (let* ((pid-file (concatenate 'string (daemon-test-path) ".pid"))
+         (command (list "sh" "-c" (format nil "echo $$ > ~a; exec sleep 60" pid-file))))
+    (unwind-protect
+         (progn
+           (call-with-socket-variable
+            (daemon-test-path-of 200)
+            (lambda ()
+              (fail (cli::launch-daemon :command command) 'daemon:daemon-error)))
+           (sleep 0.3)
+           (false (probe-file pid-file) "spawned a daemon for a path it cannot serve")
+           (call-with-socket-variable
+            (daemon-test-path)
+            (lambda ()
+              (false (cli::launch-daemon :command command :within 1))))
+           (let ((pid (with-open-file (in pid-file) (parse-integer (read-line in)))))
+             (fail (sb-posix:kill pid 0) 'sb-posix:syscall-error)))
+      (ignore-errors (delete-file pid-file)))))
 
 ;;; Recovery
 ;;;
