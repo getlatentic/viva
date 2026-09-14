@@ -7,11 +7,6 @@
               "Start, stop or inspect the long-lived organism.")
         (list "attach" #'command-attach
               "Open a session inside the organism; closing leaves it running.")
-        ;; The LAUNCHER intercepts this when it is a checkout being run and
-        ;; execs the client itself; a standalone build has no launcher, so this
-        ;; looks for the same client.
-        (list "tui" #'command-tui
-              "Full screen: sessions, the running turn and tasks at once.")
         (list "do" #'command-do
               "One prompt, one answer, no session.")
         (list "mcp" #'command-mcp
@@ -57,9 +52,7 @@ THE ORGANISM
       --cwd DIR               where a new session works
       --since N               replay events after sequence N
 
-  tui                         full screen: sessions, the turn and tasks at once
-
-  `tui` starts the daemon if there is not one, rejoins a session for this
+  `viva` starts the daemon if there is not one, rejoins a session for this
   directory, or continues the most recent conversation recorded here.
   `attach` is the same sessions on the line: it pipes, scripts and diffs.
 
@@ -158,18 +151,16 @@ Credentials are read from ~/.viva/auth.json by the engine itself, so no run
 depends on the caller having exported anything.
 ")
 
-(defparameter +retired+
-  '(("shell" . "viva tui, or `viva do --serve` to drive one from a program")
-    ("ipc"   . "viva do --serve")
-    ("live"  . "viva tui"))
-  "Commands that were removed, and what replaced each.
+(defun bare-p (parsed)
+  "Is this `viva` and nothing else?
 
-A NAME AND A DESTINATION. Falling through to the usage text is correct and
-useless: it is twenty lines that do not mention the word just typed, so the
-reader has to spot the absence and guess what it became.")
-
-(defun retired-command (name)
-  (cdr (assoc name +retired+ :test #'equal)))
+THE CLIENT READS NO ARGUMENTS, so anything given alongside would be accepted
+and dropped. `viva --cwd elsewhere` means the line client, where --cwd is read,
+rather than a full screen that silently ignored it. The launcher tests the same
+thing before it hands over, and the two must agree or the answer depends on
+whether a checkout was involved."
+  (and (null (args-positional parsed))
+       (zerop (hash-table-count (args-flags parsed)))))
 
 (defun help-wanted-p (parsed name)
   "Did they ask for the usage text, rather than just typing the command?"
@@ -211,17 +202,21 @@ Try `viva --help`.~%" unknown (rest unknown)))
       ;; Bare `viva` opens the organism. Starting work was `daemon start
       ;; --background` and then `attach` -- two commands and one concept
       ;; before anything happened, for the case that is almost always what
-      ;; somebody wants. ATTACH is called, not reimplemented, so there is one
-      ;; path into a session rather than two that can disagree.
+      ;; somebody wants.
+      ;;
+      ;; THE NAME IS THE WHOLE INTERFACE. `viva tui` was a second word for the
+      ;; thing everybody wants, and `viva` meant the line client whatever the
+      ;; terminal was -- so the usage text promised a full screen and the
+      ;; command gave a prompt. On a terminal this is the full-screen client;
+      ;; piped or redirected it is the line one, which is what a pipe can use.
+      ;; Neither is reimplemented here, so there is one path into each.
       ((and (null entry) (not (help-wanted-p parsed name)))
        (handler-case (load-cli-settings parsed)
          (error (condition) (format *error-output* "~&! config: ~a~%" condition)))
-       (handler-case (command-attach parsed)
-         (error (condition) (format *error-output* "~&attach: ~a~%" condition) 1)))
-      ((a:when-let ((instead (and name (retired-command name))))
-         (format *error-output* "~&viva ~a is gone. Use ~a.~%" name instead)
-         t)
-       1)
+       (handler-case (if (and (tui:terminal-p) (bare-p parsed))
+                         (command-tui parsed)
+                         (command-attach parsed))
+         (error (condition) (format *error-output* "~&viva: ~a~%" condition) 1)))
       ((null entry)
            (write-string +usage+)
            (if name 1 0))

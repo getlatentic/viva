@@ -38,45 +38,36 @@ viva_home="${VIVA_HOME:-${HOME:-}/.viva}"
 # terminal to a program that starts in milliseconds. The launcher already knows
 # the root and the environment, which is all that was needed.
 #
-# It falls through to the Lisp client when the Rust one has not been built,
-# because a checkout with no cargo must still have a full-screen client.
-# BARE `viva` IS THE FULL-SCREEN CLIENT, when there is a terminal to draw
-# on. Typing the name of the thing should open the thing; `viva tui` asks a
-# person to know which of two clients they want before they have seen either.
+# BARE `viva` IS THE FULL-SCREEN CLIENT, when there is a terminal to draw on.
+# Typing the name of the thing should open the thing, and there is no second
+# word for it: `viva tui` asked a person to know which of two clients they
+# wanted before they had seen either.
 #
-# Only when stdout is a terminal. Piped or redirected, `viva` stays the
-# line client it has always been -- that is the form that scripts and diffs,
-# and a full-screen program in a pipe is a program drawing into a buffer
-# nobody reads.
+# Only when stdout is a terminal. Piped or redirected, `viva` stays the line
+# client it has always been -- that is the form that scripts and diffs, and a
+# full-screen program in a pipe is a program drawing into a buffer nobody reads.
 if [ $# -eq 0 ] && [ -t 1 ] && [ -t 0 ]; then
-  set -- tui
+  for candidate in \
+    "$root/tui/target/release/viva-tui" \
+    "$root/tui/target/debug/viva-tui"
+  do
+    if [ -x "$candidate" ]; then
+      # ONLY IF NOBODY SAID OTHERWISE. The client starts a daemon with
+      # $VIVA_BIN, so clobbering it here forced every cold start through this
+      # script -- one source load for the command and another for the daemon it
+      # spawns, about 2.9s of the 3.1s a cold start cost. A guess must never
+      # beat an instruction, which is already the rule for VIVA_TUI.
+      VIVA_BIN="${VIVA_BIN:-$root/bin/viva}" exec "$candidate"
+    fi
+  done
+  # NOTHING TO FALL BACK ON, and that is the point. A second client in Lisp
+  # meant this never failed, by handing over a smaller untested program under
+  # the name of the real one.
+  printf 'The full-screen client is not built here.\n\n' >&2
+  printf 'Build it:   sh %s/tui/install.sh\n' "$root" >&2
+  printf 'Or work on the line:   viva attach\n' >&2
+  exit 1
 fi
-
-case "${1:-}" in
-  tui)
-    for candidate in \
-      "$root/tui/target/release/viva-tui" \
-      "$root/tui/target/debug/viva-tui"
-    do
-      if [ -x "$candidate" ]; then
-        shift
-        # ONLY IF NOBODY SAID OTHERWISE. The client starts a daemon with
-        # $VIVA_BIN, so clobbering it here forced every cold start through this
-        # script -- one source load for the command and another for the daemon
-        # it spawns, about 2.9s of the 3.1s a cold start cost. A guess must
-        # never beat an instruction, which is already the rule for VIVA_TUI.
-        VIVA_BIN="${VIVA_BIN:-$root/bin/viva}" exec "$candidate" "$@"
-      fi
-    done
-    # NOTHING TO FALL BACK ON, and that is the point. A second client in Lisp
-    # meant `viva tui` never failed, by handing over a smaller untested program
-    # under the name of the real one.
-    printf 'The full-screen client is not built here.\n\n' >&2
-    printf 'Build it:   sh %s/tui/install.sh\n' "$root" >&2
-    printf 'Or work on the line:   viva attach\n' >&2
-    exit 1
-    ;;
-esac
 
 # SBCL, wherever it is -- resolved in one place, shared with the image build.
 . "$root/tools/sbcl.sh"

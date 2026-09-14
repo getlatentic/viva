@@ -251,21 +251,22 @@ DOES rather than about what it says."
              (false (cli::beside-me "viva-nothing" "viva" link))))
       (ignore-errors (uiop:delete-directory-tree root :validate t)))))
 
-(define-test "a command that was removed says what replaced it"
-  ;; Falling through to the usage text is correct and useless: twenty lines that
-  ;; never mention the word just typed, so the reader has to notice an absence
-  ;; and guess what it became.
-  (dolist (name (mapcar #'car cli::+retired+))
-    (true (cli::retired-command name) name)
-    ;; And it must really be gone, not merely renamed in the table.
-    (false (find name cli::+commands+ :key #'first :test #'equal)
-           "~a is listed as retired and still dispatches" name))
-  ;; The replacements it names have to exist.
-  (is string= "viva tui" (cli::retired-command "live"))
-  (true (find "tui" cli::+commands+ :key #'first :test #'equal))
-  (true (find "do" cli::+commands+ :key #'first :test #'equal))
-  ;; A name nobody ever had is not a retirement, it is a typo: usage, not advice.
-  (false (cli::retired-command "nonsense")))
+(define-test "the name alone is the full-screen client, and only the name"
+  ;; Typing the name of the thing opens the thing. `viva tui` asked a person to
+  ;; know which of two clients they wanted before they had seen either.
+  (true (cli::bare-p (cli::parse-arguments '())))
+  ;; THE CLIENT READS NO ARGUMENTS, so anything alongside would be taken and
+  ;; dropped: those go to the line client, where the flag is read.
+  (false (cli::bare-p (cli::parse-arguments '("--cwd" "/elsewhere"))))
+  (false (cli::bare-p (cli::parse-arguments '("somesession"))))
+  ;; And the launcher decides the same thing before sbcl starts, or the answer
+  ;; would depend on whether a checkout was involved.
+  (let ((launcher (shell-code (repository-file "bin/viva"))))
+    (true (search "[ $# -eq 0 ] && [ -t 1 ] && [ -t 0 ]" launcher)
+          "the launcher no longer hands the bare form to the client")
+    (false (search "set -- tui" launcher)
+           "the launcher is routing through a command name that no longer exists")
+    (true (search "exec \"$candidate\"" launcher))))
 
 (define-test "a capability nobody registered is said out loud"
   ;; CONTRIBUTIONS returns complaints for exactly this, and the daemon took its
