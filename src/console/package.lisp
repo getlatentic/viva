@@ -26,5 +26,5 @@
                     (#:harness #:viva.harness)
                     (#:compaction #:viva.compaction)
                     (#:template #:viva.template))
-  (:export #:run-shell #:run-ipc #:build-agent #:*colour*
+  (:export #:run-ipc #:build-agent #:*colour*
            #:call-summary #:paint))

@@ -79,11 +79,10 @@ which fetches what ASDF alone cannot")))
       (true (member key accepted) "~a is passed by the CLI but BUILD-AGENT refuses it" key))
     ;; And the runners in between must not re-list them, which is the mistake
     ;; itself rather than its symptom.
-    (dolist (runner (list #'viva.console:run-shell #'viva.console:run-ipc))
-      (is eq t (accepted-keywords runner)
-          "a runner that enumerates BUILD-AGENT's keywords rots the next time one is added"))))
+    (is eq t (accepted-keywords #'viva.console:run-ipc)
+        "a runner that enumerates BUILD-AGENT's keywords rots the next time one is added")))
 
-(define-test "--limit reaches ipc, and its documented default is the real one"
+(define-test "--limit reaches serving, and its documented default is the real one"
   ;; :REQUEST-LIMIT was appended after a list that already carried one, and in a
   ;; keyword list the first value wins -- so ipc's documented 200 was 60.
   (is = 200 (getf (cli::workspace-options (cli::parse-arguments '()) :limit-default 200)
@@ -251,6 +250,40 @@ DOES rather than about what it says."
              ;; A name that is not there is still NIL, not an error.
              (false (cli::beside-me "viva-nothing" "viva" link))))
       (ignore-errors (uiop:delete-directory-tree root :validate t)))))
+
+(define-test "a command that was removed says what replaced it"
+  ;; Falling through to the usage text is correct and useless: twenty lines that
+  ;; never mention the word just typed, so the reader has to notice an absence
+  ;; and guess what it became.
+  (dolist (name (mapcar #'car cli::+retired+))
+    (true (cli::retired-command name) name)
+    ;; And it must really be gone, not merely renamed in the table.
+    (false (find name cli::+commands+ :key #'first :test #'equal)
+           "~a is listed as retired and still dispatches" name))
+  ;; The replacements it names have to exist.
+  (is string= "viva tui" (cli::retired-command "live"))
+  (true (find "tui" cli::+commands+ :key #'first :test #'equal))
+  (true (find "do" cli::+commands+ :key #'first :test #'equal))
+  ;; A name nobody ever had is not a retirement, it is a typo: usage, not advice.
+  (false (cli::retired-command "nonsense")))
+
+(define-test "a capability nobody registered is said out loud"
+  ;; CONTRIBUTIONS returns complaints for exactly this, and the daemon took its
+  ;; first two values and dropped the third -- so `capabilities = lop` in the
+  ;; machine config gave every session nothing and said nothing. The setting
+  ;; read as applied and the tools were simply absent.
+  (let ((source (repository-file "src/daemon/server.lisp")))
+    (true (search "report-capability-complaints (third declared)" source)
+          "the daemon is dropping what CONTRIBUTIONS complained about again"))
+  ;; And the complaint names what does exist, so the fix is in the message.
+  (multiple-value-bind (tools prompts complaints)
+      (viva.extension:contributions (list "lop"))
+    (declare (ignore tools prompts))
+    (is = 1 (length complaints))
+    (true (search "no capability called" (first complaints)))
+    (dolist (offered (viva.extension:builtin-names))
+      (true (search offered (first complaints))
+            "the complaint must name what this build does offer"))))
 
 (define-test "a standalone build installs itself, not a checkout"
   ;; `install` linked bin/viva resolved from the ASDF source directory and
@@ -1601,28 +1634,6 @@ print(sum([2, 3, 5]))
       (tui:type-key view (tui::make-key :value character)))
     (is eq :send (tui:type-key view (tui:decode (string (code-char 10)))))
     (is string= "hi" (tui::view-input view) "Enter typed into the line instead of sending")))
-
-(define-test "Tab keeps going round the sessions"
-  ;; It moved once and then stopped: the loop held its own copy of the current
-  ;; session, so every later Tab computed `the one after` from the same stale
-  ;; answer. Pressing Tab ONCE passed that bug; this presses it four times.
-  (let ((sessions '(("s1" . "s1  /a") ("s2" . "s2  /b")
-                    ("s3" . "s3  /c") ("s4" . "s4  /d"))))
-    (is string= "s3" (cli::next-session-after "s2" sessions))
-    (is string= "s4" (cli::next-session-after "s3" sessions))
-    ;; Wrapping, because Tab in a list of four should reach all four.
-    (is string= "s1" (cli::next-session-after "s4" sessions))
-    ;; A full cycle returns to where it started, and visits every session once.
-    (let ((visited '()) (at "s1"))
-      (dotimes (n 4)
-        (push at visited)
-        (setf at (cli::next-session-after at sessions)))
-      (is equal '("s1" "s2" "s3" "s4") (reverse visited)
-          "Tab did not visit every session")
-      (is string= "s1" at "a full cycle did not come back round")))
-  ;; One session is nowhere to go, not a loop onto itself.
-  (false (cli::next-session-after "s1" '(("s1" . "only"))))
-  (false (cli::next-session-after "s1" '())))
 
 (defun pane-ids (node) (mapcar #'tui:pane-id (tui:pane-tree-panes node)))
 

@@ -396,22 +396,6 @@ which is what a person redirecting output in a pane will already have set."
     (and (interactive-stream-p *standard-output*)
          (not (env "NO_COLOR")))))
 
-(defun command-shell (parsed)
-  "Interactive work in a directory. Reads stdin, so it also runs a script."
-  (unless (apply-door-flag parsed) (return-from command-shell 2))
-  (apply-journal-flag parsed)
-  (let ((console:*colour* (colour-wanted-p parsed)))
-    (apply #'console:run-shell (workspace-options parsed))))
-
-(defun command-ipc (parsed)
-  "The same agent, driven by another program over stdin and stdout.
-
-The higher default belongs here rather than appended: WORKSPACE-OPTIONS already
-carries a :REQUEST-LIMIT, and in a keyword list the FIRST value wins -- so the
-200 this appended was silently 60 the whole time, and `ipc` served a limit it
-did not document."
-  (apply #'console:run-ipc (workspace-options parsed :limit-default 200)))
-
 (defun command-daemon (parsed)
   "Start, stop or inspect the organism.
 
@@ -796,15 +780,28 @@ driver: the organism's defining behaviour shipped switched off with no switch."
         (format *error-output* "~&! retention turn failed: ~a~%" condition)))))
 
 (defun command-do (parsed)
-  "One prompt, one answer. What a script or a CI job wants."
+  "One prompt and one answer, or -- with --serve -- a conversation another
+program drives over stdin and stdout.
+
+ONE COMMAND, because they were one thing wearing two names: the same agent,
+built in this process, reading from something that is not a person. Asking once
+and asking repeatedly is the only difference, and that is what a flag is for.
+
+The higher limit belongs to serving rather than appended after the fact:
+WORKSPACE-OPTIONS already carries a :REQUEST-LIMIT and in a keyword list the
+first value wins, so a 200 appended there was silently 60."
   (unless (apply-door-flag parsed) (return-from command-do 2))
   (apply-journal-flag parsed)
+  (when (flag parsed "serve")
+    (return-from command-do
+      (apply #'console:run-ipc (workspace-options parsed :limit-default 200))))
   (let* ((prompt (prompt-from parsed))
          (quiet (string= "true" (flag parsed "quiet" "false"))))
     (when (blank-prompt-p prompt)
       (format t "~&usage: viva do \"<prompt>\" [--cwd DIR] [--model NAME]~%~
        viva do --file prompt.txt~%~
-       echo \"<prompt>\" | viva do~%")
+       echo \"<prompt>\" | viva do~%~
+       viva do --serve            keep reading JSON lines until end of input~%")
       (return-from command-do 1))
     (let* ((console:*colour* nil)
            ;; A transcript only on request. It is what lets a run's cost be

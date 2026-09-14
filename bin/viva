@@ -53,7 +53,7 @@ if [ $# -eq 0 ] && [ -t 1 ] && [ -t 0 ]; then
 fi
 
 case "${1:-}" in
-  tui|live)
+  tui)
     for candidate in \
       "$root/tui/target/release/viva-tui" \
       "$root/tui/target/debug/viva-tui"
@@ -68,11 +68,13 @@ case "${1:-}" in
         VIVA_BIN="${VIVA_BIN:-$root/bin/viva}" exec "$candidate" "$@"
       fi
     done
-    if [ "${1:-}" = "tui" ]; then
-      printf 'The Rust client is not built here, so this is the Lisp one.\n' >&2
-      printf 'Build the other with:  sh %s/tui/install.sh\n\n' "$root" >&2
-      set -- live "${@:2}"
-    fi
+    # NOTHING TO FALL BACK ON, and that is the point. A second client in Lisp
+    # meant `viva tui` never failed, by handing over a smaller untested program
+    # under the name of the real one.
+    printf 'The full-screen client is not built here.\n\n' >&2
+    printf 'Build it:   sh %s/tui/install.sh\n' "$root" >&2
+    printf 'Or work on the line:   viva attach\n' >&2
+    exit 1
     ;;
 esac
 

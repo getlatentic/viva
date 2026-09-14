@@ -29,7 +29,7 @@ repository keeps the negative results beside the positive ones.
   `capabilities = self-modify` in `~/.viva/config` asks for it.
 - An entry in that list is a name this build offers or a path to a file you
   wrote. A file inside a project loads only once you have run `viva trust`.
-- `viva shell --capabilities on` enables it for one run. `capabilities = on`
+- `viva do --capabilities on "..."` enables it for one run. `capabilities = on`
   in `~/.viva/config` enables it for the sessions the daemon starts.
 - `viva trust` gates a project's own tools before a later session can call them.
 

@@ -9,7 +9,7 @@ introduced as a bug fix without being stated as one.
 replay would scroll the terminal and bury whatever the person was looking at.
 It attaches **from now**.
 
-`viva live` is full-screen. Opening a session and seeing an empty pane is
+`viva tui` is full-screen. Opening a session and seeing an empty pane is
 indistinguishable from opening the wrong session. It attaches **from zero**.
 
 Both are correct for their client. Neither is a default the other should

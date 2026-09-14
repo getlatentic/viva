@@ -124,6 +124,16 @@ the safe direction. Silently classifying a real failure as a hangup is not."
   (bt:with-lock-held (*diagnostics-lock*) (incf *failures*))
   (remember-note where (string (type-of condition)) (princ-to-string condition)))
 
+(defun report-capability-complaints (complaints)
+  "Say what a declared capability could not give this session.
+
+Through NOTE-FAILURE, so it lands where a person already looks: `daemon status`
+lists it under contained failures, with the name that was asked for."
+  (dolist (complaint complaints)
+    (note-failure "capabilities"
+                  (make-condition 'simple-error :format-control "~a"
+                                                :format-arguments (list complaint)))))
+
 (defun note-progress (where detail)
   "Record something that HAPPENED, not something that went wrong.
 
@@ -383,7 +393,14 @@ cell on the same transcript would be two writers to one file."
                       (session:open-session :directory (session:session-directory cwd)
                                             :cwd cwd)))
          (declared (multiple-value-list (extension:contributions *declared*)))
-         (declared-tools (first declared))
+         ;; THE THIRD VALUE FIRST, and it is not decoration: CONTRIBUTIONS
+         ;; returns complaints because a name nobody registered must not be a
+         ;; silence. Taking only the first two dropped every one, so a
+         ;; capability misspelt in the machine config gave the session nothing
+         ;; and said nothing -- the setting looked applied and the tools were
+         ;; simply missing.
+         (declared-tools (progn (report-capability-complaints (third declared))
+                                (first declared)))
          (declared-prompts (second declared))
          (agent (harness:make-workspace-agent
                  :cwd cwd

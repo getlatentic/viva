@@ -60,7 +60,7 @@ which is the test of whether it is actually reusable.
 **As a shell.**
 
 ```bash
-viva shell --cwd ~/work/thing
+viva tui --cwd ~/work/thing
 ```
 
 `/help` lists the commands. `!cmd` runs a shell command directly. Because it
@@ -70,7 +70,7 @@ line-oriented rather than full-screen.
 **Over IPC.**
 
 ```bash
-echo '{"type":"prompt","message":"what does this repo do?"}' | viva ipc --cwd .
+echo '{"type":"prompt","message":"what does this repo do?"}' | viva do --serve --cwd .
 ```
 
 A prompt runs on its own thread, so `steer` and `abort` mean something: a steer

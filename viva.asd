@@ -188,7 +188,7 @@
                              (:file "install")
                              (:file "learned")
                              (:file "attend")
-                             (:file "live")
+                             (:file "client")
                              (:file "main")))))
 
 (defsystem "viva/tests"
