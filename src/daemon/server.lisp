@@ -392,7 +392,14 @@ cell on the same transcript would be two writers to one file."
                       (session:reopen-session (session:summary-path earlier))
                       (session:open-session :directory (session:session-directory cwd)
                                             :cwd cwd)))
-         (declared (multiple-value-list (extension:contributions *declared*)))
+         ;; PER SESSION, because a daemon serves many directories and the list
+         ;; decided when it started cannot be right for all of them.
+         (wanted (multiple-value-list (capabilities-for cwd)))
+         (declared (multiple-value-list
+                    (extension:contributions
+                     (progn (a:when-let ((complaint (third wanted)))
+                              (report-capability-complaints (list complaint)))
+                            (first wanted)))))
          ;; THE THIRD VALUE FIRST, and it is not decoration: CONTRIBUTIONS
          ;; returns complaints because a name nobody registered must not be a
          ;; silence. Taking only the first two dropped every one, so a
@@ -414,7 +421,7 @@ cell on the same transcript would be two writers to one file."
                  ;; capability's business to get right, once.
                  :extra-tools declared-tools
                  :extra-prompt declared-prompts
-                 :extension-files *declared-files*
+                 :extension-files (second wanted)
                  :request-limit 60)))
     (setf (agent:agent-stream-p agent) t
           (viva.compaction:settings-context-limit (harness:agent-compaction agent))
@@ -971,22 +978,44 @@ unlink the socket the first had just bound."
       (handler-case (progn (sb-posix:lockf fd sb-posix:f-tlock 0) fd)
         (error () (ignore-errors (sb-posix:close fd)) nil)))))
 
-(defvar *declared-files* '()
-  "The extension files this daemon was configured with -- loaded per session,
-under the trust gate, because loading one runs it.")
+(defun capabilities-for (cwd)
+  "What a session working in CWD may have, as (values NAMES FILES COMPLAINT).
 
-(defvar *declared* '()
-  "The capability names this daemon was configured with.
+THE MACHINE'S ALWAYS, AND THE PROJECT'S ONCE TRUSTED. A daemon outlives its
+clients and serves many directories at once, so one list decided when it
+started cannot be right for all of them -- a project that needs `loop` had
+nowhere to say so, and the machine config turns it on for every other project
+too.
 
-FROM THE MACHINE CONFIG, not from a flag. A daemon is usually started detached
-and often by a client rather than by a person at a shell, so a flag is a
-channel that mostly is not there -- which is how the door ended up reachable
-from `viva shell` and from nothing else. The one process whose whole premise is
-outliving its clients was the one process that could not modify itself.
+Trust is the gate that already exists and already means more: it says a
+directory's own extensions and tools may be LOADED, which is running whatever
+that directory contains. Naming a capability this build already holds is less
+than that, so it asks for nothing new.
 
-NAMES, so this is a list and not a switch. What a session gets is whatever
-those names contribute, and a build that offers three capabilities can be asked
-for two of them.")
+RESOLVED SEPARATELY AND THEN JOINED, never joined as text. `off` means nothing
+at all when it is the whole setting and is not a name, so pasting it in front
+of a project's list asked for a capability called `off`.
+
+The project adds to the machine's rather than replacing it. What the person
+running the daemon switched on is theirs to switch off, and a directory they
+cloned does not get to quietly take it away."
+  (multiple-value-bind (names files)
+      (extension:declared (config:machine-setting "capabilities" "off"))
+    (let* ((table (config:load-settings cwd))
+           (asked (config:setting table "capabilities"))
+           (from (config:source table "capabilities")))
+      (if (and (eq from :project) asked (plusp (length asked)))
+          (let ((environment (env:make-local-environment :cwd cwd)))
+            (if (trust:trusted-p environment cwd)
+                (multiple-value-bind (mine my-files) (extension:declared asked)
+                  (values (union names mine :test #'equal)
+                          (union files my-files :test #'equal)
+                          nil))
+                (values names files
+                        (format nil "~a asks for capabilities ~s in .viva/config, ~
+which is not read until the project is trusted. Run `viva trust` there."
+                                cwd asked))))
+          (values names files nil)))))
 
 (defun wire-evolution ()
   "Give this process an evolution owner that hears about registrations, and
@@ -997,13 +1026,11 @@ and no daemon installed it, so a registry tool minted in a session left no
 line in the ledger and its lineage did not survive a restart -- which is the
 one thing promotion is for."
   (actor:ledger-registrations)
-  ;; THE NAMES, not a boolean. A daemon that only knew on-or-off could offer one
-  ;; capability; the setting is a list, and what a session gets is whatever those
-  ;; names contribute.
-  (multiple-value-bind (names files)
-      (extension:declared (config:machine-setting "capabilities" "off"))
-    (setf *declared* names
-          *declared-files* files)))
+  ;; NOT THE CAPABILITIES. They were read here once, when the daemon started,
+  ;; and held for every session it would ever serve -- so one list had to be
+  ;; right for every directory at once. CAPABILITIES-FOR asks per session,
+  ;; against the config that session works under.
+  )
 
 (defun serve (&key (path (socket-path)) (background nil) announce)
   "Listen until stopped. One thread per connection; sessions outlive all of them.

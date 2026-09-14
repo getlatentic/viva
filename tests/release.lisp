@@ -268,6 +268,40 @@ DOES rather than about what it says."
            "the launcher is routing through a command name that no longer exists")
     (true (search "exec \"$candidate\"" launcher))))
 
+(define-test "a project may ask for a capability once it is trusted"
+  ;; A daemon outlives its clients and serves many directories at once, so one
+  ;; list decided when it started cannot be right for all of them -- a project
+  ;; that needs `loop` had nowhere to say so.
+  (let* ((root (uiop:ensure-directory-pathname
+                (format nil "~a/viva-cap-~a" (uiop:temporary-directory)
+                        (random 100000 (make-random-state t)))))
+         (project (namestring root)))
+    (unwind-protect
+         (progn
+           (ensure-directories-exist (merge-pathnames ".viva/" root))
+           (with-open-file (out (merge-pathnames ".viva/config" root) :direction :output)
+             (write-line "capabilities = loop" out))
+           ;; UNTRUSTED: the machine's list only, and a complaint naming the fix.
+           (multiple-value-bind (names files complaint)
+               (viva.daemon::capabilities-for project)
+             (declare (ignore files))
+             (false (member "loop" names :test #'equal)
+                    "an untrusted project turned a capability on")
+             (true complaint)
+             (true (search "viva trust" complaint)
+                   "the complaint must name what would make it work"))
+           ;; TRUSTED: taken. Trust already says this directory's own code may
+           ;; RUN, which is more than naming a capability the build holds.
+           (let ((environment (env:make-local-environment :cwd project)))
+             (trust:trust environment project))
+           (multiple-value-bind (names files complaint)
+               (viva.daemon::capabilities-for project)
+             (declare (ignore files))
+             (true (member "loop" names :test #'equal)
+                   "a trusted project's capability was ignored")
+             (false complaint)))
+      (ignore-errors (uiop:delete-directory-tree root :validate t)))))
+
 (define-test "a capability nobody registered is said out loud"
   ;; CONTRIBUTIONS returns complaints for exactly this, and the daemon took its
   ;; first two values and dropped the third -- so `capabilities = lop` in the

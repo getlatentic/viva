@@ -85,8 +85,8 @@ ORDINARY WORK
       --session-dir DIR       record the transcript, for counting the work done
 
   Capabilities are a flag only here, where the agent is built in this process.
-  A session inside the daemon takes them from ~/.viva/config, which is read
-  once when the daemon starts.
+  A session inside the daemon takes them from ~/.viva/config, and from this
+  project's .viva/config once `viva trust` has been run here.
 
   config [DIR]                every setting, its value, and where it came from
                               (~/.viva/config, then .viva/config, then
@@ -194,6 +194,17 @@ away."
       ((flag parsed "version")
        (format t "~&viva ~a~%" (version))
        0)
+      ;; A FLAG THAT CANNOT REACH THE DAEMON. Sessions here are created inside a
+      ;; process that outlives this command, so a capability named on this line
+      ;; arrives after the decision. Saying where it does belong beats a flag
+      ;; that is accepted and does nothing.
+      ((and (null entry) (flag parsed "capabilities"))
+       (format *error-output* "~&viva: a session's capabilities are not set here.~%~%~
+Name them in ~~/.viva/config, or in this project's .viva/config once~%~
+`viva trust` has been run here:~%~%  capabilities = ~a~%~%~
+`viva do --capabilities ...` is the one that takes a flag, because it builds~%~
+its agent in this process.~%" (flag parsed "capabilities"))
+       1)
       ((and (null entry) (not (help-wanted-p parsed name)) (unknown-flags parsed))
        (let ((unknown (unknown-flags parsed)))
          (format *error-output* "~&viva: ~{--~a~^, ~} ~:[is not an option~;are not options~] here.~%~
