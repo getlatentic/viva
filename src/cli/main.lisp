@@ -153,6 +153,10 @@ EXPERIMENTS
   --version                   which build this is
   --help                      this text
 
+The full-screen client does not ask the terminal for the mouse, so dragging
+selects text the way it does anywhere else. VIVA_MOUSE=1 asks for it back, for
+the wheel and clickable rows -- then hold alt or shift to select.
+
 Credentials are read from ~/.viva/auth.json by the engine itself, so no run
 depends on the caller having exported anything.
 ")
