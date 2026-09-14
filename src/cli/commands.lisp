@@ -396,6 +396,31 @@ which is what a person redirecting output in a pane will already have set."
     (and (interactive-stream-p *standard-output*)
          (not (env "NO_COLOR")))))
 
+(defun process-alive-p (pid)
+  (handler-case (progn (sb-posix:kill pid 0) t)
+    (sb-posix:syscall-error (condition)
+      (/= (sb-posix:syscall-errno condition) sb-posix:esrch))))
+
+(defun stop-daemon (&key (timeout 15))
+  "Ask the running daemon to stop, and wait for its PROCESS to be gone.
+Returns (values GONE-P PID).
+
+THE PID, not the socket. The daemon deletes its socket file the moment it stops
+listening, so a check on the socket reports it gone while the process is still
+finishing -- which is how `stopped` was printed a minute before it was true, and
+how a restart could start a second daemon beside the first."
+  (let ((pid nil))
+    (daemon:with-connection (stream)
+      (a:when-let ((line (read-line stream nil nil)))
+        (setf pid (ignore-errors (gethash "pid" (jzon:parse line)))))
+      (daemon:request stream "type" "shutdown"))
+    (values (or (null pid)
+                (loop repeat (ceiling timeout 0.05)
+                      while (process-alive-p pid)
+                      do (sleep 0.05)
+                      finally (return (not (process-alive-p pid)))))
+            pid)))
+
 (defun command-daemon (parsed)
   "Start, stop or inspect the organism.
 
@@ -474,26 +499,25 @@ it finds nobody home."
            (progn (daemon:serve :announce (lambda (path)
                                             (format t "~&listening on ~a~%" path)
                                             (finish-output)))
+                  ;; The journal, closed before EXIT reaches it. See STOP-JOURNAL.
+                  (actor:stop-journal)
                   0)))
       ((string= "restart" verb)
        ;; Stop and start, named as one thing, because `why is my change not
        ;; working` has this as its answer often enough that it should not be
        ;; two commands and a guess.
        (when (daemon:running-p)
-         (daemon:with-connection (stream)
-           (read-line stream nil nil)
-           (daemon:request stream "type" "shutdown"))
-         (loop repeat 50 while (daemon:running-p) do (sleep 0.1)))
+         (stop-daemon))
        ;; Sessions come back with the new process; a turn that was running
        ;; does not, and the restored session says so in its own stream.
        (format t "~&running turns end with the old process; sessions come back~%")
        (start-detached-daemon))
       ((string= "stop" verb)
        (if (daemon:running-p)
-           (progn (daemon:with-connection (stream)
-                    (read-line stream nil nil)
-                    (daemon:request stream "type" "shutdown"))
-                  (format t "~&stopped~%") 0)
+           (multiple-value-bind (gone pid) (stop-daemon)
+             (if gone
+                 (progn (format t "~&stopped~%") 0)
+                 (progn (format t "~&asked pid ~a to stop, and it is still running~%" pid) 1)))
            (progn (format t "~&not running~%") 1)))
       (t (format t "~&usage: viva daemon [status|start|stop|restart]~%") 1))))
 

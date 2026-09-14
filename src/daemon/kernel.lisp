@@ -414,9 +414,15 @@ state carrying ?t is how `this completion is about the current turn` is said."
 ;;;   (:owner-exited ?stale) a predecessor's death arriving late must not
 ;;;                         restart anything -- generation identity is the law
 ;;;                         that keeps cleanup from touching a successor
+;;;   (:stop ?gen)          the process is ending: close the owner on purpose
+;;; (:stopped ?gen)     no generation accepts appends, and none is wanted
+;;;   (:owner-exited ?gen)  the death that was asked for, so nothing restarts.
+;;;                         Read as a crash, it spawned a successor while SBCL
+;;;                         was exiting -- which admits no new thread -- and
+;;;                         every stop with a live session took sixty seconds.
 
 (define-owner journal
-  (:states (:available ?gen) (:restarting ?gen))
+  (:states (:available ?gen) (:restarting ?gen) (:stopped ?gen))
 
   (:transition ((:available ?gen) (:owner-exited ?gen))
     => `(:restarting ,(1+ ?gen))
@@ -425,11 +431,25 @@ state carrying ?t is how `this completion is about the current turn` is said."
   (:transition ((:available ?gen) (:owner-exited ?stale))
     => :same (list :diagnostic :stale-generation-exit ?stale))
 
+  (:transition ((:available ?gen) (:stop ?any))
+    => `(:stopped ,?gen)
+    (list :close-owner ?gen))
+
   (:transition ((:restarting ?gen) (:owner-started ?gen))
     => `(:available ,?gen)
     (list :repost-uncommitted ?gen))
 
   (:transition ((:restarting ?gen) (:owner-exited ?stale))
+    => :same (list :diagnostic :stale-generation-exit ?stale))
+
+  (:transition ((:restarting ?gen) (:stop ?any))
+    => `(:stopped ,?gen)
+    (list :close-owner ?gen))
+
+  (:transition ((:stopped ?gen) (:owner-exited ?gen))
+    => :same)
+
+  (:transition ((:stopped ?gen) (:owner-exited ?stale))
     => :same (list :diagnostic :stale-generation-exit ?stale)))
 
 ;;; ---------------------------------------------------------------------------
@@ -517,5 +537,12 @@ Returns the final state. A TLC error trace pastes in as one of these."
                      :expect (:restarting 2)
                      :effects ((:diagnostic :stale-generation-exit 1)))
                     ((:owner-started 2) :expect (:available 2))))
+    ;; A stop that was asked for is not a death to recover from.
+    (multiple-value-bind (next effects) (journal-transition '(:available 1) '(:stop 1))
+      (assert (equal next '(:stopped 1)))
+      (assert (equal effects '((:close-owner 1)))))
+    (multiple-value-bind (next effects) (journal-transition '(:stopped 1) '(:owner-exited 1))
+      (assert (equal next '(:stopped 1)))
+      (assert (null effects)))
     (format t "~&kernel self-test: all traces passed~%")
     t))

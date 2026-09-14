@@ -2114,6 +2114,25 @@ when it recorded no promotion at all."
       (values (mapcar #'tool:tool-name (viva.agent:tools agent))
               (viva.agent:system-prompt agent)))))
 
+(define-test "a journal that was asked to stop is not restarted"
+  ;; EXIT TERMINATES THE OWNER, and its cleanup reported a death the table read
+  ;; as a crash: it spawned a replacement while SBCL was exiting, which admits
+  ;; no new thread, and every `daemon stop` with a live session took sixty
+  ;; seconds to leave while saying `stopped` after one.
+  (multiple-value-bind (next effects)
+      (viva.kernel:journal-transition '(:available 1) '(:stop 1))
+    (is equal '(:stopped 1) next)
+    (is equal '((:close-owner 1)) effects))
+  (multiple-value-bind (next effects)
+      (viva.kernel:journal-transition '(:stopped 1) '(:owner-exited 1))
+    (is equal '(:stopped 1) next)
+    (false (find :spawn-owner effects :key #'first) "a stopped journal was restarted"))
+  ;; A crash is still a crash.
+  (multiple-value-bind (next effects)
+      (viva.kernel:journal-transition '(:available 1) '(:owner-exited 1))
+    (is equal '(:restarting 2) next)
+    (true (find :spawn-owner effects :key #'first))))
+
 (define-test "the journal and store roots follow the environment they run in"
   ;; A DEFVAR'S VALUE IS COMPUTED ONCE, AT LOAD, AND A SAVED IMAGE KEEPS IT. Both
   ;; roots were, so every released binary carried the CI runner's home and

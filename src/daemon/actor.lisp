@@ -456,6 +456,31 @@ none is available."
          (bt:wait-on-semaphore semaphore :timeout timeout)
          t)))
 
+(defun stop-journal (&key (timeout 15))
+  "Close the journal owner on purpose, before the process exits. Returns T once
+the owner thread has ended, NIL if there was none or it outlasted TIMEOUT.
+
+ON PURPOSE, so the table knows. EXIT terminates the owner otherwise, and its
+cleanup reports a death: read as a crash, that spawned a successor while SBCL
+was exiting, which admits no new thread, and the process sat out the whole
+sixty-second join timeout after `daemon stop` had already said `stopped`.
+
+REFUSING FIRST, then :SHUTDOWN. The mailbox is FIFO, so whatever was accepted
+before the refusal is written before the owner leaves; JOURNAL-POST is
+lock-free by design, so a send racing the refusal can still land behind it."
+  (let* ((service nil)
+         (effects (bt:with-lock-held (*journal-lock*)
+                    (when *journal-machine*
+                      (setf service *journal-service*)
+                      (when service
+                        (setf (journal-state service) :stopped))
+                      (journal-dispatch (list :stop (second *journal-machine*)))))))
+    (when (and service (find :close-owner effects :key #'first))
+      (mailbox:send-message (journal-mailbox service) :shutdown)
+      (a:when-let ((thread (journal-thread service)))
+        (handler-case (progn (bt:join-thread thread :timeout timeout) t)
+          (error () nil))))))
+
 (defun read-journal (cell from through)
   "Journalled events with sequence in (FROM, THROUGH], oldest first.
 
