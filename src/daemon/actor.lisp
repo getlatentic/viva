@@ -478,8 +478,11 @@ lock-free by design, so a send racing the refusal can still land behind it."
     (when (and service (find :close-owner effects :key #'first))
       (mailbox:send-message (journal-mailbox service) :shutdown)
       (a:when-let ((thread (journal-thread service)))
-        (handler-case (progn (bt:join-thread thread :timeout timeout) t)
-          (error () nil))))))
+        ;; SB-THREAD, for the :TIMEOUT: the portable JOIN-THREAD has none, and
+        ;; the extra arguments were an error this HANDLER-CASE swallowed, so
+        ;; the wait was a wait for nothing.
+        (ignore-errors (sb-thread:join-thread thread :default nil :timeout timeout))
+        (not (bt:thread-alive-p thread))))))
 
 (defun read-journal (cell from through)
   "Journalled events with sequence in (FROM, THROUGH], oldest first.

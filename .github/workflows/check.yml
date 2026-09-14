@@ -146,6 +146,7 @@ jobs:
           ./viva-${{ matrix.name }} daemon stop
           if kill -0 "$pid" 2>/dev/null; then
             echo "daemon stop returned while pid $pid, holding a session, was still running."
+            ps -o pid,ppid,stat,etime,command -p "$pid" || true
             exit 1
           fi
 
