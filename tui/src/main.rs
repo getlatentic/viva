@@ -14,7 +14,10 @@ mod protocol;
 mod status;
 mod ui;
 
-use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture};
+use crossterm::event::{
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
+    EnableMouseCapture,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -33,20 +36,53 @@ use std::time::{Duration, Instant};
 /// modes and the alternate screen leaves a shell with no echo, no scrollback
 /// and an invisible cursor, and the fix a person reaches for is closing the
 /// window.
-struct TerminalGuard;
+struct TerminalGuard {
+    mouse: bool,
+}
+
+/// Does this run want the mouse?
+///
+/// OFF BY DEFAULT, because asking for the mouse takes selection away. While the
+/// terminal is reporting, a drag belongs to this program and the terminal will
+/// not highlight anything -- so copying a line out of a model's answer stopped
+/// working, and every mouse action it bought is one a key already does: the
+/// wheel is PageUp and PageDown, and a click on a row is an arrow or a digit.
+/// VIVA_MOUSE asks for it back, for whoever would rather have the wheel and
+/// knows to hold a modifier to select.
+fn mouse_wanted() -> bool {
+    match std::env::var("VIVA_MOUSE") {
+        Ok(value) => {
+            let value = value.trim().to_ascii_lowercase();
+            !matches!(value.as_str(), "" | "0" | "off" | "no" | "false")
+        }
+        Err(_) => false,
+    }
+}
 
 impl TerminalGuard {
     fn enter() -> std::io::Result<Self> {
+        let mouse = mouse_wanted();
         enable_raw_mode()?;
-        execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
-        Ok(TerminalGuard)
+        // BRACKETED PASTE ALWAYS. Without it a pasted newline arrives as Enter
+        // and submits, so pasting a five-line function asked the model five
+        // questions and paid for five answers.
+        execute!(stdout(), EnterAlternateScreen, EnableBracketedPaste)?;
+        if mouse {
+            execute!(stdout(), EnableMouseCapture)?;
+        }
+        Ok(TerminalGuard { mouse })
     }
 }
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(stdout(), DisableMouseCapture, LeaveAlternateScreen);
+        // Only what was turned on: telling a terminal to stop reporting a mouse
+        // it was never reporting is a sequence some of them print.
+        if self.mouse {
+            let _ = execute!(stdout(), DisableMouseCapture);
+        }
+        let _ = execute!(stdout(), DisableBracketedPaste, LeaveAlternateScreen);
     }
 }
 
@@ -376,6 +412,12 @@ fn run_command(
             model.picker.searching = true;
             return perform(connection, model, input::Action::Search(rest)).map(|_| false);
         }
+        // Ctrl-C is the fast way and only fires when this client believes the
+        // session is busy. That belief is a cached event, and a loop that
+        // starts its next turn between two frames is exactly the case where it
+        // is wrong -- so the brake a person reaches for deliberately does not
+        // consult it.
+        "/stop" => return perform(connection, model, input::Action::Cancel).map(|_| false),
         "/close" => return perform(connection, model, input::Action::CloseTab).map(|_| false),
         "/refresh" => return perform(connection, model, input::Action::Refresh).map(|_| false),
         "/models" => {

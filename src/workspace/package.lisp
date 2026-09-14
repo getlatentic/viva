@@ -278,6 +278,8 @@
            #:machine-resource-directory #:project-resource-directory
            #:retire-unused #:ask #:converse #:resume #:refresh-resources #:harness-tool-set #:record
            #:reflect #:*reflection-budget* #:*reflection-prompt*
+           #:set-continuation #:clear-continuation #:continuation-of
+           #:take-continuation #:continue-tool #:+continue-capability+
            #:*agent* #:*default-model* #:*default-provider-name*))
 
 (defpackage #:viva.config

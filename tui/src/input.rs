@@ -55,6 +55,7 @@ pub fn read(event: &Event, model: &mut Model, hits: &Hitboxes) -> Action {
     match event {
         Event::Key(key) if key.kind == KeyEventKind::Press => key_pressed(key, model),
         Event::Mouse(mouse) => clicked(mouse, model, hits),
+        Event::Paste(text) => pasted(text, model),
         Event::Resize(_, _) => Action::None,
         _ => Action::None,
     }
@@ -101,6 +102,15 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
                 }
             }
             KeyCode::Char('d') if model.input.is_empty() => Action::Quit,
+            // Abandon the line. Readline's binding, because a prompt you
+            // cannot clear is one you empty with held Backspace -- and Esc
+            // already means "put the keyboard back on the prompt", which is
+            // not the same wish.
+            KeyCode::Char('u') => {
+                model.input.clear();
+                model.command_selection = 0;
+                Action::None
+            }
             KeyCode::Char('n') => Action::NewTab,
             KeyCode::Char('b') => Action::ToggleSidebar,
             KeyCode::Char('w') => Action::CloseTab,
@@ -346,6 +356,14 @@ fn picker_key(key: &KeyEvent, model: &mut Model) -> Action {
             model.picker.searching = true;
             Action::Search(model.picker.query.clone())
         }
+        // Before the printable arm, which does not look at modifiers and would
+        // otherwise type a literal `u` into the search it was meant to empty.
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            model.picker.query.clear();
+            model.picker.selection = 0;
+            model.picker.searching = true;
+            Action::Search(String::new())
+        }
         KeyCode::Char(character) => {
             model.picker.query.push(character);
             model.picker.selection = 0;
@@ -374,6 +392,34 @@ fn scroll_by(model: &mut Model, lines: i32) -> Action {
         conversation.scroll_by(lines);
     }
     Action::None
+}
+
+/// Pasted text goes in whole, and does not submit.
+///
+/// A terminal with no bracketed paste sends a newline as Enter, so a pasted
+/// function was one prompt per line -- each answered and each paid for. Arriving
+/// as one event, the newlines are the paste's own and are kept: what reaches the
+/// model is what was copied. The input is drawn on one line, so DRAW_INPUT shows
+/// them as a glyph rather than trying to lay them out.
+///
+/// Carriage returns are normalised, because a paste can carry either ending and
+/// a stray \r inside a prompt is invisible until something downstream splits on
+/// it.
+fn pasted(text: &str, model: &mut Model) -> Action {
+    if text.is_empty() {
+        return Action::None;
+    }
+    let normalised = text.replace("\r\n", "\n").replace('\r', "\n");
+    match model.focus {
+        // Only where typing goes. A paste into a picker is a search term the
+        // filter never sees, and into the transcript it is nothing at all --
+        // better ignored than silently appended to a prompt nobody is writing.
+        Focus::Input => {
+            model.input.push_str(&normalised);
+            Action::None
+        }
+        _ => Action::None,
+    }
 }
 
 fn clicked(mouse: &MouseEvent, model: &mut Model, hits: &Hitboxes) -> Action {
@@ -569,8 +615,93 @@ mod tests {
     }
 
     #[test]
+    fn control_u_abandons_the_line() {
+        let mut model = Model::new("/w".into());
+        for character in "a half written prompt".chars() {
+            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), &mut model);
+        }
+        let cleared =
+            key_pressed(&KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL), &mut model);
+        assert_eq!(cleared, Action::None, "clearing the line asked the daemon for something");
+        assert!(model.input.is_empty(), "ctrl-u left {:?} behind", model.input);
+        // And it must not be mistaken for quitting, which is what the other
+        // empty-input control key does.
+        assert_ne!(cleared, Action::Quit);
+    }
+
+    #[test]
+    fn control_u_empties_the_picker_search_rather_than_typing_into_it() {
+        let mut model = Model::new("/w".into());
+        key_pressed(&KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL), &mut model);
+        for character in "vite".chars() {
+            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), &mut model);
+        }
+        assert_eq!(model.picker.query, "vite");
+        match key_pressed(&KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL), &mut model) {
+            Action::Search(query) => assert!(query.is_empty(), "searched for {query:?}"),
+            other => panic!("ctrl-u in the picker became {other:?}"),
+        }
+        assert!(model.picker.query.is_empty(), "ctrl-u typed into the query it should have emptied");
+    }
+
+    #[test]
     fn an_empty_line_is_not_a_prompt_worth_paying_for() {
         let mut model = Model::new("/w".into());
         assert_eq!(typed(&mut model, "   "), Action::None);
+    }
+}
+
+
+#[cfg(test)]
+mod paste_tests {
+    use super::*;
+    use crate::model::Model;
+
+    fn typing() -> Model {
+        let mut model = Model::new("/w".into());
+        model.focus = Focus::Input;
+        model
+    }
+
+    #[test]
+    fn a_paste_keeps_its_newlines_and_does_not_send() {
+        let mut model = typing();
+        // Enter is what a terminal WITHOUT bracketed paste would have sent for
+        // each of these breaks, and each one submitted.
+        assert!(matches!(pasted("def f():\n    return 1\n", &mut model), Action::None));
+        assert_eq!(model.input, "def f():\n    return 1\n");
+    }
+
+    #[test]
+    fn either_line_ending_becomes_one() {
+        let mut model = typing();
+        pasted("a\r\nb\rc", &mut model);
+        assert_eq!(model.input, "a\nb\nc", "a stray carriage return is invisible until something splits on it");
+    }
+
+    #[test]
+    fn a_paste_appends_to_what_was_typed() {
+        let mut model = typing();
+        model.input.push_str("fix ");
+        pasted("this", &mut model);
+        assert_eq!(model.input, "fix this");
+    }
+
+    #[test]
+    fn a_paste_outside_the_input_is_ignored() {
+        // Into a picker it is a search term the filter never sees -- better
+        // dropped than appended to a prompt nobody is writing.
+        let mut model = Model::new("/w".into());
+        model.focus = Focus::Picker;
+        pasted("stray", &mut model);
+        assert_eq!(model.input, "");
+    }
+
+    #[test]
+    fn an_empty_paste_changes_nothing() {
+        let mut model = typing();
+        model.input.push_str("kept");
+        pasted("", &mut model);
+        assert_eq!(model.input, "kept");
     }
 }

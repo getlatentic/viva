@@ -55,7 +55,7 @@ CUP = re.compile(r"\x1b\[(\d*);(\d*)H")
 KNOWN = re.compile(
     r"\x1b\[(?:"
     r"\d*;\d*[Hf]|\d*[ABCD]|[0-9;]*m|\d*J|\d*K|\d*X"
-    r"|\?1049[hl]|\?25[hl]|\?100[0236][hl]|\?1015[hl]|\?1006[hl]"
+    r"|\?1049[hl]|\?25[hl]|\?100[0236][hl]|\?1015[hl]|\?1006[hl]|\?2004[hl]"
     r"|\d*;\d*r|s|u"
     r")"
 )
@@ -409,6 +409,28 @@ def main():
             fail("backspace did not erase the input line")
         else:
             ok("backspace erases what was typed")
+
+        # A PASTE IS ONE THING, and it does not send. Without bracketed paste a
+        # pasted newline arrives as Enter, so a two-line snippet asked the model
+        # two questions and paid for two answers. The newlines are kept because
+        # what reaches the model should be what was copied; the row shows them
+        # as a glyph, since the input is drawn on one line.
+        client.send(b"\x1b[200~def f():\n    return 1\n\x1b[201~")
+        client.pump(3.0)
+        rows = client.term.lines()
+        box = next((i for i, row in enumerate(rows) if "\u2502\u203a" in row), len(rows))
+        sent = [row for row in rows[:box] if "def f()" in row]
+        typed = next((row for row in rows if "\u2502\u203a" in row and "def f()" in row), "")
+        if sent:
+            print("---- frame at failure ----")
+            print("\n".join(rows))
+            fail(f"a paste submitted itself: {sent[0].strip()!r}")
+        elif "\u23ce" not in typed:
+            fail(f"a pasted newline is not shown: {typed.strip()!r}")
+        else:
+            ok("a paste arrives whole, keeps its newlines and sends nothing")
+        client.send(b"\x7f" * 40)
+        client.pump(1.0)
 
         # Paging to both extremes must leave the frame intact.
         client.send(b"\x1b[5~" * 30)
@@ -846,12 +868,26 @@ def main():
         client.pump(2.0)
         for needle, what in (("\x1b[?1049l", "the alternate screen"),
                              ("\x1b[?25h", "the cursor"),
-                             ("\x1b[?1006l", "mouse reporting")):
+                             ("\x1b[?2004l", "bracketed paste")):
             if needle not in client.raw:
                 fail(f"it did not give back {what}")
                 break
         else:
-            ok("leaves the alternate screen, the cursor and the mouse as it found them")
+            ok("leaves the alternate screen, the cursor and paste mode as it found them")
+        # AS IT FOUND IT, which is the invariant -- not `disabled`. The mouse is
+        # off unless VIVA_MOUSE asks for it, and telling a terminal to stop
+        # reporting a mouse it never reported is a sequence some of them print.
+        # Asserting the `off` sequence appears would demand exactly that.
+        asked = any(s in client.raw for s in ("\x1b[?1000h", "\x1b[?1002h",
+                                             "\x1b[?1003h", "\x1b[?1006h"))
+        gave_back = any(s in client.raw for s in ("\x1b[?1000l", "\x1b[?1002l",
+                                                 "\x1b[?1003l", "\x1b[?1006l"))
+        if asked and not gave_back:
+            fail("it asked for the mouse and did not give it back")
+        elif asked:
+            ok("mouse reporting was asked for and handed back")
+        else:
+            ok("never asked for the mouse, so the terminal keeps its selection")
     finally:
         client.close()
         launcher = os.path.join(os.path.dirname(ROOT), "bin", "viva")

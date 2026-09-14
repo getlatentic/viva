@@ -731,7 +731,8 @@ fn entry_lines(
     if let Some(before) = after {
         // Not around a question: it already opens and closes with a line of
         // its own, and adding one here gave it two on each side.
-        let asked = before == Role::User || entry.role == Role::User;
+        let asked = matches!(before, Role::User | Role::Looped)
+            || matches!(entry.role, Role::User | Role::Looped);
         if !asked && (before == Role::Tool) != (entry.role == Role::Tool) {
             lines.push(Hanging::plain(Line::from("")));
         }
@@ -739,11 +740,24 @@ fn entry_lines(
     {
         let text = entry.text.as_str();
         match entry.role {
-            Role::User => {
-                let voice = Style::default().fg(ACCENT).add_modifier(Modifier::BOLD);
+            // One shape for both, and a different mark and weight for each: a
+            // person's prompt is the bright `›`, a loop's own is a dim `↻`.
+            // Same shape because it IS the same thing -- the next prompt --
+            // and reading it takes the same eye movement either way.
+            Role::User | Role::Looped => {
+                let looped = entry.role == Role::Looped;
+                let voice = if looped {
+                    Style::default().fg(Color::Indexed(244))
+                } else {
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+                };
                 lines.push(Hanging::plain(Line::from("")));
                 for (index, piece) in text.lines().enumerate() {
-                    let prefix = if index == 0 { "› " } else { "  " };
+                    let prefix = match (index, looped) {
+                        (0, true) => "↻ ",
+                        (0, false) => "› ",
+                        _ => "  ",
+                    };
                     lines.push(Hanging::under("  ", voice, Line::from(vec![
                         Span::styled(prefix, voice),
                         Span::styled(piece.to_string(), voice),
@@ -1159,7 +1173,7 @@ fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled("› ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-            Span::raw(model.input.clone()),
+            Span::raw(one_line(&model.input)),
         ])),
         inner,
     );
@@ -1167,6 +1181,21 @@ fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
     // Screen readers follow it too.
     let column = inner.x + 2 + model.input.chars().count() as u16;
     frame.set_cursor_position((column.min(inner.x + inner.width - 1), inner.y));
+}
+
+/// What typed or pasted text looks like on a single row.
+///
+/// The prompt is stored as it will be SENT, newlines and all, so a pasted
+/// function reaches the model as a function. This row cannot lay those out, and
+/// a raw newline in a span is a hole in the border -- so each one shows as a
+/// glyph. One character wide, which is what keeps the cursor arithmetic above
+/// counting the same thing the reader sees.
+fn one_line(text: &str) -> String {
+    if text.contains('\n') {
+        text.replace('\n', "\u{23ce}")
+    } else {
+        text.to_string()
+    }
 }
 
 /// What the input's top edge says: the facts on the left, and on the right
@@ -1238,6 +1267,16 @@ fn status_text(model: &Model) -> (Vec<String>, Vec<(String, String)>) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_pasted_newline_shows_as_one_glyph() {
+        // One character wide, which is what keeps DRAW_INPUT's cursor column
+        // counting the same thing the reader sees.
+        assert_eq!(super::one_line("a\nb"), "a\u{23ce}b");
+        assert_eq!(super::one_line("a\nb").chars().count(), "a\nb".chars().count());
+        // And untouched text is untouched.
+        assert_eq!(super::one_line("plain"), "plain");
+    }
+
     #[test]
     fn a_status_written_for_a_shell_has_a_short_form_that_fits() {
         let long = "No model is configured. Put a key in ~/.viva/auth.json, \

@@ -16,6 +16,12 @@ use std::collections::{BTreeMap, HashSet};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
     User,
+    /// A prompt the agent arranged for itself, through `continue`.
+    ///
+    /// Drawn apart from what a person typed, because a loop that looks like
+    /// somebody sitting there typing the same instruction forty times is a
+    /// loop nobody realises is running.
+    Looped,
     Assistant,
     Tool,
     Note,
@@ -623,13 +629,17 @@ impl Model {
         let text = event.text("text").to_string();
         let name = event.name.clone();
         let seq = event.seq;
+        // Absent for a person, "loop" for a prompt the agent set up for itself.
+        let looped = event.text("source") == "loop";
         // A SESSION IS NAMED BY WHAT WAS FIRST ASKED IN IT, and the list this
         // name came from was fetched before that prompt existed. Waiting for
         // the next `session.list` left the sidebar calling the conversation
         // you are having `folder.id`, while every older one beside it had a
         // subject -- so the one session a person could name was the only one
         // that stayed nameless.
-        if name == "user.message" && !text.trim().is_empty() {
+        // A loop's own prompt must not name the session: it is what the agent
+        // decided to ask itself, not what anybody came here to do.
+        if name == "user.message" && !looped && !text.trim().is_empty() {
             if let Some(info) = self.sessions.iter_mut().find(|known| known.id == session) {
                 if info.opening.trim().is_empty() {
                     info.opening = text.clone();
@@ -646,7 +656,8 @@ impl Model {
         match name.as_str() {
             "user.message" => {
                 conversation.end_partial();
-                conversation.push(Role::User, text);
+                let role = if looped { Role::Looped } else { Role::User };
+                conversation.push(role, text);
             }
             "model.delta" => conversation.absorb_text(&text),
             "tool.started" => {
@@ -1109,6 +1120,34 @@ mod tests {
         }];
         model.open_tab(session);
         model
+    }
+
+    #[test]
+    fn a_loops_own_prompt_is_not_mistaken_for_a_person() {
+        // A loop that reads as somebody sitting there typing the same
+        // instruction forty times is a loop nobody realises is running -- and
+        // the session would be named after whatever the agent said to itself
+        // rather than after what was actually asked for.
+        let mut model = model_with("s1");
+        model.absorb(&event("user.message", "s1", json!({"text": "get the suite green"})));
+        model.absorb(&event("model.delta", "s1", json!({"text": "one failure left\n"})));
+        model.absorb(&event(
+            "user.message",
+            "s1",
+            json!({"text": "keep going", "source": "loop"}),
+        ));
+        let roles: Vec<Role> = model
+            .current_conversation()
+            .unwrap()
+            .visible_entries()
+            .map(|entry| entry.role)
+            .collect();
+        assert_eq!(roles, vec![Role::User, Role::Assistant, Role::Looped]);
+        let named = model.sessions.iter().find(|s| s.id == "s1").unwrap();
+        assert_eq!(
+            named.opening, "get the suite green",
+            "the loop renamed the session after its own prompt"
+        );
     }
 
     #[test]

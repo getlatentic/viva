@@ -91,6 +91,11 @@ is exactly the shape of RESUME landing before the run reaches its checkpoint.")
    (compaction :initarg :compaction :initform (compaction:make-settings)
                :accessor agent-compaction)
    (last-tokens :initform 0 :accessor agent-last-tokens)
+   ;; What the context was estimated to cost when it was last measured, and
+   ;; whether the gap between that and the provider's own count has already
+   ;; been reported. See CHECK-CONTEXT-ACCOUNTED.
+   (last-estimate :initform nil :accessor agent-last-estimate)
+   (accounting-reported :initform nil :accessor agent-accounting-reported)
    (active-tools :initarg :active-tools :initform nil :accessor agent-active-tools
                  :documentation "Names the model may call, or NIL for all of them.
 
@@ -100,7 +105,22 @@ how it operates, not merely what it knows.")
    (lane :initarg :lane :initform session:+main-lane+ :accessor agent-lane
          :documentation "Which line of the session this agent writes to. A
 sub-agent gets its own, so its turns land on their own branch of the same file.")
-   (context :initform (loop*:make-context) :accessor agent-context)))
+   (context :initform (loop*:make-context) :accessor agent-context)
+   ;; What to say to this agent once the turn it is in has finished, or NIL.
+   ;;
+   ;; A CONTINUATION IS NOT A STEER AND NOT A FOLLOW-UP. A steer lands inside
+   ;; the running turn; a follow-up restarts the loop without the turn ever
+   ;; having ended, so nothing outside sees a turn boundary and the request
+   ;; limit that bounds a turn never resets. This is neither: the turn ends
+   ;; normally, everything watching sees it end, and the next one begins with
+   ;; this text as its prompt. That is what makes a loop observable from the
+   ;; outside and stoppable by the ordinary cancel.
+   (continuation :initform nil :accessor agent-continuation)
+   ;; Turns still permitted, or NIL for no bound. Counted down as they are
+   ;; taken, so a bounded loop cannot be re-armed to run forever by accident.
+   (continuation-left :initform nil :accessor agent-continuation-left)
+   (continuation-lock :initform (bt:make-lock "viva.continuation")
+                      :reader agent-continuation-lock)))
 
 (defvar delegate-tool)  ; defined with the other tools below; referenced here
 
@@ -359,12 +379,141 @@ it reaches a checkpoint, which is what makes the stopping place coherent."
   "Stop the run cooperatively. Opens the gate too: a suspended run has to be
 able to hear this."
   (setf (agent-aborting agent) t)
+  ;; A CANCEL ENDS THE LOOP, not merely the turn inside it. Stopping a turn
+  ;; that is going to be followed by another turn saying the same thing is not
+  ;; stopping anything, and the person pressing the key has said plainly which
+  ;; of the two they meant.
+  (clear-continuation agent)
   (sb-concurrency:open-gate (agent-gate agent))
   t)
+
+;;; Continuing on purpose
+;;;
+;;; The agent says what it would want asked next; the thing that owns turns
+;;; asks it once this turn has ended. Kept here rather than in the daemon
+;;; because it is a property of the agent -- the shell and the IPC server reach
+;;; it through the same accessors -- and read under a lock because the tool
+;;; that sets it runs on the worker thread while cancel arrives on another.
+
+(defun set-continuation (agent text &key limit)
+  "Arrange for TEXT to be asked once the current turn ends.
+
+LIMIT bounds how many further turns it may cause; NIL leaves it unbounded,
+which is what a loop meant to run until it is stopped needs."
+  (bt:with-lock-held ((agent-continuation-lock agent))
+    (setf (agent-continuation agent) text
+          (agent-continuation-left agent) limit))
+  text)
+
+(defun clear-continuation (agent)
+  (bt:with-lock-held ((agent-continuation-lock agent))
+    (setf (agent-continuation agent) nil
+          (agent-continuation-left agent) nil))
+  t)
+
+(defun continuation-of (agent)
+  "(values TEXT REMAINING) without consuming it, for anything that reports."
+  (bt:with-lock-held ((agent-continuation-lock agent))
+    (values (agent-continuation agent) (agent-continuation-left agent))))
+
+(defun take-continuation (agent)
+  "The next prompt this loop owes, consuming one of its permitted turns.
+
+NIL when there is none, when the budget is spent, or when the run was
+cancelled -- the last because a cancelled turn must not be answered by
+starting another one, and this is the single place that decision is made."
+  (bt:with-lock-held ((agent-continuation-lock agent))
+    (let ((text (agent-continuation agent))
+          (left (agent-continuation-left agent)))
+      (cond ((null text) nil)
+            ((agent-aborting agent)
+             (setf (agent-continuation agent) nil
+                   (agent-continuation-left agent) nil)
+             nil)
+            ((null left) text)
+            ((<= left 1)
+             (setf (agent-continuation agent) nil
+                   (agent-continuation-left agent) nil)
+             text)
+            (t (setf (agent-continuation-left agent) (1- left))
+               text)))))
 
 (defun reported-tokens (message)
   (a:when-let ((usage (and message (msg:assistant-message-usage message))))
     (and (hash-table-p usage) (gethash "prompt_tokens" usage))))
+
+;;; Did the provider actually read what we sent it?
+;;;
+;;; MEASURED, BECAUSE THE ALTERNATIVE WAS A DAY. A gateway between here and the
+;;; model dropped every tool result carrying a double quote: the request went
+;;; out with six thousand characters of command output in it, the model was
+;;; handed none of them, and the only symptom was the model saying -- patiently,
+;;; six times running -- that the command had printed nothing. Nothing failed.
+;;; Nothing was logged. The transcript on disk held the output in full, so
+;;; every place a person would look to check said the harness was fine.
+;;;
+;;; The provider's own prompt count is the one number that can see this, and it
+;;; was already being recorded for compaction. Comparing its GROWTH against the
+;;; growth of what we appended cancels out the system prompt and the tool
+;;; schemas, which no estimate here can size, and leaves exactly the question
+;;; worth asking: we added this much, did the bill go up?
+
+(defparameter *accounting-alarm-floor* 1000
+  "Estimated tokens a turn must have added before a shortfall is worth saying.
+Small results ride inside the noise of any estimate; content loss worth
+reporting is never small.")
+
+(defparameter *accounting-alarm-ratio* 4
+  "How many times smaller the real growth must be than the estimate.
+
+A FACTOR OF FOUR, not a few percent. Four characters per token is wrong in both
+directions and a tighter threshold would cry wolf at whitespace, at a language
+that tokenises densely, at a provider that counts cached tokens its own way. A
+quarter is not an estimate being wrong; it is content that did not arrive.")
+
+(defun estimated-context-tokens (context)
+  (reduce #'+ (mapcar #'compaction:rough-tokens (loop*:context-messages context))
+          :initial-value 0))
+
+(defun check-context-accounted (agent message results context)
+  "Say so, once, if the provider billed for far less than we sent it.
+
+Compared as growth between two consecutive requests rather than as totals: the
+system prompt and the tool schemas are most of a small request and this cannot
+size either, so only the difference is a number both sides agree on.
+
+THE CONTEXT AS SENT, not as it now stands. By the time this is asked, MESSAGE
+and RESULTS have already been appended -- but the count MESSAGE carries is for
+the request made before either existed, and comparing a reply's bill against a
+context it never saw is a whole turn out of step."
+  (let ((reported (reported-tokens message))
+        (estimate (- (estimated-context-tokens context)
+                     (compaction:rough-tokens message)
+                     (reduce #'+ (mapcar #'compaction:rough-tokens results)
+                             :initial-value 0)))
+        (was-reported (agent-last-tokens agent))
+        (was-estimated (agent-last-estimate agent)))
+    (when (and reported was-estimated (plusp was-reported))
+      (let ((grew-by (- reported was-reported))
+            (expected (- estimate was-estimated)))
+        (when (and (>= expected *accounting-alarm-floor*)
+                   (< (* (max grew-by 0) *accounting-alarm-ratio*) expected)
+                   (not (agent-accounting-reported agent)))
+          (setf (agent-accounting-reported agent) t)
+          (let ((detail
+                  (format nil "~a billed ~d more prompt tokens for about ~d ~
+tokens of new tool output. Something between here and the model is discarding ~
+what tools return, so it is answering without them. Try another provider or ~
+endpoint for this model."
+                          (agent:agent-model agent) (max grew-by 0) expected)))
+            (agent:emit agent (list :type :notice :text detail))
+            (a:when-let ((session (agent-session agent)))
+              (ignore-errors
+               (session:append-record session :accounting
+                                      "reported_growth" (max grew-by 0)
+                                      "estimated_growth" expected
+                                      "model" (agent:agent-model agent))))))))
+    (setf (agent-last-estimate agent) estimate)))
 
 (defun system-content-of (payload)
   "The system message's text from a request payload, or NIL."
@@ -467,8 +616,10 @@ conversation no longer fits -- checked between turns rather than mid-request,
 because that is the only moment the context can be replaced safely. And the
 :CONTEXT hook, which is how a memory extension injects what it retrieved without
 the harness knowing anything about retrieval."
-  (declare (ignore results))
   (note-usage agent message)
+  ;; Before LAST-TOKENS moves: the check reads what the previous request was
+  ;; billed, and this is the line that overwrites it.
+  (check-context-accounted agent message results context)
   (a:when-let ((tokens (reported-tokens message)))
     (setf (agent-last-tokens agent) tokens))
   (let* ((compacted (when (compaction:due-p (agent-compaction agent) (agent-last-tokens agent))
