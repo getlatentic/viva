@@ -101,6 +101,15 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
                 }
             }
             KeyCode::Char('d') if model.input.is_empty() => Action::Quit,
+            // Abandon the line. Readline's binding, because a prompt you
+            // cannot clear is one you empty with held Backspace -- and Esc
+            // already means "put the keyboard back on the prompt", which is
+            // not the same wish.
+            KeyCode::Char('u') => {
+                model.input.clear();
+                model.command_selection = 0;
+                Action::None
+            }
             KeyCode::Char('n') => Action::NewTab,
             KeyCode::Char('b') => Action::ToggleSidebar,
             KeyCode::Char('w') => Action::CloseTab,
@@ -346,6 +355,14 @@ fn picker_key(key: &KeyEvent, model: &mut Model) -> Action {
             model.picker.searching = true;
             Action::Search(model.picker.query.clone())
         }
+        // Before the printable arm, which does not look at modifiers and would
+        // otherwise type a literal `u` into the search it was meant to empty.
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            model.picker.query.clear();
+            model.picker.selection = 0;
+            model.picker.searching = true;
+            Action::Search(String::new())
+        }
         KeyCode::Char(character) => {
             model.picker.query.push(character);
             model.picker.selection = 0;
@@ -566,6 +583,36 @@ mod tests {
             Action::Send(text) => assert_eq!(text, "read src/main.rs"),
             other => panic!("a path became {other:?}"),
         }
+    }
+
+    #[test]
+    fn control_u_abandons_the_line() {
+        let mut model = Model::new("/w".into());
+        for character in "a half written prompt".chars() {
+            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), &mut model);
+        }
+        let cleared =
+            key_pressed(&KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL), &mut model);
+        assert_eq!(cleared, Action::None, "clearing the line asked the daemon for something");
+        assert!(model.input.is_empty(), "ctrl-u left {:?} behind", model.input);
+        // And it must not be mistaken for quitting, which is what the other
+        // empty-input control key does.
+        assert_ne!(cleared, Action::Quit);
+    }
+
+    #[test]
+    fn control_u_empties_the_picker_search_rather_than_typing_into_it() {
+        let mut model = Model::new("/w".into());
+        key_pressed(&KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL), &mut model);
+        for character in "vite".chars() {
+            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), &mut model);
+        }
+        assert_eq!(model.picker.query, "vite");
+        match key_pressed(&KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL), &mut model) {
+            Action::Search(query) => assert!(query.is_empty(), "searched for {query:?}"),
+            other => panic!("ctrl-u in the picker became {other:?}"),
+        }
+        assert!(model.picker.query.is_empty(), "ctrl-u typed into the query it should have emptied");
     }
 
     #[test]

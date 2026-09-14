@@ -88,6 +88,10 @@ ORDINARY WORK
       --resume [ID]           continue the last session here, or one by id
       --capabilities on       let the agent compile new code into this image
                               and call it (off by default; see the README)
+      --capabilities loop     let the agent send itself the next prompt, so
+                              work carries on past the end of a turn. /stop,
+                              ctrl-c, or the agent's own `continue stop`
+                              ends it. Names combine: `on,loop`
   ipc [options]               serve one agent over stdin/stdout as JSON lines
       (same options; --limit defaults to 200)
       --append TEXT           add one line to the system prompt
