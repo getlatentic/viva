@@ -64,6 +64,25 @@ to release beyond the claim itself."
   (or (sb-posix:getenv "VIVA_SOCKET")
       (env:home-path "viva.sock")))
 
+(defparameter +sun-path-bytes+ #+(or darwin bsd) 104 #-(or darwin bsd) 108
+  "The size of sun_path in struct sockaddr_un, terminating NUL included.")
+
+(defun check-socket-path (path)
+  "Return PATH, or signal DAEMON-ERROR when it does not fit in sun_path.
+
+SB-BSD-SOCKETS copies a longer name past the end of its sockaddr and the kernel
+binds the truncated prefix. The daemon then listened somewhere no client looks:
+the launcher reported `could not start a daemon` while the child served on, and
+the next start failed in bind with EADDRINUSE."
+  (let ((bytes (length (sb-ext:string-to-octets path :external-format :utf-8)))
+        (limit (1- +sun-path-bytes+)))
+    (when (> bytes limit)
+      (error 'daemon-error
+             :detail (format nil "The socket path ~a is ~d bytes, and a Unix socket ~
+path on this platform can be at most ~d. Set VIVA_SOCKET (or VIVA_HOME) to a shorter path."
+                             path bytes limit)))
+    path))
+
 (defun object (&rest plist)
   (let ((table (make-hash-table :test #'equal)))
     (loop for (key value) on plist by #'cddr
@@ -913,6 +932,7 @@ does it before binding."
            (let ((socket (make-instance 'sockets:local-socket :type :stream)))
              (unwind-protect
                   (progn
+                    (check-socket-path path)
                     (sockets:socket-connect socket path)
                     ;; READ the greeting rather than hanging up on it. Answering
                     ;; is what `answering` means, so this is the better probe --
@@ -1045,6 +1065,7 @@ ANNOUNCE is called once the socket is actually bound. A caller cannot do this
 itself: in the foreground SERVE does not return, so anything printed beforehand
 is printed by every process that is about to be refused -- five racing daemons
 all reported `listening on`, and four of them were not."
+  (check-socket-path path)
   (ensure-directories-exist path)
   (wire-evolution)
   ;; Claimed as one transition, not read-then-act: two threads that both saw
@@ -1146,6 +1167,7 @@ while the accept loop serves on."
 Asking RUNNING-P here opened and closed a whole extra connection for every one
 that mattered: churn against the accept loop, and a second chance to be told no
 between the asking and the connecting."
+  (check-socket-path path)
   (let ((socket (make-instance 'sockets:local-socket :type :stream)))
     (handler-case (sockets:socket-connect socket path)
       (error ()

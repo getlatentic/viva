@@ -104,5 +104,5 @@ can name without qualifying it."))
                     (#:trust #:viva.trust)
                     (#:extension #:viva.extension)
                     (#:actor #:viva.actor))
-  (:export #:serve #:stop #:running-p #:socket-path #:connect
+  (:export #:serve #:stop #:running-p #:socket-path #:check-socket-path #:connect
            #:daemon-error #:with-connection #:request #:diagnostics))
