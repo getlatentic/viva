@@ -70,6 +70,7 @@
                              (:file "compaction")
                              (:file "models")
                              (:file "harness")
+                             (:file "continuation")
                              (:file "reflection")
                              (:file "germline")))))
 

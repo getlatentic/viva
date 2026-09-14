@@ -826,7 +826,8 @@ carrying what the alphabet abstracts away: prompt text, detail, reply, model."
          (publish cell (terminal-name outcome)
                   (event::object "turn" turn
                                  "detail" (getf options :detail)
-                                 "text" (getf options :reply)))))
+                                 "text" (getf options :reply)))
+         (continue-if-asked cell outcome)))
       (:start-worker (start-worker cell (first arguments) options))
       (:queue-prompt
        ;; The whole message, not just its text. A queued turn that dropped
@@ -920,7 +921,12 @@ else arrives meanwhile."
        (unless (getf options :retain)
          (publish cell "user.message"
                   (event::object "text" (getf options :text)
-                                 "turn" (getf options :turn))))
+                                 "turn" (getf options :turn)
+                                 ;; Absent for a person, "loop" for a prompt the
+                                 ;; agent arranged for itself. A transcript that
+                                 ;; cannot tell those apart credits the person
+                                 ;; with everything the agent decided to ask.
+                                 "source" (getf options :source))))
        (a:when-let ((translated (kernel-message cell verb options)))
          (handler-bind ((kernel:unmatched-transition
                           (lambda (condition)
@@ -1121,6 +1127,25 @@ cancelled."
     (when cell
       (let ((turn (mint-turn cell)))
         (tell cell :user-message :text text :turn turn)
+        turn))))
+
+(defun continue-if-asked (cell outcome)
+  "Start the next turn of a loop, if the agent asked for one.
+
+Posted as an ordinary prompt through the ordinary mailbox, which is the whole
+design: the lifecycle machine and the spec that mirrors it see one kind of turn,
+a client sees a message arrive and a turn start exactly as it would for a person
+typing, and the cancel that stops a turn already stops this one too.
+
+ONLY AFTER A TURN THAT COMPLETED. A cancelled turn was stopped on purpose and a
+failed one has nothing to build on -- continuing either is how a loop becomes
+the thing you cannot get out of. CANCEL-AGENT clears the continuation as well,
+so a cancel arriving while the turn was still running has already emptied this."
+  (when (eq outcome :completed)
+    (a:when-let* ((agent (cell-agent cell))
+                  (text (harness:take-continuation agent)))
+      (let ((turn (mint-turn cell)))
+        (tell cell :user-message :text text :turn turn :source "loop")
         turn))))
 
 (defun submit-retention (cell)

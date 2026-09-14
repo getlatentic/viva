@@ -141,6 +141,11 @@ one that is not worth publishing."
     ;; future full-screen client all receive it without one of them needing to
     ;; know a process exists.
     (:tool-output (values "tool.output" (object "text" (getf loop-event :text))))
+    ;; Something the harness noticed about its own working -- a provider
+    ;; dropping what it was sent, and whatever joins it. SESSION.ERROR because
+    ;; every client already shows one, and a diagnostic that needs a new pane
+    ;; before anyone can read it is a diagnostic nobody reads.
+    (:notice (values "session.error" (object "detail" (getf loop-event :text))))
     (:tool-end (let ((result (getf loop-event :result)))
                  (values (if (tool:tool-result-error-p result) "tool.failed" "tool.completed")
                          (object "call" (call-json (getf loop-event :call))

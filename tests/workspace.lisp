@@ -2468,3 +2468,124 @@ through SB-POSIX, which a dynamic binding does not touch."
                       (format nil "~a/nothing-here.lisp" (env:env-cwd environment)))))
       (true complaint "a missing file loaded")
       (true (search "no such file" complaint) "the complaint does not say what is wrong"))))
+
+;;; Continuing past the end of a turn
+;;;
+;;; The three ways a loop stops are the whole of the feature: a loop with no
+;;; brake is not a capability, it is a bill. Each is asserted rather than
+;;; described, because "the agent can stop it" is exactly the claim that is
+;;; true in the code and false on the wire when nobody checks.
+
+(defun looping-agent ()
+  (make-instance 'harness:workspace-agent
+                 :environment (env:make-local-environment :cwd "/tmp")
+                 :resource-environment (env:make-local-environment :cwd "/tmp")))
+
+(define-test "an unbounded continuation survives being taken"
+  ;; `until you stop me` has to mean that. A budget quietly imposed here would
+  ;; end a long job one turn into it and look like the model giving up.
+  (let ((agent (looping-agent)))
+    (harness:set-continuation agent "keep going")
+    (is equal "keep going" (harness:take-continuation agent))
+    (is equal "keep going" (harness:take-continuation agent))
+    (is equal "keep going" (harness:take-continuation agent))))
+
+(define-test "a bounded continuation runs out and stays out"
+  (let ((agent (looping-agent)))
+    (harness:set-continuation agent "twice more" :limit 2)
+    (is equal "twice more" (harness:take-continuation agent))
+    (is equal "twice more" (harness:take-continuation agent))
+    (false (harness:take-continuation agent) "a spent loop kept going")
+    (false (harness:take-continuation agent) "a spent loop came back")))
+
+(define-test "the agent can stop its own loop"
+  (let ((agent (looping-agent)))
+    (harness:set-continuation agent "keep going")
+    (harness:clear-continuation agent)
+    (false (harness:take-continuation agent) "clearing the loop did not stop it")))
+
+(define-test "cancelling the session ends the loop, not just the turn"
+  ;; The bug this is here for: cancel stopped the turn, the turn's completion
+  ;; started the next one from the continuation nobody had cleared, and the
+  ;; key a person presses to stop a runaway did nothing they could see.
+  (let ((agent (looping-agent)))
+    (harness:set-continuation agent "keep going")
+    (harness:cancel-agent agent)
+    (false (harness:take-continuation agent) "cancel left the loop armed")
+    (false (harness:continuation-of agent) "cancel left the loop on the books")))
+
+(define-test "the continue tool refuses a loop it cannot run"
+  ;; A start with no message would arm a loop whose prompt is the empty
+  ;; string, which is a paid request per turn asking the model nothing.
+  (let ((harness:*agent* (looping-agent)))
+    (multiple-value-bind (output failed)
+        (run-tool harness:continue-tool "action" "start")
+      (true failed "an empty continuation was accepted")
+      (true (mentions "needs a message" output) output))
+    (multiple-value-bind (output failed)
+        (run-tool harness:continue-tool "action" "start" "message" "go" "turns" 0)
+      (true failed "a loop of zero turns was accepted")
+      (true (mentions "turns must be" output) output))
+    ;; And the ordinary path arms it, through the schema a model actually sends.
+    (run-tool harness:continue-tool "action" "start" "message" "next please")
+    (is equal "next please" (harness:continuation-of harness:*agent*))
+    (run-tool harness:continue-tool "action" "stop")
+    (false (harness:continuation-of harness:*agent*) "stop did not stop it")))
+
+;;; Noticing that the provider did not read what it was sent
+;;;
+;;; The bug this exists for cost a day and left no trace: a gateway dropped
+;;; every tool result carrying a double quote, so six thousand characters of
+;;; command output went out and none arrived, and the only symptom was the
+;;; model saying the command had printed nothing. The transcript on disk held
+;;; the output in full, so every place a person would look said all was well.
+
+(defun usage-message (prompt-tokens)
+  (let ((usage (make-hash-table :test #'equal)))
+    (setf (gethash "prompt_tokens" usage) prompt-tokens)
+    (msg:make-assistant-message :content '() :usage usage)))
+
+(defun accounting-run (growths outputs)
+  "Drive CHECK-CONTEXT-ACCOUNTED over successive turns, returning the notices.
+
+GROWTHS is what the provider claims each request cost; OUTPUTS is the tool
+output appended after each. One notice at most, which is the point: a warning
+per turn about one broken provider is a warning nobody finishes reading."
+  (let* ((said '())
+         (agent (make-instance 'harness:workspace-agent
+                               :environment (env:make-local-environment :cwd "/tmp")
+                               :resource-environment (env:make-local-environment :cwd "/tmp")
+                               :listener (lambda (event)
+                                           (when (eq :notice (getf event :type))
+                                             (push (getf event :text) said)))))
+         (context (loop*:make-context)))
+    (loop for claimed in growths
+          for output in outputs
+          for message = (usage-message claimed)
+          for result = (msg:make-tool-result-message :call-id "c" :output output)
+          do (setf (loop*:context-messages context)
+                   (append (loop*:context-messages context) (list message result)))
+             (harness::check-context-accounted agent message (list result) context)
+             (setf (harness:agent-last-tokens agent) claimed))
+    (nreverse said)))
+
+(define-test "a provider that drops what it was sent is said out loud"
+  ;; Six thousand characters of output, and the bill goes up by thirty-seven
+  ;; tokens. Nothing failed; the model simply answered without them.
+  (let ((big (make-string 6000 :initial-element #\x)))
+    (let ((said (accounting-run '(1848 1885 1932) (list big big big))))
+      (is = 1 (length said) "the shortfall was not reported exactly once")
+      (true (mentions "discarding" (first said)) (first said)))))
+
+(define-test "an honest provider is left alone"
+  ;; The estimate is four characters to a token and wrong in both directions,
+  ;; so a threshold that fires on ordinary disagreement is a threshold that
+  ;; trains people to ignore it.
+  (let ((big (make-string 6000 :initial-element #\x)))
+    (is equal '() (accounting-run '(1848 3320 4800) (list big big big))
+        "an honest provider was accused")))
+
+(define-test "a small result never raises the alarm"
+  ;; Below the floor the estimate is noise, and noise is not evidence.
+  (is equal '() (accounting-run '(1848 1850 1852) (list "ok" "ok" "ok"))
+      "a two-character result was treated as lost content"))

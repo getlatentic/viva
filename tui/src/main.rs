@@ -412,6 +412,12 @@ fn run_command(
             model.picker.searching = true;
             return perform(connection, model, input::Action::Search(rest)).map(|_| false);
         }
+        // Ctrl-C is the fast way and only fires when this client believes the
+        // session is busy. That belief is a cached event, and a loop that
+        // starts its next turn between two frames is exactly the case where it
+        // is wrong -- so the brake a person reaches for deliberately does not
+        // consult it.
+        "/stop" => return perform(connection, model, input::Action::Cancel).map(|_| false),
         "/close" => return perform(connection, model, input::Action::CloseTab).map(|_| false),
         "/refresh" => return perform(connection, model, input::Action::Refresh).map(|_| false),
         "/models" => {

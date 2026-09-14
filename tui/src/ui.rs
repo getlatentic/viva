@@ -731,7 +731,8 @@ fn entry_lines(
     if let Some(before) = after {
         // Not around a question: it already opens and closes with a line of
         // its own, and adding one here gave it two on each side.
-        let asked = before == Role::User || entry.role == Role::User;
+        let asked = matches!(before, Role::User | Role::Looped)
+            || matches!(entry.role, Role::User | Role::Looped);
         if !asked && (before == Role::Tool) != (entry.role == Role::Tool) {
             lines.push(Hanging::plain(Line::from("")));
         }
@@ -739,11 +740,24 @@ fn entry_lines(
     {
         let text = entry.text.as_str();
         match entry.role {
-            Role::User => {
-                let voice = Style::default().fg(ACCENT).add_modifier(Modifier::BOLD);
+            // One shape for both, and a different mark and weight for each: a
+            // person's prompt is the bright `›`, a loop's own is a dim `↻`.
+            // Same shape because it IS the same thing -- the next prompt --
+            // and reading it takes the same eye movement either way.
+            Role::User | Role::Looped => {
+                let looped = entry.role == Role::Looped;
+                let voice = if looped {
+                    Style::default().fg(Color::Indexed(244))
+                } else {
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+                };
                 lines.push(Hanging::plain(Line::from("")));
                 for (index, piece) in text.lines().enumerate() {
-                    let prefix = if index == 0 { "› " } else { "  " };
+                    let prefix = match (index, looped) {
+                        (0, true) => "↻ ",
+                        (0, false) => "› ",
+                        _ => "  ",
+                    };
                     lines.push(Hanging::under("  ", voice, Line::from(vec![
                         Span::styled(prefix, voice),
                         Span::styled(piece.to_string(), voice),

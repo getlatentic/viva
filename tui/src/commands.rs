@@ -33,6 +33,11 @@ pub const COMMANDS: &[Command] = &[
         blurb: "start a session in a new tab",
     },
     Command {
+        name: "/stop",
+        aliases: &["/cancel"],
+        blurb: "stop this session's turn, and any loop it set up",
+    },
+    Command {
         name: "/close",
         aliases: &[],
         blurb: "close this tab; the session keeps running",
@@ -131,7 +136,8 @@ pub fn help() -> String {
     }
     text.push_str(
         "\nkeys: tab switches, ctrl-n new, ctrl-w close, ctrl-p find,\n      \
-arrows walk the list, pgup/pgdn scroll, ctrl-c stops a turn",
+arrows walk the list, pgup/pgdn scroll, ctrl-u clears the line,\n      \
+ctrl-c stops a turn",
     );
     text
 }
