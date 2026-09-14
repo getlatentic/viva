@@ -67,7 +67,7 @@ can name without qualifying it."))
   (:export #:cell #:cell-id #:spawn #:tell #:submit #:submit-retention #:busy-p #:ask-now #:publish
            #:shutdown #:await-shutdown #:await-turn
            #:subscribe #:subscribe-since #:unsubscribe #:since
-           #:find-cell #:all-cells #:snapshot #:+terminal-events+ #:*journal-root* #:journal-root
+           #:find-cell #:all-cells #:snapshot #:+terminal-events+ #:*journal-root* #:journal-root #:stop-journal
            #:live-sessions #:unmark-live #:live-root
            #:spawn-task #:cancel-task #:task-tree-snapshot #:ensure-supervisor
            #:ensure-evolver #:create-candidate #:activate-candidate
@@ -104,5 +104,5 @@ can name without qualifying it."))
                     (#:trust #:viva.trust)
                     (#:extension #:viva.extension)
                     (#:actor #:viva.actor))
-  (:export #:serve #:stop #:running-p #:socket-path #:connect
+  (:export #:serve #:stop #:running-p #:socket-path #:check-socket-path #:connect
            #:daemon-error #:with-connection #:request #:diagnostics))

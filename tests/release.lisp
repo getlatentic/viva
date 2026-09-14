@@ -346,6 +346,16 @@ reads the environment or a home directory."
         (push (format nil "~a: ~a" (file-namestring file) line) offenders)))
     (false offenders "resolved at load, and kept by every saved image:~{~%  ~a~}" offenders)))
 
+(define-test "stopping the daemon waits for it, and closes the journal first"
+  (let ((source (repository-file "src/cli/commands.lisp")))
+    (true (search "(actor:stop-journal)" source)
+          "the foreground daemon reaches EXIT with its journal still open")
+    (true (search "(defun process-alive-p" source))
+    (true (search "(stop-daemon)" source)
+          "`daemon stop` or `restart` no longer waits for the process")
+    (false (search "(loop repeat 50 while (daemon:running-p)" source)
+           "restart is waiting on the socket, which goes before the process does")))
+
 (define-test "a capability nobody registered is said out loud"
   ;; CONTRIBUTIONS returns complaints for exactly this, and the daemon took its
   ;; first two values and dropped the third -- so `capabilities = lop` in the

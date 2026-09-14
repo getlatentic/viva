@@ -396,12 +396,39 @@ which is what a person redirecting output in a pane will already have set."
     (and (interactive-stream-p *standard-output*)
          (not (env "NO_COLOR")))))
 
+(defun process-alive-p (pid)
+  (handler-case (progn (sb-posix:kill pid 0) t)
+    (sb-posix:syscall-error (condition)
+      (/= (sb-posix:syscall-errno condition) sb-posix:esrch))))
+
+(defun stop-daemon (&key (timeout 15))
+  "Ask the running daemon to stop, and wait for its PROCESS to be gone.
+Returns (values GONE-P PID).
+
+THE PID, not the socket. The daemon deletes its socket file the moment it stops
+listening, so a check on the socket reports it gone while the process is still
+finishing -- which is how `stopped` was printed a minute before it was true, and
+how a restart could start a second daemon beside the first."
+  (let ((pid nil))
+    (daemon:with-connection (stream)
+      (a:when-let ((line (read-line stream nil nil)))
+        (setf pid (ignore-errors (gethash "pid" (jzon:parse line)))))
+      (daemon:request stream "type" "shutdown"))
+    (values (or (null pid)
+                (loop repeat (ceiling timeout 0.05)
+                      while (process-alive-p pid)
+                      do (sleep 0.05)
+                      finally (return (not (process-alive-p pid)))))
+            pid)))
+
 (defun command-daemon (parsed)
   "Start, stop or inspect the organism.
 
 `start` runs in the foreground so a supervisor can own it; `--background`
 detaches the accept loop and returns, which is what `viva attach` uses when
 it finds nobody home."
+  ;; Before STATUS, which reports any failure to connect as `not running`.
+  (daemon:check-socket-path (daemon:socket-path))
   (let ((verb (or (first (args-positional parsed)) "status")))
     (cond
       ;; No RUNNING-P first: the connection is the question. Asking twice was
@@ -474,26 +501,25 @@ it finds nobody home."
            (progn (daemon:serve :announce (lambda (path)
                                             (format t "~&listening on ~a~%" path)
                                             (finish-output)))
+                  ;; The journal, closed before EXIT reaches it. See STOP-JOURNAL.
+                  (actor:stop-journal)
                   0)))
       ((string= "restart" verb)
        ;; Stop and start, named as one thing, because `why is my change not
        ;; working` has this as its answer often enough that it should not be
        ;; two commands and a guess.
        (when (daemon:running-p)
-         (daemon:with-connection (stream)
-           (read-line stream nil nil)
-           (daemon:request stream "type" "shutdown"))
-         (loop repeat 50 while (daemon:running-p) do (sleep 0.1)))
+         (stop-daemon))
        ;; Sessions come back with the new process; a turn that was running
        ;; does not, and the restored session says so in its own stream.
        (format t "~&running turns end with the old process; sessions come back~%")
        (start-detached-daemon))
       ((string= "stop" verb)
        (if (daemon:running-p)
-           (progn (daemon:with-connection (stream)
-                    (read-line stream nil nil)
-                    (daemon:request stream "type" "shutdown"))
-                  (format t "~&stopped~%") 0)
+           (multiple-value-bind (gone pid) (stop-daemon)
+             (if gone
+                 (progn (format t "~&stopped~%") 0)
+                 (progn (format t "~&asked pid ~a to stop, and it is still running~%" pid) 1)))
            (progn (format t "~&not running~%") 1)))
       (t (format t "~&usage: viva daemon [status|start|stop|restart]~%") 1))))
 
@@ -517,7 +543,7 @@ daemon, which is most of what a cold start costs."
       (namestring runtime)
       (namestring (merge-pathnames "bin/viva" (repository-root)))))
 
-(defun launch-daemon ()
+(defun launch-daemon (&key (command (list (own-launcher) "daemon" "start")) (within 10))
   "Start a daemon in a process of its own and wait for it to answer.
 
 A SEPARATE PROCESS, not a thread. A background daemon has to outlive the shell
@@ -526,14 +552,30 @@ SERVE with :BACKGROUND T, which detaches the accept loop into a thread and
 returns -- whereupon the CLI exits, taking the thread and the socket with it.
 It printed `listening on ...` and left nothing listening. SERVE's own
 :BACKGROUND is still right for a caller that IS the long-lived process, which
-is how the suite and the soak use it."
+is how the suite and the soak use it.
+
+A CHILD THAT NEVER ANSWERS IS STOPPED. Reporting `could not start a daemon`
+while it runs on leaves a process nobody can reach holding the instance lock,
+and every later start is refused on its account."
+  (daemon:check-socket-path (daemon:socket-path))
   (unless (daemon:running-p)
-    (uiop:launch-program (list (own-launcher) "daemon" "start")
-                         :output nil :error-output nil)
-    (loop repeat 100
-          until (daemon:running-p)
-          do (sleep 0.1)))
+    (let ((child (uiop:launch-program command :output nil :error-output nil)))
+      (loop repeat (round within 0.1)
+            until (daemon:running-p)
+            do (sleep 0.1))
+      (unless (daemon:running-p)
+        (stop-child child))))
   (daemon:running-p))
+
+(defun stop-child (child)
+  "End CHILD and reap it. SIGTERM first, so a daemon's unwind removes the socket
+and releases the lock it took; SIGKILL if exiting waits on its threads."
+  (when (uiop:process-alive-p child)
+    (uiop:terminate-process child)
+    (loop repeat 50 while (uiop:process-alive-p child) do (sleep 0.1))
+    (when (uiop:process-alive-p child)
+      (uiop:terminate-process child :urgent t)))
+  (uiop:wait-process child))
 
 (defun ensure-daemon ()
   "Start the organism if it is not already there, and wait for it to answer."
