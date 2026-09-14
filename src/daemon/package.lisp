@@ -67,13 +67,13 @@ can name without qualifying it."))
   (:export #:cell #:cell-id #:spawn #:tell #:submit #:submit-retention #:busy-p #:ask-now #:publish
            #:shutdown #:await-shutdown #:await-turn
            #:subscribe #:subscribe-since #:unsubscribe #:since
-           #:find-cell #:all-cells #:snapshot #:+terminal-events+ #:*journal-root*
+           #:find-cell #:all-cells #:snapshot #:+terminal-events+ #:*journal-root* #:journal-root
            #:live-sessions #:unmark-live #:live-root
            #:spawn-task #:cancel-task #:task-tree-snapshot #:ensure-supervisor
            #:ensure-evolver #:create-candidate #:activate-candidate
            #:promote-candidate #:revert-component #:discard-candidate
            #:register-file-tool #:ledger-registrations
-           #:*capability-root* #:stored-capabilities #:restore-capabilities
+           #:*capability-root* #:capability-root #:stored-capabilities #:restore-capabilities
            #:reconcile-capabilities
            #:call-component #:resolve-component #:reconstruct-lineage
            #:evolution-registry #:*activation-box* #:*default-door*

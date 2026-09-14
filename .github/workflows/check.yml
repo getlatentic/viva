@@ -121,10 +121,12 @@ jobs:
       # The artifact people actually want: one file that needs neither SBCL nor
       # Quicklisp. Without it, `the binary` is the client and the daemon is
       # still source somebody has to build.
+      # NO VIVA_JOURNAL, for the reason release.yml gives: an override here is
+      # exactly what hid a journal root baked from this runner's home.
       - name: Build the image
         env:
           VIVA_SOCKET: ${{ runner.temp }}/smoke.sock
-          VIVA_JOURNAL: ${{ runner.temp }}/smoke-journal
+          VIVA_HOME: ${{ runner.temp }}/smoke-home
         run: |
           ./tools/build-image.sh "viva-${{ matrix.name }}"
           # IT HAS TO SERVE, not merely start. `daemon status` was the whole
@@ -132,7 +134,12 @@ jobs:
           # on a fresh runner -- so the build failed for reporting the truth.
           ./viva-${{ matrix.name }} daemon start --background
           ./viva-${{ matrix.name }} daemon status
+          printf '/detach\n' | ./viva-${{ matrix.name }} attach --new --cwd "$RUNNER_TEMP"
           ./viva-${{ matrix.name }} sessions
+          if [ -z "$(ls "$VIVA_HOME/journal" 2>/dev/null)" ]; then
+            echo "The journal is not under VIVA_HOME, so this image carries a path from the machine that built it."
+            exit 1
+          fi
           ./viva-${{ matrix.name }} daemon stop
 
       - uses: actions/upload-artifact@v4

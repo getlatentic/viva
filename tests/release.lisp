@@ -302,6 +302,50 @@ DOES rather than about what it says."
              (false complaint)))
       (ignore-errors (uiop:delete-directory-tree root :validate t)))))
 
+(defun load-time-path-forms (text)
+  "The first line of every top-level DEFVAR or DEFPARAMETER in TEXT whose value
+reads the environment or a home directory."
+  (let ((lines (uiop:split-string text :separator '(#\Newline)))
+        (found '()))
+    (loop for (line . rest) on lines
+          when (or (alexandria:starts-with-subseq "(defvar " line)
+                   (alexandria:starts-with-subseq "(defparameter " line))
+            do (let ((value (list line)))
+                 ;; The value runs until the docstring, a blank line or the next
+                 ;; top-level form. Comments are skipped: they may name a
+                 ;; variable without reading it.
+                 (loop for next in rest
+                       for trimmed = (string-left-trim " " next)
+                       until (or (zerop (length trimmed))
+                                 (alexandria:starts-with #\" trimmed)
+                                 (alexandria:starts-with #\( next))
+                       unless (alexandria:starts-with #\; trimmed)
+                         do (push next value))
+                 ;; UP TO THE FIRST FUNCTION. Code inside one runs when it is
+                 ;; called, so a table of handlers that read the environment is
+                 ;; not a path computed at load -- +VERBS+ is exactly that.
+                 (let* ((joined (format nil "~{~a~^ ~}" (reverse value)))
+                        (cut (reduce #'min
+                                     (remove nil (mapcar (lambda (marker) (search marker joined))
+                                                         '("(lambda" "#'" "(function")))
+                                     :initial-value (length joined)))
+                        (loaded (subseq joined 0 cut)))
+                   (when (some (lambda (needle) (search needle loaded))
+                               '("getenv" "env:" "user-homedir-pathname"))
+                     (push line found)))))
+    (nreverse found)))
+
+(define-test "no top-level value is a path computed at load"
+  ;; A SAVED IMAGE KEEPS WHAT LOADING COMPUTED, on a machine that is not the one
+  ;; it runs on. This class has shipped four times: the repository root spawning
+  ;; a daemon, the same root installing a link, and the journal and capability
+  ;; roots. Each passed every test, because each was right where it was computed.
+  (let ((offenders '()))
+    (dolist (file (directory (merge-pathnames "src/**/*.lisp" (cli::repository-root))))
+      (dolist (line (load-time-path-forms (uiop:read-file-string file)))
+        (push (format nil "~a: ~a" (file-namestring file) line) offenders)))
+    (false offenders "resolved at load, and kept by every saved image:~{~%  ~a~}" offenders)))
+
 (define-test "a capability nobody registered is said out loud"
   ;; CONTRIBUTIONS returns complaints for exactly this, and the daemon took its
   ;; first two values and dropped the third -- so `capabilities = lop` in the
