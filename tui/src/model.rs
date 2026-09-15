@@ -372,6 +372,9 @@ pub enum Focus {
     /// digits have to mean `take that one` here and `type a digit` everywhere
     /// else.
     Models,
+    /// Asking whether to delete a session. A mode, so only a yes or a no
+    /// answers it: a stray key is not consent to delete a conversation.
+    Deleting,
 }
 
 /// One model the daemon can reach.
@@ -519,6 +522,15 @@ impl Picker {
     }
 }
 
+/// A session about to be deleted: which, what it is about, and where the
+/// keyboard goes back to once the question is answered.
+#[derive(Debug, Clone)]
+pub struct Deletion {
+    pub id: String,
+    pub subject: String,
+    pub from: Focus,
+}
+
 #[derive(Debug)]
 pub struct Model {
     pub sessions: Vec<SessionInfo>,
@@ -529,6 +541,8 @@ pub struct Model {
     pub focus: Focus,
     /// The sessions column's selection, by id, and its window.
     pub session_list: SessionList,
+    /// The session a delete is waiting on an answer for.
+    pub deleting: Option<Deletion>,
     /// The sessions that are OPEN, in the order they were opened -- browser
     /// tabs, not workspaces. The sidebar is for finding a session among all of
     /// them; a tab is one you have chosen to keep in front of you, and `+`
@@ -576,6 +590,7 @@ impl Model {
             status: String::new(),
             focus: Focus::Input,
             session_list: SessionList::default(),
+            deleting: None,
             tabs: Vec::new(),
             tab: 0,
             cwd,
@@ -930,6 +945,26 @@ impl Model {
         let current = self.current.clone();
         self.select_session(&current);
     }
+
+    /// Ask whether to delete session ID, named by SUBJECT, and give the
+    /// question the keyboard.
+    pub fn ask_delete(&mut self, id: &str, subject: String) {
+        self.deleting = Some(Deletion { id: id.to_string(), subject, from: self.focus });
+        self.focus = Focus::Deleting;
+    }
+
+    /// A deleted session: gone from every list, its tab closed, and nothing
+    /// held of it.
+    pub fn forget_session(&mut self, id: &str) {
+        self.sessions.retain(|session| session.id != id);
+        self.recent.retain(|recorded| recorded.id != id);
+        self.picker.results.retain(|recorded| recorded.id != id);
+        self.picker.selection = self.picker.selection.min(self.picker.results.len().saturating_sub(1));
+        if let Some(index) = self.tabs.iter().position(|open| open == id) {
+            self.close_tab(index);
+        }
+        self.conversations.remove(id);
+    }
 }
 
 /// The sessions column's entries, running first. Not a recorded session that is
@@ -1108,6 +1143,25 @@ mod tests {
         models.absorb(offers(&["a/9"]));
         assert_eq!(models.selection, 0);
         assert_eq!(models.selected().unwrap().label, "a/9");
+    }
+
+    #[test]
+    fn a_deleted_session_leaves_every_list_and_its_tab() {
+        let mut model = Model::new("/w".into());
+        model.sessions = vec![
+            SessionInfo { id: "s1".into(), ..Default::default() },
+            SessionInfo { id: "s2".into(), ..Default::default() },
+        ];
+        model.recent = vec![Recorded { id: "s1".into(), messages: 2, ..Default::default() }];
+        model.picker.results = vec![Recorded { id: "s1".into(), messages: 2, ..Default::default() }];
+        model.open_tab("s2");
+        model.open_tab("s1");
+        model.forget_session("s1");
+        assert!(model.sessions.iter().all(|session| session.id != "s1"), "it is still listed as running");
+        assert!(model.recent.is_empty() && model.picker.results.is_empty(), "it is still listed as recorded");
+        assert_eq!(model.tabs, ["s2"], "its tab is still open");
+        assert_eq!(model.current, "s2");
+        assert!(!model.conversations.contains_key("s1"), "what was held of it is still held");
     }
 
     #[test]

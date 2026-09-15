@@ -296,7 +296,8 @@ def whole_frame(client):
     return input_row(client).lstrip().startswith("│›")
 
 
-def recorded_conversation(home, cwd, turns=40):
+def recorded_conversation(home, cwd, turns=40, asking="question {turn} in the recorded conversation",
+                          age=0, tag="C0DE"):
     """Write a session transcript, the way one that has been used looks.
 
     THE CHECK MAKES ITS OWN. Resuming and surviving a restart both need a
@@ -306,9 +307,9 @@ def recorded_conversation(home, cwd, turns=40):
     from whatever the machine happened to have instead, which is why a fresh
     machine had nothing to resume.
     """
-    session_id = time.strftime("%Y%m%d-%H%M%S") + "-C0DE"
+    session_id = time.strftime("%Y%m%d-%H%M%S") + "-" + tag
     # Universal time, which is 1900-based, not 1970.
-    now = int(time.time()) + 2208988800
+    now = int(time.time()) - age + 2208988800
     flat = cwd.strip("/").replace("/", "-") or "root"
     directory = os.path.join(home, "sessions", flat)
     os.makedirs(directory, exist_ok=True)
@@ -321,7 +322,7 @@ def recorded_conversation(home, cwd, turns=40):
         # all roots, and a forty-turn file read back as one message.
         previous = None
         for turn in range(turns):
-            for role, text in (("user", f"question {turn} in the recorded conversation"),
+            for role, text in (("user", asking.format(turn=turn)),
                                ("assistant", f"answer {turn}, long enough to occupy a row")):
                 entry_id = f"{turn:06X}{0 if role == 'user' else 1:02X}"
                 entry = {"kind": "message", "id": entry_id, "time": now + turn,
@@ -331,7 +332,7 @@ def recorded_conversation(home, cwd, turns=40):
                     entry["parent"] = previous
                 out.write(json.dumps(entry) + "\n")
                 previous = entry_id
-    return session_id
+    return session_id, path
 
 
 def own_daemon(cwd):
@@ -402,6 +403,10 @@ def main():
     socket_path, environment = own_daemon(cwd)
     # Before the client connects, so the picker has something recorded to find.
     recorded_conversation(environment["VIVA_HOME"], os.path.realpath(cwd))
+    # One to delete: a day older, so what resumes the newest does not take it,
+    # and asked briefly, so its row in the sessions column is not cut short.
+    _, doomed_path = recorded_conversation(environment["VIVA_HOME"], os.path.realpath(cwd), turns=2,
+                                           asking="doomed {turn}", age=86400, tag="D0DE")
     client = Client(cwd, environment=environment)
     try:
         client.wait_for("sessions", 60, "the first frame")
@@ -647,6 +652,49 @@ def main():
             fail(f"esc did not give the keyboard back to the prompt: {typing!r}")
         else:
             ok("up reads the talk, left and right cross to the sessions and back, esc types")
+
+        # Deleting from the column: backspace asks by name, esc keeps the
+        # session, enter deletes it from the list and from the disk. ctrl-b
+        # twice hands the column the keyboard on the open session.
+        def doomed_row():
+            return next((line[:29] for line in client.term.lines()[1:-3] if "doomed 0" in line[:29]), None)
+        client.send(b"\x02")                      # ctrl-b: away
+        client.pump(1.0)
+        client.send(b"\x02")                      # ctrl-b: back, with the keyboard
+        client.pump(1.5)
+        for _ in range(40):
+            row = doomed_row()
+            if row is not None and row[1:2] == "›":
+                break
+            client.send(b"\x1b[B")                # down
+            client.pump(0.3)
+        row = doomed_row()
+        if row is None:
+            print(client.term.text())
+            fail("the session to delete is not in the sessions column")
+        elif row[1:2] != "›":
+            fail(f"the arrows never reached the session to delete: {row!r}")
+        else:
+            client.send(b"\x7f")                  # backspace: ask
+            client.pump(1.0)
+            asked = "delete this session?" in client.term.text()
+            client.send(b"\x1b")                  # esc: keep it
+            client.pump(1.0)
+            kept = doomed_row() is not None and os.path.exists(doomed_path)
+            client.send(b"\x7f")                  # backspace: ask again
+            client.pump(1.0)
+            client.send(b"\r")                    # enter: delete it
+            client.pump(4.0)
+            if not asked:
+                fail("backspace on a session did not ask before deleting it")
+            elif not kept:
+                fail("esc did not keep the session")
+            elif doomed_row() is not None:
+                fail(f"the deleted session is still listed: {doomed_row()!r}")
+            elif os.path.exists(doomed_path):
+                fail("the deleted session's transcript is still on disk")
+            else:
+                ok("backspace asks by name, esc keeps the session, enter deletes it from the list and the disk")
 
         # And closing the view does not end the session it was showing: the
         # tab bar counts the running sessions, and the count must not fall.

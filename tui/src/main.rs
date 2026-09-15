@@ -350,6 +350,7 @@ fn perform(
         }
         Action::Search(text) => asked.search(connection, &text)?,
         Action::Resume { id, cwd } => asked.resume(connection, model, &id, &cwd)?,
+        Action::Delete(id) => asked.delete(connection, &id)?,
     }
     Ok(false)
 }

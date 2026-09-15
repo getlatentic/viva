@@ -89,6 +89,8 @@ pub fn draw(frame: &mut Frame, model: &mut Model, rendered: &mut Rendered) -> Hi
         draw_picker(frame, area, model, &mut hits);
     } else if model.focus == Focus::Models {
         draw_models(frame, area, model);
+    } else if model.focus == Focus::Deleting {
+        draw_deleting(frame, area, model);
     } else {
         draw_command_menu(frame, rows[2], model, &mut hits);
     }
@@ -166,14 +168,17 @@ fn draw_picker(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes
 
     let rows = Layout::vertical([Constraint::Length(2), Constraint::Min(1)]).split(inner);
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("search ", Style::default().fg(DIM)),
-            Span::styled(
-                model.picker.query.clone(),
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("_", Style::default().fg(ACCENT)),
-        ])),
+        Paragraph::new(vec![
+            Line::from(vec![
+                Span::styled("search ", Style::default().fg(DIM)),
+                Span::styled(
+                    model.picker.query.clone(),
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("_", Style::default().fg(ACCENT)),
+            ]),
+            Line::from(Span::styled("enter resumes · ctrl-d deletes · esc closes", Style::default().fg(DIM))),
+        ]),
         rows[0],
     );
 
@@ -209,6 +214,47 @@ fn draw_picker(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes
         lines.push(Line::from(Span::styled(message, Style::default().fg(DIM))));
     }
     frame.render_widget(Paragraph::new(lines), rows[1]);
+}
+
+/// Whether to delete a session, asked by what it is about. Its own box and its
+/// own colour, so the question is not read as the list it was asked from.
+fn draw_deleting(frame: &mut Frame, area: Rect, model: &Model) {
+    let Some(deletion) = &model.deleting else {
+        return;
+    };
+    let warning = Color::Indexed(203);
+    let width = area.width.saturating_sub(8).min(64).max(24);
+    let height = 6.min(area.height);
+    let box_area = Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    frame.render_widget(Clear, box_area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(warning))
+        .title(Span::styled(" delete this session? ", Style::default().fg(warning).add_modifier(Modifier::BOLD)))
+        .padding(Padding::horizontal(1));
+    let inner = block.inner(box_area);
+    frame.render_widget(block, box_area);
+    let subject = cells::clip(&deletion.subject, inner.width as usize);
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::from(Span::styled(subject, Style::default().fg(Color::Indexed(252)).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled("its transcript and journal are removed for good", Style::default().fg(DIM))),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("enter", Style::default().fg(warning).add_modifier(Modifier::BOLD)),
+                Span::styled(" deletes · ", Style::default().fg(DIM)),
+                Span::styled("esc", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(" keeps it", Style::default().fg(DIM)),
+            ]),
+        ]),
+        inner,
+    );
 }
 
 /// The models on offer, over everything else.
@@ -908,7 +954,7 @@ fn status_text(model: &Model) -> (Vec<String>, Vec<(String, String)>) {
     // talk or walk the list.
     match model.focus {
         Focus::Transcript => notes.push(note("↑↓ scroll · ← sessions · esc to type", "↑↓ scroll")),
-        Focus::Sessions => notes.push(note("↑↓ choose · enter opens · → the talk", "↑↓ choose")),
+        Focus::Sessions => notes.push(note("↑↓ choose · enter opens · ⌫ deletes · → the talk", "↑↓ choose")),
         _ => {}
     }
     // The status carries what went wrong -- a closed connection, a refused
@@ -1565,6 +1611,16 @@ kilo lima mike november oscar papa quebec";
         model.sidebar = false;
         let tabs = frame_of(&mut model, 100, 16)[0].clone();
         assert!(tabs.contains("* alpha"), "the tab does not carry the state: {tabs:?}");
+    }
+
+    #[test]
+    fn a_delete_asks_by_name_and_says_it_is_for_good() {
+        let mut model = ready(&[("user.message", "run it")]);
+        model.ask_delete("s2", "the conversation about lifetimes".into());
+        let frame = frame_of(&mut model, 100, 24).join("\n");
+        assert!(frame.contains("delete this session?"), "nothing asked:\n{frame}");
+        assert!(frame.contains("the conversation about lifetimes"), "the question names nothing:\n{frame}");
+        assert!(frame.contains("for good"), "the question does not say it cannot be undone:\n{frame}");
     }
 
     #[test]

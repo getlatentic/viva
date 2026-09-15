@@ -138,7 +138,7 @@ pub fn help() -> String {
         "\nkeys: tab switches, ctrl-n new, ctrl-w close, ctrl-p find,\n      \
 ↑ reads back, ← and → cross to the sessions and back, esc types,\n      \
 pgup/pgdn/home/end scroll from anywhere, ctrl-u clears the line,\n      \
-ctrl-c stops a turn",
+⌫ on a session deletes it, ctrl-c stops a turn",
     );
     text
 }

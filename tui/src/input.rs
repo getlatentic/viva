@@ -48,6 +48,10 @@ pub enum Action {
     /// Answer on the named model in this session, from its next turn. The turn
     /// running now finishes on the model it started with.
     SwitchModel(String),
+    /// Delete the session with this id, and what is recorded under it, for
+    /// good. Only ever the answer to a question: one key names the session and
+    /// a second says yes.
+    Delete(String),
 }
 
 pub fn read(event: &Event, model: &mut Model, hits: &Hitboxes) -> Action {
@@ -79,6 +83,9 @@ fn key_pressed(key: &KeyEvent, model: &mut Model, hits: &Hitboxes) -> Action {
     }
     if model.focus == Focus::Models {
         return models_key(key, model);
+    }
+    if model.focus == Focus::Deleting {
+        return deleting_key(key, model);
     }
 
     if control {
@@ -178,6 +185,14 @@ fn key_pressed(key: &KeyEvent, model: &mut Model, hits: &Hitboxes) -> Action {
             },
             KeyCode::Right => {
                 model.focus = reading(model);
+                Action::None
+            }
+            // Asked first, by what the session is about, so what goes is the
+            // conversation a person meant.
+            KeyCode::Backspace | KeyCode::Delete => {
+                if let Some((id, subject)) = model.selected_row().map(|row| (row.id().to_string(), row.subject())) {
+                    model.ask_delete(&id, subject);
+                }
                 Action::None
             }
             KeyCode::Esc => {
@@ -394,6 +409,9 @@ fn picker_key(key: &KeyEvent, model: &mut Model) -> Action {
             model.picker.searching = true;
             Action::Search(String::new())
         }
+        // Not backspace, which edits the search.
+        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => ask_about_found(model),
+        KeyCode::Delete => ask_about_found(model),
         KeyCode::Char(character) => {
             model.picker.query.push(character);
             model.picker.selection = 0;
@@ -470,6 +488,34 @@ fn reading(model: &Model) -> Focus {
         Focus::Input
     } else {
         Focus::Transcript
+    }
+}
+
+/// Ask whether to delete the session the picker has highlighted.
+fn ask_about_found(model: &mut Model) -> Action {
+    if let Some((id, subject)) = model.picker.selected().map(|found| (found.id.clone(), found.subject())) {
+        model.ask_delete(&id, subject);
+    }
+    Action::None
+}
+
+/// The delete question's keys: enter or `y` deletes, esc or `n` keeps the
+/// session, and anything else leaves the question standing.
+fn deleting_key(key: &KeyEvent, model: &mut Model) -> Action {
+    let delete = match key.code {
+        KeyCode::Enter | KeyCode::Char('y') => true,
+        KeyCode::Esc | KeyCode::Char('n') => false,
+        _ => return Action::None,
+    };
+    let Some(deletion) = model.deleting.take() else {
+        model.focus = Focus::Input;
+        return Action::None;
+    };
+    model.focus = deletion.from;
+    if delete {
+        Action::Delete(deletion.id)
+    } else {
+        Action::None
     }
 }
 
@@ -858,6 +904,45 @@ mod tests {
         assert_eq!(model.session_list.window(total, None, 10).first, 3, "the column did not move");
         read(&wheel_at(60, 5), &mut model, &shown);
         assert!(model.current_conversation().unwrap().owes_scroll(), "the wheel over the talk did not scroll it");
+    }
+
+    #[test]
+    fn a_session_is_deleted_only_once_asked_and_esc_keeps_it() {
+        let shown = column_on_screen();
+        let mut model = talking(2);
+        model.focus_sessions();
+        press(&mut model, KeyCode::Down, &shown);
+        press(&mut model, KeyCode::Down, &shown);
+        let chosen = model.selected_row().unwrap().id().to_string();
+        assert_eq!(chosen, "r0");
+        assert_eq!(press(&mut model, KeyCode::Backspace, &shown), Action::None, "backspace deleted without asking");
+        assert_eq!(model.focus, Focus::Deleting);
+        assert_eq!(press(&mut model, KeyCode::Char('x'), &shown), Action::None);
+        assert_eq!(model.focus, Focus::Deleting, "a stray key answered the question");
+        press(&mut model, KeyCode::Esc, &shown);
+        assert_eq!((model.focus, model.deleting.is_none()), (Focus::Sessions, true), "esc did not keep the session");
+        press(&mut model, KeyCode::Delete, &shown);
+        assert_eq!(press(&mut model, KeyCode::Enter, &shown), Action::Delete(chosen));
+        assert_eq!(model.focus, Focus::Sessions);
+    }
+
+    #[test]
+    fn ctrl_d_in_the_picker_asks_about_the_highlighted_session() {
+        let none = Hitboxes::default();
+        let mut model = Model::new("/w".into());
+        model.focus = Focus::Picker;
+        model.picker.results = vec![crate::protocol::Recorded {
+            id: "r9".into(),
+            messages: 3,
+            opening: "found it".into(),
+            ..Default::default()
+        }];
+        press(&mut model, KeyCode::Backspace, &none);
+        assert_eq!(model.focus, Focus::Picker, "backspace in the search asked to delete");
+        key_pressed(&KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL), &mut model, &none);
+        assert_eq!(model.deleting.as_ref().map(|asked| asked.subject.as_str()), Some("found it"));
+        assert_eq!(press(&mut model, KeyCode::Char('y'), &none), Action::Delete("r9".into()));
+        assert_eq!(model.focus, Focus::Picker, "the picker was not given back after the answer");
     }
 }
 

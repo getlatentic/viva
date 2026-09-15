@@ -27,6 +27,8 @@ pub enum Awaiting {
     Started,
     /// Another model for a session. Its `session.model` events say when it lands.
     Switched,
+    /// A session to delete, forgotten here once the daemon says it is gone.
+    Deleted(String),
     Search,
 }
 
@@ -91,6 +93,7 @@ fn overdue(awaiting: &Awaiting, id: u64, latest_search: Option<u64>) -> Option<&
         Awaiting::Models => Some("the daemon has not listed its models yet"),
         Awaiting::Started => Some("the daemon has not started the session yet"),
         Awaiting::Switched => Some("the daemon has not changed the model yet"),
+        Awaiting::Deleted(_) => Some("the daemon has not deleted the session yet"),
         Awaiting::Attached(_) => Some("the daemon has not sent the session yet"),
         _ => None,
     }
@@ -180,6 +183,14 @@ impl Requests {
         Ok(())
     }
 
+    /// Delete SESSION. Longer than most: a running session is stopped first,
+    /// and the daemon gives that half a minute.
+    pub fn delete(&mut self, connection: &mut Connection, session: &str) -> std::io::Result<()> {
+        let id = connection.send(json!({"type": "session.delete", "session": session}))?;
+        self.expect(id, Awaiting::Deleted(session.to_string()), Duration::from_secs(40));
+        Ok(())
+    }
+
     pub fn search(&mut self, connection: &mut Connection, text: &str) -> std::io::Result<()> {
         let request = if text.trim().is_empty() {
             json!({"type": "session.recorded", "limit": 50})
@@ -227,6 +238,16 @@ impl Requests {
                 }
             }
             Awaiting::Attached(_) | Awaiting::Switched => take_response(model, reply),
+            Awaiting::Deleted(session) => {
+                if reply.get("success").and_then(Value::as_bool) == Some(true) {
+                    model.forget_session(&session);
+                    model.status = "session deleted".into();
+                    self.ask_sessions(connection)?;
+                    self.ask_recent(connection, model)?;
+                } else {
+                    take_response(model, reply);
+                }
+            }
             Awaiting::Started => match started(reply) {
                 Some(session) => {
                     model.open_tab(&session);
@@ -508,6 +529,27 @@ mod tests {
         assert_eq!(kinds(&written), ["session.model"]);
         assert_eq!(written[0]["session"], "s1");
         assert_eq!(written[0]["model"], "local/qwen");
+    }
+
+    #[test]
+    fn a_deleted_session_is_forgotten_only_once_the_daemon_says_it_is_gone() {
+        let mut wire = Wire::new();
+        let mut model = Model::new("/w".into());
+        let mut asked = Requests::default();
+        model.open_tab("s1");
+        model.recent = vec![Recorded { id: "s1".into(), messages: 2, ..Default::default() }];
+        asked.delete(&mut wire.connection, "s1").unwrap();
+        let refused = json!({"success": false, "error": "That session is in the middle of a turn; stop it first."});
+        asked.answered(&mut wire.connection, &mut model, &reply(1, refused)).unwrap();
+        assert_eq!(model.tabs, ["s1"], "a refused delete closed the tab");
+        assert!(model.status.contains("stop it first"), "the refusal was not said: {}", model.status);
+        asked.delete(&mut wire.connection, "s1").unwrap();
+        let gone = json!({"success": true, "session": "s1", "files": 2});
+        asked.answered(&mut wire.connection, &mut model, &reply(2, gone)).unwrap();
+        assert!(model.tabs.is_empty() && model.recent.is_empty(), "the deleted session is still held");
+        let written = wire.written();
+        assert_eq!(kinds(&written), ["session.delete", "session.delete", "session.list", "session.recorded"]);
+        assert_eq!(written[0]["session"], "s1");
     }
 
     #[test]
