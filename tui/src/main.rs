@@ -385,7 +385,7 @@ fn run_command(
         "/help" => model.note(commands::help()),
         "/learned" => return perform(connection, model, asked, input::Action::Learned).map(|_| false),
         "/new" => return perform(connection, model, asked, input::Action::NewTab).map(|_| false),
-        "/sessions" => return perform(connection, model, asked, input::Action::ToggleSidebar).map(|_| false),
+        "/sidebar" => return perform(connection, model, asked, input::Action::ToggleSidebar).map(|_| false),
         "/shell" => return perform(connection, model, asked, input::Action::Shell(rest)).map(|_| false),
         "/find" => {
             model.focus = model::Focus::Picker;

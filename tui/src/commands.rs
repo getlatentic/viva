@@ -23,9 +23,9 @@ pub const COMMANDS: &[Command] = &[
         blurb: "find any session, running or not",
     },
     Command {
-        name: "/sessions",
-        aliases: &["/sidebar"],
-        blurb: "show or hide the list of running sessions",
+        name: "/sidebar",
+        aliases: &[],
+        blurb: "show or hide the sessions column",
     },
     Command {
         name: "/new",

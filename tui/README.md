@@ -44,11 +44,15 @@ instant.
 | `Ctrl-O` | show every line a tool printed, or the first three |
 | `Ctrl-L` | what this session has learned: notes, skills, tools |
 | `Ctrl-P` `Ctrl-F` | find any session, running or not, in every directory |
-| `Up` from the prompt | move to the session list |
-| `Up` `Down` `Enter` | walk the list, open one |
+| `Ctrl-B` | show or hide the sessions column |
+| `Up` from the prompt | read back through the conversation |
+| `Up` `Down` | scroll the conversation; `Down` past the newest line returns to the prompt |
+| `Left` `Right` | cross to the sessions column and back |
+| `Up` `Down` `Enter` in the column | walk the list, open one |
+| `Backspace` `Delete` in the column, `Ctrl-D` in the picker | delete a session, after asking |
 | `Esc` | back to the prompt |
-| `PgUp` `PgDn` `Home` `End` | scroll; `End` follows again |
-| click, wheel | tabs, `+`, sessions, scrolling |
+| `PgUp` `PgDn` `Home` `End` | a page, the top, the newest, from anywhere |
+| click, wheel | tabs, `+`, sessions, scrolling the pane under the pointer |
 
 Slash commands are a closed set. Press `/` to see it, narrowing as you type.
 The client refuses an unknown one rather than sending it to the model.
@@ -56,8 +60,10 @@ The client refuses an unknown one rather than sending it to the model.
 | command | action |
 | --- | --- |
 | `/find` | find any session, running or not |
-| `/sessions` `/sidebar` | show or hide the list of running sessions |
+| `/sidebar` | show or hide the sessions column |
 | `/new` `/close` | start a session in a new tab; close this tab |
+| `/stop` `/cancel` | stop this session's turn, and any loop it set up |
+| `/models` `/model` | switch this session's model; a digit takes that one |
 | `/learned` `/knows` | what this session has retained |
 | `/shell` `/!` | a line starting with `!` runs here; the model does not see it |
 | `/refresh` `/help` | re-read the session list; list these |

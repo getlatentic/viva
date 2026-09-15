@@ -204,8 +204,9 @@ impl Conversation {
         Conversation { following: true, ..Default::default() }
     }
 
-    /// The smallest move worth a frame: one notch of a wheel.
-    const STEP: i32 = 3;
+    /// The smallest move worth a frame: one notch of a wheel, or one press of an
+    /// arrow key.
+    pub const STEP: i32 = 3;
     /// The largest, so a fling arrives quickly without skipping the screen.
     const LEAP: i32 = 60;
 

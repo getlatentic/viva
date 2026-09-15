@@ -139,8 +139,8 @@ fn key_pressed(key: &KeyEvent, model: &mut Model, hits: &Hitboxes) -> Action {
     // Moving through the conversation, from wherever the keyboard is: reading
     // back is never more than a key away, whichever column has it.
     match key.code {
-        KeyCode::PageUp => return scroll_by(model, 10),
-        KeyCode::PageDown => return scroll_by(model, -10),
+        KeyCode::PageUp => return scroll_by(model, page(hits)),
+        KeyCode::PageDown => return scroll_by(model, -page(hits)),
         KeyCode::Home => {
             // The far end of the scrollback, clamped when it is drawn.
             if let Some(conversation) = model.conversations.get_mut(&model.current) {
@@ -291,7 +291,7 @@ fn key_pressed(key: &KeyEvent, model: &mut Model, hits: &Hitboxes) -> Action {
             // conversations is what a person is looking for.
             if !model.is_blank() {
                 model.focus = Focus::Transcript;
-                return scroll_by(model, 1);
+                return scroll_by(model, crate::model::Conversation::STEP);
             }
             if column_shown {
                 model.focus_sessions();
@@ -442,18 +442,27 @@ fn scroll_by(model: &mut Model, lines: i32) -> Action {
     Action::None
 }
 
+/// A page of the transcript: the rows it shows, less two that stay on screen so
+/// the eye keeps its place. Ten before a frame has said how tall it is.
+fn page(hits: &Hitboxes) -> i32 {
+    match hits.transcript.height {
+        0 => 10,
+        height => (i32::from(height) - 2).max(1),
+    }
+}
+
 /// The transcript's keys. Down past the newest line hands the keyboard back to
 /// the prompt, so reading back and carrying on are one direction of travel.
 fn transcript_key(key: &KeyEvent, model: &mut Model, column_shown: bool) -> Action {
     match key.code {
-        KeyCode::Up => scroll_by(model, 1),
+        KeyCode::Up => scroll_by(model, crate::model::Conversation::STEP),
         KeyCode::Down => {
             let at_end = model
                 .current_conversation()
                 .map(|conversation| conversation.following && !conversation.owes_scroll())
                 .unwrap_or(true);
             if !at_end {
-                return scroll_by(model, -1);
+                return scroll_by(model, -crate::model::Conversation::STEP);
             }
             model.focus = Focus::Input;
             Action::None
@@ -564,8 +573,8 @@ fn clicked(mouse: &MouseEvent, model: &mut Model, hits: &Hitboxes) -> Action {
     match mouse.kind {
         // The wheel scrolls whatever it is over, which is the one mouse
         // behaviour nobody thinks about before using.
-        MouseEventKind::ScrollUp => wheel(model, hits, column, row, 3),
-        MouseEventKind::ScrollDown => wheel(model, hits, column, row, -3),
+        MouseEventKind::ScrollUp => wheel(model, hits, column, row, crate::model::Conversation::STEP),
+        MouseEventKind::ScrollDown => wheel(model, hits, column, row, -crate::model::Conversation::STEP),
         MouseEventKind::Down(MouseButton::Left) => {
             // The picker is over everything, so it answers first -- otherwise
             // a click meant for it lands on whatever it is covering.
@@ -943,6 +952,30 @@ mod tests {
         assert_eq!(model.deleting.as_ref().map(|asked| asked.subject.as_str()), Some("found it"));
         assert_eq!(press(&mut model, KeyCode::Char('y'), &none), Action::Delete("r9".into()));
         assert_eq!(model.focus, Focus::Picker, "the picker was not given back after the answer");
+    }
+
+    /// How many rows the view moves up when CODE is pressed with the keyboard on
+    /// FOCUS, once the move has been paid out.
+    fn moved_by(focus: Focus, code: KeyCode, hits: &Hitboxes) -> u16 {
+        let mut model = talking(0);
+        model.focus = focus;
+        let conversation = model.conversations.get_mut("s1").unwrap();
+        conversation.window_top(500, 30);
+        let before = conversation.anchor;
+        press(&mut model, code, hits);
+        let conversation = model.conversations.get_mut("s1").unwrap();
+        while conversation.settle() {}
+        before - conversation.anchor
+    }
+
+    #[test]
+    fn an_arrow_moves_the_conversation_a_wheel_notch_and_a_page_key_a_page() {
+        let tall = Hitboxes { transcript: ratatui::layout::Rect::new(0, 1, 100, 30), ..Default::default() };
+        assert_eq!(moved_by(Focus::Transcript, KeyCode::Up, &tall), 3, "an arrow moved other than a wheel notch");
+        assert_eq!(moved_by(Focus::Input, KeyCode::Up, &tall), 3, "up from the prompt moved other than a notch");
+        assert_eq!(moved_by(Focus::Input, KeyCode::PageUp, &tall), 28, "a page key moved other than a page less two rows");
+        assert_eq!(moved_by(Focus::Input, KeyCode::PageUp, &Hitboxes::default()), 10,
+                   "before the first frame a page key moved other than ten rows");
     }
 }
 

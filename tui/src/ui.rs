@@ -493,6 +493,14 @@ fn entry_lines(
                     Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
                 };
                 lines.push(Hanging::plain(Line::from("")));
+                // A RULE ON EVERY QUESTION BUT THE FIRST, so reading back finds
+                // where each turn begins. Air marks a turn no more than it marks
+                // the edge of a block of work, and every call already opens with
+                // a titled rule of its own; this one has no title, and sits on
+                // the question it opens.
+                if after.is_some() {
+                    lines.push(Hanging::ruled(Line::from(""), Style::default().fg(BORDER)));
+                }
                 for (index, piece) in text.lines().enumerate() {
                     let prefix = match (index, looped) {
                         (0, true) => "↻ ",
@@ -1534,9 +1542,9 @@ kilo lima mike november oscar papa quebec";
     }
 
     #[test]
-    fn a_question_is_not_given_two_lines_of_air() {
-        // It opens and closes with one of its own, so the rule that puts air
-        // where work meets words gave it a second on each side.
+    fn a_question_opens_its_turn_under_a_rule_with_one_line_of_air() {
+        // One line of air above the rule and one below the question: the rule
+        // that puts air where work meets words must not add a second.
         let mut model = ready(&[]);
         model.sidebar = false;
         model.absorb(&event("tool.started",
@@ -1550,10 +1558,29 @@ kilo lima mike november oscar papa quebec";
             .map(|row| row.trim().to_string())
             .collect();
         let asked = rows.iter().position(|row| row.contains("and then what")).unwrap();
-        assert!(rows[asked - 1].is_empty() && !rows[asked - 2].is_empty(),
-                "the question has two lines above it: {rows:?}");
+        let ruled = |row: &str| !row.is_empty() && row.chars().all(|c| c == '─');
+        assert!(ruled(&rows[asked - 1]), "no rule sits on the question: {rows:?}");
+        assert!(rows[asked - 2].is_empty() && !rows[asked - 3].is_empty(),
+                "the turn does not have exactly one line of air above its rule: {rows:?}");
         assert!(rows[asked + 1].is_empty() && !rows[asked + 2].is_empty(),
                 "the question has two lines below it: {rows:?}");
+    }
+
+    #[test]
+    fn the_first_question_on_the_page_opens_without_a_rule() {
+        let mut model = ready(&[("user.message", "the first thing asked"),
+                                ("model.delta", "an answer\n"),
+                                ("user.message", "the second thing asked")]);
+        model.sidebar = false;
+        let rows: Vec<String> = frame_of(&mut model, 100, 20)
+            .iter()
+            .map(|row| row.trim().to_string())
+            .collect();
+        let ruled = |row: &str| !row.is_empty() && row.chars().all(|c| c == '─');
+        let first = rows.iter().position(|row| row.contains("the first thing asked")).unwrap();
+        let second = rows.iter().position(|row| row.contains("the second thing asked")).unwrap();
+        assert!(!rows[..first].iter().any(|row| ruled(row)), "a rule opens the page: {rows:?}");
+        assert!(ruled(&rows[second - 1]), "the second turn opens without a rule: {rows:?}");
     }
 
     #[test]
