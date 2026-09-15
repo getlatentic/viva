@@ -131,7 +131,7 @@ impl Layout {
             }
             _ => "• ".to_string(),
         };
-        self.hanging = Some(format!("{lead}{}", " ".repeat(mark.chars().count())));
+        self.hanging = Some(format!("{lead}{}", " ".repeat(crate::cells::width(&mark))));
         self.row.push(Span::styled(mark, Style::default().fg(HEADING)));
     }
 
@@ -356,7 +356,7 @@ fn blank(drawn: &Drawn) -> bool {
 
 /// How wide a cell lands once its markup has become styling.
 fn width_of(cell: &[Span<'static>]) -> usize {
-    cell.iter().map(|span| span.content.chars().count()).sum()
+    cell.iter().map(|span| crate::cells::width(&span.content)).sum()
 }
 
 #[cfg(test)]
@@ -405,6 +405,24 @@ mod tests {
         for text in ["2 * 3 = 6", "use *.rs to match"] {
             assert_eq!(lines(text), vec![text.to_string()], "{text:?} was treated as markup");
         }
+    }
+
+    #[test]
+    fn a_table_of_wide_cells_lines_up_by_cells() {
+        let drawn = super::render("| 名前 | n |\n|---|---|\n| 日本語テキスト | 1 |\n| ab | 2 |\n");
+        let column = |row: &super::Drawn, needle: &str| -> usize {
+            let mut before = 0;
+            for span in &row.spans {
+                if let Some(at) = span.content.find(needle) {
+                    return before + crate::cells::width(&span.content[..at]);
+                }
+                before += crate::cells::width(&span.content);
+            }
+            panic!("{needle:?} is not in the row");
+        };
+        let rows: Vec<&super::Drawn> = drawn.iter().filter(|row| !super::blank(row)).collect();
+        assert_eq!(column(rows[0], "n"), column(rows[1], "1"));
+        assert_eq!(column(rows[1], "1"), column(rows[2], "2"));
     }
 
     #[test]

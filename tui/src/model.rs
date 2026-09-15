@@ -981,11 +981,10 @@ pub fn call_line(call: Option<&serde_json::Value>) -> String {
 /// One line of it, with the rest said to be there rather than shown.
 fn one_line(text: &str, width: usize) -> String {
     let flattened = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if flattened.chars().count() <= width {
+    if crate::cells::width(&flattened) <= width {
         return flattened;
     }
-    let head: String = flattened.chars().take(width).collect();
-    format!("{head}…")
+    format!("{}…", crate::cells::cut(&flattened, width))
 }
 
 fn set_task_state(conversation: &mut Conversation, event: &Event, state: TaskState) {

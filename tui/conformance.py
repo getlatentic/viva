@@ -30,6 +30,7 @@ import sys
 import tempfile
 import termios
 import time
+import unicodedata
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BINARY = os.path.join(ROOT, "target", "debug", "viva-tui")
@@ -60,6 +61,14 @@ KNOWN = re.compile(
     r"|\d*;\d*r|s|u"
     r")"
 )
+
+
+def cells_of(ch):
+    """The cells a terminal gives one character: two for an East Asian wide
+    one, none for a mark that joins the character before it."""
+    if unicodedata.category(ch) in ("Mn", "Me", "Cf"):
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
 
 
 class Terminal:
@@ -124,8 +133,17 @@ class Terminal:
             elif ch == "\n":
                 self.row = min(self.row + 1, self.rows - 1)
             elif 0 <= self.row < self.rows and 0 <= self.col < self.cols:
+                # A wide character covers the cell after it, which then holds
+                # nothing of its own.
+                cells = cells_of(ch)
+                if cells == 0:
+                    if self.col > 0:
+                        self.grid[self.row][self.col - 1] += ch
+                    continue
                 self.grid[self.row][self.col] = ch
-                self.col += 1
+                if cells == 2 and self.col + 1 < self.cols:
+                    self.grid[self.row][self.col + 1] = ""
+                self.col += cells
 
     def lines(self):
         return ["".join(r).rstrip() for r in self.grid]
@@ -459,6 +477,24 @@ def main():
             fail("backspace did not erase the input line")
         else:
             ok("backspace erases what was typed")
+
+        # THE CURSOR COUNTS CELLS. `日本語` is three characters and six cells,
+        # and a cursor placed by characters sits inside what was typed.
+        client.send(b"abc")
+        client.pump(1.0)
+        narrow = client.term.col
+        client.send("日本語🙂".encode())
+        client.pump(1.0)
+        moved = client.term.col - narrow
+        typed_wide = input_row(client)
+        client.send(b"\x7f" * 7)
+        client.pump(1.0)
+        if "abc日本語🙂" not in typed_wide:
+            fail(f"wide text did not reach the input line whole: {typed_wide!r}")
+        elif moved != 8:
+            fail(f"the cursor moved {moved} cells over 日本語🙂, which is eight cells wide")
+        else:
+            ok("the cursor moves by the cells typed, not the characters")
 
         # A PASTE IS ONE THING, and it does not send. Without bracketed paste a
         # pasted newline arrives as Enter, so a two-line snippet asked the model

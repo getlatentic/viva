@@ -6,6 +6,7 @@
 //! exactly as it is: it pipes, scripts and diffs, and that is why it exists.
 
 mod bench;
+mod cells;
 mod commands;
 mod input;
 mod markdown;

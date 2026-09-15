@@ -26,6 +26,13 @@ mod tests {
     }
 
     fn big_model(turns: usize) -> Model {
+        model_saying(turns, |turn, line| {
+            format!("answer {turn} line {line} with enough text on it to wrap once or twice at a hundred columns\n")
+        })
+    }
+
+    /// TURNS questions, each answered in twelve lines that SAY writes.
+    fn model_saying(turns: usize, say: impl Fn(usize, usize) -> String) -> Model {
         let mut model = Model::new("/w".into());
         model.sessions = vec![SessionInfo {
             id: "s1".into(),
@@ -43,7 +50,7 @@ mod tests {
             for line in 0..12 {
                 let say: Event = serde_json::from_value(json!({
                     "event": "model.delta", "session": "s1", "seq": turn,
-                    "data": {"text": format!("answer {turn} line {line} with enough text on it to wrap once or twice at a hundred columns\n")}
+                    "data": {"text": say(turn, line)}
                 })).unwrap();
                 model.absorb(&say);
             }
@@ -93,6 +100,33 @@ mod tests {
         assert!(large < small * 3.0,
                 "a token costs {:.1}x more at 400 turns than at 10 ({small:.2}ms -> {large:.2}ms)",
                 large / small.max(0.001));
+    }
+
+    /// A token in a conversation written two cells a character. A grapheme
+    /// outside ASCII is measured through Unicode's tables, and a conversation
+    /// in Japanese must not be the slow one.
+    #[test]
+    fn a_wide_transcript_streams_within_a_frame() {
+        let mut model = model_saying(400, |turn, line| {
+            format!("答え{turn}の{line}行目、百桁で一度か二度は折り返すくらいの長さがある文章です\n")
+        });
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        let mut rendered = ui::Rendered::default();
+        terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
+        let rounds = 30;
+        let started = Instant::now();
+        for round in 0..rounds {
+            let say: Event = serde_json::from_value(json!({
+                "event": "model.delta", "session": "s1", "seq": 90000 + round,
+                "data": {"text": "もう一語 "}
+            })).unwrap();
+            model.absorb(&say);
+            terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
+        }
+        let each = started.elapsed().as_secs_f64() * 1000.0 / rounds as f64;
+        println!("400 wide turns: {each:.2}ms per streamed token");
+        let budget = frame_budget_ms();
+        assert!(each < budget, "a wide token costs {each:.2}ms, over the {budget:.0}ms a frame has");
     }
 
     #[test]
