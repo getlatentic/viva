@@ -217,39 +217,82 @@ mod tests {
         assert!(dragging < budget, "a resize costs {dragging:.2}ms, over the {budget:.0}ms a frame has");
     }
 
+    /// A model, the terminal it is drawn on and the layout it keeps, drawn once
+    /// so what is measured next is steady state.
+    struct Stage {
+        model: Model,
+        terminal: Terminal<TestBackend>,
+        rendered: layout::Rendered,
+    }
+
+    impl Stage {
+        fn new(mut model: Model) -> Stage {
+            let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+            let mut rendered = layout::Rendered::default();
+            terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
+            Stage { model, terminal, rendered }
+        }
+    }
+
+    /// The fastest of WINDOWS measurements of FIRST and of SECOND, taken in turn.
+    ///
+    /// In turn, so load that comes and goes lands on both sides. The fastest, so
+    /// a stall that hits one window is not the number compared. A cost that
+    /// recurs every few draws is in every window, so it still counts.
+    fn fastest_in_turn(
+        windows: usize,
+        first: &mut Stage,
+        second: &mut Stage,
+        mut measure: impl FnMut(&mut Stage) -> f64,
+    ) -> (f64, f64) {
+        let (mut quickest_first, mut quickest_second) = (f64::INFINITY, f64::INFINITY);
+        for _ in 0..windows {
+            quickest_first = quickest_first.min(measure(first));
+            quickest_second = quickest_second.min(measure(second));
+        }
+        (quickest_first, quickest_second)
+    }
+
     #[test]
     fn a_long_reply_does_not_get_slower_line_by_line() {
-        let mut model = big_model(100);
-        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-        let mut rendered = layout::Rendered::default();
-        terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
-        let mut written = 0;
-        let mut lines = |count: usize, model: &mut Model, terminal: &mut Terminal<TestBackend>, rendered: &mut layout::Rendered| {
-            per_draw(model, terminal, rendered, count, |_, model, _| {
-                written += 1;
-                model.absorb(&delta(&format!("reply line {written}, which says a sentence or so of something\n")));
-            })
+        let reply = |line: usize| delta(&format!("reply line {line}, which says a sentence or so of something\n"));
+        // The last reply of `big_model` already has twelve lines.
+        let replying = |lines: usize| {
+            let mut model = big_model(100);
+            for line in 0..lines {
+                model.absorb(&reply(line));
+            }
+            Stage::new(model)
         };
-        let early = lines(20, &mut model, &mut terminal, &mut rendered);
-        lines(360, &mut model, &mut terminal, &mut rendered);
-        let late = lines(20, &mut model, &mut terminal, &mut rendered);
-        println!("a reply line: {early:.2}ms at line 20, {late:.2}ms at line 400");
+        let (mut near_start, mut far_in) = (replying(8), replying(388));
+        let mut written = 0;
+        let (early, late) = fastest_in_turn(5, &mut near_start, &mut far_in, |stage| {
+            per_draw(&mut stage.model, &mut stage.terminal, &mut stage.rendered, 20, |_, model, _| {
+                written += 1;
+                model.absorb(&reply(written));
+            })
+        });
+        println!("a reply line: {early:.2}ms from line 20, {late:.2}ms from line 400");
         assert!(late < early * 2.0, "line 400 of a reply costs {late:.2}ms against {early:.2}ms for line 20");
     }
 
     #[test]
     fn an_unbroken_line_streams_in_time_that_does_not_grow_with_it() {
-        let mut model = big_model(10);
-        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-        let mut rendered = layout::Rendered::default();
-        terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
         let token = "0123456789abcdef".repeat(4);
-        let short = per_draw(&mut model, &mut terminal, &mut rendered, 30, |_, model, _| model.absorb(&delta(&token)));
-        for _ in 0..1200 {
-            model.absorb(&delta(&token));
-        }
-        let long = per_draw(&mut model, &mut terminal, &mut rendered, 30, |_, model, _| model.absorb(&delta(&token)));
-        println!("a token on an unbroken line: {short:.2}ms at 2KB, {long:.2}ms at 80KB");
+        let line_of = |tokens: usize| {
+            let mut model = big_model(10);
+            for _ in 0..tokens {
+                model.absorb(&delta(&token));
+            }
+            Stage::new(model)
+        };
+        let (mut at_2kb, mut at_80kb) = (line_of(32), line_of(1250));
+        let (short, long) = fastest_in_turn(5, &mut at_2kb, &mut at_80kb, |stage| {
+            per_draw(&mut stage.model, &mut stage.terminal, &mut stage.rendered, 30, |_, model, _| {
+                model.absorb(&delta(&token))
+            })
+        });
+        println!("a token on an unbroken line: {short:.2}ms from 2KB, {long:.2}ms from 80KB");
         assert!(long < short * 2.0, "a token at 80KB costs {long:.2}ms against {short:.2}ms at 2KB");
     }
 
