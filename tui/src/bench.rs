@@ -12,7 +12,18 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
     use serde_json::json;
+    use std::sync::{Mutex, MutexGuard, PoisonError};
     use std::time::Instant;
+
+    /// Held by every bench while it measures. The harness runs tests at once,
+    /// and a frame timed while the other benches draw on the same cores is a
+    /// measure of the machine rather than of the frame.
+    static MEASURING: Mutex<()> = Mutex::new(());
+
+    /// The bench lock, whole again after a bench that failed while holding it.
+    fn alone() -> MutexGuard<'static, ()> {
+        MEASURING.lock().unwrap_or_else(PoisonError::into_inner)
+    }
 
     /// The budget for one frame, which depends on how the crate was built.
     ///
@@ -55,6 +66,7 @@ mod tests {
     /// watching output arrive.
     #[test]
     fn a_streamed_token_does_not_cost_the_whole_session() {
+        let _alone = alone();
         let mut costs = Vec::new();
         for turns in [10usize, 100, 400] {
             let mut model = big_model(turns);
@@ -95,6 +107,7 @@ mod tests {
     /// in Japanese must not be the slow one.
     #[test]
     fn a_wide_transcript_streams_within_a_frame() {
+        let _alone = alone();
         let mut model = model_saying(400, |turn, line| {
             format!("答え{turn}の{line}行目、百桁で一度か二度は折り返すくらいの長さがある文章です\n")
         });
@@ -159,6 +172,7 @@ mod tests {
 
     #[test]
     fn switching_tabs_does_not_lay_out_a_conversation_again() {
+        let _alone = alone();
         let mut model = big_model(400);
         model.sessions.push(SessionInfo {
             id: "s2".into(), label: "/w/beta".into(), state: "idle".into(), ..Default::default()
@@ -185,6 +199,7 @@ mod tests {
 
     #[test]
     fn a_page_width_seen_before_is_not_laid_out_again() {
+        let _alone = alone();
         let mut model = big_model(400);
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
         let mut rendered = layout::Rendered::default();
@@ -205,6 +220,7 @@ mod tests {
 
     #[test]
     fn a_new_page_width_is_laid_out_within_a_frame() {
+        let _alone = alone();
         let mut model = big_model(400);
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
         let mut rendered = layout::Rendered::default();
@@ -255,6 +271,7 @@ mod tests {
 
     #[test]
     fn a_long_reply_does_not_get_slower_line_by_line() {
+        let _alone = alone();
         let reply = |line: usize| delta(&format!("reply line {line}, which says a sentence or so of something\n"));
         // The last reply of `big_model` already has twelve lines.
         let replying = |lines: usize| {
@@ -278,6 +295,7 @@ mod tests {
 
     #[test]
     fn an_unbroken_line_streams_in_time_that_does_not_grow_with_it() {
+        let _alone = alone();
         let token = "0123456789abcdef".repeat(4);
         let line_of = |tokens: usize| {
             let mut model = big_model(10);
@@ -298,6 +316,7 @@ mod tests {
 
     #[test]
     fn a_frame_is_drawn_in_under_a_frame() {
+        let _alone = alone();
         // 120 turns is a long afternoon, not an extreme. At sixty frames a
         // second a frame has 16ms; a client that takes longer than that to
         // decide what to draw cannot feel immediate however fast the terminal
@@ -325,6 +344,7 @@ mod tests {
 
     #[test]
     fn scrolling_does_not_get_slower_the_longer_the_conversation() {
+        let _alone = alone();
         // IT HAS TO ACTUALLY SCROLL. This drew the same frame ten times and
         // called the number a scrolling cost -- a redraw benchmark wearing a
         // scrolling name, which would have reported `flat` however expensive
