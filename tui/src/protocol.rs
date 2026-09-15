@@ -270,9 +270,6 @@ pub struct Recorded {
     pub id: String,
     #[serde(default)]
     pub cwd: String,
-    /// When it was recorded, as Lisp universal time: seconds since 1900.
-    #[serde(default)]
-    pub time: u64,
     #[serde(default)]
     pub messages: u64,
     #[serde(default)]
@@ -298,8 +295,6 @@ impl SessionInfo {
 }
 
 impl Recorded {
-    /// How long ago, as a person says it: `3m`, `2h`, `4d`. Universal time
-    /// counts from 1900 and Unix from 1970; the gap is a constant.
     /// What this conversation is about, the same way a live one says it.
     pub fn subject(&self) -> String {
         let opening = self.opening.trim();
@@ -308,18 +303,6 @@ impl Recorded {
             format!("{folder}.{}", short_id(&self.id))
         } else {
             opening.to_string()
-        }
-    }
-
-    pub fn age(&self, now_unix: u64) -> String {
-        const GAP: u64 = 2_208_988_800;
-        let then = self.time.saturating_sub(GAP);
-        let seconds = now_unix.saturating_sub(then);
-        match seconds {
-            0..=59 => "now".into(),
-            60..=3599 => format!("{}m", seconds / 60),
-            3600..=86_399 => format!("{}h", seconds / 3600),
-            _ => format!("{}d", seconds / 86_400),
         }
     }
 }
@@ -342,7 +325,6 @@ pub struct Learned {
     /// Whether we have asked yet. Distinguishes "retained nothing" from "have
     /// not looked", which look identical as counts and are different facts.
     pub inspected: bool,
-    pub trusted: bool,
     pub notes: Vec<Retained>,
     pub skills: Vec<Retained>,
     pub tools: Vec<Retained>,
@@ -353,10 +335,6 @@ pub struct Learned {
 }
 
 impl Learned {
-    pub fn total(&self) -> usize {
-        self.notes.len() + self.skills.len() + self.tools.len()
-    }
-
     pub fn from_reply(reply: &Value) -> Self {
         let list = |key: &str| -> Vec<Retained> {
             reply
@@ -372,7 +350,6 @@ impl Learned {
         };
         Learned {
             inspected: true,
-            trusted: reply.get("trusted").and_then(Value::as_bool).unwrap_or(false),
             notes: list("notes"),
             skills: list("skills"),
             tools: list("tools"),

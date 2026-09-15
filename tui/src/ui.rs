@@ -1026,7 +1026,7 @@ fn draw_learned(frame: &mut Frame, area: Rect, model: &Model) {
 
     let learned = &model.learned;
     let mut lines: Vec<Line> = Vec::new();
-    let mut section = |lines: &mut Vec<Line>, title: &str, items: &[crate::protocol::Retained],
+    let section = |lines: &mut Vec<Line>, title: &str, items: &[crate::protocol::Retained],
                        colour: Color| {
         lines.push(Line::from(Span::styled(
             format!("{title}  ({})", items.len()),
