@@ -177,10 +177,7 @@
 
         ((string= "set_model" type)
          (handler-case
-             (let ((choice (models:resolve-model (text-argument command "model"))))
-               (setf (agent:agent-provider agent) (models:choice-provider choice)
-                     (agent:agent-reasoning-effort agent) (models:choice-effort choice))
-               (harness:set-model agent (models:choice-model choice))
+             (let ((choice (harness:use-choice agent (models:resolve-model (text-argument command "model")))))
                (respond server id type "model" (models:choice-model choice)))
            (error (condition) (fail server id type (princ-to-string condition)))))
 

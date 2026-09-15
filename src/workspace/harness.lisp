@@ -341,17 +341,20 @@ fail honestly rather than retry forever."
           ;; ever saying so.
           ((= attempt +model-attempts+)
            (a:when-let ((fallback (fallback-model agent)))
-             (fault:use-model fallback condition)))
+             ;; The whole choice, then the same request again. USE-MODEL
+             ;; changes the id alone, and another endpoint's model sent to
+             ;; this endpoint is a 404 that reads as a second outage.
+             (apply-choice agent fallback)
+             (fault:retry condition)))
           ;; Declining is an answer. The turn fails, honestly and soon.
           (t nil))))
 
 (defun fallback-model (agent)
-  "Another configured model to try, or NIL. Never the one that just failed."
-  (a:when-let ((other (find-if (lambda (choice)
-                                 (not (equal (models:choice-model choice)
-                                             (agent:agent-model agent))))
-                               (ignore-errors (models:available-models)))))
-    (models:choice-model other)))
+  "Another configured model to try, as a choice, or NIL. Never the one that just
+failed."
+  (find-if (lambda (choice)
+             (not (equal (models:choice-model choice) (agent:agent-model agent))))
+           (ignore-errors (models:available-models))))
 
 (defmethod agent:checkpoint ((agent workspace-agent) phase)
   (declare (ignore phase))
@@ -846,8 +849,11 @@ of it, and silently changing them is how a resumed run stops reproducing."
   (dolist (entry (session:entries-of session))
     (case (session:entry-kind entry)
       (:model-change
-       (a:when-let ((model (gethash "model" (session:entry-payload entry))))
-         (setf (agent:agent-model agent) model)))
+       (let* ((payload (session:entry-payload entry))
+              (model (gethash "model" payload))
+              (choice (recorded-choice model (gethash "label" payload))))
+         (cond (choice (apply-choice agent choice))
+               ((stringp model) (setf (agent:agent-model agent) model)))))
       (:active-tools-change
        (let ((names (gethash "tools" (session:entry-payload entry))))
          (setf (agent-active-tools agent)
@@ -869,12 +875,49 @@ summary and a branched one resumes on the branch last worked on."
     (setf (agent-context agent) (loop*:make-context :messages messages))
     (values agent (length messages))))
 
-(defun set-model (agent model)
-  "Change the model, recording it so a resume restores this and not the default."
-  (setf (agent:agent-model agent) model)
+(defun apply-choice (agent choice)
+  "Point AGENT at CHOICE: provider, model, effort and context limit, together.
+
+A MODEL IS FOUR SETTINGS. The id alone sent the new model's name to the old
+model's server, and a context limit left from the old model compacts at the
+wrong size for the new one."
+  (setf (agent:agent-provider agent) (models:choice-provider choice)
+        (agent:agent-model agent) (models:choice-model choice)
+        (agent:agent-reasoning-effort agent) (models:choice-effort choice)
+        (compaction:settings-context-limit (agent-compaction agent))
+        (models:choice-context-limit choice))
+  choice)
+
+(defun use-choice (agent choice)
+  "APPLY-CHOICE, recorded in the transcript so a resume comes back on it."
+  (apply-choice agent choice)
   (a:when-let ((session (agent-session agent)))
-    (session:append-entry session :model-change (session:object "model" model)))
-  model)
+    (session:append-entry session :model-change
+                          (session:object "model" (models:choice-model choice)
+                                          "label" (models:choice-label choice))))
+  choice)
+
+(defun recorded-choice (model label)
+  "The choice a recorded model change names, or NIL when nothing on offer now
+matches it. The label while it still resolves to the recorded model, else the
+model id: a catalogue whose defaults moved must not move the session."
+  (flet ((found (name) (and (stringp name) (ignore-errors (models:resolve-model name)))))
+    (let ((by-label (found label)))
+      (if (and by-label (equal (models:choice-model by-label) model))
+          by-label
+          (or (found model) by-label)))))
+
+(defun set-model (agent model)
+  "Change the model, recording it so a resume restores this and not the default.
+A name the catalogue offers brings its provider, effort and limit with it; one it
+does not -- an id on a server nothing lists -- changes the id alone."
+  (a:if-let ((choice (ignore-errors (models:resolve-model model))))
+    (models:choice-model (use-choice agent choice))
+    (progn
+      (setf (agent:agent-model agent) model)
+      (a:when-let ((session (agent-session agent)))
+        (session:append-entry session :model-change (session:object "model" model)))
+      model)))
 
 (defun set-active-tools (agent names)
   "Narrow or widen the tool set, recording it for the same reason."

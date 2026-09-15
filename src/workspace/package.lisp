@@ -272,7 +272,7 @@
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
            #:agent-extension-files #:agent-extension-directories #:agent-compaction #:agent-active-tools
            #:agent-last-tokens
-           #:compact-now #:set-model #:set-active-tools #:apply-settings
+           #:compact-now #:set-model #:use-choice #:apply-choice #:set-active-tools #:apply-settings
            #:send-message #:append-custom #:navigate #:tree-lines #:close-agent
            #:delegate #:delegate-tool #:sub-agent #:agent-lane #:delegate-async
            #:machine-resource-directory #:project-resource-directory
