@@ -694,6 +694,13 @@ def main():
         subprocess.run([launcher, "daemon", "stop"], env=environment, cwd=cwd,
                        capture_output=True, timeout=120)
         client.pump(3.0)
+        # The client starts a daemon of its own here, and goes on reading keys
+        # while it does: a start loads an image, which on a cold cache is minutes.
+        client.send(b"typed while the daemon comes back")
+        client.pump(1.0)
+        typed_during_restart = input_row(client)
+        client.send(b"\x7f" * 40)
+        client.pump(1.0)
         # NOTHING IS ASSERTED ABOUT THE STATUS LINE HERE, and two attempts at
         # it are why. The client starts a daemon when none is listening, so on
         # a quick machine it rebuilds the one this check just stopped and is
@@ -724,6 +731,16 @@ def main():
             fail(f"no tab survived the restart: {tabs_before!r} -> {tabs_after!r}")
         else:
             ok("the daemon restarts under a live client, and the tab is still there")
+        # NOTHING OUTSIDE THE FRAME. Anything the reconnect prints lands at the
+        # cursor, in the input row, in cells the client believes are blank and so
+        # never paints over.
+        stray = input_row(client).strip().strip("│›").strip()
+        if stray:
+            fail(f"the reconnect wrote outside the frame, into the input row: {stray!r}")
+        elif "typed while the daemon comes back" not in typed_during_restart:
+            fail(f"the client read no keys while the daemon came back: {typed_during_restart!r}")
+        else:
+            ok("keys are read while the daemon comes back, and nothing is written outside the frame")
         client.send(b"\x1b[H")
         client.pump(2.0)
         body = "\n".join(client.term.lines()[2:-5])

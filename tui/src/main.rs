@@ -30,6 +30,7 @@ use requests::Requests;
 use serde_json::json;
 use std::io::stdout;
 use std::path::PathBuf;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 /// Restores the terminal however the program leaves -- return, error or panic.
@@ -109,7 +110,7 @@ fn run() -> std::io::Result<()> {
     // ONE COMMAND. Telling a person to start a daemon first is telling them
     // about our architecture; `daemon start` is idempotent, so the client can
     // simply make sure of it.
-    protocol::ensure_daemon(&path)
+    protocol::ensure_daemon(&path, || eprintln!("starting the viva daemon…"))
         .map_err(|problem| std::io::Error::other(problem))?;
     let mut connection = Connection::open(&path)?;
 
@@ -184,8 +185,7 @@ fn run() -> std::io::Result<()> {
                     dirty = true;
                 }
                 None => {
-                    model.status = format!("connection lost — reconnecting ({})",
-                                           reconnect.attempts);
+                    model.status = reconnect.progress();
                     dirty = true;
                 }
             }
@@ -377,6 +377,10 @@ struct Reconnect {
     attempts: u32,
     /// Daemon starts spent since the connection was last good.
     starts: u32,
+    /// The start under way, on its own thread, which says how it went.
+    starting: Option<Receiver<Result<(), String>>>,
+    /// Why the last start failed.
+    problem: Option<String>,
 }
 
 impl Reconnect {
@@ -395,13 +399,39 @@ impl Reconnect {
         }
     }
 
-    fn due(&self) -> bool {
+    /// Time for another try: the backoff has run out, or a start has ended.
+    fn due(&mut self) -> bool {
+        let ended = match &self.starting {
+            Some(starting) => match starting.try_recv() {
+                Err(TryRecvError::Empty) => None,
+                Ok(outcome) => Some(outcome.err()),
+                Err(TryRecvError::Disconnected) => Some(Some("the daemon start died".to_string())),
+            },
+            None => None,
+        };
+        if let Some(problem) = ended {
+            self.problem = problem.map(|text| text.split_whitespace().collect::<Vec<_>>().join(" "));
+            self.starting = None;
+            return true;
+        }
         self.next.map(|at| Instant::now() >= at).unwrap_or(false)
     }
 
-    /// One try. Starts a daemon if none is listening, the same way the first
-    /// connection does -- a person who closed the lid on a daemon that was
-    /// then killed should open it to a working client, not to instructions.
+    /// What the status line says meanwhile.
+    fn progress(&self) -> String {
+        let doing = if self.starting.is_some() { "starting the daemon" } else { "reconnecting" };
+        match &self.problem {
+            Some(problem) => format!("connection lost — {doing} ({}): {problem}", self.attempts),
+            None => format!("connection lost — {doing} ({})", self.attempts),
+        }
+    }
+
+    /// One try, which never waits. Starts a daemon if none is listening, the
+    /// same way the first connection does -- a person who closed the lid on a
+    /// daemon that was then killed should open it to a working client, not to
+    /// instructions. The start runs on a thread and prints nothing: it can take
+    /// minutes on a cold cache, the loop goes on drawing meanwhile, and anything
+    /// written to the terminal now lands in the middle of the frame.
     ///
     /// CONNECTING IS CHEAP AND STARTING IS NOT. A daemon start loads an SBCL
     /// image: 1.3 seconds of CPU, measured. Running one on every retry against
@@ -412,31 +442,28 @@ impl Reconnect {
     /// budget for one.
     fn attempt(&mut self, path: &PathBuf) -> Option<Connection> {
         self.attempts += 1;
-        let fresh = Connection::open(path).ok().or_else(|| {
-            if self.starts < Self::STARTS_ALLOWED {
-                self.starts += 1;
-                protocol::ensure_daemon(path)
-                    .ok()
-                    .and_then(|()| Connection::open(path).ok())
-            } else {
-                None
-            }
-        });
-        match fresh {
-            Some(connection) => {
-                self.next = None;
-                self.starts = 0;
-                Some(connection)
-            }
-            None => {
-                // Far enough apart that a client waiting on a daemon that is
-                // never coming back costs nothing worth measuring, and near
-                // enough that one that does come back is found within a minute.
-                self.wait = (self.wait * 2).min(Duration::from_secs(30));
-                self.next = Some(Instant::now() + self.wait);
-                None
-            }
+        if let Ok(connection) = Connection::open(path) {
+            self.next = None;
+            self.starts = 0;
+            self.starting = None;
+            self.problem = None;
+            return Some(connection);
         }
+        if self.starting.is_none() && self.starts < Self::STARTS_ALLOWED {
+            self.starts += 1;
+            let (said, starting) = mpsc::channel();
+            let path = path.clone();
+            std::thread::spawn(move || {
+                let _ = said.send(protocol::ensure_daemon(&path, || {}));
+            });
+            self.starting = Some(starting);
+        }
+        // Far enough apart that a client waiting on a daemon that is never
+        // coming back costs nothing worth measuring, and near enough that one
+        // that does come back is found within a minute.
+        self.wait = (self.wait * 2).min(Duration::from_secs(30));
+        self.next = Some(Instant::now() + self.wait);
+        None
     }
 }
 

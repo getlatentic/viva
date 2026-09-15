@@ -95,12 +95,13 @@ pub fn launcher() -> Option<PathBuf> {
     candidate.exists().then_some(candidate)
 }
 
-/// Start a daemon and wait for its socket, if there is not one already.
+/// Start a daemon and wait for its socket, if there is not one already,
+/// calling ANNOUNCE once it is clear one has to be started.
 ///
 /// `daemon start` is idempotent -- it answers `already running` and exits
 /// zero -- so this does not need to ask first, and asking would be a race
 /// anyway: between the answer and the start, either could change.
-pub fn ensure_daemon(path: &PathBuf) -> Result<(), String> {
+pub fn ensure_daemon(path: &PathBuf, announce: impl FnOnce()) -> Result<(), String> {
     if UnixStream::connect(path).is_ok() {
         return Ok(());
     }
@@ -114,9 +115,12 @@ Put it on your PATH or set VIVA_BIN.", path.display())
     // used to sit below `output()`, which blocks until the start command has
     // finished -- so the reassurance arrived once the waiting was over.
     // Measured on a warm cache: 2.6 s of nothing, then the message.
-    eprintln!("starting the viva daemon…");
+    announce();
     let started = std::process::Command::new(&launcher)
         .args(["daemon", "start", "--background"])
+        // The client may already own the terminal, and its keys are not the
+        // start's to read.
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()
