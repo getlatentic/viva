@@ -9,7 +9,7 @@ viva                  # the launcher finds this binary and runs it
 
 `viva` runs this client when it has a terminal. Piped or redirected it stays
 the line client, which is the form that scripts and diffs. Where the binary is
-absent, `viva tui` says so and runs the Lisp full screen client instead.
+absent, `viva` says how to build it and points to `viva attach`.
 
 It starts the daemon if there is not one. `daemon start` is idempotent, so the
 client makes sure rather than asking.
