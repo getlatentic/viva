@@ -25,6 +25,8 @@ pub enum Awaiting {
     Attached(String),
     /// A session asked to start, fresh or resuming one, to open once it exists.
     Started,
+    /// Another model for a session. Its `session.model` events say when it lands.
+    Switched,
     Search,
 }
 
@@ -88,6 +90,7 @@ fn overdue(awaiting: &Awaiting, id: u64, latest_search: Option<u64>) -> Option<&
         Awaiting::Search if latest_search == Some(id) => Some("the daemon has not answered the search yet"),
         Awaiting::Models => Some("the daemon has not listed its models yet"),
         Awaiting::Started => Some("the daemon has not started the session yet"),
+        Awaiting::Switched => Some("the daemon has not changed the model yet"),
         Awaiting::Attached(_) => Some("the daemon has not sent the session yet"),
         _ => None,
     }
@@ -170,6 +173,13 @@ impl Requests {
         Ok(())
     }
 
+    /// Answer on another model in SESSION, from its next turn.
+    pub fn switch_model(&mut self, connection: &mut Connection, session: &str, label: &str) -> std::io::Result<()> {
+        let id = connection.send(json!({"type": "session.model", "session": session, "model": label}))?;
+        self.expect(id, Awaiting::Switched, Duration::from_secs(20));
+        Ok(())
+    }
+
     pub fn search(&mut self, connection: &mut Connection, text: &str) -> std::io::Result<()> {
         let request = if text.trim().is_empty() {
             json!({"type": "session.recorded", "limit": 50})
@@ -216,7 +226,7 @@ impl Requests {
                     None => take_response(model, reply),
                 }
             }
-            Awaiting::Attached(_) => take_response(model, reply),
+            Awaiting::Attached(_) | Awaiting::Switched => take_response(model, reply),
             Awaiting::Started => match started(reply) {
                 Some(session) => {
                     model.open_tab(&session);
@@ -490,6 +500,17 @@ mod tests {
         assert_eq!(kinds(&written), ["session.attach", "session.inspect", "session.recorded"]);
         assert_eq!(written[0]["since"], 0);
         assert_eq!(model.status, "reconnected");
+    }
+
+    #[test]
+    fn a_model_switch_names_the_session_and_the_model() {
+        let mut wire = Wire::new();
+        let mut asked = Requests::default();
+        asked.switch_model(&mut wire.connection, "s1", "local/qwen").unwrap();
+        let written = wire.written();
+        assert_eq!(kinds(&written), ["session.model"]);
+        assert_eq!(written[0]["session"], "s1");
+        assert_eq!(written[0]["model"], "local/qwen");
     }
 
     #[test]

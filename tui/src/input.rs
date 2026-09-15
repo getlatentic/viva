@@ -44,11 +44,10 @@ pub enum Action {
     /// exactly the moment the answer here is stale.
     RefreshModels,
     /// Start a session on the named model, in a new tab.
-    ///
-    /// A NEW SESSION, not a change to this one. A cell owns its agent, and
-    /// retargeting a live one means a message through its mailbox and a verb in
-    /// the proven lifecycle table -- which is spec work, not a key binding.
     UseModel(String),
+    /// Answer on the named model in this session, from its next turn. The turn
+    /// running now finishes on the model it started with.
+    SwitchModel(String),
 }
 
 pub fn read(event: &Event, model: &mut Model, hits: &Hitboxes) -> Action {
@@ -304,6 +303,17 @@ fn models_key(key: &KeyEvent, model: &mut Model) -> Action {
             match model.models.at_digit(ch as usize - '0' as usize) {
                 Some(offer) => {
                     model.focus = Focus::Input;
+                    Action::SwitchModel(offer.label)
+                }
+                None => Action::None,
+            }
+        }
+        // A new session on the highlighted model, for when the conversation here
+        // should stay on the one it has.
+        KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            match model.models.selected() {
+                Some(offer) => {
+                    model.focus = Focus::Input;
                     Action::UseModel(offer.label)
                 }
                 None => Action::None,
@@ -320,7 +330,7 @@ fn models_key(key: &KeyEvent, model: &mut Model) -> Action {
         KeyCode::Enter => match model.models.selected() {
             Some(offer) => {
                 model.focus = Focus::Input;
-                Action::UseModel(offer.label)
+                Action::SwitchModel(offer.label)
             }
             None => Action::None,
         },
@@ -642,6 +652,27 @@ mod tests {
             other => panic!("ctrl-u in the picker became {other:?}"),
         }
         assert!(model.picker.query.is_empty(), "ctrl-u typed into the query it should have emptied");
+    }
+
+    #[test]
+    fn a_model_picked_is_for_this_session_and_ctrl_n_takes_it_to_a_new_one() {
+        let mut model = Model::new("/w".into());
+        model.models.absorb(vec![crate::model::ModelOffer { label: "local/qwen".into(), id: "qwen".into() }]);
+        model.focus = Focus::Models;
+        assert_eq!(
+            key_pressed(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut model),
+            Action::SwitchModel("local/qwen".into())
+        );
+        model.focus = Focus::Models;
+        assert_eq!(
+            key_pressed(&KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE), &mut model),
+            Action::SwitchModel("local/qwen".into())
+        );
+        model.focus = Focus::Models;
+        assert_eq!(
+            key_pressed(&KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL), &mut model),
+            Action::UseModel("local/qwen".into())
+        );
     }
 
     #[test]

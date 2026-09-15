@@ -221,7 +221,7 @@ fn draw_picker(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes
 /// can read is not an answer.
 fn draw_models(frame: &mut Frame, area: Rect, model: &Model) {
     let width = area.width.saturating_sub(8).min(86).max(24);
-    let height = (Models::VISIBLE as u16 + 6).min(area.height.saturating_sub(4)).max(8);
+    let height = (Models::VISIBLE as u16 + 7).min(area.height.saturating_sub(4)).max(8);
     let box_area = Rect::new(
         area.x + (area.width.saturating_sub(width)) / 2,
         area.y + (area.height.saturating_sub(height)) / 2,
@@ -236,7 +236,7 @@ fn draw_models(frame: &mut Frame, area: Rect, model: &Model) {
     let rows = Layout::vertical([
         Constraint::Length(2),
         Constraint::Min(1),
-        Constraint::Length(1),
+        Constraint::Length(2),
     ])
     .split(inner);
 
@@ -258,6 +258,9 @@ fn draw_models(frame: &mut Frame, area: Rect, model: &Model) {
         .find(|session| session.id == model.current)
         .map(|session| session.model.clone())
         .unwrap_or_default();
+    let next = model
+        .current_conversation()
+        .and_then(|conversation| conversation.pending_model.clone());
     let matching = model.models.matching();
     let start = model.models.first_visible();
     let mut lines: Vec<Line> = Vec::new();
@@ -284,6 +287,9 @@ fn draw_models(frame: &mut Frame, area: Rect, model: &Model) {
         if !here.is_empty() && offer.id == here {
             spans.push(Span::styled("  (current)", Style::default().fg(ACCENT)));
         }
+        if next.as_deref().is_some_and(|next| next == offer.label || next == offer.id) {
+            spans.push(Span::styled("  (next turn)", Style::default().fg(ACCENT)));
+        }
         lines.push(Line::from(spans));
     }
     let shown = matching.len().saturating_sub(start).min(Models::VISIBLE);
@@ -307,11 +313,19 @@ fn draw_models(frame: &mut Frame, area: Rect, model: &Model) {
         lines.push(Line::from(Span::styled(message, Style::default().fg(DIM))));
     }
     frame.render_widget(Paragraph::new(lines), rows[1]);
+    // What a choice does, said where it is made -- including its price: no model
+    // holds a cache of a conversation it has never read.
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            " enter or a digit opens a session · ctrl-r asks again · esc closes",
-            Style::default().fg(DIM),
-        ))),
+        Paragraph::new(vec![
+            Line::from(Span::styled(
+                " enter or a digit: this session, from its next turn · ctrl-n: a new session",
+                Style::default().fg(DIM),
+            )),
+            Line::from(Span::styled(
+                " that turn reads the whole conversation afresh · ctrl-r asks again · esc",
+                Style::default().fg(DIM),
+            )),
+        ]),
         rows[2],
     );
 }

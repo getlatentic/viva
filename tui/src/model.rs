@@ -193,6 +193,9 @@ pub struct Conversation {
     /// scrolled up is reading; yanking them back to the bottom on the next
     /// token is the single rudest thing a log view can do.
     pub following: bool,
+    /// A model asked for while a turn was running, shown until the daemon says
+    /// it has been applied.
+    pub pending_model: Option<String>,
 }
 
 impl Conversation {
@@ -644,6 +647,15 @@ impl Model {
                 }
             }
         }
+        // An applied model belongs to the session's row, which the list and the
+        // status line read; a pending one to the conversation, below.
+        let model_pending = event.data.get("pending").and_then(Value::as_bool).unwrap_or(false);
+        if name == "session.model" && !model_pending {
+            let applied = event.text("model").to_string();
+            if let Some(info) = self.sessions.iter_mut().find(|known| known.id == session) {
+                info.model = applied;
+            }
+        }
         let conversation = self.conversation(&session);
         if seq > 0 {
             if conversation.last_seq > 0 && seq > conversation.last_seq + 1 {
@@ -764,6 +776,12 @@ impl Model {
             "task.completed" => set_task_state(conversation, event, TaskState::Done),
             "task.failed" | "task.error" => set_task_state(conversation, event, TaskState::Failed),
             "task.cancelled" => set_task_state(conversation, event, TaskState::Cancelled),
+            "session.model" => {
+                conversation.pending_model = model_pending.then(|| {
+                    let label = event.text("label");
+                    if label.is_empty() { event.text("model") } else { label }.to_string()
+                });
+            }
             "session.error" => {
                 let detail = event.text("detail").to_string();
                 conversation.push(Role::Note, detail);
@@ -1105,6 +1123,21 @@ mod tests {
         }];
         model.open_tab(session);
         model
+    }
+
+    #[test]
+    fn a_model_change_is_pending_until_the_daemon_applies_it() {
+        let mut model = model_with("s1");
+        model.sessions[0].model = "first".into();
+        model.absorb(&event("session.model", "s1",
+                            json!({"model": "second", "label": "local/second", "pending": true})));
+        assert_eq!(model.current_conversation().unwrap().pending_model.as_deref(), Some("local/second"));
+        assert_eq!(model.sessions[0].model, "first", "applied while the turn was still running");
+        assert_eq!(crate::status::facts(&model)[0], "first → local/second");
+        model.absorb(&event("session.model", "s1", json!({"model": "second", "label": "local/second"})));
+        assert_eq!(model.current_conversation().unwrap().pending_model, None);
+        assert_eq!(model.sessions[0].model, "second");
+        assert_eq!(crate::status::facts(&model)[0], "second");
     }
 
     #[test]

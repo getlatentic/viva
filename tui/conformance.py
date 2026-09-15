@@ -867,16 +867,30 @@ def main():
             for _ in range(len("nothing-matches-this")):
                 client.send(b"\x7f")
             client.pump(2.0)
+            # A digit changes THIS session's model and opens nothing; ctrl-n on
+            # the highlighted model is the way to a new session on it.
             client.send(b"1")
+            client.pump(4.0)
+            tabs_after = client.term.lines()[0].count("│")
+            if tabs_after != tabs_before:
+                print(client.term.text())
+                fail(f"a digit opened a session instead of switching this one: {tabs_before} tabs -> {tabs_after}")
+            elif "which model answers" in client.term.text():
+                fail("the picker stayed open after choosing")
+            else:
+                ok("a digit switches this session's model and closes the picker")
+            client.send(b"/models\r")
+            client.pump(4.0)
+            client.send(b"\x0e")                   # ctrl-n: a new session on the highlighted model
             client.pump(12.0)
             tabs_after = client.term.lines()[0].count("│")
             if tabs_after != tabs_before + 1:
                 print(client.term.text())
-                fail(f"a digit opened no session: {tabs_before} tabs -> {tabs_after}")
+                fail(f"ctrl-n in the picker opened no session: {tabs_before} tabs -> {tabs_after}")
             elif "which model answers" in client.term.text():
-                fail("the picker stayed open after choosing")
+                fail("the picker stayed open after ctrl-n")
             else:
-                ok("a digit opens a session and closes the picker")
+                ok("ctrl-n in the picker opens a new session on that model")
 
         # THE MENU. A closed set nobody can see is barely better than no set.
         client.send(b"/")

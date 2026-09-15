@@ -295,6 +295,14 @@ fn perform(
         }
         Action::RefreshModels => asked.ask_models(connection, true)?,
         Action::UseModel(label) => asked.start(connection, model, Some(&label))?,
+        Action::SwitchModel(label) => {
+            if model.current.is_empty() {
+                asked.start(connection, model, Some(&label))?;
+            } else {
+                let session = model.current.clone();
+                asked.switch_model(connection, &session, &label)?;
+            }
+        }
         Action::CloseTab => {
             let index = model.tab;
             model.close_tab(index);

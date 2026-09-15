@@ -45,7 +45,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "/models",
         aliases: &["/model"],
-        blurb: "choose which model answers; a digit takes that one",
+        blurb: "switch this session's model; a digit takes that one",
     },
     Command {
         name: "/refresh",
