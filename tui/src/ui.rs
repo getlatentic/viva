@@ -5,8 +5,11 @@
 //! is not ours -- what is ours is above it, and this file is only the
 //! arrangement.
 
+use crate::cells;
+use crate::layout::Rendered;
 use crate::markdown;
 use crate::model::{Entry, Focus, Listed, Model, Models, Outcome, Role, TaskState};
+use crate::wrap::Hanging;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wrap};
 
@@ -29,234 +32,6 @@ pub struct Hitboxes {
     pub picker: Option<Rect>,
     pub picker_rows: Vec<(usize, Rect)>,
     pub command_rows: Vec<(usize, Rect)>,
-}
-
-/// The transcript, laid out once per change instead of once per frame.
-///
-/// Wrapping is what costs: building the lines and asking the paragraph how
-/// tall it is both walk the whole conversation, and doing that at every
-/// keypress means a long session is slower than a short one at exactly the
-/// moment a person notices. Measured at 43ms a frame for 200 turns before this
-/// existed, which is three frames' worth of work to move a cursor.
-/// One entry's rows, and the version of the entry they were made from.
-struct Laid {
-    stamp: u64,
-    expanded: bool,
-    /// What came before it. A block puts a line of air between itself and
-    /// prose, so its layout depends on what it follows and it has to be laid
-    /// out again when that changes.
-    after: Option<Role>,
-    lines: Vec<Line<'static>>,
-}
-
-#[derive(Default)]
-pub struct Rendered {
-    key: Option<(String, u16)>,
-    blocks: Vec<Laid>,
-    /// Where each block begins, so a window can be found without walking.
-    starts: Vec<usize>,
-    total: u16,
-}
-
-/// Break LINES to WIDTH, keeping each span's style across the break.
-///
-/// Wrapping HERE rather than at render time is the point. A Paragraph wraps
-/// every time it is drawn, so a frame costs the length of the conversation
-/// however little of it is visible -- and a person scrolling is asking for a
-/// frame per keypress. Wrapped once per change, the render is a slice.
-/// A line, and what stands in front of the rows it wraps onto.
-///
-/// A result line that begins with a gutter and loses it on the rows below
-/// breaks its own block open: the second half of a long line starts at the
-/// pane edge, outside the rule that says which call printed it.
-struct Hanging {
-    line: Line<'static>,
-    indent: Option<Span<'static>>,
-}
-
-impl Hanging {
-    fn plain(line: Line<'static>) -> Self {
-        Hanging { line, indent: None }
-    }
-
-    fn under(indent: impl Into<String>, style: Style, line: Line<'static>) -> Self {
-        Hanging { line, indent: Some(Span::styled(indent.into(), style)) }
-    }
-}
-
-fn wrap_lines(lines: &[Hanging], width: u16) -> Vec<Line<'static>> {
-    let width = width.max(1) as usize;
-    let mut wrapped: Vec<Line<'static>> = Vec::with_capacity(lines.len());
-    for hanging in lines {
-        wrapped.extend(wrap_one(hanging, width));
-    }
-    wrapped
-}
-
-/// One line as the rows it needs, breaking between words.
-///
-/// ACROSS SPANS, not within one. A wrapper that breaks each span on its own
-/// sees `react-dom` written half as code and half as prose as two pieces, and
-/// cuts the word in half at the seam -- which only shows once something is
-/// styling the text, and then shows everywhere.
-fn wrap_one(hanging: &Hanging, width: usize) -> Vec<Line<'static>> {
-    let indent: Vec<(char, Style)> = match &hanging.indent {
-        Some(span) if span.content.chars().count() < width => {
-            span.content.chars().map(|character| (character, span.style)).collect()
-        }
-        _ => Vec::new(),
-    };
-    let glyphs: Vec<(char, Style)> = hanging
-        .line
-        .spans
-        .iter()
-        .flat_map(|span| span.content.chars().map(|character| (character, span.style)))
-        .collect();
-
-    let mut rows: Vec<Vec<(char, Style)>> = Vec::new();
-    let mut row: Vec<(char, Style)> = Vec::new();
-    let mut at = 0;
-    while at < glyphs.len() {
-        let blank = glyphs[at].0 == ' ';
-        let end = (at..glyphs.len())
-            .find(|index| (glyphs[*index].0 == ' ') != blank)
-            .unwrap_or(glyphs.len());
-        let run = &glyphs[at..end];
-        at = end;
-        if row.len() + run.len() <= width {
-            row.extend_from_slice(run);
-            continue;
-        }
-        // The break falls here. A run of spaces IS the break and is dropped;
-        // a word moves down whole, unless it is longer than the pane.
-        if blank {
-            rows.push(std::mem::replace(&mut row, indent.clone()));
-            continue;
-        }
-        if row.len() > indent.len() {
-            rows.push(std::mem::replace(&mut row, indent.clone()));
-        }
-        let mut rest = run;
-        while row.len() + rest.len() > width {
-            let room = width.saturating_sub(row.len());
-            if room == 0 {
-                rows.push(std::mem::replace(&mut row, indent.clone()));
-                continue;
-            }
-            row.extend_from_slice(&rest[..room]);
-            rest = &rest[room..];
-            rows.push(std::mem::replace(&mut row, indent.clone()));
-        }
-        row.extend_from_slice(rest);
-    }
-    rows.push(row);
-    rows.into_iter().map(to_line).collect()
-}
-
-/// Neighbouring characters written the same way become one span again, so a
-/// row costs what it says rather than one span per character.
-fn to_line(glyphs: Vec<(char, Style)>) -> Line<'static> {
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    for (character, style) in glyphs {
-        match spans.last_mut() {
-            Some(last) if last.style == style => last.content.to_mut().push(character),
-            _ => spans.push(Span::styled(character.to_string(), style)),
-        }
-    }
-    Line::from(spans)
-}
-
-impl Rendered {
-    /// The rows to draw for a window HEIGHT tall starting at OFFSET.
-    ///
-    /// A slice, so rendering costs the height of the pane rather than the
-    /// length of the session.
-    fn window(&self, offset: u16, height: u16) -> Vec<Line<'static>> {
-        let first = (offset as usize).min(self.total as usize);
-        let last = (first + height as usize).min(self.total as usize);
-        let mut rows = Vec::with_capacity(last - first);
-        // Straight to the block the window opens on, rather than through every
-        // line above it.
-        let mut at = match self.starts.binary_search(&first) {
-            Ok(index) => index,
-            Err(index) => index.saturating_sub(1),
-        };
-        while at < self.blocks.len() {
-            let start = self.starts[at];
-            if start >= last {
-                break;
-            }
-            for (offset, line) in self.blocks[at].lines.iter().enumerate() {
-                let position = start + offset;
-                if position >= first && position < last {
-                    rows.push(line.clone());
-                }
-            }
-            at += 1;
-        }
-        rows
-    }
-
-    /// Lay out only what changed.
-    ///
-    /// A token changes ONE entry, and re-wrapping the whole conversation for
-    /// it costs the length of the conversation: measured at 6.5ms a token for
-    /// ten turns and 70.8ms for four hundred, so a long session got slower at
-    /// exactly the moment somebody was watching output arrive. Each entry
-    /// carries a stamp that changes when it does, so a pass over a thousand
-    /// entries compares a thousand integers and lays out the one that moved.
-    fn refresh(&mut self, model: &Model, width: u16) {
-        let key = (model.current.clone(), width);
-        if self.key.as_ref() != Some(&key) {
-            // A different session, or a resize: nothing laid out for the old
-            // width can be reused at the new one.
-            self.blocks.clear();
-            self.key = Some(key);
-        }
-        let Some(conversation) = model.current_conversation() else {
-            self.blocks.clear();
-            self.starts.clear();
-            self.total = 0;
-            return;
-        };
-        let expanded = conversation.expanded;
-        let mut count = 0;
-        let mut after: Option<Role> = None;
-        for entry in conversation.visible_entries() {
-            let fresh = match self.blocks.get(count) {
-                Some(block) => {
-                    block.stamp != entry.stamp
-                        || block.expanded != expanded
-                        || block.after != after
-                }
-                None => true,
-            };
-            if fresh {
-                let block = Laid {
-                    stamp: entry.stamp,
-                    expanded,
-                    after,
-                    lines: wrap_lines(&entry_lines(entry, expanded, width, after), width),
-                };
-                match self.blocks.get_mut(count) {
-                    Some(slot) => *slot = block,
-                    None => self.blocks.push(block),
-                }
-            }
-            count += 1;
-            after = Some(entry.role);
-        }
-        self.blocks.truncate(count);
-
-        self.starts.clear();
-        self.starts.reserve(self.blocks.len());
-        let mut running = 0usize;
-        for block in &self.blocks {
-            self.starts.push(running);
-            running += block.lines.len();
-        }
-        self.total = running.min(u16::MAX as usize) as u16;
-    }
 }
 
 pub fn draw(frame: &mut Frame, model: &mut Model, rendered: &mut Rendered) -> Hitboxes {
@@ -415,9 +190,9 @@ fn draw_picker(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes
         } else {
             Style::default()
         };
-        let opening: String = found.opening.chars().take(48).collect();
+        let opening = cells::cut(&found.opening, 48).to_string();
         lines.push(Line::from(vec![
-            Span::styled(format!("{:<10}", found.short_cwd()), style.fg(if chosen {
+            Span::styled(cells::pad(&found.short_cwd(), 10), style.fg(if chosen {
                 Color::Indexed(232)
             } else {
                 Color::Indexed(252)
@@ -500,8 +275,8 @@ fn draw_models(frame: &mut Frame, area: Rect, model: &Model) {
             .add_modifier(if chosen { Modifier::BOLD } else { Modifier::empty() });
         let mut spans = vec![
             Span::styled(format!(" ({}) ", offset + 1), Style::default().fg(DIM)),
-            Span::styled(format!("{:<34}", clip(&offer.label, 34)), label),
-            Span::styled(format!(" {}", clip(&offer.id, 30)), Style::default().fg(DIM)),
+            Span::styled(cells::pad(&cells::clip(&offer.label, 34), 34), label),
+            Span::styled(format!(" {}", cells::clip(&offer.id, 30)), Style::default().fg(DIM)),
         ];
         // THE ONE ALREADY ANSWERING, said in words. A session records the model
         // id, so that is what matches -- the label it was chosen by is not
@@ -569,7 +344,7 @@ fn draw_tabs(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) 
         let (mark, mark_colour) = state.map(state_mark).unwrap_or(("", BORDER));
         let lead = if mark.is_empty() || mark == "-" { String::new() } else { format!("{mark} ") };
         let text = format!(" {lead}{} ", model.tab_label(id));
-        let width = text.chars().count() as u16;
+        let width = cells::width(&text) as u16;
         let style = if index == model.tab {
             Style::default().fg(Color::Indexed(232)).bg(ACCENT).add_modifier(Modifier::BOLD)
         } else {
@@ -602,7 +377,7 @@ fn draw_tabs(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) 
         (n, 0) => format!("{n} session{}  ctrl-b ", if n == 1 { "" } else { "s" }),
         (n, w) => format!("{n} session{}, {w} working  ctrl-b ", if n == 1 { "" } else { "s" }),
     };
-    let width = summary.chars().count() as u16;
+    let width = cells::width(&summary) as u16;
     if width > 0 && width + column + 4 < area.x + area.width {
         let right = Rect::new(area.x + area.width - width, area.y, width, 1);
         frame.render_widget(
@@ -664,7 +439,7 @@ fn draw_sessions(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitbox
             // CUT WITH A MARK. A subject sliced by the pane edge reads as a
             // subject that happens to end there, and the column is narrow
             // enough that most of them are.
-            Span::styled(clip(&row.subject(), inner.width.saturating_sub(4) as usize), name),
+            Span::styled(cells::clip(&row.subject(), inner.width.saturating_sub(4) as usize), name),
         ]));
         if let Listed::Live(session) = row {
             if session.state != "idle" && !session.state.is_empty() {
@@ -705,17 +480,13 @@ fn state_mark(state: &str) -> (&'static str, Color) {
 /// invisible on a monochrome terminal, to anyone who cannot tell two shades
 /// apart, and to any test that reads the frame back -- so the distinction that
 /// matters most is the one that must not depend on it.
-/// The rows ONE entry needs.
+/// The lines ONE entry comes to, before they are wrapped to a width.
 ///
-/// One entry at a time, because a token changes one entry and re-wrapping the
-/// whole conversation for it costs the length of the conversation. Measured
-/// before this: one streamed token cost 6.5ms at ten turns and 70.8ms at four
-/// hundred, so a long session got slower at exactly the moment somebody was
-/// watching output arrive.
+/// One entry at a time, because a token changes one entry and laying out the
+/// whole conversation for it costs the length of the conversation.
 fn entry_lines(
     entry: &Entry,
     expanded: bool,
-    width: u16,
     after: Option<Role>,
 ) -> Vec<Hanging> {
     // How many lines of a tool result to show when it is not expanded. Three
@@ -821,12 +592,7 @@ fn entry_lines(
                     title.push(Span::styled("  not sent to the model",
                                             Style::default().fg(DIM)));
                 }
-                let used: usize = title.iter().map(|span| span.content.chars().count()).sum();
-                if used + 2 < width as usize {
-                    title.push(Span::styled(
-                        format!(" {}", "─".repeat(width as usize - used - 1)), rule));
-                }
-                lines.push(Hanging::plain(Line::from(title)));
+                lines.push(Hanging::ruled(Line::from(title), rule));
                 let shown = if expanded {
                     entry.output.len()
                 } else {
@@ -956,15 +722,6 @@ fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
     }
 }
 
-/// TEXT within WIDTH, saying so when it did not fit.
-fn clip(text: &str, width: usize) -> String {
-    if text.chars().count() <= width {
-        return text.to_string();
-    }
-    let kept: String = text.chars().take(width.saturating_sub(1)).collect();
-    format!("{}…", kept.trim_end())
-}
-
 /// A duration as a person reads one: `838ms`, `2.3s`, `1m04s`.
 fn elapsed(took: std::time::Duration) -> String {
     let millis = took.as_millis();
@@ -992,8 +749,8 @@ fn draw_transcript(
     frame.render_widget(block, area);
     hits.transcript = inner;
 
-    rendered.refresh(model, inner.width);
-    let total = rendered.total;
+    rendered.refresh(model, inner.width, entry_lines);
+    let total = rendered.total();
     let offset = model
         .conversations
         .get_mut(&model.current)
@@ -1026,7 +783,7 @@ fn draw_learned(frame: &mut Frame, area: Rect, model: &Model) {
 
     let learned = &model.learned;
     let mut lines: Vec<Line> = Vec::new();
-    let mut section = |lines: &mut Vec<Line>, title: &str, items: &[crate::protocol::Retained],
+    let section = |lines: &mut Vec<Line>, title: &str, items: &[crate::protocol::Retained],
                        colour: Color| {
         lines.push(Line::from(Span::styled(
             format!("{title}  ({})", items.len()),
@@ -1037,8 +794,8 @@ fn draw_learned(frame: &mut Frame, area: Rect, model: &Model) {
         }
         for item in items {
             lines.push(Line::from(vec![
-                Span::styled(format!("  {:<22}", item.name), Style::default().fg(Color::Indexed(252))),
-                Span::styled(format!("{:<9}", item.scope), Style::default().fg(DIM)),
+                Span::styled(format!("  {}", cells::pad(&item.name, 22)), Style::default().fg(Color::Indexed(252))),
+                Span::styled(cells::pad(&item.scope, 9), Style::default().fg(DIM)),
                 Span::styled(item.detail.clone(), Style::default().fg(DIM)),
             ]));
         }
@@ -1135,25 +892,25 @@ fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
     let mut shown: Vec<String> = facts.clone();
     let reserved = notes
         .first()
-        .map(|(_, short)| short.chars().count() + 3)
+        .map(|(_, short)| cells::width(short) + 3)
         .unwrap_or(0);
     while shown.len() > 1
-        && shown.join("  ›  ").chars().count() + reserved + 2 > top.width as usize
+        && cells::width(&shown.join("  ›  ")) + reserved + 2 > top.width as usize
     {
         shown.pop();
     }
     let left = format!(" {} ", shown.join("  ›  "));
     let mut kept: Vec<String> = Vec::new();
-    let mut room = (top.width as usize).saturating_sub(left.chars().count() + 2);
+    let mut room = (top.width as usize).saturating_sub(cells::width(&left) + 2);
     for (long, short) in &notes {
         // The long form, the short form, or nothing -- and nothing after it.
         let gap = if kept.is_empty() { 2 } else { 3 };
         let chosen = [long, short]
             .into_iter()
-            .find(|form| !form.is_empty() && form.chars().count() + gap <= room);
+            .find(|form| !form.is_empty() && cells::width(form) + gap <= room);
         match chosen {
             Some(form) => {
-                room -= form.chars().count() + gap;
+                room -= cells::width(form) + gap;
                 kept.push(form.clone());
             }
             None => break,
@@ -1161,7 +918,7 @@ fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
     }
     let right = if kept.is_empty() { String::new() } else { format!(" {} ", kept.join("   ")) };
     let fill = (top.width as usize)
-        .saturating_sub(left.chars().count() + right.chars().count());
+        .saturating_sub(cells::width(&left) + cells::width(&right));
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(left, Style::default().fg(DIM)),
@@ -1170,17 +927,19 @@ fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
         ])),
         top,
     );
+    let typed = one_line(&model.input);
+    // The cursor sits after what was typed, not wherever the last write ended.
+    // Screen readers follow it too.
+    let column = (inner.x as usize + 2 + cells::width(&typed))
+        .min((inner.x + inner.width).saturating_sub(1) as usize) as u16;
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled("› ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-            Span::raw(one_line(&model.input)),
+            Span::raw(typed),
         ])),
         inner,
     );
-    // The cursor sits after what was typed, not wherever the last write ended.
-    // Screen readers follow it too.
-    let column = inner.x + 2 + model.input.chars().count() as u16;
-    frame.set_cursor_position((column.min(inner.x + inner.width - 1), inner.y));
+    frame.set_cursor_position((column, inner.y));
 }
 
 /// What typed or pasted text looks like on a single row.
@@ -1188,13 +947,14 @@ fn draw_input(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes)
 /// The prompt is stored as it will be SENT, newlines and all, so a pasted
 /// function reaches the model as a function. This row cannot lay those out, and
 /// a raw newline in a span is a hole in the border -- so each one shows as a
-/// glyph. One character wide, which is what keeps the cursor arithmetic above
-/// counting the same thing the reader sees.
+/// glyph, one cell wide. A tab becomes the spaces it stands for: ratatui draws
+/// a tab as nothing, which would leave the cursor short of the text after it.
 fn one_line(text: &str) -> String {
-    if text.contains('\n') {
-        text.replace('\n', "\u{23ce}")
+    let shown = text.replace('\n', "\u{23ce}");
+    if shown.contains('\t') {
+        cells::expand_tabs(&shown, &mut 0)
     } else {
-        text.to_string()
+        shown
     }
 }
 
@@ -1406,6 +1166,22 @@ shaped like: { \"deepseek\": { \"apiKey\": \"sk-...\" } }";
         let wide = frame_of(&mut model, 100, 60).join("\n");
         assert!(wide.contains("line39"), "expanding showed nothing more");
         assert!(wide.contains("expanded"), "nothing says the output is expanded");
+    }
+
+    #[test]
+    fn the_cursor_sits_after_the_cells_typed() {
+        let at = |typed: &str| {
+            let mut model = crate::model::Model::new("/w".into());
+            model.input = typed.to_string();
+            let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 20)).unwrap();
+            let mut rendered = super::Rendered::default();
+            terminal.draw(|frame| { super::draw(frame, &mut model, &mut rendered); }).unwrap();
+            terminal.get_cursor_position().unwrap().x
+        };
+        assert_eq!(at("abc") - at(""), 3);
+        assert_eq!(at("日本語") - at(""), 6);
+        assert_eq!(at("🙂") - at(""), 2);
+        assert_eq!(at("a\tb") - at(""), 5);
     }
 
     #[test]

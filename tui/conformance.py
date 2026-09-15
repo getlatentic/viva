@@ -24,11 +24,13 @@ import pty
 import re
 import select
 import signal
+import socket
 import struct
 import sys
 import tempfile
 import termios
 import time
+import unicodedata
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BINARY = os.path.join(ROOT, "target", "debug", "viva-tui")
@@ -59,6 +61,14 @@ KNOWN = re.compile(
     r"|\d*;\d*r|s|u"
     r")"
 )
+
+
+def cells_of(ch):
+    """The cells a terminal gives one character: two for an East Asian wide
+    one, none for a mark that joins the character before it."""
+    if unicodedata.category(ch) in ("Mn", "Me", "Cf"):
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
 
 
 class Terminal:
@@ -123,8 +133,17 @@ class Terminal:
             elif ch == "\n":
                 self.row = min(self.row + 1, self.rows - 1)
             elif 0 <= self.row < self.rows and 0 <= self.col < self.cols:
+                # A wide character covers the cell after it, which then holds
+                # nothing of its own.
+                cells = cells_of(ch)
+                if cells == 0:
+                    if self.col > 0:
+                        self.grid[self.row][self.col - 1] += ch
+                    continue
                 self.grid[self.row][self.col] = ch
-                self.col += 1
+                if cells == 2 and self.col + 1 < self.cols:
+                    self.grid[self.row][self.col + 1] = ""
+                self.col += cells
 
     def lines(self):
         return ["".join(r).rstrip() for r in self.grid]
@@ -358,6 +377,15 @@ def own_daemon(cwd):
     sys.exit("the check's own daemon never came up")
 
 
+def daemon_pid(socket_path):
+    """The daemon's process, from the greeting it gives every connection."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+        probe.settimeout(10)
+        probe.connect(socket_path)
+        greeting = probe.makefile("r", encoding="utf-8").readline()
+    return json.loads(greeting)["pid"]
+
+
 def main():
     cwd = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(ROOT)
     # The short name resolves to a launcher. What a person types is `viva`,
@@ -378,6 +406,46 @@ def main():
     try:
         client.wait_for("sessions", 60, "the first frame")
         ok("connects and draws a frame")
+
+        # A DAEMON THAT DOES NOT ANSWER DOES NOT STOP THE CLIENT. A session start
+        # takes as long as the daemon takes, and a client that waited for it in
+        # front of its loop drew nothing and read no keys until the answer came.
+        # Before the other checks, so it depends on nothing they leave behind.
+        def tab_count():
+            return client.term.lines()[0].count("│")
+        settle = time.time() + 60
+        while tab_count() < 2 and time.time() < settle:
+            client.pump(0.3)
+        client.pump(2.0)
+        tabs_before = tab_count()
+        pid = daemon_pid(socket_path)
+        os.kill(pid, signal.SIGSTOP)
+        try:
+            client.send(b"\x0e")                   # ctrl-n, which nothing can answer yet
+            client.send(b"typed while the daemon is stopped")
+            client.pump(2.0)
+            typed = input_row(client)
+        finally:
+            os.kill(pid, signal.SIGCONT)
+        resumed = time.time()
+        opened = None
+        while opened is None and time.time() - resumed < 20:
+            client.pump(0.1)
+            if tab_count() == tabs_before + 1:
+                opened = time.time() - resumed
+        if "typed while the daemon is stopped" not in typed:
+            print("---- frame at failure ----")
+            print(client.term.text())
+            fail(f"a stopped daemon stopped the client drawing: {typed!r}")
+        elif opened is None:
+            fail(f"the session asked for while the daemon was stopped never opened: "
+                 f"{client.term.lines()[0]!r}")
+        else:
+            ok(f"a stopped daemon leaves the client drawing, and the tab opens "
+               f"{opened:.1f}s after it resumes")
+        client.send(b"\x7f" * 40)
+        client.send(b"\x17")                       # ctrl-w: the view goes, the session stays
+        client.pump(2.0)
 
         for rows, cols in ((30, 60), (30, 120), (20, 70), (36, 100), (14, 44), (34, 120)):
             client.resize(rows, cols)
@@ -409,6 +477,24 @@ def main():
             fail("backspace did not erase the input line")
         else:
             ok("backspace erases what was typed")
+
+        # THE CURSOR COUNTS CELLS. `日本語` is three characters and six cells,
+        # and a cursor placed by characters sits inside what was typed.
+        client.send(b"abc")
+        client.pump(1.0)
+        narrow = client.term.col
+        client.send("日本語🙂".encode())
+        client.pump(1.0)
+        moved = client.term.col - narrow
+        typed_wide = input_row(client)
+        client.send(b"\x7f" * 7)
+        client.pump(1.0)
+        if "abc日本語🙂" not in typed_wide:
+            fail(f"wide text did not reach the input line whole: {typed_wide!r}")
+        elif moved != 8:
+            fail(f"the cursor moved {moved} cells over 日本語🙂, which is eight cells wide")
+        else:
+            ok("the cursor moves by the cells typed, not the characters")
 
         # A PASTE IS ONE THING, and it does not send. Without bracketed paste a
         # pasted newline arrives as Enter, so a two-line snippet asked the model
@@ -644,6 +730,13 @@ def main():
         subprocess.run([launcher, "daemon", "stop"], env=environment, cwd=cwd,
                        capture_output=True, timeout=120)
         client.pump(3.0)
+        # The client starts a daemon of its own here, and goes on reading keys
+        # while it does: a start loads an image, which on a cold cache is minutes.
+        client.send(b"typed while the daemon comes back")
+        client.pump(1.0)
+        typed_during_restart = input_row(client)
+        client.send(b"\x7f" * 40)
+        client.pump(1.0)
         # NOTHING IS ASSERTED ABOUT THE STATUS LINE HERE, and two attempts at
         # it are why. The client starts a daemon when none is listening, so on
         # a quick machine it rebuilds the one this check just stopped and is
@@ -674,6 +767,16 @@ def main():
             fail(f"no tab survived the restart: {tabs_before!r} -> {tabs_after!r}")
         else:
             ok("the daemon restarts under a live client, and the tab is still there")
+        # NOTHING OUTSIDE THE FRAME. Anything the reconnect prints lands at the
+        # cursor, in the input row, in cells the client believes are blank and so
+        # never paints over.
+        stray = input_row(client).strip().strip("│›").strip()
+        if stray:
+            fail(f"the reconnect wrote outside the frame, into the input row: {stray!r}")
+        elif "typed while the daemon comes back" not in typed_during_restart:
+            fail(f"the client read no keys while the daemon came back: {typed_during_restart!r}")
+        else:
+            ok("keys are read while the daemon comes back, and nothing is written outside the frame")
         client.send(b"\x1b[H")
         client.pump(2.0)
         body = "\n".join(client.term.lines()[2:-5])

@@ -376,8 +376,6 @@ pub struct ModelOffer {
     /// somebody reading a transcript has only this to match against.
     #[serde(default)]
     pub id: String,
-    #[serde(default)]
-    pub endpoint: String,
 }
 
 /// Choosing a model, over everything else.
@@ -892,10 +890,6 @@ impl Model {
         rows
     }
 
-    pub fn selected_session(&self) -> Option<&SessionInfo> {
-        self.sessions.get(self.selection)
-    }
-
     /// What the highlighted row would open, whether it is running or not.
     pub fn selected_row(&self) -> Option<Listed<'_>> {
         self.sidebar_rows().into_iter().nth(self.selection)
@@ -923,13 +917,6 @@ impl Listed<'_> {
         match self {
             Listed::Live(session) => &session.id,
             Listed::Earlier(recorded) => &recorded.id,
-        }
-    }
-
-    pub fn cwd(&self) -> &str {
-        match self {
-            Listed::Live(session) => &session.cwd,
-            Listed::Earlier(recorded) => &recorded.cwd,
         }
     }
 
@@ -994,11 +981,10 @@ pub fn call_line(call: Option<&serde_json::Value>) -> String {
 /// One line of it, with the rest said to be there rather than shown.
 fn one_line(text: &str, width: usize) -> String {
     let flattened = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if flattened.chars().count() <= width {
+    if crate::cells::width(&flattened) <= width {
         return flattened;
     }
-    let head: String = flattened.chars().take(width).collect();
-    format!("{head}…")
+    format!("{}…", crate::cells::cut(&flattened, width))
 }
 
 fn set_task_state(conversation: &mut Conversation, event: &Event, state: TaskState) {
@@ -1018,7 +1004,6 @@ mod tests {
             .map(|label| ModelOffer {
                 label: (*label).to_string(),
                 id: label.rsplit('/').next().unwrap().to_string(),
-                endpoint: String::new(),
             })
             .collect()
     }

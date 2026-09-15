@@ -16,6 +16,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # CommonMark, rather than a parser of my own accumulating special cases.
 pulldown-cmark = { version = "0.13", default-features = false }
+# Text is measured in cells with the two crates ratatui draws it with.
+unicode-segmentation = "1"
+unicode-width = "0.2"
 
 [profile.release]
 strip = true

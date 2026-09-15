@@ -4,11 +4,11 @@
 //! speaks. Nothing here is new: if this file needs the daemon to change, the
 //! boundary has been drawn in the wrong place.
 //!
-//! Requests and events share the socket, so a reader thread would steal
-//! replies from a caller waiting on one. Instead the connection is drained by
-//! a single reader that hands EVERYTHING to the caller as `Incoming`, and a
-//! request is a write followed by watching that stream for its response.
+//! Requests and events share the socket, so one reader thread hands
+//! everything to the caller as `Incoming`, and a response is matched to its
+//! request by the id `send` returned.
 
+use crate::wake::Bell;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
@@ -96,12 +96,13 @@ pub fn launcher() -> Option<PathBuf> {
     candidate.exists().then_some(candidate)
 }
 
-/// Start a daemon and wait for its socket, if there is not one already.
+/// Start a daemon and wait for its socket, if there is not one already,
+/// calling ANNOUNCE once it is clear one has to be started.
 ///
 /// `daemon start` is idempotent -- it answers `already running` and exits
 /// zero -- so this does not need to ask first, and asking would be a race
 /// anyway: between the answer and the start, either could change.
-pub fn ensure_daemon(path: &PathBuf) -> Result<(), String> {
+pub fn ensure_daemon(path: &PathBuf, announce: impl FnOnce()) -> Result<(), String> {
     if UnixStream::connect(path).is_ok() {
         return Ok(());
     }
@@ -115,9 +116,12 @@ Put it on your PATH or set VIVA_BIN.", path.display())
     // used to sit below `output()`, which blocks until the start command has
     // finished -- so the reassurance arrived once the waiting was over.
     // Measured on a warm cache: 2.6 s of nothing, then the message.
-    eprintln!("starting the viva daemon…");
+    announce();
     let started = std::process::Command::new(&launcher)
         .args(["daemon", "start", "--background"])
+        // The client may already own the terminal, and its keys are not the
+        // start's to read.
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()
@@ -148,8 +152,14 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn open(path: &PathBuf) -> std::io::Result<Self> {
-        let stream = UnixStream::connect(path)?;
+    /// A connection to the daemon at PATH, ringing BELL whenever it has
+    /// something for the loop.
+    pub fn open(path: &PathBuf, bell: Bell) -> std::io::Result<Self> {
+        Self::over(UnixStream::connect(path)?, bell)
+    }
+
+    /// A connection over a stream that already reaches a daemon.
+    pub fn over(stream: UnixStream, bell: Bell) -> std::io::Result<Self> {
         let writer = stream.try_clone()?;
         let (sender, incoming) = mpsc::channel();
         // The reader owns the socket's read half and nothing else. Parsing
@@ -164,12 +174,17 @@ impl Connection {
                 };
                 if let Some(message) = message {
                     let closed = matches!(message, Incoming::Closed);
-                    if sender.send(message).is_err() || closed {
+                    if sender.send(message).is_err() {
+                        return;
+                    }
+                    bell.ring();
+                    if closed {
                         return;
                     }
                 }
             }
             let _ = sender.send(Incoming::Closed);
+            bell.ring();
         });
         Ok(Connection { writer, incoming, next_id: 1, closed: false })
     }
@@ -214,33 +229,6 @@ impl Connection {
             }
         }
         batch
-    }
-
-    /// Block until the response to `id` arrives, collecting the events that
-    /// come first. The replay after `session.attach ... since 0` arrives this
-    /// way -- before the response -- and dropping it is how a client shows an
-    /// empty pane for a session with a hundred turns in it.
-    pub fn wait_for(&mut self, id: u64, timeout: std::time::Duration)
-        -> (Option<Value>, Vec<Event>)
-    {
-        let deadline = std::time::Instant::now() + timeout;
-        let mut events = Vec::new();
-        while std::time::Instant::now() < deadline {
-            match self.incoming.recv_timeout(std::time::Duration::from_millis(50)) {
-                Ok(Incoming::Event(event)) => events.push(event),
-                Ok(Incoming::Response(value)) => {
-                    let matches_id = value.get("id").and_then(Value::as_u64) == Some(id);
-                    if matches_id {
-                        return (Some(value), events);
-                    }
-                }
-                Ok(Incoming::Greeting(_)) => {}
-                Ok(Incoming::Closed) => break,
-                Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        }
-        (None, events)
     }
 }
 
@@ -290,9 +278,6 @@ pub struct Recorded {
     pub id: String,
     #[serde(default)]
     pub cwd: String,
-    /// When it was recorded, as Lisp universal time: seconds since 1900.
-    #[serde(default)]
-    pub time: u64,
     #[serde(default)]
     pub messages: u64,
     #[serde(default)]
@@ -318,8 +303,6 @@ impl SessionInfo {
 }
 
 impl Recorded {
-    /// How long ago, as a person says it: `3m`, `2h`, `4d`. Universal time
-    /// counts from 1900 and Unix from 1970; the gap is a constant.
     /// What this conversation is about, the same way a live one says it.
     pub fn subject(&self) -> String {
         let opening = self.opening.trim();
@@ -328,18 +311,6 @@ impl Recorded {
             format!("{folder}.{}", short_id(&self.id))
         } else {
             opening.to_string()
-        }
-    }
-
-    pub fn age(&self, now_unix: u64) -> String {
-        const GAP: u64 = 2_208_988_800;
-        let then = self.time.saturating_sub(GAP);
-        let seconds = now_unix.saturating_sub(then);
-        match seconds {
-            0..=59 => "now".into(),
-            60..=3599 => format!("{}m", seconds / 60),
-            3600..=86_399 => format!("{}h", seconds / 3600),
-            _ => format!("{}d", seconds / 86_400),
         }
     }
 }
@@ -362,7 +333,6 @@ pub struct Learned {
     /// Whether we have asked yet. Distinguishes "retained nothing" from "have
     /// not looked", which look identical as counts and are different facts.
     pub inspected: bool,
-    pub trusted: bool,
     pub notes: Vec<Retained>,
     pub skills: Vec<Retained>,
     pub tools: Vec<Retained>,
@@ -373,10 +343,6 @@ pub struct Learned {
 }
 
 impl Learned {
-    pub fn total(&self) -> usize {
-        self.notes.len() + self.skills.len() + self.tools.len()
-    }
-
     pub fn from_reply(reply: &Value) -> Self {
         let list = |key: &str| -> Vec<Retained> {
             reply
@@ -392,7 +358,6 @@ impl Learned {
         };
         Learned {
             inspected: true,
-            trusted: reply.get("trusted").and_then(Value::as_bool).unwrap_or(false),
             notes: list("notes"),
             skills: list("skills"),
             tools: list("tools"),
