@@ -6,6 +6,7 @@
 //! feeds it a known event stream and reads the result back.
 
 use crate::protocol::{Event, Learned, Recorded, SessionInfo};
+use crate::session_list::SessionList;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 
@@ -523,7 +524,8 @@ pub struct Model {
     pub input: String,
     pub status: String,
     pub focus: Focus,
-    pub selection: usize,
+    /// The sessions column's selection, by id, and its window.
+    pub session_list: SessionList,
     /// The sessions that are OPEN, in the order they were opened -- browser
     /// tabs, not workspaces. The sidebar is for finding a session among all of
     /// them; a tab is one you have chosen to keep in front of you, and `+`
@@ -541,7 +543,8 @@ pub struct Model {
     /// worth its width to nobody, and a column of the conversations you have
     /// had here is the thing you came back for.
     pub sidebar: bool,
-    /// Sessions recorded in this directory, newest first, for the welcome.
+    /// Conversations recorded in this directory, newest first: the sessions
+    /// column's earlier ones, and what the welcome counts.
     pub recent: Vec<Recorded>,
     /// Which entry the slash menu has highlighted. Reset whenever the line
     /// changes, so the highlight cannot point past a list that just shrank.
@@ -569,7 +572,7 @@ impl Model {
             input: String::new(),
             status: String::new(),
             focus: Focus::Input,
-            selection: 0,
+            session_list: SessionList::default(),
             tabs: Vec::new(),
             tab: 0,
             cwd,
@@ -895,32 +898,46 @@ impl Model {
     /// still has a process, which is a mark on the row and not a reason to
     /// keep two lists in two places.
     pub fn sidebar_rows(&self) -> Vec<Listed<'_>> {
-        let mut rows: Vec<Listed<'_>> = self.sessions.iter().map(Listed::Live).collect();
-        for recorded in &self.recent {
-            // Not the ones already running: a live session's transcript is in
-            // the recorded list too, and listing both makes one look like two.
-            if recorded.messages > 0
-                && !self.sessions.iter().any(|live| live.id == recorded.id)
-            {
-                rows.push(Listed::Earlier(recorded));
-            }
-        }
-        rows
+        listed(&self.sessions, &self.recent)
     }
 
     /// What the highlighted row would open, whether it is running or not.
     pub fn selected_row(&self) -> Option<Listed<'_>> {
-        self.sidebar_rows().into_iter().nth(self.selection)
+        let rows = self.sidebar_rows();
+        let ids: Vec<&str> = rows.iter().map(Listed::id).collect();
+        let index = self.session_list.index(&ids)?;
+        rows.into_iter().nth(index)
     }
 
     pub fn move_selection(&mut self, step: isize) {
-        let count = self.sidebar_rows().len() as isize;
-        if count == 0 {
-            return;
-        }
-        let next = (self.selection as isize + step).rem_euclid(count);
-        self.selection = next as usize;
+        let rows = listed(&self.sessions, &self.recent);
+        let ids: Vec<&str> = rows.iter().map(Listed::id).collect();
+        self.session_list.step(&ids, step);
     }
+
+    pub fn select_session(&mut self, id: &str) {
+        let rows = listed(&self.sessions, &self.recent);
+        let ids: Vec<&str> = rows.iter().map(Listed::id).collect();
+        self.session_list.select(&ids, id);
+    }
+
+    /// Give the sessions column the keyboard, starting from the open session.
+    pub fn focus_sessions(&mut self) {
+        self.focus = Focus::Sessions;
+        let current = self.current.clone();
+        self.select_session(&current);
+    }
+}
+
+/// The sessions column's entries, running first. Not a recorded session that is
+/// also running: its transcript is in the recorded list too, and listing both
+/// makes one look like two.
+fn listed<'a>(sessions: &'a [SessionInfo], recent: &'a [Recorded]) -> Vec<Listed<'a>> {
+    let earlier = recent
+        .iter()
+        .filter(|recorded| recorded.messages > 0 && !sessions.iter().any(|live| live.id == recorded.id))
+        .map(Listed::Earlier);
+    sessions.iter().map(Listed::Live).chain(earlier).collect()
 }
 
 /// A row in the sessions list: one that is running, or one that was.

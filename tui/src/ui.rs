@@ -8,14 +8,11 @@
 use crate::cells;
 use crate::layout::Rendered;
 use crate::markdown;
-use crate::model::{Entry, Focus, Listed, Model, Models, Outcome, Role, TaskState};
+use crate::model::{Entry, Focus, Model, Models, Outcome, Role, TaskState};
+use crate::theme::{state_mark, ACCENT, BORDER, DIM};
 use crate::wrap::Hanging;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wrap};
-
-pub const ACCENT: Color = Color::Indexed(13);
-const DIM: Color = Color::Indexed(244);
-const BORDER: Color = Color::Indexed(240);
 
 /// Where each thing was drawn, so a click can be answered without a second
 /// calculation of the same layout. Two functions deriving it independently is
@@ -25,7 +22,7 @@ pub struct Hitboxes {
     pub tabs: Vec<(usize, Rect)>,
     pub new_tab: Option<Rect>,
     pub sessions: Rect,
-    pub session_rows: Vec<(usize, Rect)>,
+    pub session_rows: Vec<(String, Rect)>,
     pub transcript: Rect,
     pub tasks: Rect,
     pub input: Rect,
@@ -68,7 +65,9 @@ pub fn draw(frame: &mut Frame, model: &mut Model, rendered: &mut Rendered) -> Hi
     let body = Layout::horizontal(constraints).split(rows[1]);
     let mut at = 0;
     if show_sessions {
-        draw_sessions(frame, body[at], model, &mut hits);
+        let column = crate::sidebar::draw(frame, body[at], model);
+        hits.sessions = column.area;
+        hits.session_rows = column.rows;
         at += 1;
     }
     let page = body[at];
@@ -396,95 +395,6 @@ fn draw_tabs(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) 
         let right = Rect::new(area.x + area.width - width, area.y, width, 1);
         frame.render_widget(
             Paragraph::new(Span::styled(summary, Style::default().fg(DIM))), right);
-    }
-}
-
-fn draw_sessions(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) {
-    let focused = model.focus == Focus::Sessions;
-    // A column with an edge, not a box. The edge is where it meets the page.
-    let block = Block::default()
-        .borders(Borders::RIGHT)
-        .border_style(Style::default().fg(if focused { ACCENT } else { BORDER }))
-        .title(Span::styled(" sessions ", Style::default().fg(if focused { ACCENT } else { DIM })))
-        .padding(Padding::horizontal(1));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    hits.sessions = inner;
-
-    let mut lines: Vec<Line> = Vec::new();
-    let mut running = 0;
-    let rows = model.sidebar_rows();
-    let live = rows.iter().filter(|row| matches!(row, Listed::Live(_))).count();
-    for (index, row) in rows.iter().enumerate() {
-        // A rule between what is running and what was, drawn where they meet.
-        // Inline, not inserted afterwards: inserting a line shifted every row
-        // below it and left the click targets pointing one session up.
-        if index == live && live > 0 && index < rows.len() {
-            lines.push(Line::from(Span::styled(
-                "─".repeat(inner.width.min(24) as usize), Style::default().fg(BORDER))));
-        }
-        let current = row.id() == model.current;
-        let cursor = if focused && index == model.selection { "[" } else { " " };
-        let (mark, colour) = match row {
-            Listed::Live(session) => {
-                running += 1;
-                state_mark(&session.state)
-            }
-            // A conversation with no process is not a state, it is a record.
-            Listed::Earlier(_) => ("·", BORDER),
-        };
-        let name = match row {
-            Listed::Live(_) => {
-                if current {
-                    Style::default().fg(Color::Indexed(252)).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default()
-                }
-            }
-            Listed::Earlier(_) => Style::default().fg(DIM),
-        };
-        lines.push(Line::from(vec![
-            Span::styled(if current { ">" } else { " " }.to_string(),
-                         Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-            Span::styled(cursor.to_string(), Style::default().fg(ACCENT)),
-            Span::styled(format!("{mark} "), Style::default().fg(colour)),
-            // WHAT IT IS ABOUT, and where it is only when nothing was asked
-            // yet. Four sessions in one directory were four identical rows.
-            // CUT WITH A MARK. A subject sliced by the pane edge reads as a
-            // subject that happens to end there, and the column is narrow
-            // enough that most of them are.
-            Span::styled(cells::clip(&row.subject(), inner.width.saturating_sub(4) as usize), name),
-        ]));
-        if let Listed::Live(session) = row {
-            if session.state != "idle" && !session.state.is_empty() {
-                let last = lines.len() - 1;
-                lines[last].spans.push(Span::styled(format!("  {}", session.state),
-                                                    Style::default().fg(DIM)));
-            }
-        }
-        // From where the row was actually DRAWN, so a click lands on the
-        // session it points at.
-        let at = inner.y + (lines.len() as u16 - 1);
-        if at < inner.y + inner.height {
-            hits.session_rows.push((index, Rect::new(inner.x, at, inner.width, 1)));
-        }
-    }
-    let _ = running;
-    if lines.is_empty() {
-        lines.push(Line::from(Span::styled("no sessions here", Style::default().fg(DIM))));
-    }
-    // No wrap: one row per session, so the row a click lands on is the
-    // session it names. A subject too long for the column is cut by the pane.
-    frame.render_widget(Paragraph::new(lines), inner);
-}
-
-fn state_mark(state: &str) -> (&'static str, Color) {
-    match state {
-        "working" => ("*", Color::Indexed(220)),
-        "stuck" => ("!", Color::Indexed(203)),
-        "suspended" => ("~", Color::Indexed(111)),
-        "stopping" => (".", DIM),
-        _ => ("-", BORDER),
     }
 }
 
@@ -1413,7 +1323,7 @@ kilo lima mike november oscar papa quebec";
             .iter()
             .find(|row| row.contains("why does the picker"))
             .unwrap_or_else(|| panic!("the sidebar does not say what the session is about"));
-        assert!(listed.contains('>'), "the current session lost its marker: {listed:?}");
+        assert!(listed.contains('▌'), "the current session lost its marker: {listed:?}");
         // A session nothing has been asked in falls back to where it is.
         assert!(rows[1..].iter().any(|row| row.contains("beta")),
                 "a session with no question is not listed by its directory");
@@ -1641,7 +1551,7 @@ kilo lima mike november oscar papa quebec";
             .iter()
             .find(|line| line.contains("alpha"))
             .expect("the sidebar has no row for the current session");
-        assert!(row.contains('>'), "the current session's row carries no marker: {row:?}");
+        assert!(row.contains('▌'), "the current session's row carries no marker: {row:?}");
         assert!(row.contains('*'), "the working session shows no state mark: {row:?}");
         // Without the sidebar, the tab itself says the session is working.
         model.sidebar = false;

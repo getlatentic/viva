@@ -260,7 +260,7 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
         KeyCode::Up => {
             // Up from the prompt reaches the list, which is where a person
             // looks first when they want another session.
-            model.focus = Focus::Sessions;
+            model.focus_sessions();
             Action::None
         }
         KeyCode::Char(character) => {
@@ -404,6 +404,17 @@ fn scroll_by(model: &mut Model, lines: i32) -> Action {
     Action::None
 }
 
+/// Over the sessions column the wheel moves its window and leaves the
+/// selection where it is; anywhere else it scrolls the transcript.
+fn wheel(model: &mut Model, hits: &Hitboxes, column: u16, row: u16, lines: i32) -> Action {
+    if inside(hits.sessions, column, row) {
+        let total = crate::sidebar::rows(model).len();
+        model.session_list.wheel(-lines as isize, total, hits.sessions.height as usize);
+        return Action::None;
+    }
+    scroll_by(model, lines)
+}
+
 /// Pasted text goes in whole, and does not submit.
 ///
 /// A terminal with no bracketed paste sends a newline as Enter, so a pasted
@@ -438,8 +449,8 @@ fn clicked(mouse: &MouseEvent, model: &mut Model, hits: &Hitboxes) -> Action {
     match mouse.kind {
         // The wheel scrolls whatever it is over, which is the one mouse
         // behaviour nobody thinks about before using.
-        MouseEventKind::ScrollUp => scroll_by(model, 3),
-        MouseEventKind::ScrollDown => scroll_by(model, -3),
+        MouseEventKind::ScrollUp => wheel(model, hits, column, row, 3),
+        MouseEventKind::ScrollDown => wheel(model, hits, column, row, -3),
         MouseEventKind::Down(MouseButton::Left) => {
             // The picker is over everything, so it answers first -- otherwise
             // a click meant for it lands on whatever it is covering.
@@ -483,10 +494,10 @@ fn clicked(mouse: &MouseEvent, model: &mut Model, hits: &Hitboxes) -> Action {
             if inside(hits.sessions, column, row) {
                 // A click gives the sidebar the keyboard as well as selecting,
                 // so the arrows work from where the eye already is.
-                model.focus = Focus::Sessions;
-                for (index, area) in &hits.session_rows {
+                model.focus_sessions();
+                for (id, area) in &hits.session_rows {
                     if inside(*area, column, row) {
-                        model.selection = *index;
+                        model.select_session(id);
                         return match model.selected_row() {
                             Some(crate::model::Listed::Live(session)) => {
                                 Action::Open(session.id.clone())
@@ -679,6 +690,46 @@ mod tests {
     fn an_empty_line_is_not_a_prompt_worth_paying_for() {
         let mut model = Model::new("/w".into());
         assert_eq!(typed(&mut model, "   "), Action::None);
+    }
+
+    /// Two sessions, EARLIER recorded ones, and a conversation in the first
+    /// long enough to read back through.
+    fn talking(earlier: usize) -> Model {
+        let mut model = Model::new("/w".into());
+        model.sessions = vec![
+            crate::protocol::SessionInfo { id: "s1".into(), ..Default::default() },
+            crate::protocol::SessionInfo { id: "s2".into(), ..Default::default() },
+        ];
+        model.recent = (0..earlier)
+            .map(|index| crate::protocol::Recorded { id: format!("r{index}"), messages: 2, ..Default::default() })
+            .collect();
+        model.open_tab("s1");
+        let said: crate::protocol::Event = serde_json::from_value(serde_json::json!({
+            "event": "user.message", "session": "s1", "seq": 1,
+            "data": {"text": "a question\n\n".repeat(60)}
+        }))
+        .unwrap();
+        model.absorb(&said);
+        model
+    }
+
+    fn column_on_screen() -> Hitboxes {
+        Hitboxes { sessions: ratatui::layout::Rect::new(0, 1, 29, 10), ..Default::default() }
+    }
+
+    #[test]
+    fn the_wheel_over_the_sessions_column_moves_the_column_and_not_the_talk() {
+        let shown = column_on_screen();
+        let mut model = talking(40);
+        let wheel_at = |column: u16, row: u16| {
+            Event::Mouse(MouseEvent { kind: MouseEventKind::ScrollDown, column, row, modifiers: KeyModifiers::NONE })
+        };
+        read(&wheel_at(3, 5), &mut model, &shown);
+        assert!(!model.current_conversation().unwrap().owes_scroll(), "the wheel over the column scrolled the talk");
+        let total = crate::sidebar::rows(&model).len();
+        assert_eq!(model.session_list.window(total, None, 10).first, 3, "the column did not move");
+        read(&wheel_at(60, 5), &mut model, &shown);
+        assert!(model.current_conversation().unwrap().owes_scroll(), "the wheel over the talk did not scroll it");
     }
 }
 

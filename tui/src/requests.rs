@@ -98,7 +98,7 @@ fn overdue(awaiting: &Awaiting, id: u64, latest_search: Option<u64>) -> Option<&
 
 impl Requests {
     pub fn ask_recent(&mut self, connection: &mut Connection, model: &Model) -> std::io::Result<()> {
-        let id = connection.send(json!({"type": "session.recorded", "cwd": model.cwd, "limit": 6}))?;
+        let id = connection.send(json!({"type": "session.recorded", "cwd": model.cwd, "limit": 50}))?;
         self.expect(id, Awaiting::Recent, Duration::from_secs(5));
         Ok(())
     }
@@ -316,9 +316,6 @@ fn take_sessions(model: &mut Model, reply: &Value) {
         .filter_map(|value| serde_json::from_value::<SessionInfo>(value.clone()).ok())
         .collect();
     model.prune_tabs();
-    if model.selection >= model.sessions.len() {
-        model.selection = model.sessions.len().saturating_sub(1);
-    }
 }
 
 #[cfg(test)]

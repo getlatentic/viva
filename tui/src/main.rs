@@ -14,7 +14,10 @@ mod markdown;
 mod model;
 mod protocol;
 mod requests;
+mod session_list;
+mod sidebar;
 mod status;
+mod theme;
 mod ui;
 mod wake;
 mod wrap;
@@ -316,7 +319,10 @@ fn perform(
                 model.current = id;
             }
         }
-        Action::Refresh => asked.ask_sessions(connection)?,
+        Action::Refresh => {
+            asked.ask_sessions(connection)?;
+            asked.ask_recent(connection, model)?;
+        }
         Action::Learned => {
             asked.ask_learned(connection, model)?;
             model.showing_learned = true;
@@ -336,7 +342,11 @@ fn perform(
         }
         Action::ToggleSidebar => {
             model.sidebar = !model.sidebar;
-            model.focus = if model.sidebar { model::Focus::Sessions } else { model::Focus::Input };
+            if model.sidebar {
+                model.focus_sessions();
+            } else if model.focus == model::Focus::Sessions {
+                model.focus = model::Focus::Input;
+            }
         }
         Action::Search(text) => asked.search(connection, &text)?,
         Action::Resume { id, cwd } => asked.resume(connection, model, &id, &cwd)?,
