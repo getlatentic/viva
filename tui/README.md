@@ -56,7 +56,7 @@ The client refuses an unknown one rather than sending it to the model.
 | command | action |
 | --- | --- |
 | `/find` | find any session, running or not |
-| `/sessions` `/sidebar` | show or hide the list of running sessions |
+| `/sidebar` | show or hide the sessions column |
 | `/new` `/close` | start a session in a new tab; close this tab |
 | `/learned` `/knows` | what this session has retained |
 | `/shell` `/!` | a line starting with `!` runs here; the model does not see it |
