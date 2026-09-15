@@ -18,281 +18,204 @@ repository keeps the negative results beside the positive ones.
 
 ![Sessions on the left, the transcript on the right, each tool call a titled rule with its result beneath it](docs/viva.png)
 
-- Sessions run in the background and reattach by id.
-- Closing the terminal does not end a running turn.
-- One client works with many concurrent sessions.
-- One process starts at 95 MB and holds 100 sessions in 127 MB, a thread each.
-- A thread each is the ceiling: it answers at 500 sessions and stops near 750.
-- Full-text search spans every session recorded, in every directory.
-- A session spawns scoped child agents that cannot outlive it.
-- Live-image modification is off by default. It is a named capability:
-  `capabilities = self-modify` in `~/.viva/config` asks for it, and a
-  project's own `.viva/config` may ask once `viva trust` has been run there.
-- An entry in that list is a name this build offers or a path to a file you
-  wrote. A file inside a project loads only once you have run `viva trust`.
-- `viva do --capabilities on "..."` enables it for one run. `capabilities = on`
-  in `~/.viva/config` enables it for the sessions the daemon starts.
-- `viva trust` gates a project's own tools before a later session can call them.
-
-## What persists
-
-Three continuities, and they are three different mechanisms.
-
-**Conversation.** Session state lives in the daemon. A client can disconnect
-and later reattach to the same session and transcript, under the same id.
-Closing a client removes a subscriber rather than ending the work, and a client
-whose daemon goes away reconnects by itself.
-
-| event | the session | the turn that was running |
-| --- | --- | --- |
-| client closed or crashed | keeps running | keeps running |
-| lid closed | pauses with the machine | resumes with the machine |
-| daemon stopped or killed | comes back, same id | lost; the session says so |
-| `session.stop` | ends | ends |
-
-A turn is a thread in the daemon. When the daemon dies, the turn dies with it,
-and the transcript holds everything up to the last message written.
-
-**Capability.** An agent writes notes, skills and tools into the workspace as
-ordinary project files. Those files survive a process restart, and a later
-session reuses them once you have run `viva trust` on the project.
-
-**Execution.** With capabilities enabled, an agent compiles a function into the
-running Common Lisp image and invokes it immediately. That function lives only
-in that image. viva records its lineage in the journal, and it does not
-reconstruct the compiled function after a restart.
-
-The third is deliberately not durable yet.
-
-```text
-                       viva
-                        │
-          ┌─────────────┴─────────────┐
-          │                           │
-     persistent work             self-extension
-          │                           │
-      daemon/session          ┌───────┴────────┐
-                              │                │
-                         live image        workspace
-                         transient          durable
-                              │                │
-                         functions       notes / skills /
-                                           tools
-```
-
-Common Lisp makes the live half of the experiment practical. Its image model
-lets an agent define, compile, install and invoke new behaviour without
-crossing an edit-build-restart boundary. Durable reuse is a separate mechanism,
-and it goes through workspace files.
-
 ## Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/getlatentic/viva/main/get.sh | sh
-viva              # opens this directory's session, or starts one
+viva --version                        # prints the release it installed
 ```
 
-A released binary for macOS on Apple silicon and Linux on x86_64. Re-run it to
-upgrade.
+That installs a released binary for macOS on Apple silicon or Linux on x86_64,
+and needs nothing else. Run it again to upgrade. `VIVA_VERSION` pins a release.
+On Windows, run it inside WSL.
 
-Anywhere else, build from source. This needs SBCL:
+To build from source, install SBCL and Rust first:
 
 ```bash
-brew install sbcl        # or: apt install sbcl
-sh install.sh
+brew install sbcl                     # or: apt install sbcl
+curl -fsSL https://sh.rustup.rs | sh  # Rust, for the full-screen client
+git clone https://github.com/getlatentic/viva && cd viva
+sh install.sh                         # installs Quicklisp, puts viva on PATH
+sh tui/install.sh                     # builds the full-screen client
 ```
 
-### A provider key
+Then give it a model:
 
 ```bash
-mkdir -p ~/.viva && cat > ~/.viva/auth.json <<'JSON'
-{ "deepseek": { "apiKey": "sk-..." } }
-JSON
+mkdir -p ~/.viva && echo '{ "deepseek": { "apiKey": "sk-..." } }' > ~/.viva/auth.json
 chmod 600 ~/.viva/auth.json
 ```
 
-Three places, tried in this order. A flag names one key for one run. The file
-is where somebody put a key on purpose, and the environment is whatever a shell
-happened to export.
-
-| | |
-| --- | --- |
-| `--api-key` | this run only |
-| `~/.viva/auth.json` | `deepseek`, `openai`, `openrouter`, `bedrock` |
-| `DEEPSEEK_API_KEY` and friends | the environment |
-
-One key per provider, and the models it serves listed under it. `endpoint`
-reaches a deployment in another region. `models` replaces the built-in list, so
-a provider that adds a model does not wait for a release. `model` says what the
-provider's own name means.
-
-```json
-{ "deepseek": { "apiKey": "sk-...",
-                "models": ["deepseek-v4-flash", "deepseek-v4-pro"] },
-  "bedrock":  { "apiKey": "...",
-                "endpoint": "https://bedrock-mantle.eu-west-1.api.aws/v1/chat/completions",
-                "model": "openai.gpt-oss-120b" } }
-```
-
-Every model answers to `provider/id` — `viva --model deepseek/deepseek-v4-pro`.
-A provider's own name resolves to whichever model it pins, or the first it
-lists.
-
-Keys are not settings: `config` is a file people copy into projects and commit,
-and `auth.json` is not. Nothing sources a file of shell exports.
-
-### Windows
-
-Run it under WSL. Both ends talk over a unix socket, and Windows has none, so
-the daemon does not build there.
-
-```powershell
-wsl --install               # PowerShell, once, then reboot
-```
-
-```bash
-git clone <this repo> ~/viva     # inside the Ubuntu shell
-cd ~/viva && sh install.sh
-```
-
-Keep the checkout inside the WSL filesystem. A path under `/mnt/c/` sends every
-file read across the Windows boundary. CI does not test WSL. It tests the Linux
-build that WSL runs.
-
-## Run
+## Use
 
 | command | what it does |
 | --- | --- |
-| `viva` | full screen: sessions, transcript, tasks |
-| `viva attach` | line oriented, for pipes and diffs |
-| `viva learned` | what this directory has retained |
-| `viva sessions` | every recorded conversation here |
-| `viva daemon status` | the long lived process |
+| `viva` | open this directory's session in the full-screen client, or start one |
+| `viva attach [SESSION]` | the same sessions as plain lines, for pipes and scripts |
+| `viva do "PROMPT"` | one prompt and its answer, with no session |
+| `viva sessions --search TEXT` | find a recorded conversation; `--all` looks in every project |
+| `viva learned` | the notes, skills and tools this project has kept |
+| `viva config` | every setting, its value, and the file that set it |
+| `viva trust` | let this project's own extensions and tools run |
+| `viva mcp` | serve this project's tools over MCP |
+| `viva daemon status` | the process that sessions run in |
 
-Keys inside the full screen client. Press `/` for the commands.
+Sessions run in a daemon. Closing the client leaves a turn running, and `viva`
+rejoins the session later. If the daemon stops, the session comes back under
+the same id, but the turn that was running is lost. `viva help` lists every
+flag, and [tui/README.md](tui/README.md) lists the full-screen client's keys.
 
-| key | action |
-| --- | --- |
-| `Ctrl-P` | find any session, running or not; type to narrow |
-| `Ctrl-N` | start a session in a new tab |
-| `Ctrl-W` | close the tab; the session keeps running |
-| `Ctrl-O` | show all of a tool's output, or the first three lines again |
-| `Ctrl-L` | what this session has learned |
-| `Ctrl-B` | put the sessions column away, or bring it back |
-| `/models` | choose which model answers; a digit takes that row |
-| `!` | run a shell command here; the model does not see it |
-| `Ctrl-C` | stop the running turn; leave when there is none |
+## Capabilities and extensions
 
-## What it keeps, and where
+An agent keeps what it learns as files, and you can write the same files by
+hand. Each kind works from a project's `.viva/` and from `~/.viva/` for every
+project. For skills and tools, the project's copy wins on a name clash.
 
-| tier | written to | reaches the model as |
+| kind | file | what the model gets |
 | --- | --- | --- |
-| note | `.viva/MEMORY.md` | prompt text |
-| skill | `.viva/skills/<name>/SKILL.md` | prompt text |
-| tool | `.viva/tools/<name>/tool.json` | the tool list, and MCP |
-| capability | `~/.viva/capabilities/<version>.lisp` | prompt text, and `call_capability` |
+| note | `.viva/MEMORY.md` | the text, in its prompt |
+| skill | `.viva/skills/<name>/SKILL.md` | the name and description; it reads the body when one matches |
+| tool | `.viva/tools/<name>/tool.json` | a tool it can call |
+| extension | `.viva/extensions/<name>.lisp` | what the file registers: tools, hooks, commands, providers |
+| capability | `~/.viva/capabilities/` | functions it compiled, when `self-modify` is on |
 
-Everything viva keeps for itself is under `~/.viva/`: `auth.json`, `config`,
-`sessions/`, `journal/`, `capabilities/`, `trusted.sexp`. `VIVA_HOME` names
-that directory outright.
+A project's own tools and extensions run only after `viva trust` in that
+project. Until then, `viva mcp` there lists no tools.
 
-A fact becomes a note. Code becomes a skill. Code the agent has already wanted
-twice becomes a tool it calls by name.
+### Tools
 
-`/models` lists every model this daemon can reach, marks the one already
-answering, and opens a session on whichever you pick. Press `Ctrl-R` there to
-ask the local servers again: they serve whatever you pulled onto the machine.
+A tool is a directory with a manifest and a script in any language. The
+arguments arrive as JSON on standard input, and what the script prints is the
+result. `.viva/tools/word_count/tool.json`:
 
-A capability is the fourth tier, and the only one that is not a file the model
-writes. It is a Lisp function the agent compiles into the running process, so a
-call costs no subprocess. One capability can call another by name. Promotion
-writes the source down, and the next daemon start compiles it again at the same
-version number. Reversion moves that file
-aside, so what the agent takes back stays taken back. The tier needs
-`--capabilities on`. The agent writes these with the ordinary
-`write` tool, and you can author one by hand in the same format. `~/.viva/`
-applies to every directory, and the project directory wins on a name clash.
-
-## Self-improvement experiments
-
-Where the answer stands today. Each entry links to the run that produced it.
-
-- [x] **Retention on real work.** 25 tasks, five recurring job shapes, policy
-  on. It retains, and what it retains is good: 5 artifacts, 4 of 5 worth
-  keeping on a cold review. Later tasks called the one tool it built five
-  times. [Results](experiments/dogfood/RESULTS.md).
-- [x] **Does retention pay?** Not yet, and honestly split. The corpus improved
-  8.2% against a 20% threshold, and one job shape got 18% worse. Averaging
-  those into a win is the thing the threshold exists to prevent.
-- [x] **Live self-modification** — compiling retained code into the running
-  Lisp image, mid-task. Killed on the pre-registered rule. Carrying the door
-  costs about 23% in tokens even when nothing opens it. The cleanest, most
-  fluent use in the battery still cost 43% to 73% more.
-  [Results](experiments/kc6/RESULTS.md).
-- [x] **Will a model invest if you let it?** Not on its own. Across 45
-  task-runs with the door open, every arm made zero `remember` calls and wrote
-  no `MEMORY.md`. Re-running under explicit framing did not move it.
-- [ ] **Composition** — does a capability that calls another capability beat a
-  text skill re-derived each time? This needs both retention and live
-  execution in one harness, which is why it is testable here. The compiled
-  path composes and survives a restart. The pre-registration measures the
-  file-backed one. [Pre-registration](docs/b15-preregistration.md).
-- [ ] **A Lisp-fluent model.** 19 of 59 self-modification attempts failed to
-  compile, which measures the model rather than the mechanism. The current
-  pin forbids the probe.
-- [ ] **Ergonomics on the door** — shipping an idiom guide in the tool
-  descriptions, since a door's ergonomics include its language.
-- [ ] **Rehydrating a live capability** — a promoted capability compiles back
-  from disk when the daemon starts, so the comparison is buildable: does a
-  reconstructed minted function beat reloading the file-backed tool? The
-  mechanism is in, the measurement is not.
-
-What the record supports so far: **retention pays where the work is mechanical
-and recurs, and costs where the work is judgment.** The round trip is the
-expense, not the language. Short tasks have no derivation cost to amortise an
-artifact against.
-
-[docs/self-improvement-model.md](docs/self-improvement-model.md) states the
-model behind them.
-
-## Files
-
+```json
+{
+  "name": "word_count",
+  "description": "Count the words in a piece of text.",
+  "version": 1,
+  "exec": ["python3", "run.py"],
+  "parameters": [
+    {"name": "text", "type": "string", "description": "the text to count", "required": true}
+  ]
+}
 ```
-bin/viva             the launcher
-src/core/            messages, tools, the agent loop
-src/workspace/       skills, registry, memory, reflection
-src/daemon/          sessions as actors, the socket, the task tree
-src/tui/             the Lisp full screen client
-tui/                 the Rust client, and three checks that drive it over a pty
-spec/                TLA+ specifications and their configurations
-experiments/         pre-registrations, runs, and results
-tools/               the image build, and the checks that need a terminal
-docs/                design decisions and comparisons
+
+`.viva/tools/word_count/run.py`:
+
+```python
+import json, sys
+print(len(json.load(sys.stdin)["text"].split()))
+```
+
+After `viva trust`, `viva learned` lists it, the agent can call it, and
+`viva mcp` serves it to any MCP client. Over MCP, `{"text": "one two three"}`
+returns `3`. [docs/tool-registry.md](docs/tool-registry.md) has the full format.
+
+### Extensions
+
+An extension is a Lisp file that registers what it adds when it loads. This one
+adds a tool:
+
+```lisp
+(in-package #:viva.extension)
+
+(defextension "ping"
+  :description "A tool that answers pong."
+  (register-tool
+   (make-instance 'viva.tool:function-tool
+                  :name "ping"
+                  :description "Answer pong."
+                  :parameters '()
+                  :body (lambda (arguments context)
+                          (declare (ignore arguments context))
+                          "pong"))))
+```
+
+`(on :before-request #'function)` adds a hook instead. A `:tool-call` hook can
+refuse a call before it runs. `viva do --extension DIR` loads a directory of
+extensions for one run.
+
+### Capabilities
+
+Two behaviours stay off until the `capabilities` setting names them:
+
+| name | what the agent can do |
+| --- | --- |
+| `self-modify` | compile a function into the running process, call it, keep it across restarts, and take it back |
+| `loop` | send itself the next prompt, so work carries on past a turn; `/stop` or ctrl-c ends it |
+
+```bash
+echo 'capabilities = self-modify,loop' >> ~/.viva/config   # sessions the daemon starts
+viva do --capabilities on,loop "PROMPT"                     # one run
+```
+
+A project can ask for them in its own `.viva/config` once it is trusted. An
+entry can also be the path of a Lisp file you wrote.
+
+## Configure
+
+Settings are `key = value` lines. A project's `.viva/config` overrides
+`~/.viva/config`, the environment overrides both, and a flag overrides all
+three. `viva config` shows which one decided each value:
+
+```text
+setting        value                from
+model          deepseek             ~/.viva/config
+limit          -                    the built-in default
+retain         -                    the built-in default
+capabilities   self-modify,loop     ~/.viva/config
+```
+
+Keys never go in a config file, because people commit a project's config. They
+go in `~/.viva/auth.json`, one entry per provider:
+
+| provider | entry |
+| --- | --- |
+| `deepseek`, `openai`, `openrouter`, `bedrock` | `{ "apiKey": "..." }` |
+| `local` (llama.cpp on port 8099), `ollama` (port 11434) | `{}`, or `VIVA_LOCAL_ENDPOINT` or `OLLAMA_ENDPOINT` in the environment; they need no key |
+
+An entry's `endpoint` reaches another deployment, and `models` replaces the
+list it offers. Every model answers to `provider/id`, as in
+`viva do --model deepseek/deepseek-v4-flash`.
+
+## Develop
+
+```text
+bin/viva          the launcher
+src/core/         messages, tools, the agent loop
+src/workspace/    skills, registry, memory, extensions, sessions
+src/daemon/       sessions as actors, the socket, the task tree
+tui/              the Rust full-screen client, and the checks that drive it
+spec/             TLA+ specifications
+experiments/      pre-registrations, runs and results
+tools/            the image build, and the checks that need a terminal
+docs/             design decisions and comparisons
 ```
 
 ```bash
 viva test                                   # the Lisp suite
 cargo test --manifest-path tui/Cargo.toml   # the client
-./spec/verify.sh                            # the TLA+ configurations
+./spec/verify.sh                            # the TLA+ specifications
 ```
 
-CI runs all three on macOS and Linux, builds a standalone binary on each, then
-starts a daemon with the binary it built and asks it for its sessions. An
-artifact that cannot serve fails the build. Eleven of the 23 TLA+
-configurations must fail: a proof that stops proving breaks the run instead of
-passing quietly.
+CI runs all three on macOS and Linux.
+
+## Experiments
+
+| question | answer so far | results |
+| --- | --- | --- |
+| Does it retain useful work? | Yes: 5 artifacts over 25 tasks, and 4 of 5 passed a cold review | [dogfood](experiments/dogfood/RESULTS.md) |
+| Does retention pay? | Not yet: the corpus improved 8.2% against a 20% threshold, and one job shape got 18% worse | [dogfood](experiments/dogfood/RESULTS.md) |
+| Does live self-modification pay? | No: about 23% more tokens even when unused, and 43% to 73% more when used | [kc6](experiments/kc6/RESULTS.md) |
+| Does a model keep things unprompted? | No: zero `remember` calls across 45 task-runs per arm | [kc6](experiments/kc6/RESULTS.md) |
+
+[docs/self-improvement-model.md](docs/self-improvement-model.md) states the
+model behind them.
 
 ## Acknowledgements
 
-- The agent loop is a port of [Pi](https://github.com/badlogic/pi-mono).
-  [docs/harness-lineage.md](docs/harness-lineage.md) names what came from Pi
-  and what this project added.
-- The skill format follows Anthropic's Agent Skills.
-- The tool format follows MCP. `viva mcp` serves the registry to any client.
-- The Rust client draws with [ratatui](https://ratatui.rs) and parses markdown
-  with pulldown-cmark.
-- The Lisp engine runs on SBCL.
-
-## Status
-
-Still in development, as a research harness.
+- The agent loop is a port of [Pi](https://github.com/badlogic/pi-mono), and
+  [docs/harness-lineage.md](docs/harness-lineage.md) says what came from it.
+- Skills follow Anthropic's Agent Skills format, and tools follow MCP.
+- The full-screen client draws with [ratatui](https://ratatui.rs) and parses
+  markdown with pulldown-cmark. The engine runs on SBCL.
