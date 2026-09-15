@@ -20,7 +20,8 @@ pub struct Hanging {
     line: Line<'static>,
     indent: Option<Span<'static>>,
     /// A rule from the end of the line to the edge of the pane, drawn when the
-    /// line fits on one row with room to spare: what heads a tool call.
+    /// line fits on one row with room to spare: what heads a tool call. An empty
+    /// line is rule from edge to edge: what opens a turn.
     rule: Option<Style>,
 }
 
@@ -117,7 +118,9 @@ fn lay(line: &Hanging, width: u16, mut wrapped: Wrapped, from: usize) -> Wrapped
     }
     if let (Some(style), [row]) = (line.rule, wrapped.rows.as_mut_slice()) {
         let used: usize = row.spans.iter().map(|span| cells::width(&span.content)).sum();
-        if used + 2 < width {
+        if used == 0 {
+            row.spans.push(Span::styled("─".repeat(width), style));
+        } else if used + 2 < width {
             row.spans.push(Span::styled(format!(" {}", "─".repeat(width - used - 1)), style));
         }
     }
@@ -370,6 +373,12 @@ mod tests {
         let long = Line::from("a title far too long to leave room for any rule".to_string());
         let wrapped = wrap(&Hanging::ruled(long, Style::default()), 20);
         assert!(text_of(&wrapped).iter().all(|row| !row.contains('─')), "{wrapped:?}");
+    }
+
+    #[test]
+    fn a_rule_with_nothing_before_it_fills_its_row() {
+        let wrapped = wrap(&Hanging::ruled(Line::from(""), Style::default()), 20);
+        assert_eq!(text_of(&wrapped), ["─".repeat(20)]);
     }
 
     #[test]

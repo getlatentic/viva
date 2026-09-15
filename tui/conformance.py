@@ -784,6 +784,30 @@ def main():
             fail("the resumed conversation shows no earlier prompt")
         else:
             ok("a resumed session shows what was said in it, from the top")
+
+        # EVERY TURN AFTER THE FIRST OPENS UNDER A RULE, so reading back finds
+        # where each begins, and the first question on the page opens under
+        # none. The transcript starts after the sessions column when it is up.
+        page = [row[30:] if column_shown() else row for row in client.term.lines()[2:-5]]
+        asked = []
+        for index, row in enumerate(page):
+            found = re.search(r"› question (\d+) ", row)
+            if found:
+                asked.append((index, int(found.group(1))))
+        unruled = [number for index, number in asked
+                   if number > 0 and (index == 0 or "─" * 20 not in page[index - 1])]
+        first_ruled = any(number == 0 and index > 0 and "─" * 20 in page[index - 1]
+                          for index, number in asked)
+        if len(asked) < 2:
+            print("\n".join(client.term.lines()))
+            fail("fewer than two questions are on the first page of the resumed session")
+        elif unruled:
+            print("\n".join(client.term.lines()))
+            fail(f"these turns open without a rule: {unruled}")
+        elif first_ruled:
+            fail("the first question on the page opens under a rule")
+        else:
+            ok(f"{len(asked) - 1} turns open under a rule, and the first question does not")
         client.send(b"\x1b[F")                     # End, back to following
         client.pump(1.0)
 
