@@ -604,7 +604,8 @@ fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
     for (k, what) in [
         ("ctrl-p", "find any session, running or not"),
         ("ctrl-n", "start a session in a new tab"),
-        ("ctrl-b", "show the running sessions"),
+        ("ctrl-b", "show or hide the sessions"),
+        ("↑ ← →", "read back, cross to the sessions"),
         ("ctrl-o", "all of a tool's output"),
         ("/", "the commands"),
     ] {
@@ -903,6 +904,13 @@ fn status_text(model: &Model) -> (Vec<String>, Vec<(String, String)>) {
     let facts = crate::status::facts(model);
     let mut notes: Vec<(String, String)> = Vec::new();
     let note = |long: &str, short: &str| (long.to_string(), short.to_string());
+    // Which column has the arrows, said first: the same two keys scroll the
+    // talk or walk the list.
+    match model.focus {
+        Focus::Transcript => notes.push(note("↑↓ scroll · ← sessions · esc to type", "↑↓ scroll")),
+        Focus::Sessions => notes.push(note("↑↓ choose · enter opens · → the talk", "↑↓ choose")),
+        _ => {}
+    }
     // The status carries what went wrong -- a closed connection, a refused
     // request -- so it is never replaced by the facts.
     if !model.status.is_empty() {

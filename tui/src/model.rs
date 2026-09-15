@@ -361,6 +361,9 @@ impl Conversation {
 pub enum Focus {
     Input,
     Sessions,
+    /// Reading back through the conversation: the arrows scroll it here, walk
+    /// the list in the sessions column, and belong to the prompt otherwise.
+    Transcript,
     /// The picker is open over everything else. A mode, deliberately: finding
     /// a session among hundreds is a different activity from talking to one,
     /// and pretending otherwise means every key has two meanings.

@@ -620,6 +620,34 @@ def main():
             else:
                 ok("the sessions column is there, and ctrl-b puts it away and back")
 
+        # The arrows scroll the talk from the prompt and walk the list from the
+        # column, and the status edge says which. ctrl-b left the keyboard with
+        # the column, so esc gives it back to the prompt first.
+        client.send(b"\x1b")                      # esc: the prompt
+        client.pump(1.0)
+        client.send(b"\x1b[A")                    # up: read back
+        client.pump(1.0)
+        reading = status_row(client)
+        client.send(b"\x1b[D")                    # left: the sessions column
+        client.pump(1.0)
+        choosing = status_row(client)
+        client.send(b"\x1b[C")                    # right: the talk again
+        client.pump(1.0)
+        back = status_row(client)
+        client.send(b"\x1b")                      # esc: the prompt
+        client.pump(1.0)
+        typing = status_row(client)
+        if "↑↓ scroll" not in reading:
+            fail(f"up from the prompt did not go to the talk: {reading!r}")
+        elif "↑↓ choose" not in choosing:
+            fail(f"left from the talk did not reach the sessions column: {choosing!r}")
+        elif "↑↓ scroll" not in back:
+            fail(f"right from the column did not come back to the talk: {back!r}")
+        elif "↑↓" in typing:
+            fail(f"esc did not give the keyboard back to the prompt: {typing!r}")
+        else:
+            ok("up reads the talk, left and right cross to the sessions and back, esc types")
+
         # And closing the view does not end the session it was showing: the
         # tab bar counts the running sessions, and the count must not fall.
         def running(row):

@@ -136,7 +136,8 @@ pub fn help() -> String {
     }
     text.push_str(
         "\nkeys: tab switches, ctrl-n new, ctrl-w close, ctrl-p find,\n      \
-arrows walk the list, pgup/pgdn scroll, ctrl-u clears the line,\n      \
+↑ reads back, ← and → cross to the sessions and back, esc types,\n      \
+pgup/pgdn/home/end scroll from anywhere, ctrl-u clears the line,\n      \
 ctrl-c stops a turn",
     );
     text
