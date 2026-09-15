@@ -98,7 +98,12 @@ def talk(client):
     seq = [0]
 
     def line(payload):
-        client.sendall((json.dumps(payload) + "\n").encode())
+        # The client learns a daemon is up by connecting and leaving at once,
+        # so a greeting can be written to a connection that has already gone.
+        try:
+            client.sendall((json.dumps(payload) + "\n").encode())
+        except OSError:
+            pass
 
     def event(name, data, session="s1"):
         seq[0] += 1
