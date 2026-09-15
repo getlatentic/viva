@@ -9,12 +9,14 @@ mod bench;
 mod cells;
 mod commands;
 mod input;
+mod layout;
 mod markdown;
 mod model;
 mod protocol;
 mod requests;
 mod status;
 mod ui;
+mod wrap;
 
 use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
@@ -131,7 +133,7 @@ fn run() -> std::io::Result<()> {
     terminal.clear()?;
 
     let mut hits = ui::Hitboxes::default();
-    let mut rendered = ui::Rendered::default();
+    let mut rendered = layout::Rendered::default();
     let mut reconnect = Reconnect::default();
     // DRAW ONLY WHEN SOMETHING CHANGED. Redrawing on a timer means an idle
     // client spends the same effort as a busy one, and the effort is not small

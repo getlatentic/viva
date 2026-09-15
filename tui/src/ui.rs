@@ -6,8 +6,10 @@
 //! arrangement.
 
 use crate::cells;
+use crate::layout::Rendered;
 use crate::markdown;
 use crate::model::{Entry, Focus, Listed, Model, Models, Outcome, Role, TaskState};
+use crate::wrap::Hanging;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wrap};
 
@@ -30,277 +32,6 @@ pub struct Hitboxes {
     pub picker: Option<Rect>,
     pub picker_rows: Vec<(usize, Rect)>,
     pub command_rows: Vec<(usize, Rect)>,
-}
-
-/// The transcript, laid out once per change instead of once per frame.
-///
-/// Wrapping is what costs: building the lines and asking the paragraph how
-/// tall it is both walk the whole conversation, and doing that at every
-/// keypress means a long session is slower than a short one at exactly the
-/// moment a person notices. Measured at 43ms a frame for 200 turns before this
-/// existed, which is three frames' worth of work to move a cursor.
-/// One entry's rows, and the version of the entry they were made from.
-struct Laid {
-    stamp: u64,
-    expanded: bool,
-    /// What came before it. A block puts a line of air between itself and
-    /// prose, so its layout depends on what it follows and it has to be laid
-    /// out again when that changes.
-    after: Option<Role>,
-    lines: Vec<Line<'static>>,
-}
-
-#[derive(Default)]
-pub struct Rendered {
-    key: Option<(String, u16)>,
-    blocks: Vec<Laid>,
-    /// Where each block begins, so a window can be found without walking.
-    starts: Vec<usize>,
-    total: u16,
-}
-
-/// Break LINES to WIDTH, keeping each span's style across the break.
-///
-/// Wrapping HERE rather than at render time is the point. A Paragraph wraps
-/// every time it is drawn, so a frame costs the length of the conversation
-/// however little of it is visible -- and a person scrolling is asking for a
-/// frame per keypress. Wrapped once per change, the render is a slice.
-/// A line, and what stands in front of the rows it wraps onto.
-///
-/// A result line that begins with a gutter and loses it on the rows below
-/// breaks its own block open: the second half of a long line starts at the
-/// pane edge, outside the rule that says which call printed it.
-struct Hanging {
-    line: Line<'static>,
-    indent: Option<Span<'static>>,
-}
-
-impl Hanging {
-    fn plain(line: Line<'static>) -> Self {
-        Hanging { line, indent: None }
-    }
-
-    fn under(indent: impl Into<String>, style: Style, line: Line<'static>) -> Self {
-        Hanging { line, indent: Some(Span::styled(indent.into(), style)) }
-    }
-}
-
-fn wrap_lines(lines: &[Hanging], width: u16) -> Vec<Line<'static>> {
-    let width = width.max(1) as usize;
-    let mut wrapped: Vec<Line<'static>> = Vec::with_capacity(lines.len());
-    for hanging in lines {
-        wrapped.extend(wrap_one(hanging, width));
-    }
-    wrapped
-}
-
-/// One line as the rows it needs, breaking between words.
-///
-/// ACROSS SPANS, not within one. A wrapper that breaks each span on its own
-/// sees `react-dom` written half as code and half as prose as two pieces, and
-/// cuts the word in half at the seam -- which only shows once something is
-/// styling the text, and then shows everywhere.
-fn wrap_one(hanging: &Hanging, width: usize) -> Vec<Line<'static>> {
-    let expanded: Vec<Span<'static>>;
-    let spans: &[Span<'static>] = if hanging.line.spans.iter().any(|span| span.content.contains('\t')) {
-        let mut column = 0;
-        expanded = hanging
-            .line
-            .spans
-            .iter()
-            .map(|span| Span::styled(cells::expand_tabs(&span.content, &mut column), span.style))
-            .collect();
-        &expanded
-    } else {
-        &hanging.line.spans
-    };
-    let indent = hanging.indent.as_ref().filter(|span| cells::width(&span.content) < width);
-    let indent_cells = indent.map_or(0, |span| cells::width(&span.content));
-    let glyphs: Vec<Glyph> = spans
-        .iter()
-        .enumerate()
-        .flat_map(|(span, source)| {
-            cells::glyphs(&source.content).map(move |(start, grapheme, cells)| Glyph {
-                span,
-                start,
-                end: start + grapheme.len(),
-                cells,
-                blank: grapheme == " ",
-            })
-        })
-        .collect();
-
-    let mut rows: Vec<Vec<Glyph>> = Vec::new();
-    let mut row: Vec<Glyph> = Vec::new();
-    // Cells taken on the row being filled, counting the indent it starts with.
-    let mut used = 0;
-    let mut at = 0;
-    while at < glyphs.len() {
-        let blank = glyphs[at].blank;
-        let end = (at..glyphs.len())
-            .find(|index| glyphs[*index].blank != blank)
-            .unwrap_or(glyphs.len());
-        let run = &glyphs[at..end];
-        at = end;
-        let run_cells: usize = run.iter().map(|glyph| glyph.cells).sum();
-        if used + run_cells <= width {
-            row.extend_from_slice(run);
-            used += run_cells;
-            continue;
-        }
-        // The break falls here. A run of spaces IS the break and is dropped;
-        // a word moves down whole, unless it is wider than the pane, and then
-        // it breaks between graphemes -- never through one two cells wide.
-        if blank {
-            rows.push(std::mem::take(&mut row));
-            used = indent_cells;
-            continue;
-        }
-        if !row.is_empty() {
-            rows.push(std::mem::take(&mut row));
-            used = indent_cells;
-        }
-        for glyph in run {
-            if used + glyph.cells > width && !row.is_empty() {
-                rows.push(std::mem::take(&mut row));
-                used = indent_cells;
-            }
-            row.push(*glyph);
-            used += glyph.cells;
-        }
-    }
-    rows.push(row);
-    rows.iter()
-        .enumerate()
-        .map(|(index, row)| to_line(spans, if index == 0 { None } else { indent }, row))
-        .collect()
-}
-
-/// One grapheme of a line being wrapped: the span it is in, where in that
-/// span, and the cells it takes.
-#[derive(Clone, Copy)]
-struct Glyph {
-    span: usize,
-    start: usize,
-    end: usize,
-    cells: usize,
-    blank: bool,
-}
-
-/// A row of glyphs as spans again. Neighbouring glyphs from one span are one
-/// slice of it, and neighbours written the same way are joined, so a row costs
-/// what it says rather than one span per character.
-fn to_line(spans: &[Span<'static>], indent: Option<&Span<'static>>, row: &[Glyph]) -> Line<'static> {
-    let mut joined: Vec<Span<'static>> = indent.into_iter().cloned().collect();
-    let mut index = 0;
-    while index < row.len() {
-        let first = row[index];
-        let mut last = index;
-        while last + 1 < row.len() && row[last + 1].span == first.span && row[last + 1].start == row[last].end {
-            last += 1;
-        }
-        let source = &spans[first.span];
-        let text = &source.content[first.start..row[last].end];
-        match joined.last_mut() {
-            Some(previous) if previous.style == source.style => previous.content.to_mut().push_str(text),
-            _ => joined.push(Span::styled(text.to_string(), source.style)),
-        }
-        index = last + 1;
-    }
-    Line::from(joined)
-}
-
-impl Rendered {
-    /// The rows to draw for a window HEIGHT tall starting at OFFSET.
-    ///
-    /// A slice, so rendering costs the height of the pane rather than the
-    /// length of the session.
-    fn window(&self, offset: u16, height: u16) -> Vec<Line<'static>> {
-        let first = (offset as usize).min(self.total as usize);
-        let last = (first + height as usize).min(self.total as usize);
-        let mut rows = Vec::with_capacity(last - first);
-        // Straight to the block the window opens on, rather than through every
-        // line above it.
-        let mut at = match self.starts.binary_search(&first) {
-            Ok(index) => index,
-            Err(index) => index.saturating_sub(1),
-        };
-        while at < self.blocks.len() {
-            let start = self.starts[at];
-            if start >= last {
-                break;
-            }
-            for (offset, line) in self.blocks[at].lines.iter().enumerate() {
-                let position = start + offset;
-                if position >= first && position < last {
-                    rows.push(line.clone());
-                }
-            }
-            at += 1;
-        }
-        rows
-    }
-
-    /// Lay out only what changed.
-    ///
-    /// A token changes ONE entry, and re-wrapping the whole conversation for
-    /// it costs the length of the conversation: measured at 6.5ms a token for
-    /// ten turns and 70.8ms for four hundred, so a long session got slower at
-    /// exactly the moment somebody was watching output arrive. Each entry
-    /// carries a stamp that changes when it does, so a pass over a thousand
-    /// entries compares a thousand integers and lays out the one that moved.
-    fn refresh(&mut self, model: &Model, width: u16) {
-        let key = (model.current.clone(), width);
-        if self.key.as_ref() != Some(&key) {
-            // A different session, or a resize: nothing laid out for the old
-            // width can be reused at the new one.
-            self.blocks.clear();
-            self.key = Some(key);
-        }
-        let Some(conversation) = model.current_conversation() else {
-            self.blocks.clear();
-            self.starts.clear();
-            self.total = 0;
-            return;
-        };
-        let expanded = conversation.expanded;
-        let mut count = 0;
-        let mut after: Option<Role> = None;
-        for entry in conversation.visible_entries() {
-            let fresh = match self.blocks.get(count) {
-                Some(block) => {
-                    block.stamp != entry.stamp
-                        || block.expanded != expanded
-                        || block.after != after
-                }
-                None => true,
-            };
-            if fresh {
-                let block = Laid {
-                    stamp: entry.stamp,
-                    expanded,
-                    after,
-                    lines: wrap_lines(&entry_lines(entry, expanded, width, after), width),
-                };
-                match self.blocks.get_mut(count) {
-                    Some(slot) => *slot = block,
-                    None => self.blocks.push(block),
-                }
-            }
-            count += 1;
-            after = Some(entry.role);
-        }
-        self.blocks.truncate(count);
-
-        self.starts.clear();
-        self.starts.reserve(self.blocks.len());
-        let mut running = 0usize;
-        for block in &self.blocks {
-            self.starts.push(running);
-            running += block.lines.len();
-        }
-        self.total = running.min(u16::MAX as usize) as u16;
-    }
 }
 
 pub fn draw(frame: &mut Frame, model: &mut Model, rendered: &mut Rendered) -> Hitboxes {
@@ -749,17 +480,13 @@ fn state_mark(state: &str) -> (&'static str, Color) {
 /// invisible on a monochrome terminal, to anyone who cannot tell two shades
 /// apart, and to any test that reads the frame back -- so the distinction that
 /// matters most is the one that must not depend on it.
-/// The rows ONE entry needs.
+/// The lines ONE entry comes to, before they are wrapped to a width.
 ///
-/// One entry at a time, because a token changes one entry and re-wrapping the
-/// whole conversation for it costs the length of the conversation. Measured
-/// before this: one streamed token cost 6.5ms at ten turns and 70.8ms at four
-/// hundred, so a long session got slower at exactly the moment somebody was
-/// watching output arrive.
+/// One entry at a time, because a token changes one entry and laying out the
+/// whole conversation for it costs the length of the conversation.
 fn entry_lines(
     entry: &Entry,
     expanded: bool,
-    width: u16,
     after: Option<Role>,
 ) -> Vec<Hanging> {
     // How many lines of a tool result to show when it is not expanded. Three
@@ -865,12 +592,7 @@ fn entry_lines(
                     title.push(Span::styled("  not sent to the model",
                                             Style::default().fg(DIM)));
                 }
-                let used: usize = title.iter().map(|span| cells::width(&span.content)).sum();
-                if used + 2 < width as usize {
-                    title.push(Span::styled(
-                        format!(" {}", "─".repeat(width as usize - used - 1)), rule));
-                }
-                lines.push(Hanging::plain(Line::from(title)));
+                lines.push(Hanging::ruled(Line::from(title), rule));
                 let shown = if expanded {
                     entry.output.len()
                 } else {
@@ -1027,8 +749,8 @@ fn draw_transcript(
     frame.render_widget(block, area);
     hits.transcript = inner;
 
-    rendered.refresh(model, inner.width);
-    let total = rendered.total;
+    rendered.refresh(model, inner.width, entry_lines);
+    let total = rendered.total();
     let offset = model
         .conversations
         .get_mut(&model.current)
@@ -1444,32 +1166,6 @@ shaped like: { \"deepseek\": { \"apiKey\": \"sk-...\" } }";
         let wide = frame_of(&mut model, 100, 60).join("\n");
         assert!(wide.contains("line39"), "expanding showed nothing more");
         assert!(wide.contains("expanded"), "nothing says the output is expanded");
-    }
-
-    #[test]
-    fn a_wide_line_wraps_by_the_cells_it_takes() {
-        let text = "日本語のテキストが三十文字続く長い一行をここに書いてある";
-        let rows = super::wrap_one(&super::Hanging::plain(ratatui::text::Line::from(text.to_string())), 20);
-        assert!(rows.iter().all(|row| row.width() <= 20), "a row ran past the pane: {rows:?}");
-        let joined: String = rows.iter().flat_map(|row| row.spans.iter()).map(|span| span.content.as_ref()).collect();
-        assert_eq!(joined, text);
-        assert_eq!(rows.len(), 3);
-    }
-
-    #[test]
-    fn a_wide_glyph_with_one_cell_left_starts_the_next_row() {
-        let rows = super::wrap_one(&super::Hanging::plain(ratatui::text::Line::from("a日本".to_string())), 4);
-        let text: Vec<String> = rows
-            .iter()
-            .map(|row| row.spans.iter().map(|span| span.content.as_ref()).collect())
-            .collect();
-        assert_eq!(text, ["a日", "本"]);
-    }
-
-    #[test]
-    fn a_tab_keeps_the_indentation_it_stands_for() {
-        let rows = super::wrap_one(&super::Hanging::plain(ratatui::text::Line::from("\tindented".to_string())), 40);
-        assert_eq!(rows[0].spans[0].content, "    indented");
     }
 
     #[test]

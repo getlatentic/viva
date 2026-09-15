@@ -32,7 +32,7 @@ pub fn glyphs(text: &str) -> Glyphs<'_> {
 }
 
 /// One cell a byte, which covers most text without a table lookup.
-fn printable_ascii(text: &str) -> bool {
+pub fn printable_ascii(text: &str) -> bool {
     text.bytes().all(|byte| (b' '..=b'~').contains(&byte))
 }
 

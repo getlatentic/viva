@@ -7,6 +7,7 @@
 mod tests {
     use crate::model::Model;
     use crate::protocol::{Event, SessionInfo};
+    use crate::layout;
     use crate::ui;
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
@@ -41,20 +42,7 @@ mod tests {
             ..Default::default()
         }];
         model.open_tab("s1");
-        for turn in 0..turns {
-            let ask: Event = serde_json::from_value(json!({
-                "event": "user.message", "session": "s1", "seq": turn,
-                "data": {"text": format!("question number {turn}")}
-            })).unwrap();
-            model.absorb(&ask);
-            for line in 0..12 {
-                let say: Event = serde_json::from_value(json!({
-                    "event": "model.delta", "session": "s1", "seq": turn,
-                    "data": {"text": say(turn, line)}
-                })).unwrap();
-                model.absorb(&say);
-            }
-        }
+        converse(&mut model, "s1", turns, say);
         model
     }
 
@@ -71,7 +59,7 @@ mod tests {
         for turns in [10usize, 100, 400] {
             let mut model = big_model(turns);
             let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-            let mut rendered = ui::Rendered::default();
+            let mut rendered = layout::Rendered::default();
             terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
 
             let rounds = 30;
@@ -111,7 +99,7 @@ mod tests {
             format!("答え{turn}の{line}行目、百桁で一度か二度は折り返すくらいの長さがある文章です\n")
         });
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-        let mut rendered = ui::Rendered::default();
+        let mut rendered = layout::Rendered::default();
         terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
         let rounds = 30;
         let started = Instant::now();
@@ -129,6 +117,142 @@ mod tests {
         assert!(each < budget, "a wide token costs {each:.2}ms, over the {budget:.0}ms a frame has");
     }
 
+    /// TURNS more questions in SESSION, each answered in twelve lines SAY writes.
+    fn converse(model: &mut Model, session: &str, turns: usize, say: impl Fn(usize, usize) -> String) {
+        for turn in 0..turns {
+            let ask: Event = serde_json::from_value(json!({
+                "event": "user.message", "session": session, "seq": turn,
+                "data": {"text": format!("question number {turn}")}
+            })).unwrap();
+            model.absorb(&ask);
+            for line in 0..12 {
+                let said: Event = serde_json::from_value(json!({
+                    "event": "model.delta", "session": session, "seq": turn,
+                    "data": {"text": say(turn, line)}
+                })).unwrap();
+                model.absorb(&said);
+            }
+        }
+    }
+
+    fn delta(text: &str) -> Event {
+        serde_json::from_value(json!({
+            "event": "model.delta", "session": "s1", "seq": 0, "data": {"text": text}
+        })).unwrap()
+    }
+
+    /// Milliseconds a draw takes after each of ROUNDS calls to STEP.
+    fn per_draw(
+        model: &mut Model,
+        terminal: &mut Terminal<TestBackend>,
+        rendered: &mut layout::Rendered,
+        rounds: usize,
+        mut step: impl FnMut(usize, &mut Model, &mut Terminal<TestBackend>),
+    ) -> f64 {
+        let started = Instant::now();
+        for round in 0..rounds {
+            step(round, model, terminal);
+            terminal.draw(|frame| { ui::draw(frame, model, rendered); }).unwrap();
+        }
+        started.elapsed().as_secs_f64() * 1000.0 / rounds as f64
+    }
+
+    #[test]
+    fn switching_tabs_does_not_lay_out_a_conversation_again() {
+        let mut model = big_model(400);
+        model.sessions.push(SessionInfo {
+            id: "s2".into(), label: "/w/beta".into(), state: "idle".into(), ..Default::default()
+        });
+        converse(&mut model, "s2", 400, |turn, line| {
+            format!("the other session, turn {turn} line {line}, with text enough to wrap at a hundred columns\n")
+        });
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        let mut rendered = layout::Rendered::default();
+        for id in ["s1", "s2"] {
+            model.open_tab(id);
+            terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
+        }
+        let still = per_draw(&mut model, &mut terminal, &mut rendered, 20, |_, _, _| {});
+        let switching = per_draw(&mut model, &mut terminal, &mut rendered, 20, |round, model, _| {
+            model.open_tab(if round % 2 == 0 { "s1" } else { "s2" });
+        });
+        println!("tab switch, two 400-turn sessions: {switching:.2}ms  (a frame that changes nothing: {still:.2}ms)");
+        let budget = frame_budget_ms();
+        assert!(switching < budget, "a tab switch costs {switching:.2}ms, over the {budget:.0}ms a frame has");
+        assert!(switching < still * 3.0 + 0.5,
+                "a tab switch costs {switching:.2}ms against {still:.2}ms for a frame that changes nothing");
+    }
+
+    #[test]
+    fn a_page_width_seen_before_is_not_laid_out_again() {
+        let mut model = big_model(400);
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        let mut rendered = layout::Rendered::default();
+        for shown in [false, true] {
+            model.sidebar = shown;
+            terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
+        }
+        let still = per_draw(&mut model, &mut terminal, &mut rendered, 20, |_, _, _| {});
+        let toggling = per_draw(&mut model, &mut terminal, &mut rendered, 20, |round, model, _| {
+            model.sidebar = round % 2 == 0;
+        });
+        println!("sessions column toggled, 400 turns: {toggling:.2}ms a frame  (a frame that changes nothing: {still:.2}ms)");
+        let budget = frame_budget_ms();
+        assert!(toggling < budget, "a toggle costs {toggling:.2}ms, over the {budget:.0}ms a frame has");
+        assert!(toggling < still * 3.0 + 0.5,
+                "a toggle costs {toggling:.2}ms against {still:.2}ms for a frame that changes nothing");
+    }
+
+    #[test]
+    fn a_new_page_width_is_laid_out_within_a_frame() {
+        let mut model = big_model(400);
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        let mut rendered = layout::Rendered::default();
+        terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
+        let dragging = per_draw(&mut model, &mut terminal, &mut rendered, 20, |round, _, terminal| {
+            terminal.backend_mut().resize(119 - round as u16, 40);
+        });
+        println!("resized to a width not seen before, 400 turns: {dragging:.2}ms a frame");
+        let budget = frame_budget_ms();
+        assert!(dragging < budget, "a resize costs {dragging:.2}ms, over the {budget:.0}ms a frame has");
+    }
+
+    #[test]
+    fn a_long_reply_does_not_get_slower_line_by_line() {
+        let mut model = big_model(100);
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        let mut rendered = layout::Rendered::default();
+        terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
+        let mut written = 0;
+        let mut lines = |count: usize, model: &mut Model, terminal: &mut Terminal<TestBackend>, rendered: &mut layout::Rendered| {
+            per_draw(model, terminal, rendered, count, |_, model, _| {
+                written += 1;
+                model.absorb(&delta(&format!("reply line {written}, which says a sentence or so of something\n")));
+            })
+        };
+        let early = lines(20, &mut model, &mut terminal, &mut rendered);
+        lines(360, &mut model, &mut terminal, &mut rendered);
+        let late = lines(20, &mut model, &mut terminal, &mut rendered);
+        println!("a reply line: {early:.2}ms at line 20, {late:.2}ms at line 400");
+        assert!(late < early * 2.0, "line 400 of a reply costs {late:.2}ms against {early:.2}ms for line 20");
+    }
+
+    #[test]
+    fn an_unbroken_line_streams_in_time_that_does_not_grow_with_it() {
+        let mut model = big_model(10);
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        let mut rendered = layout::Rendered::default();
+        terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
+        let token = "0123456789abcdef".repeat(4);
+        let short = per_draw(&mut model, &mut terminal, &mut rendered, 30, |_, model, _| model.absorb(&delta(&token)));
+        for _ in 0..1200 {
+            model.absorb(&delta(&token));
+        }
+        let long = per_draw(&mut model, &mut terminal, &mut rendered, 30, |_, model, _| model.absorb(&delta(&token)));
+        println!("a token on an unbroken line: {short:.2}ms at 2KB, {long:.2}ms at 80KB");
+        assert!(long < short * 2.0, "a token at 80KB costs {long:.2}ms against {short:.2}ms at 2KB");
+    }
+
     #[test]
     fn a_frame_is_drawn_in_under_a_frame() {
         // 120 turns is a long afternoon, not an extreme. At sixty frames a
@@ -138,7 +262,7 @@ mod tests {
         let mut model = big_model(120);
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
         // Warm once, so the number is steady-state rather than first-touch.
-        let mut rendered = ui::Rendered::default();
+        let mut rendered = layout::Rendered::default();
         terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
 
         let rounds = 20;
@@ -174,7 +298,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
 
         let time = |model: &mut Model, terminal: &mut Terminal<TestBackend>| {
-            let mut rendered = ui::Rendered::default();
+            let mut rendered = layout::Rendered::default();
             terminal.draw(|frame| { ui::draw(frame, model, &mut rendered); }).unwrap();
             let rounds = 40;
             let started = Instant::now();
