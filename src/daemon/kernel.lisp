@@ -220,7 +220,7 @@ state carrying ?t is how `this completion is about the current turn` is said."
 ;;;;                                out -- terminal, stays registered
 ;;;
 ;;; Messages: (:submit ?turn) (:finished ?turn ?outcome) (:cancel ?turn)
-;;;           (:steer ?turn) (:suspend) (:resume) (:shutdown)
+;;;           (:steer ?turn) (:suspend) (:resume) (:shutdown) (:retarget)
 ;;;           (:stop-deadline) (:flush-confirmed) (:flush-failed)
 ;;;
 ;;; Effects are DESCRIPTIONS the coordinator executes; the kernel never
@@ -235,6 +235,7 @@ state carrying ?t is how `this completion is about the current turn` is said."
   (:transition ((:idle) (:submit ?turn))
     => `(:working ,?turn 0)
     (list :publish :turn.started ?turn)
+    (list :apply-staged-model)
     (list :start-worker ?turn))
 
   (:transition ((:working ?turn ?queued) (:submit ?next))
@@ -258,12 +259,14 @@ state carrying ?t is how `this completion is about the current turn` is said."
   ;; --- the current turn ends: identity first, then the stale case --------
   (:transition ((:working ?turn 0) (:finished ?turn ?outcome))
     => '(:idle)
-    (list :publish-terminal ?turn ?outcome))
+    (list :publish-terminal ?turn ?outcome)
+    (list :apply-staged-model))
 
   (:transition ((:working ?turn ?queued) (:finished ?turn ?outcome))
     :when (plusp ?queued)
     => `(:working :next-queued ,(1- ?queued))
     (list :publish-terminal ?turn ?outcome)
+    (list :apply-staged-model)
     (list :start-next-queued))
 
   ;; A completion for a turn that is no longer current changes nothing.
@@ -317,7 +320,8 @@ state carrying ?t is how `this completion is about the current turn` is said."
   (:transition ((:suspended :none ?queued) (:resume))
     :when (plusp ?queued)
     => `(:working :next-queued ,(1- ?queued))
-    (list :open-gate) (list :publish :task.resumed) (list :start-next-queued))
+    (list :open-gate) (list :publish :task.resumed)
+    (list :apply-staged-model) (list :start-next-queued))
   (:transition ((:suspended ?turn ?queued) (:resume))
     => `(:working ,?turn ,?queued)
     (list :open-gate) (list :publish :task.resumed))
@@ -325,7 +329,8 @@ state carrying ?t is how `this completion is about the current turn` is said."
   ;; at a checkpoint before parking).
   (:transition ((:suspended ?turn 0) (:finished ?turn ?outcome))
     => '(:suspended :none 0)
-    (list :publish-terminal ?turn ?outcome))
+    (list :publish-terminal ?turn ?outcome)
+    (list :apply-staged-model))
   ;; The queue does NOT advance while the gate is closed: starting a worker
   ;; under suspension parks it, and designating a next turn without starting
   ;; it strands the queue. Completions while suspended leave the queue for
@@ -333,7 +338,18 @@ state carrying ?t is how `this completion is about the current turn` is said."
   (:transition ((:suspended ?turn ?queued) (:finished ?turn ?outcome))
     :when (plusp ?queued)
     => `(:suspended :none ,?queued)
-    (list :publish-terminal ?turn ?outcome))
+    (list :publish-terminal ?turn ?outcome)
+    (list :apply-staged-model))
+
+  ;; --- the model: changed between turns, never under one -------------------
+  ;; With no turn running a new model applies at once. With one running it is
+  ;; held, and every clause above that ends or starts a turn applies what is
+  ;; held first -- so a turn's requests all go to one model, and a session at
+  ;; rest never holds a change it has not made.
+  (:transition ((:idle) (:retarget)) => :same (list :apply-model))
+  (:transition ((:suspended :none ?queued) (:retarget)) => :same (list :apply-model))
+  (:transition ((:working ?turn ?queued) (:retarget)) => :same (list :stage-model))
+  (:transition ((:suspended ?turn ?queued) (:retarget)) => :same (list :stage-model))
 
   ;; --- shutdown: BEGIN-STOPPING's two shapes ------------------------------
   (:transition ((:working ?turn ?queued) (:shutdown))
@@ -377,6 +393,8 @@ state carrying ?t is how `this completion is about the current turn` is said."
   (:transition ((:stopping ?turn) (:suspend)) => :same)
   (:transition ((:stopping ?turn) (:resume)) => :same)
   (:transition ((:stopping ?turn) (:shutdown)) => :same)
+  (:transition ((:stopping ?turn) (:retarget))
+    => :same (list :publish :session.error :model-refused-stopping ?turn))
 
   ;; --- flushing: completion is proven durable, then the session leaves ----
   (:transition ((:flushing) (:flush-confirmed))
@@ -396,6 +414,8 @@ state carrying ?t is how `this completion is about the current turn` is said."
   (:transition ((:flushing) (:suspend)) => :same)
   (:transition ((:flushing) (:resume)) => :same)
   (:transition ((:flushing) (:shutdown)) => :same)
+  (:transition ((:flushing) (:retarget))
+    => :same (list :publish :session.error :model-refused-stopping))
 
   ;; --- terminal states absorb ---------------------------------------------
   (:transition ((:stuck) (:finished ?turn ?outcome))
@@ -514,6 +534,23 @@ Returns the final state. A TLC error trace pastes in as one of these."
           '(((:suspend) :expect (:suspended "t6" 2))
             ((:finished "t6" :completed) :expect (:suspended :none 2))
             ((:resume) :expect (:working :next-queued 1))))
+    ;; A model asked for during a turn waits for it, and is applied before
+    ;; the next one starts; at rest it applies at once; stopping refuses it.
+    (cell '(:working "m1" 1)
+          '(((:retarget) :expect (:working "m1" 1) :effects ((:stage-model)))
+            ((:finished "m1" :completed)
+             :expect (:working :next-queued 0)
+             :effects ((:publish-terminal "m1" :completed)
+                       (:apply-staged-model)
+                       (:start-next-queued)))))
+    (cell '(:idle)
+          '(((:retarget) :expect (:idle) :effects ((:apply-model)))))
+    (cell '(:suspended :none 0)
+          '(((:retarget) :expect (:suspended :none 0) :effects ((:apply-model)))))
+    (cell '(:stopping "m2")
+          '(((:retarget)
+             :expect (:stopping "m2")
+             :effects ((:publish :session.error :model-refused-stopping "m2")))))
     ;; Queue overload is refused, not accumulated.
     (let ((state '(:working "t5" 0)))
       (dotimes (i (1+ +queue-limit+))

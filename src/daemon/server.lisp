@@ -713,6 +713,19 @@ correct and nobody could receive it."
         ((string= "session.stop" type)
          (if cell (progn (actor:shutdown cell) (ok)) (no "No such session.")))
 
+        ;; ANOTHER MODEL FOR A SESSION ALREADY TALKING, from its next turn: at
+        ;; once when nothing is running, when the running turn ends otherwise,
+        ;; and `session.model` says which. Resolved HERE, on the asker's
+        ;; thread, so a name nothing offers is refused to the one who asked
+        ;; rather than failing inside the session.
+        ((string= "session.model" type)
+         (let ((wanted (text-of command "model")))
+           (cond ((null cell) (no "No such session."))
+                 ((null wanted) (no "session.model needs a model."))
+                 (t (let ((choice (models:resolve-model wanted)))
+                      (actor:retarget cell choice)
+                      (ok "model" (model-json choice)))))))
+
         ;; The whole point of the actor model: this returns at once, and the
         ;; work continues whether or not the caller stays connected. The turn
         ;; id comes back so a caller can name what it started -- to wait for

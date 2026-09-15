@@ -891,6 +891,90 @@ checkpoint."))
                    "made ~d attempts before giving up" (flaky-calls agent)))
         (actor:shutdown cell)))))
 
+;;; The model: changed between turns, never under one
+
+(defclass model-noting-agent (paced-agent)
+  ((asked :initform '() :accessor asked-models))
+  (:documentation "A paced agent that notes which model each request went to."))
+
+(defmethod client:complete :before ((agent model-noting-agent) messages)
+  (declare (ignore messages))
+  (push (agent:agent-model agent) (asked-models agent)))
+
+(defun model-events (cell)
+  "CELL's session.model events, oldest first, as (MODEL . PENDING)."
+  (loop for event in (actor:since cell 0)
+        when (string= "session.model" (event:event-name event))
+          collect (let ((data (event:event-data event)))
+                    (cons (gethash "model" data) (gethash "pending" data)))))
+
+(define-test "a model asked for during a turn waits for that turn, and the next turn has it"
+  ;; Applied at once, the rest of the running turn's requests would go to a
+  ;; different model than its first ones. spec/CellLifecycle.tla,
+  ;; RunningTurnKeepsItsModel.
+  (with-repository (environment)
+    (ensure-suite-watchdog)
+    (let* ((agent (make-instance 'model-noting-agent
+                                 :environment environment :resource-environment environment
+                                 :model "first-model" :pause 0.05 :limit 6 :request-limit 500))
+           (cell (actor:spawn :label "retarget" :agent agent))
+           (second (models::make-choice :label "test/second-model" :model "second-model"
+                                        :context-limit 32000)))
+      (unwind-protect
+           (let ((first-turn (actor:submit cell "go")))
+             (true (daemon-wait (lambda () (actor:busy-p cell))) "the first turn never started")
+             (actor:retarget cell second)
+             (is string= "turn.completed" (actor:await-turn cell first-turn :timeout 30))
+             (let ((first-requests (asked-models agent)))
+               (true (plusp (length first-requests)))
+               (true (every (lambda (model) (string= "first-model" model)) first-requests)
+                     "the running turn changed model under itself: ~s" first-requests))
+             (true (daemon-wait (lambda ()
+                                  (string= "second-model" (getf (actor:snapshot cell) :model))))
+                   "the model was not applied when the turn ended")
+             (is = 32000 (viva.compaction:settings-context-limit (harness:agent-compaction agent)))
+             (is equal '(("second-model" . t) ("second-model")) (model-events cell)
+                 "expected the change announced as pending, then as applied")
+             (let ((second-turn (actor:submit cell "again")))
+               (is string= "turn.completed" (actor:await-turn cell second-turn :timeout 30))
+               (is string= "second-model" (first (asked-models agent)))))
+        (harness:cancel-agent agent)
+        (actor:shutdown cell)))))
+
+(define-test "a model asked for at rest applies at once, and a restart would bring it back on it"
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (actor:retarget cell (models::make-choice :label "test/other" :model "other-model"
+                                              :context-limit 16000))
+    (true (daemon-wait (lambda () (string= "other-model" (getf (actor:snapshot cell) :model))))
+          "a session at rest did not take the model at once")
+    (is string= "other-model" (agent:agent-model agent))
+    (is equal '(("other-model")) (model-events cell) "at rest there is nothing to wait for")
+    ;; The live marker is what a restarted daemon starts the session from.
+    (let ((marker (find (actor:cell-id cell) (actor:live-sessions)
+                        :key (lambda (each) (gethash "id" each)) :test #'string=)))
+      (true marker "the session has no live marker")
+      (is string= "other-model" (gethash "model" marker)))))
+
+(define-test "session.model refuses a model nothing offers, and takes one that is"
+  (with-daemon (path)
+    (with-every-key
+      (with-paced-cell (cell agent :pause 0.01 :limit 1)
+        (daemon:with-connection (stream path)
+          (read-line stream nil nil)
+          (let ((refused (daemon:request stream "type" "session.model"
+                                         "session" (actor:cell-id cell) "model" "no-such-model")))
+            (false (gethash "success" refused))
+            (true (search "No model called" (or (gethash "error" refused) ""))
+                  "the refusal does not say why: ~s" (gethash "error" refused)))
+          (let ((taken (daemon:request stream "type" "session.model"
+                                       "session" (actor:cell-id cell)
+                                       "model" "deepseek/deepseek-v4-flash")))
+            (true (gethash "success" taken))
+            (is string= "deepseek-v4-flash" (gethash "id" (gethash "model" taken))))
+          (true (daemon-wait (lambda ()
+                               (string= "deepseek-v4-flash" (getf (actor:snapshot cell) :model))))
+                "the session never took the model it was given"))))))
+
 (defclass retrying-tools-agent (harness:workspace-agent)
   ((script :initarg :script :accessor rt-script)
    (retried :initform 0 :accessor rt-retried)))
