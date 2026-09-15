@@ -908,6 +908,11 @@ checkpoint."))
           collect (let ((data (event:event-data event)))
                     (cons (gethash "model" data) (gethash "pending" data)))))
 
+(defun model-applied-p (cell)
+  "Has CELL said it applied a model? Saying so is the last thing applying one
+does, so once it has, the agent, the snapshot and the live marker have it too."
+  (find nil (model-events cell) :key #'cdr))
+
 (define-test "a model asked for during a turn waits for that turn, and the next turn has it"
   ;; Applied at once, the rest of the running turn's requests would go to a
   ;; different model than its first ones. spec/CellLifecycle.tla,
@@ -929,9 +934,9 @@ checkpoint."))
                (true (plusp (length first-requests)))
                (true (every (lambda (model) (string= "first-model" model)) first-requests)
                      "the running turn changed model under itself: ~s" first-requests))
-             (true (daemon-wait (lambda ()
-                                  (string= "second-model" (getf (actor:snapshot cell) :model))))
+             (true (daemon-wait (lambda () (model-applied-p cell)))
                    "the model was not applied when the turn ended")
+             (is string= "second-model" (getf (actor:snapshot cell) :model))
              (is = 32000 (viva.compaction:settings-context-limit (harness:agent-compaction agent)))
              (is equal '(("second-model" . t) ("second-model")) (model-events cell)
                  "expected the change announced as pending, then as applied")
@@ -945,8 +950,9 @@ checkpoint."))
   (with-paced-cell (cell agent :pause 0.01 :limit 1)
     (actor:retarget cell (models::make-choice :label "test/other" :model "other-model"
                                               :context-limit 16000))
-    (true (daemon-wait (lambda () (string= "other-model" (getf (actor:snapshot cell) :model))))
+    (true (daemon-wait (lambda () (model-applied-p cell)))
           "a session at rest did not take the model at once")
+    (is string= "other-model" (getf (actor:snapshot cell) :model))
     (is string= "other-model" (agent:agent-model agent))
     (is equal '(("other-model")) (model-events cell) "at rest there is nothing to wait for")
     ;; The live marker is what a restarted daemon starts the session from.
