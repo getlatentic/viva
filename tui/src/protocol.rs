@@ -4,10 +4,9 @@
 //! speaks. Nothing here is new: if this file needs the daemon to change, the
 //! boundary has been drawn in the wrong place.
 //!
-//! Requests and events share the socket, so a reader thread would steal
-//! replies from a caller waiting on one. Instead the connection is drained by
-//! a single reader that hands EVERYTHING to the caller as `Incoming`, and a
-//! request is a write followed by watching that stream for its response.
+//! Requests and events share the socket, so one reader thread hands
+//! everything to the caller as `Incoming`, and a response is matched to its
+//! request by the id `send` returned.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -149,7 +148,11 @@ pub struct Connection {
 
 impl Connection {
     pub fn open(path: &PathBuf) -> std::io::Result<Self> {
-        let stream = UnixStream::connect(path)?;
+        Self::over(UnixStream::connect(path)?)
+    }
+
+    /// A connection over a stream that already reaches a daemon.
+    pub fn over(stream: UnixStream) -> std::io::Result<Self> {
         let writer = stream.try_clone()?;
         let (sender, incoming) = mpsc::channel();
         // The reader owns the socket's read half and nothing else. Parsing
@@ -214,33 +217,6 @@ impl Connection {
             }
         }
         batch
-    }
-
-    /// Block until the response to `id` arrives, collecting the events that
-    /// come first. The replay after `session.attach ... since 0` arrives this
-    /// way -- before the response -- and dropping it is how a client shows an
-    /// empty pane for a session with a hundred turns in it.
-    pub fn wait_for(&mut self, id: u64, timeout: std::time::Duration)
-        -> (Option<Value>, Vec<Event>)
-    {
-        let deadline = std::time::Instant::now() + timeout;
-        let mut events = Vec::new();
-        while std::time::Instant::now() < deadline {
-            match self.incoming.recv_timeout(std::time::Duration::from_millis(50)) {
-                Ok(Incoming::Event(event)) => events.push(event),
-                Ok(Incoming::Response(value)) => {
-                    let matches_id = value.get("id").and_then(Value::as_u64) == Some(id);
-                    if matches_id {
-                        return (Some(value), events);
-                    }
-                }
-                Ok(Incoming::Greeting(_)) => {}
-                Ok(Incoming::Closed) => break,
-                Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        }
-        (None, events)
     }
 }
 

@@ -24,6 +24,7 @@ import pty
 import re
 import select
 import signal
+import socket
 import struct
 import sys
 import tempfile
@@ -358,6 +359,15 @@ def own_daemon(cwd):
     sys.exit("the check's own daemon never came up")
 
 
+def daemon_pid(socket_path):
+    """The daemon's process, from the greeting it gives every connection."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+        probe.settimeout(10)
+        probe.connect(socket_path)
+        greeting = probe.makefile("r", encoding="utf-8").readline()
+    return json.loads(greeting)["pid"]
+
+
 def main():
     cwd = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(ROOT)
     # The short name resolves to a launcher. What a person types is `viva`,
@@ -378,6 +388,46 @@ def main():
     try:
         client.wait_for("sessions", 60, "the first frame")
         ok("connects and draws a frame")
+
+        # A DAEMON THAT DOES NOT ANSWER DOES NOT STOP THE CLIENT. A session start
+        # takes as long as the daemon takes, and a client that waited for it in
+        # front of its loop drew nothing and read no keys until the answer came.
+        # Before the other checks, so it depends on nothing they leave behind.
+        def tab_count():
+            return client.term.lines()[0].count("│")
+        settle = time.time() + 60
+        while tab_count() < 2 and time.time() < settle:
+            client.pump(0.3)
+        client.pump(2.0)
+        tabs_before = tab_count()
+        pid = daemon_pid(socket_path)
+        os.kill(pid, signal.SIGSTOP)
+        try:
+            client.send(b"\x0e")                   # ctrl-n, which nothing can answer yet
+            client.send(b"typed while the daemon is stopped")
+            client.pump(2.0)
+            typed = input_row(client)
+        finally:
+            os.kill(pid, signal.SIGCONT)
+        resumed = time.time()
+        opened = None
+        while opened is None and time.time() - resumed < 20:
+            client.pump(0.1)
+            if tab_count() == tabs_before + 1:
+                opened = time.time() - resumed
+        if "typed while the daemon is stopped" not in typed:
+            print("---- frame at failure ----")
+            print(client.term.text())
+            fail(f"a stopped daemon stopped the client drawing: {typed!r}")
+        elif opened is None:
+            fail(f"the session asked for while the daemon was stopped never opened: "
+                 f"{client.term.lines()[0]!r}")
+        else:
+            ok(f"a stopped daemon leaves the client drawing, and the tab opens "
+               f"{opened:.1f}s after it resumes")
+        client.send(b"\x7f" * 40)
+        client.send(b"\x17")                       # ctrl-w: the view goes, the session stays
+        client.pump(2.0)
 
         for rows, cols in ((30, 60), (30, 120), (20, 70), (36, 100), (14, 44), (34, 120)):
             client.resize(rows, cols)

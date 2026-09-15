@@ -11,6 +11,7 @@ mod input;
 mod markdown;
 mod model;
 mod protocol;
+mod requests;
 mod status;
 mod ui;
 
@@ -23,9 +24,10 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use model::Model;
-use protocol::{Connection, Incoming, Recorded, SessionInfo};
+use protocol::{Connection, Incoming};
 use ratatui::prelude::*;
-use serde_json::{json, Value};
+use requests::Requests;
+use serde_json::json;
 use std::io::stdout;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -111,62 +113,14 @@ fn run() -> std::io::Result<()> {
         .map_err(|problem| std::io::Error::other(problem))?;
     let mut connection = Connection::open(&path)?;
 
-    let mut model = Model::new(cwd.clone());
+    let mut model = Model::new(cwd);
     // No standing hint. The welcome teaches the keys and `/` lists the
     // commands, so the status carries only what happened -- and a note that
     // is always there would outrank the ones that are not.
 
-    // THE GREETING ALREADY CARRIES THE SESSIONS. Asking for them again was
-    // the first draft: a second round trip to learn what the daemon had
-    // already said, and a first frame that was empty until it answered.
-    // Wait for the GREETING, not for a non-empty session list. Waiting for
-    // sessions meant a daemon with none -- a fresh one, which is exactly when
-    // somebody is looking hardest at how long this takes -- stalled for the
-    // whole deadline before drawing anything.
-    let deadline = Instant::now() + Duration::from_secs(10);
-    let mut greeted = false;
-    while !greeted && Instant::now() < deadline {
-        for message in connection.drain() {
-            match message {
-                Incoming::Greeting(greeting) => {
-                    take_sessions(&mut model, &greeting);
-                    greeted = true;
-                }
-                Incoming::Event(event) => model.absorb(&event),
-                Incoming::Response(reply) => take_response(&mut model, &reply),
-                Incoming::Closed => {
-                    model.connected = false;
-                    greeted = true;
-                }
-            }
-        }
-        if !greeted {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-
-    // THIS DIRECTORY'S SESSION, and one is STARTED when there is none.
-    //
-    // Whichever session happened to be newest was the fallback, so opening
-    // the client in one project could land you in another project's
-    // conversation. And with no live session anywhere it opened nothing at
-    // all: `viva` says it opens a session in the current directory, and on a
-    // daemon that had just started it opened a page saying `no session open`.
-    let here = model
-        .sessions
-        .iter()
-        .find(|session| session.cwd.trim_end_matches('/') == cwd.trim_end_matches('/'))
-        .map(|session| session.id.clone());
-    match here {
-        Some(id) => open_session(&mut connection, &mut model, &id)?,
-        None => {
-            perform(&mut connection, &mut model, input::Action::NewTab)?;
-        }
-    }
-    // Before the first frame, so the counts are there from the start rather
-    // than appearing a moment later.
-    let _ = refresh_learned(&mut connection, &mut model);
-    let _ = refresh_recent(&mut connection, &mut model);
+    // Nothing waits for the daemon. The greeting opens this directory's
+    // session, and each answer is handled by the loop when it lands.
+    let mut asked = Requests::default();
 
     // Set up the terminal LAST, so any failure above prints as ordinary text
     // instead of into an alternate screen nobody will ever see.
@@ -191,15 +145,29 @@ fn run() -> std::io::Result<()> {
         // for a burst of twenty events rather than twenty repaints.
         for message in connection.drain() {
             dirty = true;
-            match message {
-                Incoming::Event(event) => model.absorb(&event),
-                Incoming::Response(reply) => take_response(&mut model, &reply),
-                Incoming::Greeting(_) => {}
+            let handled = match message {
+                Incoming::Event(event) => {
+                    model.absorb(&event);
+                    Ok(())
+                }
+                Incoming::Response(reply) => asked
+                    .answered(&mut connection, &mut model, &reply)
+                    .map(|mine| {
+                        if !mine {
+                            requests::take_response(&mut model, &reply);
+                        }
+                    }),
+                Incoming::Greeting(greeting) => asked.greeted(&mut connection, &mut model, &greeting),
                 Incoming::Closed => {
+                    asked.forget(&mut model);
                     model.connected = false;
                     reconnect.lost();
                     model.status = "connection lost — reconnecting".into();
+                    Ok(())
                 }
+            };
+            if let Err(problem) = handled {
+                model.status = format!("{problem}");
             }
         }
 
@@ -210,9 +178,9 @@ fn run() -> std::io::Result<()> {
         // asked a dozen times rather than a thousand.
         if !model.connected && reconnect.due() {
             match reconnect.attempt(&path) {
+                // Its greeting attaches the open tabs again.
                 Some(fresh) => {
                     connection = fresh;
-                    rejoin(&mut connection, &mut model);
                     dirty = true;
                 }
                 None => {
@@ -241,7 +209,7 @@ fn run() -> std::io::Result<()> {
         while waiting {
             dirty = true;
             let action = input::read(&event::read()?, &mut model, &hits);
-            match perform(&mut connection, &mut model, action) {
+            match perform(&mut connection, &mut model, &mut asked, action) {
                 Ok(true) => return Ok(()),
                 Ok(false) => {}
                 Err(problem) => model.status = format!("{problem}"),
@@ -249,6 +217,9 @@ fn run() -> std::io::Result<()> {
             waiting = event::poll(Duration::from_millis(0))?;
         }
 
+        if asked.expire(&mut model, Instant::now()) {
+            dirty = true;
+        }
         if let Some(conversation) = model.conversations.get_mut(&model.current) {
             if conversation.settle() {
                 dirty = true;
@@ -261,6 +232,7 @@ fn run() -> std::io::Result<()> {
 fn perform(
     connection: &mut Connection,
     model: &mut Model,
+    asked: &mut Requests,
     action: input::Action,
 ) -> std::io::Result<bool> {
     use input::Action;
@@ -275,20 +247,27 @@ fn perform(
             // back through the same path as everything else. Echoing here as
             // well shows the prompt twice; echoing here INSTEAD shows it once
             // and loses it on the next attach.
-            connection.send(json!({
-                "type": "prompt", "session": model.current, "text": text
-            }))?;
+            if model.current.is_empty() {
+                // Enter has already emptied the line, and there is no session
+                // to send it to yet, so it goes back rather than away.
+                model.input = text;
+                model.status = "no session is open yet".into();
+            } else {
+                connection.send(json!({
+                    "type": "prompt", "session": model.current, "text": text
+                }))?;
+            }
         }
-        Action::Open(id) => open_session(connection, model, &id)?,
-        Action::NewTab => start_session(connection, model, None)?,
+        Action::Open(id) => asked.open(connection, model, &id)?,
+        Action::NewTab => asked.start(connection, model, None)?,
         Action::Models => {
             model.models.query.clear();
             model.models.refreshing = true;
-            fetch_models(connection, model, false)?;
+            asked.ask_models(connection, false)?;
             model.focus = model::Focus::Models;
         }
-        Action::RefreshModels => fetch_models(connection, model, true)?,
-        Action::UseModel(label) => start_session(connection, model, Some(&label))?,
+        Action::RefreshModels => asked.ask_models(connection, true)?,
+        Action::UseModel(label) => asked.start(connection, model, Some(&label))?,
         Action::CloseTab => {
             let index = model.tab;
             model.close_tab(index);
@@ -302,16 +281,17 @@ fn perform(
                 model.current = id;
             }
         }
-        Action::Refresh => refresh_sessions(connection, model)?,
+        Action::Refresh => asked.ask_sessions(connection)?,
         Action::Learned => {
-            refresh_learned(connection, model)?;
+            asked.ask_learned(connection, model)?;
             model.showing_learned = true;
         }
-        Action::Command(line) => return run_command(connection, model, &line),
+        Action::Command(line) => return run_command(connection, model, asked, &line),
         Action::Shell(line) => {
             if line.is_empty() {
                 model.status = "! needs a command".into();
             } else if model.current.is_empty() {
+                model.input = format!("!{line}");
                 model.status = "no session to run it in".into();
             } else {
                 connection.send(json!({
@@ -323,53 +303,8 @@ fn perform(
             model.sidebar = !model.sidebar;
             model.focus = if model.sidebar { model::Focus::Sessions } else { model::Focus::Input };
         }
-        Action::Search(text) => {
-            let asked = if text.trim().is_empty() {
-                connection.send(json!({"type": "session.recorded", "limit": 50}))?
-            } else {
-                connection.send(json!({"type": "session.search", "text": text, "limit": 50}))?
-            };
-            let (reply, events) = connection.wait_for(asked, Duration::from_secs(15));
-            for event in events {
-                model.absorb(&event);
-            }
-            model.picker.searching = false;
-            if let Some(found) = reply.as_ref().and_then(|r| r.get("recorded")).and_then(Value::as_array) {
-                model.picker.results = found
-                    .iter()
-                    .filter_map(|value| serde_json::from_value::<Recorded>(value.clone()).ok())
-                    .collect();
-                model.picker.selection = 0;
-            }
-        }
-        Action::Resume { id, cwd } => {
-            // Continue it in a NEW cell. A recorded session is a file, not a
-            // running thing, so resuming is starting -- and the daemon
-            // publishes what it loaded, which is what makes it visible here.
-            // ITS OWN directory, not ours. The daemon scopes find-session to
-            // the cwd it is given, so resuming a session recorded elsewhere
-            // into the client's directory finds nothing -- and a resume that
-            // finds nothing succeeds, producing an empty session that looks
-            // exactly like history that failed to load.
-            let where_it_lived = if cwd.is_empty() { model.cwd.clone() } else { cwd };
-            let started = connection.send(json!({
-                "type": "session.start", "cwd": where_it_lived, "resume": id
-            }))?;
-            let (reply, events) = connection.wait_for(started, Duration::from_secs(60));
-            for event in events {
-                model.absorb(&event);
-            }
-            if let Some(new_id) = reply
-                .as_ref()
-                .and_then(|reply| reply.get("session"))
-                .and_then(|session| session.get("id"))
-                .and_then(Value::as_str)
-            {
-                let new_id = new_id.to_string();
-                refresh_sessions(connection, model)?;
-                open_session(connection, model, &new_id)?;
-            }
-        }
+        Action::Search(text) => asked.search(connection, &text)?,
+        Action::Resume { id, cwd } => asked.resume(connection, model, &id, &cwd)?,
     }
     Ok(false)
 }
@@ -383,6 +318,7 @@ fn perform(
 fn run_command(
     connection: &mut Connection,
     model: &mut Model,
+    asked: &mut Requests,
     line: &str,
 ) -> std::io::Result<bool> {
     let mut parts = line.trim().splitn(2, char::is_whitespace);
@@ -401,29 +337,29 @@ fn run_command(
         // the whole point of a daemon, so every word for it does the same.
         "/quit" => return Ok(true),
         "/help" => model.note(commands::help()),
-        "/learned" => return perform(connection, model, input::Action::Learned).map(|_| false),
-        "/new" => return perform(connection, model, input::Action::NewTab).map(|_| false),
-        "/sessions" => return perform(connection, model, input::Action::ToggleSidebar).map(|_| false),
-        "/shell" => return perform(connection, model, input::Action::Shell(rest)).map(|_| false),
+        "/learned" => return perform(connection, model, asked, input::Action::Learned).map(|_| false),
+        "/new" => return perform(connection, model, asked, input::Action::NewTab).map(|_| false),
+        "/sessions" => return perform(connection, model, asked, input::Action::ToggleSidebar).map(|_| false),
+        "/shell" => return perform(connection, model, asked, input::Action::Shell(rest)).map(|_| false),
         "/find" => {
             model.focus = model::Focus::Picker;
             model.picker.query = rest.clone();
             model.picker.selection = 0;
             model.picker.searching = true;
-            return perform(connection, model, input::Action::Search(rest)).map(|_| false);
+            return perform(connection, model, asked, input::Action::Search(rest)).map(|_| false);
         }
         // Ctrl-C is the fast way and only fires when this client believes the
         // session is busy. That belief is a cached event, and a loop that
         // starts its next turn between two frames is exactly the case where it
         // is wrong -- so the brake a person reaches for deliberately does not
         // consult it.
-        "/stop" => return perform(connection, model, input::Action::Cancel).map(|_| false),
-        "/close" => return perform(connection, model, input::Action::CloseTab).map(|_| false),
-        "/refresh" => return perform(connection, model, input::Action::Refresh).map(|_| false),
+        "/stop" => return perform(connection, model, asked, input::Action::Cancel).map(|_| false),
+        "/close" => return perform(connection, model, asked, input::Action::CloseTab).map(|_| false),
+        "/refresh" => return perform(connection, model, asked, input::Action::Refresh).map(|_| false),
         "/models" => {
             // The typed remainder seeds the search, so `/models oss` narrows on
             // the way in rather than making somebody type it twice.
-            let outcome = perform(connection, model, input::Action::Models);
+            let outcome = perform(connection, model, asked, input::Action::Models);
             model.models.query = rest.clone();
             model.models.selection = 0;
             return outcome.map(|_| false);
@@ -504,245 +440,25 @@ impl Reconnect {
     }
 }
 
-/// Pick up where the old connection left off, on a daemon that may be new.
-///
-/// EVERYTHING IS RE-READ. A daemon that restarted brought the sessions back
-/// under the same ids, but its streams begin again at sequence one: folding
-/// the replay onto what this client already holds would show every turn
-/// twice, and trusting `last_seq` would skip most of it. The tabs stay --
-/// they name sessions, and the sessions are the thing that survived.
-fn rejoin(connection: &mut Connection, model: &mut Model) {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    let mut greeted = false;
-    while !greeted && Instant::now() < deadline {
-        for message in connection.drain() {
-            if let Incoming::Greeting(greeting) = message {
-                take_sessions(model, &greeting);
-                greeted = true;
-            }
-        }
-        if !greeted {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    }
-    if !greeted {
-        return;
-    }
-    model.connected = true;
-    model.conversations.clear();
-    let open: Vec<String> = model.tabs.clone();
-    for id in open {
-        model.conversation(&id);
-        let _ = attach(connection, model, &id);
-    }
-    let _ = refresh_learned(connection, model);
-    let _ = refresh_recent(connection, model);
-    model.status = "reconnected".into();
-}
-
-/// What was recorded in this directory, for the welcome. A handful, newest
-/// first: the welcome is a door, not the picker.
-fn refresh_recent(connection: &mut Connection, model: &mut Model) -> std::io::Result<()> {
-    let asked = connection.send(json!({
-        "type": "session.recorded", "cwd": model.cwd, "limit": 6
-    }))?;
-    let (reply, events) = connection.wait_for(asked, Duration::from_secs(5));
-    for event in events {
-        model.absorb(&event);
-    }
-    if let Some(found) = reply.as_ref().and_then(|r| r.get("recorded")).and_then(Value::as_array) {
-        model.recent = found
-            .iter()
-            .filter_map(|value| serde_json::from_value::<Recorded>(value.clone()).ok())
-            .collect();
-    }
-    Ok(())
-}
-
-fn open_session(
-    connection: &mut Connection,
-    model: &mut Model,
-    id: &str,
-) -> std::io::Result<()> {
-    model.open_tab(id);
-    attach(connection, model, id)
-}
-
-/// Subscribe, from the beginning.
-///
-/// SINCE 0 because this client shows a STATE, and an empty state is a claim.
-/// Opening a session onto a blank pane is indistinguishable from opening the
-/// wrong one. The replay arrives before the response, which is why the events
-/// collected while waiting are folded rather than dropped.
-fn attach(connection: &mut Connection, model: &mut Model, id: &str) -> std::io::Result<()> {
-    let already = model
-        .conversations
-        .get(id)
-        .map(|conversation| !conversation.entries.is_empty())
-        .unwrap_or(false);
-    if already {
-        return Ok(());
-    }
-    let asked = connection.send(json!({
-        "type": "session.attach", "session": id, "since": 0
-    }))?;
-    let (_, events) = connection.wait_for(asked, Duration::from_secs(20));
-    for event in events {
-        model.absorb(&event);
-    }
-    Ok(())
-}
-
-/// What this session has retained, in one request.
-///
-/// ONE request, not four: session.inspect answers notes, skills, tools and
-/// trust from a single instant. Four questions about one moment answered by
-/// four round trips would be four different moments.
-/// Start a session here, on MODEL when one was chosen, and open it in a tab.
-///
-/// ONE PATH FOR BOTH. `ctrl-n` and the model picker differ by one field, and two
-/// copies of this would be two chances for a refusal to be handled in one and
-/// dropped in the other -- which is exactly the fault this arm already had once.
-fn start_session(
-    connection: &mut Connection,
-    model: &mut Model,
-    named: Option<&str>,
-) -> std::io::Result<()> {
-    let mut request = json!({"type": "session.start", "cwd": model.cwd.clone()});
-    if let Some(named) = named {
-        request["model"] = json!(named);
-    }
-    let started = connection.send(request)?;
-    let (reply, events) = connection.wait_for(started, Duration::from_secs(30));
-    for event in events {
-        model.absorb(&event);
-    }
-    if let Some(id) = reply
-        .as_ref()
-        .and_then(|reply| reply.get("session"))
-        .and_then(|session| session.get("id"))
-        .and_then(Value::as_str)
-    {
-        let id = id.to_string();
-        model.open_tab(&id);
-        refresh_sessions(connection, model)?;
-        attach(connection, model, &id)?;
-        // NO CONFIRMATION IN THE STATUS. That field carries what went wrong and
-        // is never replaced by the facts, so a note put there sits on top of the
-        // learned counts for the rest of the run. The header already names the
-        // model the session resolved to, which is the confirmation.
-    } else if let Some(reply) = reply.as_ref() {
-        // A START THAT FAILED HAS TO SAY SO. This only ever looked for a session
-        // id, so a refusal was dropped and the pane kept saying `starting a
-        // session…` -- which is what a person with no provider key saw instead
-        // of the message naming the file to put one in.
-        take_response(model, reply);
-    }
-    Ok(())
-}
-
-/// What the daemon can reach. REFRESH asks its dynamic providers again.
-fn fetch_models(
-    connection: &mut Connection,
-    model: &mut Model,
-    refresh: bool,
-) -> std::io::Result<()> {
-    let asked = connection.send(json!({"type": "models", "refresh": refresh}))?;
-    // Longer than the other round trips on purpose: a refresh reaches every
-    // local server, and one that is not running is a bounded wait each.
-    let (reply, events) = connection.wait_for(asked, Duration::from_secs(20));
-    for event in events {
-        model.absorb(&event);
-    }
-    model.models.refreshing = false;
-    if let Some(reply) = reply {
-        if let Some(array) = reply.get("models").and_then(Value::as_array) {
-            let offers = array
-                .iter()
-                .filter_map(|value| serde_json::from_value::<model::ModelOffer>(value.clone()).ok())
-                .collect();
-            model.models.absorb(offers);
-        } else {
-            take_response(model, &reply);
-        }
-    }
-    Ok(())
-}
-
-fn refresh_learned(connection: &mut Connection, model: &mut Model) -> std::io::Result<()> {
-    if model.current.is_empty() {
-        return Ok(());
-    }
-    let asked = connection.send(json!({
-        "type": "session.inspect", "session": model.current
-    }))?;
-    let (reply, events) = connection.wait_for(asked, Duration::from_secs(15));
-    for event in events {
-        model.absorb(&event);
-    }
-    if let Some(reply) = reply {
-        model.learned = protocol::Learned::from_reply(&reply);
-    }
-    Ok(())
-}
-
-fn refresh_sessions(connection: &mut Connection, model: &mut Model) -> std::io::Result<()> {
-    let asked = connection.send(json!({"type": "session.list"}))?;
-    let (reply, events) = connection.wait_for(asked, Duration::from_secs(10));
-    for event in events {
-        model.absorb(&event);
-    }
-    if let Some(reply) = reply {
-        take_sessions(model, &reply);
-    }
-    Ok(())
-}
-
-/// One row's worth of a message that may have been written for a terminal.
-///
-/// THE STATUS LINE IS ONE ROW. An error composed for somebody reading a shell
-/// can carry newlines and indentation -- the one for a missing provider key
-/// prints a whole JSON shape -- and pushed into a single row it rendered as
-/// nothing at all. So a person with no key saw `starting a session…` and no
-/// reason, which is the state this collapse exists to make impossible.
-fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn take_response(model: &mut Model, reply: &Value) {
-    if reply.get("sessions").is_some() {
-        take_sessions(model, reply);
-    } else if reply.get("success").and_then(Value::as_bool) == Some(false) {
-        if let Some(error) = reply.get("error").and_then(Value::as_str) {
-            model.status = one_line(error);
-        }
-    }
-}
-
-fn take_sessions(model: &mut Model, reply: &Value) {
-    let Some(array) = reply.get("sessions").and_then(Value::as_array) else {
-        return;
-    };
-    model.sessions = array
-        .iter()
-        .filter_map(|value| serde_json::from_value::<SessionInfo>(value.clone()).ok())
-        .collect();
-    model.prune_tabs();
-    if model.selection >= model.sessions.len() {
-        model.selection = model.sessions.len().saturating_sub(1);
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader};
+    use std::os::unix::net::UnixStream;
+
     #[test]
-    fn a_message_written_for_a_shell_becomes_one_row() {
-        // The status line is one row, and an error composed for somebody reading
-        // a shell carries newlines and indentation. Pushed into a single row it
-        // rendered as nothing at all.
-        let shell = "No model is configured. Put a key in:\n\n  {\n    \"a\": 1\n  }\n";
-        assert_eq!(super::one_line(shell),
-                   "No model is configured. Put a key in: { \"a\": 1 }");
-        assert_eq!(super::one_line("already one row"), "already one row");
+    fn a_prompt_with_no_session_open_goes_back_to_the_line() {
+        let (ours, theirs) = UnixStream::pair().expect("a socket pair");
+        theirs.set_read_timeout(Some(Duration::from_millis(50))).expect("a read timeout");
+        let mut connection = Connection::over(ours).expect("a connection");
+        let mut model = Model::new("/w".into());
+        let mut asked = Requests::default();
+        let typed = input::Action::Send("what is in this folder".into());
+        perform(&mut connection, &mut model, &mut asked, typed).unwrap();
+        assert_eq!(model.input, "what is in this folder");
+        assert_eq!(model.status, "no session is open yet");
+        let mut line = String::new();
+        let sent = BufReader::new(theirs).read_line(&mut line);
+        assert!(!matches!(sent, Ok(read) if read > 0), "the prompt went to no session: {line}");
     }
 }
