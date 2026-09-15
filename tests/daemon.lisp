@@ -1085,11 +1085,13 @@ checkpoint."))
           (ignore-errors (close deaf))
           (actor:shutdown cell))))))
 
-(defclass wedged-agent (harness:workspace-agent) ())
+(defclass wedged-agent (harness:workspace-agent)
+  ((away :initform nil :accessor wedged-away)))
 
 (defmethod client:complete ((agent wedged-agent) messages)
   (declare (ignore messages))
   ;; Ignores cancellation entirely: the worker that will not come back.
+  (setf (wedged-away agent) t)
   (sleep 60)
   (say "much too late"))
 
@@ -1102,13 +1104,17 @@ checkpoint."))
          (progn
            (setf viva.actor::+stopping-grace+ 2)
            (with-repository (environment)
-             (let ((cell (actor:spawn :label "wedged"
-                                      :agent (make-instance 'wedged-agent
-                                                            :environment environment
-                                                            :resource-environment environment
-                                                            :request-limit 500))))
+             (let* ((agent (make-instance 'wedged-agent
+                                          :environment environment
+                                          :resource-environment environment
+                                          :request-limit 500))
+                    (cell (actor:spawn :label "wedged" :agent agent)))
                (actor:submit cell "go")
-               (true (daemon-wait (lambda () (viva.actor::busy-p cell))))
+               ;; INSIDE THE CALL THAT WILL NOT RETURN, not merely busy. A turn
+               ;; is busy from the moment it starts, and a shutdown that lands
+               ;; before the worker reaches the model is a cancel the loop still
+               ;; hears: the turn ends at once and no deadline is ever reached.
+               (true (daemon-wait (lambda () (wedged-away agent))))
                (actor:shutdown cell)
                ;; Traffic throughout the whole grace period.
                (let ((chatter (bt:make-thread
