@@ -51,6 +51,11 @@ impl Requests {
         self.asked.insert(id, Asked { awaiting, deadline, note: None });
     }
 
+    /// When a request goes overdue if nothing answers it first.
+    pub fn next_deadline(&self) -> Option<Instant> {
+        self.asked.values().filter_map(|asked| asked.deadline).min()
+    }
+
     /// Say in the status what a person is still waiting on. True if anything
     /// went overdue since the last call.
     pub fn expire(&mut self, model: &mut Model, now: Instant) -> bool {
@@ -323,7 +328,7 @@ mod tests {
         fn new() -> Wire {
             let (ours, theirs) = UnixStream::pair().expect("a socket pair");
             theirs.set_read_timeout(Some(Duration::from_millis(50))).expect("a read timeout");
-            Wire { connection: Connection::over(ours).expect("a connection"), daemon: BufReader::new(theirs) }
+            Wire { connection: Connection::over(ours, crate::wake::bell().0).expect("a connection"), daemon: BufReader::new(theirs) }
         }
 
         /// Every request that reached the daemon since the last call.
@@ -412,7 +417,9 @@ mod tests {
         let mut asked = Requests::default();
         asked.start(&mut wire.connection, &model, None).unwrap();
         let late = Instant::now() + Duration::from_secs(31);
+        assert!(asked.next_deadline().is_some_and(|deadline| deadline < late));
         assert!(asked.expire(&mut model, late));
+        assert_eq!(asked.next_deadline(), None, "an overdue request would go on waking the loop");
         assert_eq!(model.status, "the daemon has not started the session yet");
         assert!(!asked.expire(&mut model, late), "the same request went overdue twice");
         asked.answered(&mut wire.connection, &mut model, &reply(1, json!({"session": {"id": "s9"}}))).unwrap();

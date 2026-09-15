@@ -8,6 +8,7 @@
 //! everything to the caller as `Incoming`, and a response is matched to its
 //! request by the id `send` returned.
 
+use crate::wake::Bell;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
@@ -151,12 +152,14 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn open(path: &PathBuf) -> std::io::Result<Self> {
-        Self::over(UnixStream::connect(path)?)
+    /// A connection to the daemon at PATH, ringing BELL whenever it has
+    /// something for the loop.
+    pub fn open(path: &PathBuf, bell: Bell) -> std::io::Result<Self> {
+        Self::over(UnixStream::connect(path)?, bell)
     }
 
     /// A connection over a stream that already reaches a daemon.
-    pub fn over(stream: UnixStream) -> std::io::Result<Self> {
+    pub fn over(stream: UnixStream, bell: Bell) -> std::io::Result<Self> {
         let writer = stream.try_clone()?;
         let (sender, incoming) = mpsc::channel();
         // The reader owns the socket's read half and nothing else. Parsing
@@ -171,12 +174,17 @@ impl Connection {
                 };
                 if let Some(message) = message {
                     let closed = matches!(message, Incoming::Closed);
-                    if sender.send(message).is_err() || closed {
+                    if sender.send(message).is_err() {
+                        return;
+                    }
+                    bell.ring();
+                    if closed {
                         return;
                     }
                 }
             }
             let _ = sender.send(Incoming::Closed);
+            bell.ring();
         });
         Ok(Connection { writer, incoming, next_id: 1, closed: false })
     }

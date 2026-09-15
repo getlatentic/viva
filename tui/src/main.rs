@@ -16,6 +16,7 @@ mod protocol;
 mod requests;
 mod status;
 mod ui;
+mod wake;
 mod wrap;
 
 use crossterm::event::{
@@ -35,6 +36,7 @@ use std::io::stdout;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
+use wake::Bell;
 
 /// Restores the terminal however the program leaves -- return, error or panic.
 ///
@@ -115,7 +117,8 @@ fn run() -> std::io::Result<()> {
     // simply make sure of it.
     protocol::ensure_daemon(&path, || eprintln!("starting the viva daemon…"))
         .map_err(|problem| std::io::Error::other(problem))?;
-    let mut connection = Connection::open(&path)?;
+    let (bell, waiter) = wake::bell();
+    let mut connection = Connection::open(&path, bell.clone())?;
 
     let mut model = Model::new(cwd);
     // No standing hint. The welcome teaches the keys and `/` lists the
@@ -135,14 +138,24 @@ fn run() -> std::io::Result<()> {
     let mut hits = ui::Hitboxes::default();
     let mut rendered = layout::Rendered::default();
     let mut reconnect = Reconnect::default();
+    let keys = read_keys(bell.clone());
     // DRAW ONLY WHEN SOMETHING CHANGED. Redrawing on a timer means an idle
     // client spends the same effort as a busy one, and the effort is not small
     // -- laying out a long transcript costs the length of the conversation.
     let mut dirty = true;
     loop {
-        if dirty {
-            terminal.draw(|frame| hits = ui::draw(frame, &mut model, &mut rendered))?;
-            dirty = false;
+        // EVERY key that is already waiting, before drawing again. Holding a
+        // key or spinning a wheel delivers events faster than a frame, and
+        // repainting between each one makes the client slower the harder it is
+        // being used -- which is the wrong way round.
+        while let Ok(read) = keys.try_recv() {
+            dirty = true;
+            let action = input::read(&read?, &mut model, &hits);
+            match perform(&mut connection, &mut model, &mut asked, action) {
+                Ok(true) => return Ok(()),
+                Ok(false) => {}
+                Err(problem) => model.status = format!("{problem}"),
+            }
         }
 
         // Everything the daemon has said, before the next frame: one repaint
@@ -181,7 +194,7 @@ fn run() -> std::io::Result<()> {
         // too`. Tried on a backoff, so a daemon that is down for a minute is
         // asked a dozen times rather than a thousand.
         if !model.connected && reconnect.due() {
-            match reconnect.attempt(&path) {
+            match reconnect.attempt(&path, &bell) {
                 // Its greeting attaches the open tabs again.
                 Some(fresh) => {
                     connection = fresh;
@@ -194,32 +207,6 @@ fn run() -> std::io::Result<()> {
             }
         }
 
-        // EVERY key that is already waiting, before drawing again. Holding a
-        // key or spinning a wheel delivers events faster than a frame, and
-        // repainting between each one makes the client slower the harder it is
-        // being used -- which is the wrong way round.
-        // A scroll still owed is a reason to come straight back: the frames
-        // that pay it out are what make the movement visible.
-        let owed = model
-            .conversations
-            .get(&model.current)
-            .map(|conversation| conversation.owes_scroll())
-            .unwrap_or(false);
-        // Paced, not raced: a frame every few milliseconds is what makes the
-        // movement visible, and the same wait still answers a key at once.
-        let patience = if owed { 6 } else { 30 };
-        let mut waiting = event::poll(Duration::from_millis(patience))?;
-        while waiting {
-            dirty = true;
-            let action = input::read(&event::read()?, &mut model, &hits);
-            match perform(&mut connection, &mut model, &mut asked, action) {
-                Ok(true) => return Ok(()),
-                Ok(false) => {}
-                Err(problem) => model.status = format!("{problem}"),
-            }
-            waiting = event::poll(Duration::from_millis(0))?;
-        }
-
         if asked.expire(&mut model, Instant::now()) {
             dirty = true;
         }
@@ -228,7 +215,44 @@ fn run() -> std::io::Result<()> {
                 dirty = true;
             }
         }
+        if dirty {
+            terminal.draw(|frame| hits = ui::draw(frame, &mut model, &mut rendered))?;
+            dirty = false;
+        }
+
+        // Asleep until something arrives, or until the earliest thing that has
+        // a time: the next step of a scroll still owed, a request going overdue,
+        // a reconnect coming due. Nothing else wakes an idle client.
+        let pacing = model
+            .conversations
+            .get(&model.current)
+            .filter(|conversation| conversation.owes_scroll())
+            .map(|_| Instant::now() + Duration::from_millis(6));
+        let reconnecting = if model.connected { None } else { reconnect.next };
+        waiter.wait([pacing, asked.next_deadline(), reconnecting].into_iter().flatten().min());
     }
+}
+
+/// Keys, read on a thread of their own, so the loop waits on one bell for a
+/// key and for the daemon alike.
+///
+/// The thread holds crossterm's event reader for as long as it waits, so
+/// nothing else may ask the terminal something whose answer is read back --
+/// the cursor's position, say. That question would wait for the next key.
+fn read_keys(bell: Bell) -> Receiver<std::io::Result<event::Event>> {
+    let (sender, keys) = mpsc::channel();
+    std::thread::spawn(move || loop {
+        let read = event::read();
+        let failed = read.is_err();
+        if sender.send(read).is_err() {
+            return;
+        }
+        bell.ring();
+        if failed {
+            return;
+        }
+    });
+    keys
 }
 
 /// Do what a keypress or click asked for. Returns true to leave.
@@ -443,9 +467,9 @@ impl Reconnect {
     /// doing, a day after the daemon they wanted had gone. So the socket is
     /// tried first every time, and a start is attempted only while there is
     /// budget for one.
-    fn attempt(&mut self, path: &PathBuf) -> Option<Connection> {
+    fn attempt(&mut self, path: &PathBuf, bell: &Bell) -> Option<Connection> {
         self.attempts += 1;
-        if let Ok(connection) = Connection::open(path) {
+        if let Ok(connection) = Connection::open(path, bell.clone()) {
             self.next = None;
             self.starts = 0;
             self.starting = None;
@@ -456,8 +480,10 @@ impl Reconnect {
             self.starts += 1;
             let (said, starting) = mpsc::channel();
             let path = path.clone();
+            let bell = bell.clone();
             std::thread::spawn(move || {
                 let _ = said.send(protocol::ensure_daemon(&path, || {}));
+                bell.ring();
             });
             self.starting = Some(starting);
         }
@@ -480,7 +506,7 @@ mod tests {
     fn a_prompt_with_no_session_open_goes_back_to_the_line() {
         let (ours, theirs) = UnixStream::pair().expect("a socket pair");
         theirs.set_read_timeout(Some(Duration::from_millis(50))).expect("a read timeout");
-        let mut connection = Connection::over(ours).expect("a connection");
+        let mut connection = Connection::over(ours, wake::bell().0).expect("a connection");
         let mut model = Model::new("/w".into());
         let mut asked = Requests::default();
         let typed = input::Action::Send("what is in this folder".into());

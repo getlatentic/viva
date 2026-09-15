@@ -17,9 +17,11 @@ import fcntl
 import json
 import os
 import pty
+import random
 import re
 import select
 import socket
+import statistics
 import struct
 import sys
 import tempfile
@@ -80,6 +82,9 @@ LIVE = [
     ("turn.completed", {}),
 ]
 
+# A line the check asks the daemon to send when it chooses, and when it was sent.
+LATENCY = {"go": threading.Event(), "text": "", "sent": 0.0}
+
 
 def serve(path, ready):
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -96,18 +101,30 @@ def serve(path, ready):
 
 def talk(client):
     seq = [0]
+    lock = threading.Lock()
+    attached = []
 
     def line(payload):
         # The client learns a daemon is up by connecting and leaving at once,
         # so a greeting can be written to a connection that has already gone.
-        try:
-            client.sendall((json.dumps(payload) + "\n").encode())
-        except OSError:
-            pass
+        with lock:
+            try:
+                client.sendall((json.dumps(payload) + "\n").encode())
+            except OSError:
+                pass
 
     def event(name, data, session="s1"):
-        seq[0] += 1
-        line({"event": name, "session": session, "seq": seq[0], "time": 0, "data": data})
+        with lock:
+            seq[0] += 1
+            number = seq[0]
+        line({"event": name, "session": session, "seq": number, "time": 0, "data": data})
+
+    def emit():
+        while True:
+            LATENCY["go"].wait()
+            LATENCY["go"].clear()
+            LATENCY["sent"] = time.monotonic()
+            event("model.delta", {"text": LATENCY["text"] + "\n"}, attached[-1])
 
     line({"type": "ready", "pid": 1, "sessions": SESSIONS})
     buffer = b""
@@ -128,6 +145,9 @@ def talk(client):
             kind = request.get("type")
             rid = request.get("id")
             if kind == "session.attach":
+                if not attached:
+                    threading.Thread(target=emit, daemon=True).start()
+                attached.append(request.get("session", "s1"))
                 for name, data in REPLAY:
                     event(name, data, request.get("session", "s1"))
                 line({"type": "response", "id": rid, "command": kind,
@@ -280,6 +300,41 @@ def main():
         fail(f"a completed task is not marked as completed: {child_line!r}")
     else:
         ok("a finished task looks different from a running one")
+
+    # A LINE FROM THE DAEMON IS DRAWN WHEN IT ARRIVES. A client that waited for
+    # keys on a timer left the line to wait out the rest of that wait before it
+    # was even read -- tens of milliseconds on every token of every reply.
+    def seen(marker, seconds):
+        stop = time.monotonic() + seconds
+        while time.monotonic() < stop:
+            r, _, _ = select.select([fd], [], [], 0.001)
+            if r:
+                try:
+                    chunk = os.read(fd, 65536)
+                except OSError:
+                    return None
+                term.feed(decoder.decode(chunk))
+                if marker in term.text():
+                    return time.monotonic()
+        return None
+
+    delays = []
+    for index in range(15):
+        time.sleep(random.uniform(0.15, 0.25))
+        marker = format((index + 1) * 2654435761 % (1 << 32), "08x") + "z"
+        LATENCY["text"] = marker
+        LATENCY["go"].set()
+        arrived = seen(marker, 3.0)
+        if arrived is not None:
+            delays.append((arrived - LATENCY["sent"]) * 1000)
+    if len(delays) < 15:
+        fail(f"only {len(delays)} of 15 lines from the daemon reached the screen")
+    elif statistics.median(delays) > 20:
+        fail(f"a line from the daemon took {statistics.median(delays):.1f}ms to reach the screen "
+             f"(median of 15; slowest {max(delays):.1f}ms)")
+    else:
+        ok(f"a line from the daemon is on screen {statistics.median(delays):.1f}ms after it is sent "
+           f"(median of 15; slowest {max(delays):.1f}ms)")
 
     # A new tab, against a daemon whose answer is known exactly.
     before = term.lines()[0]
