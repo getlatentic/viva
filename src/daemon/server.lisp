@@ -381,6 +381,46 @@ somebody bringing one back has only that."
   (let ((value (gethash key command)))
     (if (stringp value) value default)))
 
+(defvar *deleting* (make-hash-table :test #'equal)
+  "Sessions being deleted, so a resume cannot bring one back halfway through.")
+
+(defvar *deleting-lock* (bt:make-lock "viva.deleting"))
+
+(defun deleting-p (id)
+  (bt:with-lock-held (*deleting-lock*) (gethash id *deleting*)))
+
+(defun delete-session (id)
+  "Stop session ID if it is live and has no turn, then delete what is recorded
+under its id: transcript, journal files, live marker. Values: how many files
+went, or NIL and why nothing did.
+
+REFUSED WHILE A TURN RUNS, and while stuck. Deleting is not a way to stop work
+somebody may still want, and a stuck session never leaves the registry -- its
+files would go while the session stayed."
+  (bt:with-lock-held (*deleting-lock*)
+    (when (gethash id *deleting*)
+      (return-from delete-session (values nil "That session is already being deleted.")))
+    (setf (gethash id *deleting*) t))
+  (unwind-protect
+       (let ((cell (actor:find-cell id)))
+         (when cell
+           (let ((now (actor:snapshot cell)))
+             (cond ((eq :stuck (getf now :state))
+                    (return-from delete-session
+                      (values nil "That session is stuck; restart the daemon, then delete it.")))
+                   ((getf now :turn)
+                    (return-from delete-session
+                      (values nil "That session is in the middle of a turn; stop it first.")))))
+           (unless (actor:await-shutdown cell :timeout 30)
+             (return-from delete-session
+               (values nil "That session did not stop in time; nothing was deleted."))))
+         (let ((transcripts (session:delete-session-files id))
+               (journals (actor:forget-journal id)))
+           (if (and (null cell) (zerop transcripts) (zerop journals))
+               (values nil "No such session.")
+               (+ transcripts journals))))
+    (bt:with-lock-held (*deleting-lock*) (remhash id *deleting*))))
+
 (defun start-session (command)
   "Start a session, or continue one. Returns its cell.
 
@@ -388,6 +428,9 @@ A SESSION THAT IS ALREADY RUNNING IS ATTACHED TO, NOT STARTED AGAIN. With ids
 durable, a resume can name a live cell -- a tab reopened after the client
 restarted, a picker entry for a session the daemon brought back -- and a second
 cell on the same transcript would be two writers to one file."
+  (a:when-let ((wanted (text-of command "resume")))
+    (when (deleting-p wanted)
+      (error "That session is being deleted.")))
   (a:when-let ((running (a:when-let ((wanted (text-of command "resume")))
                           (and (not (string= "true" wanted)) (actor:find-cell wanted)))))
     (return-from start-session running))
@@ -712,6 +755,29 @@ correct and nobody could receive it."
 
         ((string= "session.stop" type)
          (if cell (progn (actor:shutdown cell) (ok)) (no "No such session.")))
+
+        ;; ANOTHER MODEL FOR A SESSION ALREADY TALKING, from its next turn: at
+        ;; once when nothing is running, when the running turn ends otherwise,
+        ;; and `session.model` says which. Resolved HERE, on the asker's
+        ;; thread, so a name nothing offers is refused to the one who asked
+        ;; rather than failing inside the session.
+        ((string= "session.model" type)
+         (let ((wanted (text-of command "model")))
+           (cond ((null cell) (no "No such session."))
+                 ((null wanted) (no "session.model needs a model."))
+                 (t (let ((choice (models:resolve-model wanted)))
+                      (actor:retarget cell choice)
+                      (ok "model" (model-json choice)))))))
+
+        ;; What is recorded under the id goes -- transcript, journal, live
+        ;; marker -- and nothing else: notes, skills and tools the session
+        ;; retained belong to its project.
+        ((string= "session.delete" type)
+         (let ((id (text-of command "session")))
+           (if (not (session:valid-session-id-p id))
+               (no "session.delete needs a session id.")
+               (multiple-value-bind (files refusal) (delete-session id)
+                 (if files (ok "session" id "files" files) (no refusal))))))
 
         ;; The whole point of the actor model: this returns at once, and the
         ;; work continues whether or not the caller stays connected. The turn

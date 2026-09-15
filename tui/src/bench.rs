@@ -12,7 +12,18 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
     use serde_json::json;
+    use std::sync::{Mutex, MutexGuard, PoisonError};
     use std::time::Instant;
+
+    /// Held by every bench while it measures. The harness runs tests at once,
+    /// and a frame timed while the other benches draw on the same cores is a
+    /// measure of the machine rather than of the frame.
+    static MEASURING: Mutex<()> = Mutex::new(());
+
+    /// The bench lock, whole again after a bench that failed while holding it.
+    fn alone() -> MutexGuard<'static, ()> {
+        MEASURING.lock().unwrap_or_else(PoisonError::into_inner)
+    }
 
     /// The budget for one frame, which depends on how the crate was built.
     ///
@@ -55,6 +66,7 @@ mod tests {
     /// watching output arrive.
     #[test]
     fn a_streamed_token_does_not_cost_the_whole_session() {
+        let _alone = alone();
         let mut costs = Vec::new();
         for turns in [10usize, 100, 400] {
             let mut model = big_model(turns);
@@ -95,6 +107,7 @@ mod tests {
     /// in Japanese must not be the slow one.
     #[test]
     fn a_wide_transcript_streams_within_a_frame() {
+        let _alone = alone();
         let mut model = model_saying(400, |turn, line| {
             format!("答え{turn}の{line}行目、百桁で一度か二度は折り返すくらいの長さがある文章です\n")
         });
@@ -159,6 +172,7 @@ mod tests {
 
     #[test]
     fn switching_tabs_does_not_lay_out_a_conversation_again() {
+        let _alone = alone();
         let mut model = big_model(400);
         model.sessions.push(SessionInfo {
             id: "s2".into(), label: "/w/beta".into(), state: "idle".into(), ..Default::default()
@@ -185,6 +199,7 @@ mod tests {
 
     #[test]
     fn a_page_width_seen_before_is_not_laid_out_again() {
+        let _alone = alone();
         let mut model = big_model(400);
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
         let mut rendered = layout::Rendered::default();
@@ -205,6 +220,7 @@ mod tests {
 
     #[test]
     fn a_new_page_width_is_laid_out_within_a_frame() {
+        let _alone = alone();
         let mut model = big_model(400);
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
         let mut rendered = layout::Rendered::default();
@@ -217,44 +233,90 @@ mod tests {
         assert!(dragging < budget, "a resize costs {dragging:.2}ms, over the {budget:.0}ms a frame has");
     }
 
+    /// A model, the terminal it is drawn on and the layout it keeps, drawn once
+    /// so what is measured next is steady state.
+    struct Stage {
+        model: Model,
+        terminal: Terminal<TestBackend>,
+        rendered: layout::Rendered,
+    }
+
+    impl Stage {
+        fn new(mut model: Model) -> Stage {
+            let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+            let mut rendered = layout::Rendered::default();
+            terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
+            Stage { model, terminal, rendered }
+        }
+    }
+
+    /// The fastest of WINDOWS measurements of FIRST and of SECOND, taken in turn.
+    ///
+    /// In turn, so load that comes and goes lands on both sides. The fastest, so
+    /// a stall that hits one window is not the number compared. A cost that
+    /// recurs every few draws is in every window, so it still counts.
+    fn fastest_in_turn(
+        windows: usize,
+        first: &mut Stage,
+        second: &mut Stage,
+        mut measure: impl FnMut(&mut Stage) -> f64,
+    ) -> (f64, f64) {
+        let (mut quickest_first, mut quickest_second) = (f64::INFINITY, f64::INFINITY);
+        for _ in 0..windows {
+            quickest_first = quickest_first.min(measure(first));
+            quickest_second = quickest_second.min(measure(second));
+        }
+        (quickest_first, quickest_second)
+    }
+
     #[test]
     fn a_long_reply_does_not_get_slower_line_by_line() {
-        let mut model = big_model(100);
-        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-        let mut rendered = layout::Rendered::default();
-        terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
-        let mut written = 0;
-        let mut lines = |count: usize, model: &mut Model, terminal: &mut Terminal<TestBackend>, rendered: &mut layout::Rendered| {
-            per_draw(model, terminal, rendered, count, |_, model, _| {
-                written += 1;
-                model.absorb(&delta(&format!("reply line {written}, which says a sentence or so of something\n")));
-            })
+        let _alone = alone();
+        let reply = |line: usize| delta(&format!("reply line {line}, which says a sentence or so of something\n"));
+        // The last reply of `big_model` already has twelve lines.
+        let replying = |lines: usize| {
+            let mut model = big_model(100);
+            for line in 0..lines {
+                model.absorb(&reply(line));
+            }
+            Stage::new(model)
         };
-        let early = lines(20, &mut model, &mut terminal, &mut rendered);
-        lines(360, &mut model, &mut terminal, &mut rendered);
-        let late = lines(20, &mut model, &mut terminal, &mut rendered);
-        println!("a reply line: {early:.2}ms at line 20, {late:.2}ms at line 400");
+        let (mut near_start, mut far_in) = (replying(8), replying(388));
+        let mut written = 0;
+        let (early, late) = fastest_in_turn(5, &mut near_start, &mut far_in, |stage| {
+            per_draw(&mut stage.model, &mut stage.terminal, &mut stage.rendered, 20, |_, model, _| {
+                written += 1;
+                model.absorb(&reply(written));
+            })
+        });
+        println!("a reply line: {early:.2}ms from line 20, {late:.2}ms from line 400");
         assert!(late < early * 2.0, "line 400 of a reply costs {late:.2}ms against {early:.2}ms for line 20");
     }
 
     #[test]
     fn an_unbroken_line_streams_in_time_that_does_not_grow_with_it() {
-        let mut model = big_model(10);
-        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
-        let mut rendered = layout::Rendered::default();
-        terminal.draw(|frame| { ui::draw(frame, &mut model, &mut rendered); }).unwrap();
+        let _alone = alone();
         let token = "0123456789abcdef".repeat(4);
-        let short = per_draw(&mut model, &mut terminal, &mut rendered, 30, |_, model, _| model.absorb(&delta(&token)));
-        for _ in 0..1200 {
-            model.absorb(&delta(&token));
-        }
-        let long = per_draw(&mut model, &mut terminal, &mut rendered, 30, |_, model, _| model.absorb(&delta(&token)));
-        println!("a token on an unbroken line: {short:.2}ms at 2KB, {long:.2}ms at 80KB");
+        let line_of = |tokens: usize| {
+            let mut model = big_model(10);
+            for _ in 0..tokens {
+                model.absorb(&delta(&token));
+            }
+            Stage::new(model)
+        };
+        let (mut at_2kb, mut at_80kb) = (line_of(32), line_of(1250));
+        let (short, long) = fastest_in_turn(5, &mut at_2kb, &mut at_80kb, |stage| {
+            per_draw(&mut stage.model, &mut stage.terminal, &mut stage.rendered, 30, |_, model, _| {
+                model.absorb(&delta(&token))
+            })
+        });
+        println!("a token on an unbroken line: {short:.2}ms from 2KB, {long:.2}ms from 80KB");
         assert!(long < short * 2.0, "a token at 80KB costs {long:.2}ms against {short:.2}ms at 2KB");
     }
 
     #[test]
     fn a_frame_is_drawn_in_under_a_frame() {
+        let _alone = alone();
         // 120 turns is a long afternoon, not an extreme. At sixty frames a
         // second a frame has 16ms; a client that takes longer than that to
         // decide what to draw cannot feel immediate however fast the terminal
@@ -282,6 +344,7 @@ mod tests {
 
     #[test]
     fn scrolling_does_not_get_slower_the_longer_the_conversation() {
+        let _alone = alone();
         // IT HAS TO ACTUALLY SCROLL. This drew the same frame ten times and
         // called the number a scrolling cost -- a redraw benchmark wearing a
         // scrolling name, which would have reported `flat` however expensive

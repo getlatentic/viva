@@ -106,6 +106,10 @@ live undefined-variable warning that every later warning would have hidden in.")
   ;; loss has not been announced; :REPORTED it has. Degradation is a state the
   ;; session is allowed to be in and required to say out loud.
   (degraded nil)
+  ;; A model asked for while a turn was running, applied when that turn is
+  ;; over. Changed under the turn, the rest of its requests would go to a
+  ;; different model than the ones before them.
+  (staged-model nil)
   (flush-declared nil :type boolean)
   (journal-path "" :type string)
   (subscribers '() :type list)
@@ -248,6 +252,28 @@ marker exists for."
 
 (defun unmark-live (id)
   (ignore-errors (delete-file (live-path id))))
+
+(defun journal-files (id)
+  "Every journal file session ID has had, one per time it was spawned. Exactly
+its own: `abc-*` also matches `abc-def-...`, so what follows the id must be the
+spawn time and nothing else."
+  (let ((prefix (format nil "~a-" id)))
+    (remove-if-not (lambda (path)
+                     (let ((name (pathname-name path)))
+                       (and (a:starts-with-subseq prefix name)
+                            (let ((stamp (subseq name (length prefix))))
+                              (and (plusp (length stamp)) (every #'digit-char-p stamp))))))
+                   (ignore-errors
+                    (directory (merge-pathnames (format nil "~a-*.jsonl" id) (journal-root)))))))
+
+(defun forget-journal (id)
+  "Delete session ID's journal files and its live marker, and say how many files
+went. Named files only: the same directory holds every other session's journal
+and the evolution ledger."
+  (let ((files (journal-files id)))
+    (dolist (file files) (ignore-errors (delete-file file)))
+    (unmark-live id)
+    (length files)))
 
 (defun live-sessions ()
   "What was running when the last daemon stopped, oldest first.
@@ -827,6 +853,7 @@ lifecycle decision (or names a turn that is already gone, the old APPLIES-P)."
        (when (or (null named) (equal named (current-turn cell)))
          (list verb))))
     (:shutdown '(:shutdown))
+    (:retarget '(:retarget))
     ((:stop-deadline :flush-confirmed :flush-failed) (list verb))
     (t nil)))
 
@@ -834,6 +861,7 @@ lifecycle decision (or names a turn that is already gone, the old APPLIES-P)."
   (ecase reason
     (:prompt-refused-stopping "prompt refused: the session is stopping")
     (:prompt-refused-queue-full "prompt refused: queue full")
+    (:model-refused-stopping "model change refused: the session is stopping")
     (:shutdown-timed-out "shutdown timed out with a turn still running")))
 
 (defun terminal-name (outcome)
@@ -902,6 +930,14 @@ carrying what the alphabet abstracts away: prompt text, detail, reply, model."
          (setf (cell-stop-deadline cell)
                (+ (get-internal-real-time)
                   (* +stopping-grace+ internal-time-units-per-second)))))
+      (:apply-model (apply-model cell (getf options :choice)))
+      (:stage-model
+       (let ((choice (getf options :choice)))
+         (owning (cell) (setf (cell-staged-model cell) choice))
+         (publish-model cell choice t)))
+      (:apply-staged-model
+       (a:when-let ((choice (owning (cell) (shiftf (cell-staged-model cell) nil))))
+         (apply-model cell choice)))
       (:post-flush (attempt-flush cell))
       (:retry-flush (sleep 1) (attempt-flush cell))
       (:declare-flush-failure
@@ -918,6 +954,24 @@ carrying what the alphabet abstracts away: prompt text, detail, reply, model."
        (destructuring-bind (kind &rest detail) arguments
          (publish cell "session.error"
                   (event::object "detail" (format nil "~(~a~): ~{~a~^ ~}" kind detail))))))))
+
+(defun publish-model (cell choice pending)
+  (publish cell "session.model" (event::object "model" (models:choice-model choice)
+                                               "label" (models:choice-label choice)
+                                               "pending" pending)))
+
+(defun apply-model (cell choice)
+  "Point the session at CHOICE, write it down, and say so.
+
+BETWEEN TURNS ONLY: the table emits this at rest or at a turn boundary, because
+while a turn runs its agent belongs to the turn's thread."
+  (harness:use-choice (cell-agent cell) choice)
+  (owning (cell) (setf (cell-model cell) (models:choice-model choice)))
+  ;; The marker too, or a restart brings the session back on its first model.
+  (handler-case (mark-live cell)
+    (error (condition)
+      (format *error-output* "~&viva live-marker: ~a not rewritten: ~a~%" (cell-id cell) condition)))
+  (publish-model cell choice nil))
 
 (defun attempt-flush (cell)
   "One flush attempt, reported back into the mailbox as a kernel message: the
@@ -1155,6 +1209,12 @@ visible loss. spec/Recovery.tla, RecoveryWitnessName."
   "Post a message and return at once. The session works at its own pace."
   (let ((cell (resolve cell)))
     (when cell (deliver cell message))))
+
+(defun retarget (cell choice)
+  "Ask the session to answer on CHOICE from its next turn: at once when nothing
+is running, when the running turn is over otherwise. spec/CellLifecycle.tla,
+RunningTurnKeepsItsModel."
+  (tell cell :retarget :choice choice))
 
 (defun submit (cell text)
   "Post a prompt and return the id of the turn it will become.

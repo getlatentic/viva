@@ -202,10 +202,7 @@ the last one HERE."
    (make-verb :name "model" :argument "[NAME]" :blurb "show or switch the model"
               :handler (lambda (agent argument out)
                          (if (plusp (length argument))
-                             (let ((choice (models:resolve-model argument)))
-                               (setf (agent:agent-model agent) (models:choice-model choice)
-                                     (agent:agent-provider agent) (models:choice-provider choice)
-                                     (agent:agent-reasoning-effort agent) (models:choice-effort choice))
+                             (let ((choice (harness:use-choice agent (models:resolve-model argument))))
                                (format out "  now ~a~%" (models:choice-model choice)))
                              (format out "  ~a~%  available: ~{~a~^, ~}~%"
                                      (agent:agent-model agent)

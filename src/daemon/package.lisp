@@ -49,6 +49,7 @@ can name without qualifying it."))
                     (#:agent #:viva.agent)
                     (#:env #:viva.env)
                     (#:harness #:viva.harness)
+                    (#:models #:viva.models)
                     (#:operation #:viva.operation)
                     (#:session #:viva.session)
                     (#:kernel #:viva.kernel)
@@ -64,11 +65,11 @@ can name without qualifying it."))
   ;; the escape hatch every law here exists to remove. Ask through SNAPSHOT,
   ;; say through TELL and SUBMIT, listen through SUBSCRIBE. Tests reach inside
   ;; with :: on purpose; testing internals is what they are for.
-  (:export #:cell #:cell-id #:spawn #:tell #:submit #:submit-retention #:busy-p #:ask-now #:publish
+  (:export #:cell #:cell-id #:spawn #:tell #:retarget #:submit #:submit-retention #:busy-p #:ask-now #:publish
            #:shutdown #:await-shutdown #:await-turn
            #:subscribe #:subscribe-since #:unsubscribe #:since
            #:find-cell #:all-cells #:snapshot #:+terminal-events+ #:*journal-root* #:journal-root #:stop-journal
-           #:live-sessions #:unmark-live #:live-root
+           #:live-sessions #:unmark-live #:live-root #:forget-journal
            #:spawn-task #:cancel-task #:task-tree-snapshot #:ensure-supervisor
            #:ensure-evolver #:create-candidate #:activate-candidate
            #:promote-candidate #:revert-component #:discard-candidate

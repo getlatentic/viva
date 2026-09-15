@@ -40,6 +40,7 @@ fi
 # config : module : expectation : what the expectation means
 cases='
 CellLifecycle:CellLifecycle:holds:the cell lifecycle, complete space
+CellLifecycleWitnessRetarget:CellLifecycle:violates:a model applied at once reaches a turn already running
 ReplayBarrier:ReplayBarrier:holds:no subscriber misses an event across the barrier
 ReplayBarrierBroken:ReplayBarrier:violates:without the barrier, the gap is reachable
 TaskTreeSafety:TaskTree:holds:scoped children cannot outlive their parent

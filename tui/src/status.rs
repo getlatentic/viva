@@ -15,8 +15,13 @@ pub fn facts(model: &Model) -> Vec<String> {
         return Vec::new();
     };
     let mut facts = Vec::new();
-    if !session.model.is_empty() {
-        facts.push(session.model.clone());
+    // The model answering now, and the one the next turn will have when a change
+    // is waiting for the running turn to end.
+    match model.current_conversation().and_then(|conversation| conversation.pending_model.as_deref()) {
+        Some(next) if session.model.is_empty() => facts.push(format!("→ {next}")),
+        Some(next) => facts.push(format!("{} → {next}", session.model)),
+        None if !session.model.is_empty() => facts.push(session.model.clone()),
+        None => {}
     }
     if !session.effort.is_empty() {
         facts.push(session.effort.clone());

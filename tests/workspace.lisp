@@ -2064,6 +2064,29 @@ through SB-POSIX, which a dynamic binding does not touch."
        (loop for (name . was) in restore
              do (if was (sb-posix:setenv name was 1) (sb-posix:unsetenv name))))))
 
+(define-test "a session switched to another model resumes on all of that model"
+  ;; The id alone came back, on whatever provider the resumed agent started
+  ;; with: another endpoint's model, sent to the wrong server.
+  (with-every-key
+    (with-repository (environment)
+      (let* ((directory (uiop:parse-native-namestring
+                         (format nil "~a/.sessions/" (env:env-cwd environment))))
+             (session (session:open-session :directory directory))
+             (agent (harness:make-workspace-agent :cwd (env:env-cwd environment)
+                                                  :session session :load-resources nil))
+             (wanted (models:resolve-model "deepseek/deepseek-v4-flash")))
+        (ws-say session :user "hello")
+        (harness:use-choice agent wanted)
+        (session:close-session session)
+        (let ((fresh (harness:make-workspace-agent :cwd (env:env-cwd environment)
+                                                   :model "default-model" :load-resources nil)))
+          (harness:resume fresh (session:session-path session))
+          (is string= (models:choice-model wanted) (agent:agent-model fresh))
+          (is string= (viva.provider:provider-endpoint (models:choice-provider wanted))
+              (viva.provider:provider-endpoint (agent:agent-provider fresh)))
+          (is = (models:choice-context-limit wanted)
+              (viva.compaction:settings-context-limit (harness:agent-compaction fresh))))))))
+
 (define-test "one endpoint offers many models, and every label is its own"
   ;; TWO ARMS UNDER ONE NAME is how two sweeps stop being comparable, and the
   ;; experiment-facing name `gpt-oss-120b` already belongs to OpenRouter's copy

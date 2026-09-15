@@ -44,16 +44,19 @@ pub enum Action {
     /// exactly the moment the answer here is stale.
     RefreshModels,
     /// Start a session on the named model, in a new tab.
-    ///
-    /// A NEW SESSION, not a change to this one. A cell owns its agent, and
-    /// retargeting a live one means a message through its mailbox and a verb in
-    /// the proven lifecycle table -- which is spec work, not a key binding.
     UseModel(String),
+    /// Answer on the named model in this session, from its next turn. The turn
+    /// running now finishes on the model it started with.
+    SwitchModel(String),
+    /// Delete the session with this id, and what is recorded under it, for
+    /// good. Only ever the answer to a question: one key names the session and
+    /// a second says yes.
+    Delete(String),
 }
 
 pub fn read(event: &Event, model: &mut Model, hits: &Hitboxes) -> Action {
     match event {
-        Event::Key(key) if key.kind == KeyEventKind::Press => key_pressed(key, model),
+        Event::Key(key) if key.kind == KeyEventKind::Press => key_pressed(key, model, hits),
         Event::Mouse(mouse) => clicked(mouse, model, hits),
         Event::Paste(text) => pasted(text, model),
         Event::Resize(_, _) => Action::None,
@@ -61,7 +64,7 @@ pub fn read(event: &Event, model: &mut Model, hits: &Hitboxes) -> Action {
     }
 }
 
-fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
+fn key_pressed(key: &KeyEvent, model: &mut Model, hits: &Hitboxes) -> Action {
     let control = key.modifiers.contains(KeyModifiers::CONTROL);
     let busy = model
         .current_conversation()
@@ -80,6 +83,9 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
     }
     if model.focus == Focus::Models {
         return models_key(key, model);
+    }
+    if model.focus == Focus::Deleting {
+        return deleting_key(key, model);
     }
 
     if control {
@@ -130,6 +136,29 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
         };
     }
 
+    // Moving through the conversation, from wherever the keyboard is: reading
+    // back is never more than a key away, whichever column has it.
+    match key.code {
+        KeyCode::PageUp => return scroll_by(model, 10),
+        KeyCode::PageDown => return scroll_by(model, -10),
+        KeyCode::Home => {
+            // The far end of the scrollback, clamped when it is drawn.
+            if let Some(conversation) = model.conversations.get_mut(&model.current) {
+                conversation.to_top();
+            }
+            return Action::None;
+        }
+        KeyCode::End => {
+            follow(model);
+            return Action::None;
+        }
+        _ => {}
+    }
+    let column_shown = hits.sessions.width > 0;
+    if model.focus == Focus::Transcript {
+        return transcript_key(key, model, column_shown);
+    }
+
     // With the sidebar focused the arrows walk the list; with the input
     // focused they belong to the prompt. Without this distinction every key is
     // the prompt's, and a list on screen is a list you cannot walk.
@@ -154,6 +183,18 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
                 },
                 None => Action::None,
             },
+            KeyCode::Right => {
+                model.focus = reading(model);
+                Action::None
+            }
+            // Asked first, by what the session is about, so what goes is the
+            // conversation a person meant.
+            KeyCode::Backspace | KeyCode::Delete => {
+                if let Some((id, subject)) = model.selected_row().map(|row| (row.id().to_string(), row.subject())) {
+                    model.ask_delete(&id, subject);
+                }
+                Action::None
+            }
             KeyCode::Esc => {
                 model.focus = Focus::Input;
                 Action::None
@@ -244,24 +285,17 @@ fn key_pressed(key: &KeyEvent, model: &mut Model) -> Action {
             model.focus = Focus::Input;
             Action::None
         }
-        KeyCode::PageUp => scroll_by(model, 10),
-        KeyCode::PageDown => scroll_by(model, -10),
-        KeyCode::Home => {
-            // The far end of the scrollback, clamped when it is drawn.
-            if let Some(conversation) = model.conversations.get_mut(&model.current) {
-                conversation.following = false;
-                conversation.to_top();
-            }
-            Action::None
-        }
-        KeyCode::End => {
-            follow(model);
-            Action::None
-        }
         KeyCode::Up => {
-            // Up from the prompt reaches the list, which is where a person
-            // looks first when they want another session.
-            model.focus = Focus::Sessions;
+            // Up from the prompt reads back through the conversation. With
+            // nothing said there is nothing to read, and the list of earlier
+            // conversations is what a person is looking for.
+            if !model.is_blank() {
+                model.focus = Focus::Transcript;
+                return scroll_by(model, 1);
+            }
+            if column_shown {
+                model.focus_sessions();
+            }
             Action::None
         }
         KeyCode::Char(character) => {
@@ -304,6 +338,17 @@ fn models_key(key: &KeyEvent, model: &mut Model) -> Action {
             match model.models.at_digit(ch as usize - '0' as usize) {
                 Some(offer) => {
                     model.focus = Focus::Input;
+                    Action::SwitchModel(offer.label)
+                }
+                None => Action::None,
+            }
+        }
+        // A new session on the highlighted model, for when the conversation here
+        // should stay on the one it has.
+        KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            match model.models.selected() {
+                Some(offer) => {
+                    model.focus = Focus::Input;
                     Action::UseModel(offer.label)
                 }
                 None => Action::None,
@@ -320,7 +365,7 @@ fn models_key(key: &KeyEvent, model: &mut Model) -> Action {
         KeyCode::Enter => match model.models.selected() {
             Some(offer) => {
                 model.focus = Focus::Input;
-                Action::UseModel(offer.label)
+                Action::SwitchModel(offer.label)
             }
             None => Action::None,
         },
@@ -364,6 +409,9 @@ fn picker_key(key: &KeyEvent, model: &mut Model) -> Action {
             model.picker.searching = true;
             Action::Search(String::new())
         }
+        // Not backspace, which edits the search.
+        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => ask_about_found(model),
+        KeyCode::Delete => ask_about_found(model),
         KeyCode::Char(character) => {
             model.picker.query.push(character);
             model.picker.selection = 0;
@@ -392,6 +440,94 @@ fn scroll_by(model: &mut Model, lines: i32) -> Action {
         conversation.scroll_by(lines);
     }
     Action::None
+}
+
+/// The transcript's keys. Down past the newest line hands the keyboard back to
+/// the prompt, so reading back and carrying on are one direction of travel.
+fn transcript_key(key: &KeyEvent, model: &mut Model, column_shown: bool) -> Action {
+    match key.code {
+        KeyCode::Up => scroll_by(model, 1),
+        KeyCode::Down => {
+            let at_end = model
+                .current_conversation()
+                .map(|conversation| conversation.following && !conversation.owes_scroll())
+                .unwrap_or(true);
+            if !at_end {
+                return scroll_by(model, -1);
+            }
+            model.focus = Focus::Input;
+            Action::None
+        }
+        KeyCode::Left if column_shown => {
+            model.focus_sessions();
+            Action::None
+        }
+        KeyCode::Esc | KeyCode::Enter => {
+            model.focus = Focus::Input;
+            Action::None
+        }
+        KeyCode::Tab => next_tab(model),
+        // Typing means writing again, so the prompt takes the key.
+        KeyCode::Backspace => {
+            model.focus = Focus::Input;
+            model.input.pop();
+            Action::None
+        }
+        KeyCode::Char(character) => {
+            model.focus = Focus::Input;
+            model.input.push(character);
+            Action::None
+        }
+        _ => Action::None,
+    }
+}
+
+/// Where the keyboard goes to read: the transcript, unless nothing is in it.
+fn reading(model: &Model) -> Focus {
+    if model.is_blank() {
+        Focus::Input
+    } else {
+        Focus::Transcript
+    }
+}
+
+/// Ask whether to delete the session the picker has highlighted.
+fn ask_about_found(model: &mut Model) -> Action {
+    if let Some((id, subject)) = model.picker.selected().map(|found| (found.id.clone(), found.subject())) {
+        model.ask_delete(&id, subject);
+    }
+    Action::None
+}
+
+/// The delete question's keys: enter or `y` deletes, esc or `n` keeps the
+/// session, and anything else leaves the question standing.
+fn deleting_key(key: &KeyEvent, model: &mut Model) -> Action {
+    let delete = match key.code {
+        KeyCode::Enter | KeyCode::Char('y') => true,
+        KeyCode::Esc | KeyCode::Char('n') => false,
+        _ => return Action::None,
+    };
+    let Some(deletion) = model.deleting.take() else {
+        model.focus = Focus::Input;
+        return Action::None;
+    };
+    model.focus = deletion.from;
+    if delete {
+        Action::Delete(deletion.id)
+    } else {
+        Action::None
+    }
+}
+
+/// Over the sessions column the wheel moves its window and leaves the
+/// selection where it is; anywhere else it scrolls the transcript.
+fn wheel(model: &mut Model, hits: &Hitboxes, column: u16, row: u16, lines: i32) -> Action {
+    if inside(hits.sessions, column, row) {
+        let total = crate::sidebar::rows(model).len();
+        model.session_list.wheel(-lines as isize, total, hits.sessions.height as usize);
+        return Action::None;
+    }
+    scroll_by(model, lines)
 }
 
 /// Pasted text goes in whole, and does not submit.
@@ -428,8 +564,8 @@ fn clicked(mouse: &MouseEvent, model: &mut Model, hits: &Hitboxes) -> Action {
     match mouse.kind {
         // The wheel scrolls whatever it is over, which is the one mouse
         // behaviour nobody thinks about before using.
-        MouseEventKind::ScrollUp => scroll_by(model, 3),
-        MouseEventKind::ScrollDown => scroll_by(model, -3),
+        MouseEventKind::ScrollUp => wheel(model, hits, column, row, 3),
+        MouseEventKind::ScrollDown => wheel(model, hits, column, row, -3),
         MouseEventKind::Down(MouseButton::Left) => {
             // The picker is over everything, so it answers first -- otherwise
             // a click meant for it lands on whatever it is covering.
@@ -473,10 +609,10 @@ fn clicked(mouse: &MouseEvent, model: &mut Model, hits: &Hitboxes) -> Action {
             if inside(hits.sessions, column, row) {
                 // A click gives the sidebar the keyboard as well as selecting,
                 // so the arrows work from where the eye already is.
-                model.focus = Focus::Sessions;
-                for (index, area) in &hits.session_rows {
+                model.focus_sessions();
+                for (id, area) in &hits.session_rows {
                     if inside(*area, column, row) {
-                        model.selection = *index;
+                        model.select_session(id);
                         return match model.selected_row() {
                             Some(crate::model::Listed::Live(session)) => {
                                 Action::Open(session.id.clone())
@@ -491,7 +627,9 @@ fn clicked(mouse: &MouseEvent, model: &mut Model, hits: &Hitboxes) -> Action {
                 }
                 return Action::None;
             }
-            if inside(hits.transcript, column, row) || inside(hits.input, column, row) {
+            if inside(hits.transcript, column, row) {
+                model.focus = reading(model);
+            } else if inside(hits.input, column, row) {
                 model.focus = Focus::Input;
             }
             Action::None
@@ -514,9 +652,9 @@ mod tests {
 
     fn typed(model: &mut Model, text: &str) -> Action {
         for character in text.chars() {
-            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), model);
+            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), model, &Hitboxes::default());
         }
-        key_pressed(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), model)
+        key_pressed(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), model, &Hitboxes::default())
     }
 
     #[test]
@@ -587,13 +725,13 @@ mod tests {
         // `/find`.
         let mut model = Model::new("/w".into());
         for character in "/fi".chars() {
-            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), &mut model);
+            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), &mut model, &Hitboxes::default());
         }
-        let completed = key_pressed(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &mut model);
+        let completed = key_pressed(&KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &mut model, &Hitboxes::default());
         assert_eq!(completed, Action::None, "tab ran the command instead of completing it");
         assert_eq!(model.input, "/find ", "tab did not complete the name");
         // And with a trailing space the menu is gone, so Enter sends the line.
-        match key_pressed(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut model) {
+        match key_pressed(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut model, &Hitboxes::default()) {
             Action::Command(line) => assert_eq!(line, "/find"),
             other => panic!("enter after completing became {other:?}"),
         }
@@ -618,10 +756,10 @@ mod tests {
     fn control_u_abandons_the_line() {
         let mut model = Model::new("/w".into());
         for character in "a half written prompt".chars() {
-            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), &mut model);
+            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), &mut model, &Hitboxes::default());
         }
         let cleared =
-            key_pressed(&KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL), &mut model);
+            key_pressed(&KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL), &mut model, &Hitboxes::default());
         assert_eq!(cleared, Action::None, "clearing the line asked the daemon for something");
         assert!(model.input.is_empty(), "ctrl-u left {:?} behind", model.input);
         // And it must not be mistaken for quitting, which is what the other
@@ -632,12 +770,12 @@ mod tests {
     #[test]
     fn control_u_empties_the_picker_search_rather_than_typing_into_it() {
         let mut model = Model::new("/w".into());
-        key_pressed(&KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL), &mut model);
+        key_pressed(&KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL), &mut model, &Hitboxes::default());
         for character in "vite".chars() {
-            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), &mut model);
+            key_pressed(&KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE), &mut model, &Hitboxes::default());
         }
         assert_eq!(model.picker.query, "vite");
-        match key_pressed(&KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL), &mut model) {
+        match key_pressed(&KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL), &mut model, &Hitboxes::default()) {
             Action::Search(query) => assert!(query.is_empty(), "searched for {query:?}"),
             other => panic!("ctrl-u in the picker became {other:?}"),
         }
@@ -645,9 +783,166 @@ mod tests {
     }
 
     #[test]
+    fn a_model_picked_is_for_this_session_and_ctrl_n_takes_it_to_a_new_one() {
+        let mut model = Model::new("/w".into());
+        model.models.absorb(vec![crate::model::ModelOffer { label: "local/qwen".into(), id: "qwen".into() }]);
+        model.focus = Focus::Models;
+        assert_eq!(
+            key_pressed(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut model, &Hitboxes::default()),
+            Action::SwitchModel("local/qwen".into())
+        );
+        model.focus = Focus::Models;
+        assert_eq!(
+            key_pressed(&KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE), &mut model, &Hitboxes::default()),
+            Action::SwitchModel("local/qwen".into())
+        );
+        model.focus = Focus::Models;
+        assert_eq!(
+            key_pressed(&KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL), &mut model, &Hitboxes::default()),
+            Action::UseModel("local/qwen".into())
+        );
+    }
+
+    #[test]
     fn an_empty_line_is_not_a_prompt_worth_paying_for() {
         let mut model = Model::new("/w".into());
         assert_eq!(typed(&mut model, "   "), Action::None);
+    }
+
+    fn press(model: &mut Model, code: KeyCode, hits: &Hitboxes) -> Action {
+        key_pressed(&KeyEvent::new(code, KeyModifiers::NONE), model, hits)
+    }
+
+    /// Two sessions, EARLIER recorded ones, and a conversation in the first
+    /// long enough to read back through.
+    fn talking(earlier: usize) -> Model {
+        let mut model = Model::new("/w".into());
+        model.sessions = vec![
+            crate::protocol::SessionInfo { id: "s1".into(), ..Default::default() },
+            crate::protocol::SessionInfo { id: "s2".into(), ..Default::default() },
+        ];
+        model.recent = (0..earlier)
+            .map(|index| crate::protocol::Recorded { id: format!("r{index}"), messages: 2, ..Default::default() })
+            .collect();
+        model.open_tab("s1");
+        let said: crate::protocol::Event = serde_json::from_value(serde_json::json!({
+            "event": "user.message", "session": "s1", "seq": 1,
+            "data": {"text": "a question\n\n".repeat(60)}
+        }))
+        .unwrap();
+        model.absorb(&said);
+        model
+    }
+
+    fn column_on_screen() -> Hitboxes {
+        Hitboxes { sessions: ratatui::layout::Rect::new(0, 1, 29, 10), ..Default::default() }
+    }
+
+    #[test]
+    fn up_from_the_prompt_reads_back_and_the_arrows_then_scroll_the_talk_not_the_list() {
+        let shown = column_on_screen();
+        let mut model = talking(0);
+        press(&mut model, KeyCode::Up, &shown);
+        assert_eq!(model.focus, Focus::Transcript, "up from the prompt did not go to the conversation");
+        assert!(model.current_conversation().unwrap().owes_scroll(), "up did not scroll the conversation");
+        model.focus_sessions();
+        model.focus = Focus::Transcript;
+        press(&mut model, KeyCode::Up, &shown);
+        press(&mut model, KeyCode::Up, &shown);
+        assert_eq!(model.selected_row().unwrap().id(), "s1", "the arrows walked the list");
+        // Left crosses to the column, on the open session, where the same
+        // arrows walk the list; right comes back to the conversation.
+        press(&mut model, KeyCode::Left, &shown);
+        assert_eq!(model.focus, Focus::Sessions);
+        press(&mut model, KeyCode::Down, &shown);
+        assert_eq!(model.selected_row().unwrap().id(), "s2");
+        press(&mut model, KeyCode::Right, &shown);
+        assert_eq!(model.focus, Focus::Transcript);
+    }
+
+    #[test]
+    fn down_past_the_newest_line_hands_the_keyboard_back_to_the_prompt() {
+        let none = Hitboxes::default();
+        let mut model = talking(0);
+        model.focus = Focus::Transcript;
+        press(&mut model, KeyCode::Up, &none);
+        press(&mut model, KeyCode::Down, &none);
+        assert_eq!(model.focus, Focus::Transcript, "down left while a scroll was still owed");
+        press(&mut model, KeyCode::Down, &none);
+        assert_eq!(model.focus, Focus::Input, "down at the newest line did not return to the prompt");
+        model.focus = Focus::Transcript;
+        press(&mut model, KeyCode::Char('h'), &none);
+        assert_eq!((model.focus, model.input.as_str()), (Focus::Input, "h"), "typing did not reach the prompt");
+        // With no sessions column on screen, left has nowhere to go.
+        model.focus = Focus::Transcript;
+        press(&mut model, KeyCode::Left, &none);
+        assert_eq!(model.focus, Focus::Transcript);
+    }
+
+    #[test]
+    fn page_keys_move_the_conversation_from_the_sessions_column_and_leave_its_selection() {
+        let shown = column_on_screen();
+        let mut model = talking(3);
+        model.focus_sessions();
+        press(&mut model, KeyCode::Down, &shown);
+        let selected = model.selected_row().unwrap().id().to_string();
+        press(&mut model, KeyCode::PageUp, &shown);
+        assert!(model.current_conversation().unwrap().owes_scroll(), "page up did not move the conversation");
+        assert_eq!((model.focus, model.selected_row().unwrap().id()), (Focus::Sessions, selected.as_str()));
+    }
+
+    #[test]
+    fn the_wheel_over_the_sessions_column_moves_the_column_and_not_the_talk() {
+        let shown = column_on_screen();
+        let mut model = talking(40);
+        let wheel_at = |column: u16, row: u16| {
+            Event::Mouse(MouseEvent { kind: MouseEventKind::ScrollDown, column, row, modifiers: KeyModifiers::NONE })
+        };
+        read(&wheel_at(3, 5), &mut model, &shown);
+        assert!(!model.current_conversation().unwrap().owes_scroll(), "the wheel over the column scrolled the talk");
+        let total = crate::sidebar::rows(&model).len();
+        assert_eq!(model.session_list.window(total, None, 10).first, 3, "the column did not move");
+        read(&wheel_at(60, 5), &mut model, &shown);
+        assert!(model.current_conversation().unwrap().owes_scroll(), "the wheel over the talk did not scroll it");
+    }
+
+    #[test]
+    fn a_session_is_deleted_only_once_asked_and_esc_keeps_it() {
+        let shown = column_on_screen();
+        let mut model = talking(2);
+        model.focus_sessions();
+        press(&mut model, KeyCode::Down, &shown);
+        press(&mut model, KeyCode::Down, &shown);
+        let chosen = model.selected_row().unwrap().id().to_string();
+        assert_eq!(chosen, "r0");
+        assert_eq!(press(&mut model, KeyCode::Backspace, &shown), Action::None, "backspace deleted without asking");
+        assert_eq!(model.focus, Focus::Deleting);
+        assert_eq!(press(&mut model, KeyCode::Char('x'), &shown), Action::None);
+        assert_eq!(model.focus, Focus::Deleting, "a stray key answered the question");
+        press(&mut model, KeyCode::Esc, &shown);
+        assert_eq!((model.focus, model.deleting.is_none()), (Focus::Sessions, true), "esc did not keep the session");
+        press(&mut model, KeyCode::Delete, &shown);
+        assert_eq!(press(&mut model, KeyCode::Enter, &shown), Action::Delete(chosen));
+        assert_eq!(model.focus, Focus::Sessions);
+    }
+
+    #[test]
+    fn ctrl_d_in_the_picker_asks_about_the_highlighted_session() {
+        let none = Hitboxes::default();
+        let mut model = Model::new("/w".into());
+        model.focus = Focus::Picker;
+        model.picker.results = vec![crate::protocol::Recorded {
+            id: "r9".into(),
+            messages: 3,
+            opening: "found it".into(),
+            ..Default::default()
+        }];
+        press(&mut model, KeyCode::Backspace, &none);
+        assert_eq!(model.focus, Focus::Picker, "backspace in the search asked to delete");
+        key_pressed(&KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL), &mut model, &none);
+        assert_eq!(model.deleting.as_ref().map(|asked| asked.subject.as_str()), Some("found it"));
+        assert_eq!(press(&mut model, KeyCode::Char('y'), &none), Action::Delete("r9".into()));
+        assert_eq!(model.focus, Focus::Picker, "the picker was not given back after the answer");
     }
 }
 

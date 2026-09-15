@@ -14,6 +14,9 @@
   '(;; a session's life. SESSION.COMPLETED asserts that nothing this session
     ;; owns can still change the world; SESSION.ERROR does not end anything.
     "session.started" "session.completed" "session.error"
+    ;; The model a session answers on, as a person asked: PENDING while the
+    ;; running turn finishes on the model it started with, then applied.
+    "session.model"
     ;; What the person said. Separate from TURN.STARTED because that carries a
     ;; turn id and nothing else -- the kernel that emits it is the proven
     ;; lifecycle machine and knows only about turns. Without this the prompt

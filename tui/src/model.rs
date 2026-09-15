@@ -6,6 +6,7 @@
 //! feeds it a known event stream and reads the result back.
 
 use crate::protocol::{Event, Learned, Recorded, SessionInfo};
+use crate::session_list::SessionList;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 
@@ -193,6 +194,9 @@ pub struct Conversation {
     /// scrolled up is reading; yanking them back to the bottom on the next
     /// token is the single rudest thing a log view can do.
     pub following: bool,
+    /// A model asked for while a turn was running, shown until the daemon says
+    /// it has been applied.
+    pub pending_model: Option<String>,
 }
 
 impl Conversation {
@@ -357,6 +361,9 @@ impl Conversation {
 pub enum Focus {
     Input,
     Sessions,
+    /// Reading back through the conversation: the arrows scroll it here, walk
+    /// the list in the sessions column, and belong to the prompt otherwise.
+    Transcript,
     /// The picker is open over everything else. A mode, deliberately: finding
     /// a session among hundreds is a different activity from talking to one,
     /// and pretending otherwise means every key has two meanings.
@@ -365,6 +372,9 @@ pub enum Focus {
     /// digits have to mean `take that one` here and `type a digit` everywhere
     /// else.
     Models,
+    /// Asking whether to delete a session. A mode, so only a yes or a no
+    /// answers it: a stray key is not consent to delete a conversation.
+    Deleting,
 }
 
 /// One model the daemon can reach.
@@ -512,6 +522,15 @@ impl Picker {
     }
 }
 
+/// A session about to be deleted: which, what it is about, and where the
+/// keyboard goes back to once the question is answered.
+#[derive(Debug, Clone)]
+pub struct Deletion {
+    pub id: String,
+    pub subject: String,
+    pub from: Focus,
+}
+
 #[derive(Debug)]
 pub struct Model {
     pub sessions: Vec<SessionInfo>,
@@ -520,7 +539,10 @@ pub struct Model {
     pub input: String,
     pub status: String,
     pub focus: Focus,
-    pub selection: usize,
+    /// The sessions column's selection, by id, and its window.
+    pub session_list: SessionList,
+    /// The session a delete is waiting on an answer for.
+    pub deleting: Option<Deletion>,
     /// The sessions that are OPEN, in the order they were opened -- browser
     /// tabs, not workspaces. The sidebar is for finding a session among all of
     /// them; a tab is one you have chosen to keep in front of you, and `+`
@@ -538,7 +560,8 @@ pub struct Model {
     /// worth its width to nobody, and a column of the conversations you have
     /// had here is the thing you came back for.
     pub sidebar: bool,
-    /// Sessions recorded in this directory, newest first, for the welcome.
+    /// Conversations recorded in this directory, newest first: the sessions
+    /// column's earlier ones, and what the welcome counts.
     pub recent: Vec<Recorded>,
     /// Which entry the slash menu has highlighted. Reset whenever the line
     /// changes, so the highlight cannot point past a list that just shrank.
@@ -566,7 +589,8 @@ impl Model {
             input: String::new(),
             status: String::new(),
             focus: Focus::Input,
-            selection: 0,
+            session_list: SessionList::default(),
+            deleting: None,
             tabs: Vec::new(),
             tab: 0,
             cwd,
@@ -642,6 +666,15 @@ impl Model {
                 if info.opening.trim().is_empty() {
                     info.opening = text.clone();
                 }
+            }
+        }
+        // An applied model belongs to the session's row, which the list and the
+        // status line read; a pending one to the conversation, below.
+        let model_pending = event.data.get("pending").and_then(Value::as_bool).unwrap_or(false);
+        if name == "session.model" && !model_pending {
+            let applied = event.text("model").to_string();
+            if let Some(info) = self.sessions.iter_mut().find(|known| known.id == session) {
+                info.model = applied;
             }
         }
         let conversation = self.conversation(&session);
@@ -764,6 +797,12 @@ impl Model {
             "task.completed" => set_task_state(conversation, event, TaskState::Done),
             "task.failed" | "task.error" => set_task_state(conversation, event, TaskState::Failed),
             "task.cancelled" => set_task_state(conversation, event, TaskState::Cancelled),
+            "session.model" => {
+                conversation.pending_model = model_pending.then(|| {
+                    let label = event.text("label");
+                    if label.is_empty() { event.text("model") } else { label }.to_string()
+                });
+            }
             "session.error" => {
                 let detail = event.text("detail").to_string();
                 conversation.push(Role::Note, detail);
@@ -877,32 +916,66 @@ impl Model {
     /// still has a process, which is a mark on the row and not a reason to
     /// keep two lists in two places.
     pub fn sidebar_rows(&self) -> Vec<Listed<'_>> {
-        let mut rows: Vec<Listed<'_>> = self.sessions.iter().map(Listed::Live).collect();
-        for recorded in &self.recent {
-            // Not the ones already running: a live session's transcript is in
-            // the recorded list too, and listing both makes one look like two.
-            if recorded.messages > 0
-                && !self.sessions.iter().any(|live| live.id == recorded.id)
-            {
-                rows.push(Listed::Earlier(recorded));
-            }
-        }
-        rows
+        listed(&self.sessions, &self.recent)
     }
 
     /// What the highlighted row would open, whether it is running or not.
     pub fn selected_row(&self) -> Option<Listed<'_>> {
-        self.sidebar_rows().into_iter().nth(self.selection)
+        let rows = self.sidebar_rows();
+        let ids: Vec<&str> = rows.iter().map(Listed::id).collect();
+        let index = self.session_list.index(&ids)?;
+        rows.into_iter().nth(index)
     }
 
     pub fn move_selection(&mut self, step: isize) {
-        let count = self.sidebar_rows().len() as isize;
-        if count == 0 {
-            return;
-        }
-        let next = (self.selection as isize + step).rem_euclid(count);
-        self.selection = next as usize;
+        let rows = listed(&self.sessions, &self.recent);
+        let ids: Vec<&str> = rows.iter().map(Listed::id).collect();
+        self.session_list.step(&ids, step);
     }
+
+    pub fn select_session(&mut self, id: &str) {
+        let rows = listed(&self.sessions, &self.recent);
+        let ids: Vec<&str> = rows.iter().map(Listed::id).collect();
+        self.session_list.select(&ids, id);
+    }
+
+    /// Give the sessions column the keyboard, starting from the open session.
+    pub fn focus_sessions(&mut self) {
+        self.focus = Focus::Sessions;
+        let current = self.current.clone();
+        self.select_session(&current);
+    }
+
+    /// Ask whether to delete session ID, named by SUBJECT, and give the
+    /// question the keyboard.
+    pub fn ask_delete(&mut self, id: &str, subject: String) {
+        self.deleting = Some(Deletion { id: id.to_string(), subject, from: self.focus });
+        self.focus = Focus::Deleting;
+    }
+
+    /// A deleted session: gone from every list, its tab closed, and nothing
+    /// held of it.
+    pub fn forget_session(&mut self, id: &str) {
+        self.sessions.retain(|session| session.id != id);
+        self.recent.retain(|recorded| recorded.id != id);
+        self.picker.results.retain(|recorded| recorded.id != id);
+        self.picker.selection = self.picker.selection.min(self.picker.results.len().saturating_sub(1));
+        if let Some(index) = self.tabs.iter().position(|open| open == id) {
+            self.close_tab(index);
+        }
+        self.conversations.remove(id);
+    }
+}
+
+/// The sessions column's entries, running first. Not a recorded session that is
+/// also running: its transcript is in the recorded list too, and listing both
+/// makes one look like two.
+fn listed<'a>(sessions: &'a [SessionInfo], recent: &'a [Recorded]) -> Vec<Listed<'a>> {
+    let earlier = recent
+        .iter()
+        .filter(|recorded| recorded.messages > 0 && !sessions.iter().any(|live| live.id == recorded.id))
+        .map(Listed::Earlier);
+    sessions.iter().map(Listed::Live).chain(earlier).collect()
 }
 
 /// A row in the sessions list: one that is running, or one that was.
@@ -1073,6 +1146,25 @@ mod tests {
     }
 
     #[test]
+    fn a_deleted_session_leaves_every_list_and_its_tab() {
+        let mut model = Model::new("/w".into());
+        model.sessions = vec![
+            SessionInfo { id: "s1".into(), ..Default::default() },
+            SessionInfo { id: "s2".into(), ..Default::default() },
+        ];
+        model.recent = vec![Recorded { id: "s1".into(), messages: 2, ..Default::default() }];
+        model.picker.results = vec![Recorded { id: "s1".into(), messages: 2, ..Default::default() }];
+        model.open_tab("s2");
+        model.open_tab("s1");
+        model.forget_session("s1");
+        assert!(model.sessions.iter().all(|session| session.id != "s1"), "it is still listed as running");
+        assert!(model.recent.is_empty() && model.picker.results.is_empty(), "it is still listed as recorded");
+        assert_eq!(model.tabs, ["s2"], "its tab is still open");
+        assert_eq!(model.current, "s2");
+        assert!(!model.conversations.contains_key("s1"), "what was held of it is still held");
+    }
+
+    #[test]
     fn moving_wraps_and_survives_an_empty_list() {
         let mut models = picker(&["a/1", "a/2"]);
         models.move_selection(-1);
@@ -1105,6 +1197,21 @@ mod tests {
         }];
         model.open_tab(session);
         model
+    }
+
+    #[test]
+    fn a_model_change_is_pending_until_the_daemon_applies_it() {
+        let mut model = model_with("s1");
+        model.sessions[0].model = "first".into();
+        model.absorb(&event("session.model", "s1",
+                            json!({"model": "second", "label": "local/second", "pending": true})));
+        assert_eq!(model.current_conversation().unwrap().pending_model.as_deref(), Some("local/second"));
+        assert_eq!(model.sessions[0].model, "first", "applied while the turn was still running");
+        assert_eq!(crate::status::facts(&model)[0], "first → local/second");
+        model.absorb(&event("session.model", "s1", json!({"model": "second", "label": "local/second"})));
+        assert_eq!(model.current_conversation().unwrap().pending_model, None);
+        assert_eq!(model.sessions[0].model, "second");
+        assert_eq!(crate::status::facts(&model)[0], "second");
     }
 
     #[test]

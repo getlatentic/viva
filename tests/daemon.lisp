@@ -891,6 +891,149 @@ checkpoint."))
                    "made ~d attempts before giving up" (flaky-calls agent)))
         (actor:shutdown cell)))))
 
+;;; The model: changed between turns, never under one
+
+(defclass model-noting-agent (paced-agent)
+  ((asked :initform '() :accessor asked-models))
+  (:documentation "A paced agent that notes which model each request went to."))
+
+(defmethod client:complete :before ((agent model-noting-agent) messages)
+  (declare (ignore messages))
+  (push (agent:agent-model agent) (asked-models agent)))
+
+(defun model-events (cell)
+  "CELL's session.model events, oldest first, as (MODEL . PENDING)."
+  (loop for event in (actor:since cell 0)
+        when (string= "session.model" (event:event-name event))
+          collect (let ((data (event:event-data event)))
+                    (cons (gethash "model" data) (gethash "pending" data)))))
+
+(define-test "a model asked for during a turn waits for that turn, and the next turn has it"
+  ;; Applied at once, the rest of the running turn's requests would go to a
+  ;; different model than its first ones. spec/CellLifecycle.tla,
+  ;; RunningTurnKeepsItsModel.
+  (with-repository (environment)
+    (ensure-suite-watchdog)
+    (let* ((agent (make-instance 'model-noting-agent
+                                 :environment environment :resource-environment environment
+                                 :model "first-model" :pause 0.05 :limit 6 :request-limit 500))
+           (cell (actor:spawn :label "retarget" :agent agent))
+           (second (models::make-choice :label "test/second-model" :model "second-model"
+                                        :context-limit 32000)))
+      (unwind-protect
+           (let ((first-turn (actor:submit cell "go")))
+             (true (daemon-wait (lambda () (actor:busy-p cell))) "the first turn never started")
+             (actor:retarget cell second)
+             (is string= "turn.completed" (actor:await-turn cell first-turn :timeout 30))
+             (let ((first-requests (asked-models agent)))
+               (true (plusp (length first-requests)))
+               (true (every (lambda (model) (string= "first-model" model)) first-requests)
+                     "the running turn changed model under itself: ~s" first-requests))
+             (true (daemon-wait (lambda ()
+                                  (string= "second-model" (getf (actor:snapshot cell) :model))))
+                   "the model was not applied when the turn ended")
+             (is = 32000 (viva.compaction:settings-context-limit (harness:agent-compaction agent)))
+             (is equal '(("second-model" . t) ("second-model")) (model-events cell)
+                 "expected the change announced as pending, then as applied")
+             (let ((second-turn (actor:submit cell "again")))
+               (is string= "turn.completed" (actor:await-turn cell second-turn :timeout 30))
+               (is string= "second-model" (first (asked-models agent)))))
+        (harness:cancel-agent agent)
+        (actor:shutdown cell)))))
+
+(define-test "a model asked for at rest applies at once, and a restart would bring it back on it"
+  (with-paced-cell (cell agent :pause 0.01 :limit 1)
+    (actor:retarget cell (models::make-choice :label "test/other" :model "other-model"
+                                              :context-limit 16000))
+    (true (daemon-wait (lambda () (string= "other-model" (getf (actor:snapshot cell) :model))))
+          "a session at rest did not take the model at once")
+    (is string= "other-model" (agent:agent-model agent))
+    (is equal '(("other-model")) (model-events cell) "at rest there is nothing to wait for")
+    ;; The live marker is what a restarted daemon starts the session from.
+    (let ((marker (find (actor:cell-id cell) (actor:live-sessions)
+                        :key (lambda (each) (gethash "id" each)) :test #'string=)))
+      (true marker "the session has no live marker")
+      (is string= "other-model" (gethash "model" marker)))))
+
+(define-test "session.model refuses a model nothing offers, and takes one that is"
+  (with-daemon (path)
+    (with-every-key
+      (with-paced-cell (cell agent :pause 0.01 :limit 1)
+        (daemon:with-connection (stream path)
+          (read-line stream nil nil)
+          (let ((refused (daemon:request stream "type" "session.model"
+                                         "session" (actor:cell-id cell) "model" "no-such-model")))
+            (false (gethash "success" refused))
+            (true (search "No model called" (or (gethash "error" refused) ""))
+                  "the refusal does not say why: ~s" (gethash "error" refused)))
+          (let ((taken (daemon:request stream "type" "session.model"
+                                       "session" (actor:cell-id cell)
+                                       "model" "deepseek/deepseek-v4-flash")))
+            (true (gethash "success" taken))
+            (is string= "deepseek-v4-flash" (gethash "id" (gethash "model" taken))))
+          (true (daemon-wait (lambda ()
+                               (string= "deepseek-v4-flash" (getf (actor:snapshot cell) :model))))
+                "the session never took the model it was given"))))))
+
+;;; Deleting a session
+
+(define-test "deleting a session removes what is recorded under its id, and nothing else"
+  (with-repository (environment)
+    (let* ((root (env:env-cwd environment))
+           (directory (session:session-directory root))
+           (doomed (session:open-session :directory directory :cwd root))
+           (kept (session:open-session :directory directory :cwd root))
+           (id (session:session-id doomed))
+           (notes (merge-pathnames ".viva/MEMORY.md" (uiop:ensure-directory-pathname root))))
+      (dolist (each (list doomed kept))
+        (session:record-entry each :message
+                              (msg:make-user-message :content (list (msg:make-text "said here")))))
+      (session:close-session doomed)
+      (session:close-session kept)
+      (ensure-directories-exist notes)
+      (with-open-file (out notes :direction :output :if-exists :supersede)
+        (write-string "- a note the project keeps" out))
+      (with-daemon (path)
+        (let ((stream (daemon:connect path)))
+          (unwind-protect
+               (progn
+                 (read-line stream nil nil)
+                 (daemon:request stream "type" "session.start" "cwd" root "resume" id)
+                 (true (actor:find-cell id) "the session to delete never started")
+                 (true (viva.actor::journal-files id) "the session wrote no journal to delete")
+                 (let ((reply (daemon:request stream "type" "session.delete" "session" id)))
+                   (true (gethash "success" reply) "refused: ~a" (gethash "error" reply)))
+                 (false (actor:find-cell id) "the session is still running")
+                 (false (session:session-files id) "its transcript is still there")
+                 (false (viva.actor::journal-files id) "its journal is still there")
+                 (false (probe-file (viva.actor::live-path id)) "its live marker is still there")
+                 (viva.daemon::rehydrate-sessions)
+                 (false (actor:find-cell id) "a restart brought it back")
+                 (true (probe-file (session:session-path kept))
+                       "another session's transcript went with it")
+                 (true (probe-file notes) "the project's notes went with it")
+                 (false (gethash "success"
+                                 (daemon:request stream "type" "session.delete" "session" id))
+                        "deleting it twice succeeded"))
+            (ignore-errors (close stream))))))))
+
+(define-test "a session in the middle of a turn is not deleted, and neither is a path"
+  (with-daemon (path)
+    (with-paced-cell (cell agent :pause 0.05 :limit 40)
+      (daemon:with-connection (stream path)
+        (read-line stream nil nil)
+        (actor:submit cell "go")
+        (true (daemon-wait (lambda () (actor:busy-p cell))) "the turn never started")
+        (let ((refused (daemon:request stream "type" "session.delete"
+                                       "session" (actor:cell-id cell))))
+          (false (gethash "success" refused) "a session with a turn running was deleted")
+          (true (search "turn" (or (gethash "error" refused) "")) "~s" (gethash "error" refused)))
+        (true (actor:find-cell (actor:cell-id cell)) "the running session is gone")
+        (dolist (hostile '("../../etc" "*" "a/b" ""))
+          (false (gethash "success" (daemon:request stream "type" "session.delete"
+                                                    "session" hostile))
+                 "~s was taken for a session id" hostile))))))
+
 (defclass retrying-tools-agent (harness:workspace-agent)
   ((script :initarg :script :accessor rt-script)
    (retried :initform 0 :accessor rt-retried)))
@@ -1001,11 +1144,13 @@ checkpoint."))
           (ignore-errors (close deaf))
           (actor:shutdown cell))))))
 
-(defclass wedged-agent (harness:workspace-agent) ())
+(defclass wedged-agent (harness:workspace-agent)
+  ((away :initform nil :accessor wedged-away)))
 
 (defmethod client:complete ((agent wedged-agent) messages)
   (declare (ignore messages))
   ;; Ignores cancellation entirely: the worker that will not come back.
+  (setf (wedged-away agent) t)
   (sleep 60)
   (say "much too late"))
 
@@ -1018,13 +1163,17 @@ checkpoint."))
          (progn
            (setf viva.actor::+stopping-grace+ 2)
            (with-repository (environment)
-             (let ((cell (actor:spawn :label "wedged"
-                                      :agent (make-instance 'wedged-agent
-                                                            :environment environment
-                                                            :resource-environment environment
-                                                            :request-limit 500))))
+             (let* ((agent (make-instance 'wedged-agent
+                                          :environment environment
+                                          :resource-environment environment
+                                          :request-limit 500))
+                    (cell (actor:spawn :label "wedged" :agent agent)))
                (actor:submit cell "go")
-               (true (daemon-wait (lambda () (viva.actor::busy-p cell))))
+               ;; INSIDE THE CALL THAT WILL NOT RETURN, not merely busy. A turn
+               ;; is busy from the moment it starts, and a shutdown that lands
+               ;; before the worker reaches the model is a cancel the loop still
+               ;; hears: the turn ends at once and no deadline is ever reached.
+               (true (daemon-wait (lambda () (wedged-away agent))))
                (actor:shutdown cell)
                ;; Traffic throughout the whole grace period.
                (let ((chatter (bt:make-thread

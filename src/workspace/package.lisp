@@ -196,6 +196,7 @@
            #:close-session #:release-transcript #:load-session #:session-messages #:latest-session
            #:session-directory #:usage-of #:+format-version+ #:+conversation-kinds+
            #:list-sessions #:search-sessions #:find-session #:describe-session #:slug
+           #:valid-session-id-p #:session-files #:delete-session-files
            #:summary #:summary-id #:summary-path #:summary-cwd #:summary-time
            #:summary-messages #:summary-opening
            #:ancestry #:context-entries #:children-of #:entry-at #:compact #:fork
@@ -272,7 +273,7 @@
            #:agent-extra-tools #:agent-extra-prompt #:agent-resource-environment
            #:agent-extension-files #:agent-extension-directories #:agent-compaction #:agent-active-tools
            #:agent-last-tokens
-           #:compact-now #:set-model #:set-active-tools #:apply-settings
+           #:compact-now #:set-model #:use-choice #:apply-choice #:set-active-tools #:apply-settings
            #:send-message #:append-custom #:navigate #:tree-lines #:close-agent
            #:delegate #:delegate-tool #:sub-agent #:agent-lane #:delegate-async
            #:machine-resource-directory #:project-resource-directory

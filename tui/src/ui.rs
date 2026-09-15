@@ -8,14 +8,11 @@
 use crate::cells;
 use crate::layout::Rendered;
 use crate::markdown;
-use crate::model::{Entry, Focus, Listed, Model, Models, Outcome, Role, TaskState};
+use crate::model::{Entry, Focus, Model, Models, Outcome, Role, TaskState};
+use crate::theme::{state_mark, ACCENT, BORDER, DIM};
 use crate::wrap::Hanging;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wrap};
-
-pub const ACCENT: Color = Color::Indexed(13);
-const DIM: Color = Color::Indexed(244);
-const BORDER: Color = Color::Indexed(240);
 
 /// Where each thing was drawn, so a click can be answered without a second
 /// calculation of the same layout. Two functions deriving it independently is
@@ -25,7 +22,7 @@ pub struct Hitboxes {
     pub tabs: Vec<(usize, Rect)>,
     pub new_tab: Option<Rect>,
     pub sessions: Rect,
-    pub session_rows: Vec<(usize, Rect)>,
+    pub session_rows: Vec<(String, Rect)>,
     pub transcript: Rect,
     pub tasks: Rect,
     pub input: Rect,
@@ -68,7 +65,9 @@ pub fn draw(frame: &mut Frame, model: &mut Model, rendered: &mut Rendered) -> Hi
     let body = Layout::horizontal(constraints).split(rows[1]);
     let mut at = 0;
     if show_sessions {
-        draw_sessions(frame, body[at], model, &mut hits);
+        let column = crate::sidebar::draw(frame, body[at], model);
+        hits.sessions = column.area;
+        hits.session_rows = column.rows;
         at += 1;
     }
     let page = body[at];
@@ -90,6 +89,8 @@ pub fn draw(frame: &mut Frame, model: &mut Model, rendered: &mut Rendered) -> Hi
         draw_picker(frame, area, model, &mut hits);
     } else if model.focus == Focus::Models {
         draw_models(frame, area, model);
+    } else if model.focus == Focus::Deleting {
+        draw_deleting(frame, area, model);
     } else {
         draw_command_menu(frame, rows[2], model, &mut hits);
     }
@@ -167,14 +168,17 @@ fn draw_picker(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes
 
     let rows = Layout::vertical([Constraint::Length(2), Constraint::Min(1)]).split(inner);
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("search ", Style::default().fg(DIM)),
-            Span::styled(
-                model.picker.query.clone(),
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("_", Style::default().fg(ACCENT)),
-        ])),
+        Paragraph::new(vec![
+            Line::from(vec![
+                Span::styled("search ", Style::default().fg(DIM)),
+                Span::styled(
+                    model.picker.query.clone(),
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("_", Style::default().fg(ACCENT)),
+            ]),
+            Line::from(Span::styled("enter resumes · ctrl-d deletes · esc closes", Style::default().fg(DIM))),
+        ]),
         rows[0],
     );
 
@@ -212,6 +216,47 @@ fn draw_picker(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes
     frame.render_widget(Paragraph::new(lines), rows[1]);
 }
 
+/// Whether to delete a session, asked by what it is about. Its own box and its
+/// own colour, so the question is not read as the list it was asked from.
+fn draw_deleting(frame: &mut Frame, area: Rect, model: &Model) {
+    let Some(deletion) = &model.deleting else {
+        return;
+    };
+    let warning = Color::Indexed(203);
+    let width = area.width.saturating_sub(8).min(64).max(24);
+    let height = 6.min(area.height);
+    let box_area = Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    );
+    frame.render_widget(Clear, box_area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(warning))
+        .title(Span::styled(" delete this session? ", Style::default().fg(warning).add_modifier(Modifier::BOLD)))
+        .padding(Padding::horizontal(1));
+    let inner = block.inner(box_area);
+    frame.render_widget(block, box_area);
+    let subject = cells::clip(&deletion.subject, inner.width as usize);
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::from(Span::styled(subject, Style::default().fg(Color::Indexed(252)).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled("its transcript and journal are removed for good", Style::default().fg(DIM))),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("enter", Style::default().fg(warning).add_modifier(Modifier::BOLD)),
+                Span::styled(" deletes · ", Style::default().fg(DIM)),
+                Span::styled("esc", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(" keeps it", Style::default().fg(DIM)),
+            ]),
+        ]),
+        inner,
+    );
+}
+
 /// The models on offer, over everything else.
 ///
 /// A BOUNDED WINDOW with a count above and below it, rather than a list that
@@ -221,7 +266,7 @@ fn draw_picker(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes
 /// can read is not an answer.
 fn draw_models(frame: &mut Frame, area: Rect, model: &Model) {
     let width = area.width.saturating_sub(8).min(86).max(24);
-    let height = (Models::VISIBLE as u16 + 6).min(area.height.saturating_sub(4)).max(8);
+    let height = (Models::VISIBLE as u16 + 7).min(area.height.saturating_sub(4)).max(8);
     let box_area = Rect::new(
         area.x + (area.width.saturating_sub(width)) / 2,
         area.y + (area.height.saturating_sub(height)) / 2,
@@ -236,7 +281,7 @@ fn draw_models(frame: &mut Frame, area: Rect, model: &Model) {
     let rows = Layout::vertical([
         Constraint::Length(2),
         Constraint::Min(1),
-        Constraint::Length(1),
+        Constraint::Length(2),
     ])
     .split(inner);
 
@@ -258,6 +303,9 @@ fn draw_models(frame: &mut Frame, area: Rect, model: &Model) {
         .find(|session| session.id == model.current)
         .map(|session| session.model.clone())
         .unwrap_or_default();
+    let next = model
+        .current_conversation()
+        .and_then(|conversation| conversation.pending_model.clone());
     let matching = model.models.matching();
     let start = model.models.first_visible();
     let mut lines: Vec<Line> = Vec::new();
@@ -284,6 +332,9 @@ fn draw_models(frame: &mut Frame, area: Rect, model: &Model) {
         if !here.is_empty() && offer.id == here {
             spans.push(Span::styled("  (current)", Style::default().fg(ACCENT)));
         }
+        if next.as_deref().is_some_and(|next| next == offer.label || next == offer.id) {
+            spans.push(Span::styled("  (next turn)", Style::default().fg(ACCENT)));
+        }
         lines.push(Line::from(spans));
     }
     let shown = matching.len().saturating_sub(start).min(Models::VISIBLE);
@@ -307,11 +358,19 @@ fn draw_models(frame: &mut Frame, area: Rect, model: &Model) {
         lines.push(Line::from(Span::styled(message, Style::default().fg(DIM))));
     }
     frame.render_widget(Paragraph::new(lines), rows[1]);
+    // What a choice does, said where it is made -- including its price: no model
+    // holds a cache of a conversation it has never read.
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            " enter or a digit opens a session · ctrl-r asks again · esc closes",
-            Style::default().fg(DIM),
-        ))),
+        Paragraph::new(vec![
+            Line::from(Span::styled(
+                " enter or a digit: this session, from its next turn · ctrl-n: a new session",
+                Style::default().fg(DIM),
+            )),
+            Line::from(Span::styled(
+                " that turn reads the whole conversation afresh · ctrl-r asks again · esc",
+                Style::default().fg(DIM),
+            )),
+        ]),
         rows[2],
     );
 }
@@ -382,95 +441,6 @@ fn draw_tabs(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) 
         let right = Rect::new(area.x + area.width - width, area.y, width, 1);
         frame.render_widget(
             Paragraph::new(Span::styled(summary, Style::default().fg(DIM))), right);
-    }
-}
-
-fn draw_sessions(frame: &mut Frame, area: Rect, model: &Model, hits: &mut Hitboxes) {
-    let focused = model.focus == Focus::Sessions;
-    // A column with an edge, not a box. The edge is where it meets the page.
-    let block = Block::default()
-        .borders(Borders::RIGHT)
-        .border_style(Style::default().fg(if focused { ACCENT } else { BORDER }))
-        .title(Span::styled(" sessions ", Style::default().fg(if focused { ACCENT } else { DIM })))
-        .padding(Padding::horizontal(1));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    hits.sessions = inner;
-
-    let mut lines: Vec<Line> = Vec::new();
-    let mut running = 0;
-    let rows = model.sidebar_rows();
-    let live = rows.iter().filter(|row| matches!(row, Listed::Live(_))).count();
-    for (index, row) in rows.iter().enumerate() {
-        // A rule between what is running and what was, drawn where they meet.
-        // Inline, not inserted afterwards: inserting a line shifted every row
-        // below it and left the click targets pointing one session up.
-        if index == live && live > 0 && index < rows.len() {
-            lines.push(Line::from(Span::styled(
-                "─".repeat(inner.width.min(24) as usize), Style::default().fg(BORDER))));
-        }
-        let current = row.id() == model.current;
-        let cursor = if focused && index == model.selection { "[" } else { " " };
-        let (mark, colour) = match row {
-            Listed::Live(session) => {
-                running += 1;
-                state_mark(&session.state)
-            }
-            // A conversation with no process is not a state, it is a record.
-            Listed::Earlier(_) => ("·", BORDER),
-        };
-        let name = match row {
-            Listed::Live(_) => {
-                if current {
-                    Style::default().fg(Color::Indexed(252)).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default()
-                }
-            }
-            Listed::Earlier(_) => Style::default().fg(DIM),
-        };
-        lines.push(Line::from(vec![
-            Span::styled(if current { ">" } else { " " }.to_string(),
-                         Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-            Span::styled(cursor.to_string(), Style::default().fg(ACCENT)),
-            Span::styled(format!("{mark} "), Style::default().fg(colour)),
-            // WHAT IT IS ABOUT, and where it is only when nothing was asked
-            // yet. Four sessions in one directory were four identical rows.
-            // CUT WITH A MARK. A subject sliced by the pane edge reads as a
-            // subject that happens to end there, and the column is narrow
-            // enough that most of them are.
-            Span::styled(cells::clip(&row.subject(), inner.width.saturating_sub(4) as usize), name),
-        ]));
-        if let Listed::Live(session) = row {
-            if session.state != "idle" && !session.state.is_empty() {
-                let last = lines.len() - 1;
-                lines[last].spans.push(Span::styled(format!("  {}", session.state),
-                                                    Style::default().fg(DIM)));
-            }
-        }
-        // From where the row was actually DRAWN, so a click lands on the
-        // session it points at.
-        let at = inner.y + (lines.len() as u16 - 1);
-        if at < inner.y + inner.height {
-            hits.session_rows.push((index, Rect::new(inner.x, at, inner.width, 1)));
-        }
-    }
-    let _ = running;
-    if lines.is_empty() {
-        lines.push(Line::from(Span::styled("no sessions here", Style::default().fg(DIM))));
-    }
-    // No wrap: one row per session, so the row a click lands on is the
-    // session it names. A subject too long for the column is cut by the pane.
-    frame.render_widget(Paragraph::new(lines), inner);
-}
-
-fn state_mark(state: &str) -> (&'static str, Color) {
-    match state {
-        "working" => ("*", Color::Indexed(220)),
-        "stuck" => ("!", Color::Indexed(203)),
-        "suspended" => ("~", Color::Indexed(111)),
-        "stopping" => (".", DIM),
-        _ => ("-", BORDER),
     }
 }
 
@@ -680,7 +650,8 @@ fn draw_welcome(frame: &mut Frame, area: Rect, model: &Model) {
     for (k, what) in [
         ("ctrl-p", "find any session, running or not"),
         ("ctrl-n", "start a session in a new tab"),
-        ("ctrl-b", "show the running sessions"),
+        ("ctrl-b", "show or hide the sessions"),
+        ("↑ ← →", "read back, cross to the sessions"),
         ("ctrl-o", "all of a tool's output"),
         ("/", "the commands"),
     ] {
@@ -979,6 +950,13 @@ fn status_text(model: &Model) -> (Vec<String>, Vec<(String, String)>) {
     let facts = crate::status::facts(model);
     let mut notes: Vec<(String, String)> = Vec::new();
     let note = |long: &str, short: &str| (long.to_string(), short.to_string());
+    // Which column has the arrows, said first: the same two keys scroll the
+    // talk or walk the list.
+    match model.focus {
+        Focus::Transcript => notes.push(note("↑↓ scroll · ← sessions · esc to type", "↑↓ scroll")),
+        Focus::Sessions => notes.push(note("↑↓ choose · enter opens · ⌫ deletes · → the talk", "↑↓ choose")),
+        _ => {}
+    }
     // The status carries what went wrong -- a closed connection, a refused
     // request -- so it is never replaced by the facts.
     if !model.status.is_empty() {
@@ -1399,7 +1377,7 @@ kilo lima mike november oscar papa quebec";
             .iter()
             .find(|row| row.contains("why does the picker"))
             .unwrap_or_else(|| panic!("the sidebar does not say what the session is about"));
-        assert!(listed.contains('>'), "the current session lost its marker: {listed:?}");
+        assert!(listed.contains('▌'), "the current session lost its marker: {listed:?}");
         // A session nothing has been asked in falls back to where it is.
         assert!(rows[1..].iter().any(|row| row.contains("beta")),
                 "a session with no question is not listed by its directory");
@@ -1627,12 +1605,22 @@ kilo lima mike november oscar papa quebec";
             .iter()
             .find(|line| line.contains("alpha"))
             .expect("the sidebar has no row for the current session");
-        assert!(row.contains('>'), "the current session's row carries no marker: {row:?}");
+        assert!(row.contains('▌'), "the current session's row carries no marker: {row:?}");
         assert!(row.contains('*'), "the working session shows no state mark: {row:?}");
         // Without the sidebar, the tab itself says the session is working.
         model.sidebar = false;
         let tabs = frame_of(&mut model, 100, 16)[0].clone();
         assert!(tabs.contains("* alpha"), "the tab does not carry the state: {tabs:?}");
+    }
+
+    #[test]
+    fn a_delete_asks_by_name_and_says_it_is_for_good() {
+        let mut model = ready(&[("user.message", "run it")]);
+        model.ask_delete("s2", "the conversation about lifetimes".into());
+        let frame = frame_of(&mut model, 100, 24).join("\n");
+        assert!(frame.contains("delete this session?"), "nothing asked:\n{frame}");
+        assert!(frame.contains("the conversation about lifetimes"), "the question names nothing:\n{frame}");
+        assert!(frame.contains("for good"), "the question does not say it cannot be undone:\n{frame}");
     }
 
     #[test]

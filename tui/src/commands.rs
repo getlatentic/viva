@@ -45,7 +45,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "/models",
         aliases: &["/model"],
-        blurb: "choose which model answers; a digit takes that one",
+        blurb: "switch this session's model; a digit takes that one",
     },
     Command {
         name: "/refresh",
@@ -136,8 +136,9 @@ pub fn help() -> String {
     }
     text.push_str(
         "\nkeys: tab switches, ctrl-n new, ctrl-w close, ctrl-p find,\n      \
-arrows walk the list, pgup/pgdn scroll, ctrl-u clears the line,\n      \
-ctrl-c stops a turn",
+↑ reads back, ← and → cross to the sessions and back, esc types,\n      \
+pgup/pgdn/home/end scroll from anywhere, ctrl-u clears the line,\n      \
+⌫ on a session deletes it, ctrl-c stops a turn",
     );
     text
 }

@@ -296,7 +296,8 @@ def whole_frame(client):
     return input_row(client).lstrip().startswith("│›")
 
 
-def recorded_conversation(home, cwd, turns=40):
+def recorded_conversation(home, cwd, turns=40, asking="question {turn} in the recorded conversation",
+                          age=0, tag="C0DE"):
     """Write a session transcript, the way one that has been used looks.
 
     THE CHECK MAKES ITS OWN. Resuming and surviving a restart both need a
@@ -306,9 +307,9 @@ def recorded_conversation(home, cwd, turns=40):
     from whatever the machine happened to have instead, which is why a fresh
     machine had nothing to resume.
     """
-    session_id = time.strftime("%Y%m%d-%H%M%S") + "-C0DE"
+    session_id = time.strftime("%Y%m%d-%H%M%S") + "-" + tag
     # Universal time, which is 1900-based, not 1970.
-    now = int(time.time()) + 2208988800
+    now = int(time.time()) - age + 2208988800
     flat = cwd.strip("/").replace("/", "-") or "root"
     directory = os.path.join(home, "sessions", flat)
     os.makedirs(directory, exist_ok=True)
@@ -321,7 +322,7 @@ def recorded_conversation(home, cwd, turns=40):
         # all roots, and a forty-turn file read back as one message.
         previous = None
         for turn in range(turns):
-            for role, text in (("user", f"question {turn} in the recorded conversation"),
+            for role, text in (("user", asking.format(turn=turn)),
                                ("assistant", f"answer {turn}, long enough to occupy a row")):
                 entry_id = f"{turn:06X}{0 if role == 'user' else 1:02X}"
                 entry = {"kind": "message", "id": entry_id, "time": now + turn,
@@ -331,7 +332,7 @@ def recorded_conversation(home, cwd, turns=40):
                     entry["parent"] = previous
                 out.write(json.dumps(entry) + "\n")
                 previous = entry_id
-    return session_id
+    return session_id, path
 
 
 def own_daemon(cwd):
@@ -402,6 +403,10 @@ def main():
     socket_path, environment = own_daemon(cwd)
     # Before the client connects, so the picker has something recorded to find.
     recorded_conversation(environment["VIVA_HOME"], os.path.realpath(cwd))
+    # One to delete: a day older, so what resumes the newest does not take it,
+    # and asked briefly, so its row in the sessions column is not cut short.
+    _, doomed_path = recorded_conversation(environment["VIVA_HOME"], os.path.realpath(cwd), turns=2,
+                                           asking="doomed {turn}", age=86400, tag="D0DE")
     client = Client(cwd, environment=environment)
     try:
         client.wait_for("sessions", 60, "the first frame")
@@ -619,6 +624,77 @@ def main():
                 fail("ctrl-b did not bring the sessions column back")
             else:
                 ok("the sessions column is there, and ctrl-b puts it away and back")
+
+        # The arrows scroll the talk from the prompt and walk the list from the
+        # column, and the status edge says which. ctrl-b left the keyboard with
+        # the column, so esc gives it back to the prompt first.
+        client.send(b"\x1b")                      # esc: the prompt
+        client.pump(1.0)
+        client.send(b"\x1b[A")                    # up: read back
+        client.pump(1.0)
+        reading = status_row(client)
+        client.send(b"\x1b[D")                    # left: the sessions column
+        client.pump(1.0)
+        choosing = status_row(client)
+        client.send(b"\x1b[C")                    # right: the talk again
+        client.pump(1.0)
+        back = status_row(client)
+        client.send(b"\x1b")                      # esc: the prompt
+        client.pump(1.0)
+        typing = status_row(client)
+        if "↑↓ scroll" not in reading:
+            fail(f"up from the prompt did not go to the talk: {reading!r}")
+        elif "↑↓ choose" not in choosing:
+            fail(f"left from the talk did not reach the sessions column: {choosing!r}")
+        elif "↑↓ scroll" not in back:
+            fail(f"right from the column did not come back to the talk: {back!r}")
+        elif "↑↓" in typing:
+            fail(f"esc did not give the keyboard back to the prompt: {typing!r}")
+        else:
+            ok("up reads the talk, left and right cross to the sessions and back, esc types")
+
+        # Deleting from the column: backspace asks by name, esc keeps the
+        # session, enter deletes it from the list and from the disk. ctrl-b
+        # twice hands the column the keyboard on the open session.
+        def doomed_row():
+            return next((line[:29] for line in client.term.lines()[1:-3] if "doomed 0" in line[:29]), None)
+        client.send(b"\x02")                      # ctrl-b: away
+        client.pump(1.0)
+        client.send(b"\x02")                      # ctrl-b: back, with the keyboard
+        client.pump(1.5)
+        for _ in range(40):
+            row = doomed_row()
+            if row is not None and row[1:2] == "›":
+                break
+            client.send(b"\x1b[B")                # down
+            client.pump(0.3)
+        row = doomed_row()
+        if row is None:
+            print(client.term.text())
+            fail("the session to delete is not in the sessions column")
+        elif row[1:2] != "›":
+            fail(f"the arrows never reached the session to delete: {row!r}")
+        else:
+            client.send(b"\x7f")                  # backspace: ask
+            client.pump(1.0)
+            asked = "delete this session?" in client.term.text()
+            client.send(b"\x1b")                  # esc: keep it
+            client.pump(1.0)
+            kept = doomed_row() is not None and os.path.exists(doomed_path)
+            client.send(b"\x7f")                  # backspace: ask again
+            client.pump(1.0)
+            client.send(b"\r")                    # enter: delete it
+            client.pump(4.0)
+            if not asked:
+                fail("backspace on a session did not ask before deleting it")
+            elif not kept:
+                fail("esc did not keep the session")
+            elif doomed_row() is not None:
+                fail(f"the deleted session is still listed: {doomed_row()!r}")
+            elif os.path.exists(doomed_path):
+                fail("the deleted session's transcript is still on disk")
+            else:
+                ok("backspace asks by name, esc keeps the session, enter deletes it from the list and the disk")
 
         # And closing the view does not end the session it was showing: the
         # tab bar counts the running sessions, and the count must not fall.
@@ -867,16 +943,30 @@ def main():
             for _ in range(len("nothing-matches-this")):
                 client.send(b"\x7f")
             client.pump(2.0)
+            # A digit changes THIS session's model and opens nothing; ctrl-n on
+            # the highlighted model is the way to a new session on it.
             client.send(b"1")
+            client.pump(4.0)
+            tabs_after = client.term.lines()[0].count("│")
+            if tabs_after != tabs_before:
+                print(client.term.text())
+                fail(f"a digit opened a session instead of switching this one: {tabs_before} tabs -> {tabs_after}")
+            elif "which model answers" in client.term.text():
+                fail("the picker stayed open after choosing")
+            else:
+                ok("a digit switches this session's model and closes the picker")
+            client.send(b"/models\r")
+            client.pump(4.0)
+            client.send(b"\x0e")                   # ctrl-n: a new session on the highlighted model
             client.pump(12.0)
             tabs_after = client.term.lines()[0].count("│")
             if tabs_after != tabs_before + 1:
                 print(client.term.text())
-                fail(f"a digit opened no session: {tabs_before} tabs -> {tabs_after}")
+                fail(f"ctrl-n in the picker opened no session: {tabs_before} tabs -> {tabs_after}")
             elif "which model answers" in client.term.text():
-                fail("the picker stayed open after choosing")
+                fail("the picker stayed open after ctrl-n")
             else:
-                ok("a digit opens a session and closes the picker")
+                ok("ctrl-n in the picker opens a new session on that model")
 
         # THE MENU. A closed set nobody can see is barely better than no set.
         client.send(b"/")

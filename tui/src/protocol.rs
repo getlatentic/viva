@@ -278,6 +278,9 @@ pub struct Recorded {
     pub id: String,
     #[serde(default)]
     pub cwd: String,
+    /// When it was last written to, in universal time: seconds from 1900.
+    #[serde(default)]
+    pub time: u64,
     #[serde(default)]
     pub messages: u64,
     #[serde(default)]
