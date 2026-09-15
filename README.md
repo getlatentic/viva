@@ -20,23 +20,23 @@ repository keeps the negative results beside the positive ones.
 
 ## Install
 
-Released binaries cover macOS on Apple silicon and Linux on x86_64, and need
-nothing else. Run the installer again to upgrade, and use WSL on Windows.
-
 ```bash
+# macOS on Apple silicon or Linux on x86_64, WSL included; run again to upgrade
 curl -fsSL https://raw.githubusercontent.com/getlatentic/viva/main/get.sh | sh
-mkdir -p ~/.viva && echo '{ "deepseek": { "apiKey": "sk-..." } }' > ~/.viva/auth.json
-chmod 600 ~/.viva/auth.json          # the key stays outside any repository
-viva --version                       # prints the release it installed
 ```
 
-Anywhere else, build from source with SBCL and Rust:
-
 ```bash
+# anywhere else, from source
 brew install sbcl                    # or: apt install sbcl
 curl -fsSL https://sh.rustup.rs | sh # Rust, for the full-screen client
 git clone https://github.com/getlatentic/viva && cd viva
 sh install.sh && sh tui/install.sh   # Quicklisp, viva on PATH, the client
+```
+
+```bash
+mkdir -p ~/.viva && echo '{ "deepseek": { "apiKey": "sk-..." } }' > ~/.viva/auth.json
+chmod 600 ~/.viva/auth.json
+viva                                 # opens this directory's session
 ```
 
 ## Use
