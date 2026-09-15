@@ -253,6 +253,28 @@ marker exists for."
 (defun unmark-live (id)
   (ignore-errors (delete-file (live-path id))))
 
+(defun journal-files (id)
+  "Every journal file session ID has had, one per time it was spawned. Exactly
+its own: `abc-*` also matches `abc-def-...`, so what follows the id must be the
+spawn time and nothing else."
+  (let ((prefix (format nil "~a-" id)))
+    (remove-if-not (lambda (path)
+                     (let ((name (pathname-name path)))
+                       (and (a:starts-with-subseq prefix name)
+                            (let ((stamp (subseq name (length prefix))))
+                              (and (plusp (length stamp)) (every #'digit-char-p stamp))))))
+                   (ignore-errors
+                    (directory (merge-pathnames (format nil "~a-*.jsonl" id) (journal-root)))))))
+
+(defun forget-journal (id)
+  "Delete session ID's journal files and its live marker, and say how many files
+went. Named files only: the same directory holds every other session's journal
+and the evolution ledger."
+  (let ((files (journal-files id)))
+    (dolist (file files) (ignore-errors (delete-file file)))
+    (unmark-live id)
+    (length files)))
+
 (defun live-sessions ()
   "What was running when the last daemon stopped, oldest first.
 

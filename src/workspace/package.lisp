@@ -196,6 +196,7 @@
            #:close-session #:release-transcript #:load-session #:session-messages #:latest-session
            #:session-directory #:usage-of #:+format-version+ #:+conversation-kinds+
            #:list-sessions #:search-sessions #:find-session #:describe-session #:slug
+           #:valid-session-id-p #:session-files #:delete-session-files
            #:summary #:summary-id #:summary-path #:summary-cwd #:summary-time
            #:summary-messages #:summary-opening
            #:ancestry #:context-entries #:children-of #:entry-at #:compact #:fork

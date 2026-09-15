@@ -596,3 +596,30 @@ to; a few hundred JSONL files is not the problem an index solves."
 
 (defun latest-session (&optional cwd)
   (first (list-sessions :cwd cwd :limit 1)))
+
+(defun valid-session-id-p (id)
+  "Is ID shaped like a session id -- ASCII letters, digits and dashes -- and so
+nothing a path or a wildcard could make into something else?"
+  (and (stringp id)
+       (< 0 (length id) 65)
+       (every (lambda (character)
+                (or (char<= #\0 character #\9)
+                    (char<= #\a (char-downcase character) #\z)
+                    (char= character #\-)))
+              id)))
+
+(defun session-files (id)
+  "Every transcript file named for session ID, in whichever project directory it
+was started from: a delete names the session, not where it ran."
+  (unless (valid-session-id-p id)
+    (error "~s is not a session id." id))
+  (ignore-errors
+   (directory (merge-pathnames (format nil "*/~a.jsonl" id) (session-directory)))))
+
+(defun delete-session-files (id)
+  "Delete every transcript named for session ID, and say how many there were.
+Only those files: a directory of transcripts is shared by every session started
+in the same place."
+  (let ((files (session-files id)))
+    (dolist (file files) (delete-file file))
+    (length files)))

@@ -69,7 +69,7 @@ can name without qualifying it."))
            #:shutdown #:await-shutdown #:await-turn
            #:subscribe #:subscribe-since #:unsubscribe #:since
            #:find-cell #:all-cells #:snapshot #:+terminal-events+ #:*journal-root* #:journal-root #:stop-journal
-           #:live-sessions #:unmark-live #:live-root
+           #:live-sessions #:unmark-live #:live-root #:forget-journal
            #:spawn-task #:cancel-task #:task-tree-snapshot #:ensure-supervisor
            #:ensure-evolver #:create-candidate #:activate-candidate
            #:promote-candidate #:revert-component #:discard-candidate

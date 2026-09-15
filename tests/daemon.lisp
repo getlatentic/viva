@@ -975,6 +975,65 @@ checkpoint."))
                                (string= "deepseek-v4-flash" (getf (actor:snapshot cell) :model))))
                 "the session never took the model it was given"))))))
 
+;;; Deleting a session
+
+(define-test "deleting a session removes what is recorded under its id, and nothing else"
+  (with-repository (environment)
+    (let* ((root (env:env-cwd environment))
+           (directory (session:session-directory root))
+           (doomed (session:open-session :directory directory :cwd root))
+           (kept (session:open-session :directory directory :cwd root))
+           (id (session:session-id doomed))
+           (notes (merge-pathnames ".viva/MEMORY.md" (uiop:ensure-directory-pathname root))))
+      (dolist (each (list doomed kept))
+        (session:record-entry each :message
+                              (msg:make-user-message :content (list (msg:make-text "said here")))))
+      (session:close-session doomed)
+      (session:close-session kept)
+      (ensure-directories-exist notes)
+      (with-open-file (out notes :direction :output :if-exists :supersede)
+        (write-string "- a note the project keeps" out))
+      (with-daemon (path)
+        (let ((stream (daemon:connect path)))
+          (unwind-protect
+               (progn
+                 (read-line stream nil nil)
+                 (daemon:request stream "type" "session.start" "cwd" root "resume" id)
+                 (true (actor:find-cell id) "the session to delete never started")
+                 (true (viva.actor::journal-files id) "the session wrote no journal to delete")
+                 (let ((reply (daemon:request stream "type" "session.delete" "session" id)))
+                   (true (gethash "success" reply) "refused: ~a" (gethash "error" reply)))
+                 (false (actor:find-cell id) "the session is still running")
+                 (false (session:session-files id) "its transcript is still there")
+                 (false (viva.actor::journal-files id) "its journal is still there")
+                 (false (probe-file (viva.actor::live-path id)) "its live marker is still there")
+                 (viva.daemon::rehydrate-sessions)
+                 (false (actor:find-cell id) "a restart brought it back")
+                 (true (probe-file (session:session-path kept))
+                       "another session's transcript went with it")
+                 (true (probe-file notes) "the project's notes went with it")
+                 (false (gethash "success"
+                                 (daemon:request stream "type" "session.delete" "session" id))
+                        "deleting it twice succeeded"))
+            (ignore-errors (close stream))))))))
+
+(define-test "a session in the middle of a turn is not deleted, and neither is a path"
+  (with-daemon (path)
+    (with-paced-cell (cell agent :pause 0.05 :limit 40)
+      (daemon:with-connection (stream path)
+        (read-line stream nil nil)
+        (actor:submit cell "go")
+        (true (daemon-wait (lambda () (actor:busy-p cell))) "the turn never started")
+        (let ((refused (daemon:request stream "type" "session.delete"
+                                       "session" (actor:cell-id cell))))
+          (false (gethash "success" refused) "a session with a turn running was deleted")
+          (true (search "turn" (or (gethash "error" refused) "")) "~s" (gethash "error" refused)))
+        (true (actor:find-cell (actor:cell-id cell)) "the running session is gone")
+        (dolist (hostile '("../../etc" "*" "a/b" ""))
+          (false (gethash "success" (daemon:request stream "type" "session.delete"
+                                                    "session" hostile))
+                 "~s was taken for a session id" hostile))))))
+
 (defclass retrying-tools-agent (harness:workspace-agent)
   ((script :initarg :script :accessor rt-script)
    (retried :initform 0 :accessor rt-retried)))
