@@ -41,6 +41,7 @@ fi
 cases='
 CellLifecycle:CellLifecycle:holds:the cell lifecycle, complete space
 CellLifecycleWitnessRetarget:CellLifecycle:violates:a model applied at once reaches a turn already running
+CellLifecycleWitnessHold:CellLifecycle:violates:a draining turn that starts its queue breaks the hold
 ReplayBarrier:ReplayBarrier:holds:no subscriber misses an event across the barrier
 ReplayBarrierBroken:ReplayBarrier:violates:without the barrier, the gap is reachable
 TaskTreeSafety:TaskTree:holds:scoped children cannot outlive their parent
@@ -86,7 +87,7 @@ while IFS=: read -r config module expect meaning; do
         "$here/$module.tla" >"$log" 2>&1 </dev/null); then
     actual=holds
   else
-    if grep -q 'Invariant .* is violated\|Temporal properties were violated' "$log"; then
+    if grep -q 'Invariant .* is violated\|Action property .* is violated\|Temporal properties were violated' "$log"; then
       actual=violates
     else
       actual=error
