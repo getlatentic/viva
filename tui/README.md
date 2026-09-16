@@ -7,30 +7,15 @@ sh tui/install.sh     # needs a Rust toolchain
 viva                  # the launcher finds this binary and runs it
 ```
 
-`viva` runs this client when it has a terminal. Piped or redirected it stays
-the line client, which is the form that scripts and diffs. Where the binary is
-absent, `viva` says how to build it and points to `viva attach`.
+`viva` runs this client when it has a terminal, and the line client when a
+pipe or a redirect takes its output. Where the binary is absent, `viva` says
+how to build it and points to `viva attach`. It starts the daemon if there is
+not one.
 
-It starts the daemon if there is not one. `daemon start` is idempotent, so the
-client makes sure rather than asking.
-
-## The protocol is the daemon's
-
-It speaks line-delimited JSON on `~/.viva/viva.sock`, or on
-`VIVA_SOCKET`. `viva attach` and `viva live` speak the same protocol.
-
-```
-        engine (SBCL)
-             |  JSON over a unix socket
-    +--------+--------+
-  attach    live    viva-tui
-  (line)   (Lisp)     (Rust)
-```
-
-Two verbs exist for this client: `session.recorded` and `session.search`. Both
-are facts about the workspace rather than about any interface, so they live in
-the daemon. `session.inspect` answers notes, skills, tools and trust from one
-instant.
+It speaks line-delimited JSON on `~/.viva/viva.sock`, or on `VIVA_SOCKET`.
+`viva attach` and `viva live` speak the same protocol. This client calls
+`session.recorded` for a transcript, `session.search` for the finder, and
+`session.inspect` for notes, skills, tools and trust from one instant.
 
 ## Keys
 
@@ -69,53 +54,35 @@ The client refuses an unknown one rather than sending it to the model.
 | `/refresh` `/help` | re-read the session list; list these |
 | `/quit` `/exit` `/detach` `/q` | leave; the session keeps running |
 
-The menu, the dispatcher and `/help` read one table, and a test walks it to
-assert that every offered name and alias resolves.
-
 ## On screen
 
-A tool call and its result are one block, three lines by default. The client
-counts the lines it hides. Showing three of four hundred teaches a reader that
-the command printed three. The mark carries the outcome: `·` running, `✔`
-done, `✘` failed. A failed call keeps its reason.
+A tool call and its result are one block, three lines by default, with a count
+of the lines it hides. The mark carries the outcome: `·` running, `✔` done,
+`✘` failed. A failed call keeps its reason.
 
-The status line always carries the retention counts, including at zero.
-`Ctrl-L` opens the detail and gives the scope of each item. A machine level
-tool loads in every directory you open, and a project level one does not. The
-panel lists anything that failed the trust check as refused.
-
-A tab is a session you have open, like a browser tab. The sidebar finds a
-session among all of them, and `+` starts one.
-
-## Speed
+The status line carries the retention counts, including at zero. `Ctrl-L`
+opens the detail, gives the scope of each item, and lists anything that failed
+the trust check as refused. A tab is a session you have open, like a browser
+tab. The sidebar finds a session among all of them, and `+` starts one.
 
 The client lays out a frame once per change, not once per draw, and renders
-only the visible rows.
-
-| what | release build |
-| --- | --- |
-| one streamed token, 10 turns | 0.72 ms |
-| one streamed token, 400 turns | 0.70 ms |
-| one frame, 240 entries | 0.78 ms |
-| one scroll step, 10 and 400 turns | 0.76 ms and 0.69 ms |
-| idle for two seconds | 0 bytes |
-
-Flat is the part that matters: the length of a conversation costs nothing to
-draw. `cargo test --release` holds it to that.
+only the visible rows. Benches hold a streamed token, a scroll step and a tab
+switch inside one frame at 60fps, in a conversation of 400 turns. A token and
+a scroll step cost the same there as at 10.
 
 ## Checks
 
 ```bash
-cargo test --manifest-path tui/Cargo.toml   # 85 tests: model and rendered frames
-python3 tui/conformance.py                  # 33 terminal invariants, real daemon
+cargo test --manifest-path tui/Cargo.toml   # 168 tests: the model, and the frames it draws
+python3 tui/conformance.py                  # 46 terminal invariants, real daemon
 python3 tui/wire_check.py                   # protocol contract, scripted daemon
 ```
 
 `conformance.py` holds this client to the same invariants as the Lisp one: a
 resize leaves one frame, paging stops at both ends, an idle client writes
 nothing, and the client gives the terminal back. `wire_check.py` drives it from
-a scripted daemon. A real daemon cannot produce a subagent, a completed task or
-a dropped sequence number on demand, and asking it costs money.
+a scripted daemon, because a real one cannot produce a subagent, a completed
+task or a dropped sequence number on demand.
 
 Both build first. A unit test can pass against source while a check fails
 against the binary beside it.
