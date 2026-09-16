@@ -69,6 +69,15 @@
               "deepseek.v3.2"
               "qwen.qwen3-coder-480b-a35b-instruct"
               "nvidia.nemotron-super-3-120b"))
+    ;; IBM's gateway speaks the same chat completions, and authenticates with a
+    ;; token minted from the key rather than with the key itself. What it serves
+    ;; are the aliases a tenant configured, which no table here can know: name
+    ;; them in auth.json, or set WATSONX_MODEL.
+    (:label "watsonx" :key "WATSONX_API_KEY" :kind :watsonx :effort "low"
+     :endpoint-var "WATSONX_ENDPOINT"
+     :endpoint "https://us-south.ml.cloud.ibm.com/ml/gateway/v1/chat/completions"
+     :model-var "WATSONX_MODEL"
+     :models ())
     ;; KEYLESS, AND CONFIGURED BY BEING NAMED. A server on your own machine
     ;; needs no key, and Pi's rule covers exactly this: a keyless local server
     ;; still has auth semantics, and what its auth reports is whether the
@@ -199,7 +208,8 @@ something still has to decide whether to offer it."
       ;; anything the caller chose.
       (:llama-cpp (provider:llama-cpp-provider
                    :endpoint endpoint
-                   :output-prefix provider:+harmony-output-prefix+)))))
+                   :output-prefix provider:+harmony-output-prefix+))
+      (:watsonx (provider:watsonx-provider :endpoint endpoint :api-key key)))))
 
 (defun entry-choices (entry &key (auth (auth:read-auth)) refresh)
   "ENTRY as usable choices, or NIL where it has no key.

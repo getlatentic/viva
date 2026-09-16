@@ -93,3 +93,34 @@
         (provider:provider-endpoint (agent:agent-provider local)))
     (is string= "https://api.openai.com/v1/chat/completions"
         (provider:provider-endpoint (agent:agent-provider hosted)))))
+
+;;; watsonx
+
+(define-test "watsonx mints one access token and keeps it until it is nearly spent"
+  ;; The gateway takes a token minted from the key rather than the key, and a
+  ;; token bought per request is a round trip to IBM before every answer.
+  (let* ((minted 0)
+         (viva.provider::*mint-token*
+           (lambda (key)
+             (declare (ignore key))
+             (incf minted)
+             (values (format nil "token-~d" minted) 3600)))
+         (provider (provider:watsonx-provider :api-key "an-api-key")))
+    (flet ((authorization ()
+             (cdr (assoc "Authorization" (provider:headers provider) :test #'string=))))
+      (is string= "Bearer token-1" (authorization))
+      (is string= "Bearer token-1" (authorization))
+      (is = 1 minted "it bought a token it already held")
+      ;; Spent: the next request pays for another.
+      (setf (viva.provider::watsonx-good-until provider) 0)
+      (is string= "Bearer token-2" (authorization))
+      (is = 2 minted))))
+
+(define-test "watsonx sends what any OpenAI-compatible server expects"
+  ;; It inherits the payload, so the only difference on the wire is the header.
+  (let* ((agent (make-instance 'agent:queued-agent :reasoning-effort "low"))
+         (provider (provider:watsonx-provider :api-key "k"))
+         (payload (provider:augment-payload provider (payload-for agent) agent)))
+    (is string= "low" (gethash "reasoning_effort" payload))
+    (is string= "https://us-south.ml.cloud.ibm.com/ml/gateway/v1/chat/completions"
+        (provider:provider-endpoint provider))))

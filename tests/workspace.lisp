@@ -2048,10 +2048,11 @@ body~%~@[~%```~a~%print(1)~%```~%~]" name (and (plusp (length language)) languag
 SETF and restore rather than LET: the catalogue reads the process environment
 through SB-POSIX, which a dynamic binding does not touch."
   `(let ((keys '("OPENAI_API_KEY" "OPENROUTER_API_KEY" "DEEPSEEK_API_KEY"
-                 "BEDROCK_API_KEY"))
+                 "BEDROCK_API_KEY" "WATSONX_API_KEY"))
          ;; CLEARED, because the repository's own .env pins some of these and a
          ;; test that read them would assert against whoever edited that file.
-         (pins '("OPENAI_MODEL" "OPENROUTER_MODEL" "DEEPSEEK_MODEL" "BEDROCK_MODEL"))
+         (pins '("OPENAI_MODEL" "OPENROUTER_MODEL" "DEEPSEEK_MODEL" "BEDROCK_MODEL"
+                 "WATSONX_MODEL"))
          (restore '()))
      (unwind-protect
           (progn (dolist (name keys)
@@ -2110,6 +2111,25 @@ through SB-POSIX, which a dynamic binding does not touch."
       ;; And so does a raw model id, which is how a recorded session comes back.
       (is string= "openai.gpt-oss-20b"
           (models:choice-model (models:resolve-model "openai.gpt-oss-20b"))))))
+
+(define-test "watsonx is offered once its key and its aliases are written down"
+  ;; A gateway's aliases belong to a tenant, so the catalogue ships none: the
+  ;; entry carries the endpoint and the key, and auth.json names what it serves.
+  (let ((elsewhere (throwaway-directory))
+        (before (sb-posix:getenv "VIVA_HOME"))
+        (key (sb-posix:getenv "WATSONX_API_KEY")))
+    (unwind-protect
+         (progn
+           (sb-posix:setenv "VIVA_HOME" elsewhere 1)
+           (sb-posix:unsetenv "WATSONX_API_KEY")
+           (with-open-file (out (env:auth-path) :direction :output :if-exists :supersede)
+             (write-string "{\"watsonx\": {\"apiKey\": \"k\", \"models\": [\"granite\"]}}" out))
+           (let ((choice (models:resolve-model "watsonx/granite")))
+             (is string= "granite" (models:choice-model choice))
+             (is string= "https://us-south.ml.cloud.ibm.com/ml/gateway/v1/chat/completions"
+                 (viva.provider:provider-endpoint (models:choice-provider choice)))))
+      (if before (sb-posix:setenv "VIVA_HOME" before 1) (sb-posix:unsetenv "VIVA_HOME"))
+      (if key (sb-posix:setenv "WATSONX_API_KEY" key 1) (sb-posix:unsetenv "WATSONX_API_KEY")))))
 
 (define-test "a sweep over every arm is one per endpoint, not one per model"
   ;; An endpoint serving eight models would otherwise turn one battery into

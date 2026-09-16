@@ -18,7 +18,7 @@
 (in-package #:viva.config)
 
 (defparameter +settings+
-  '(("model" . "Which model to use, by catalogue name: deepseek, openai, openrouter, bedrock, local.")
+  '(("model" . "Which model to use, by catalogue name: deepseek, openai, openrouter, bedrock, watsonx, local, ollama.")
     ("limit" . "Model requests one prompt may spend.")
     ("retain" . "Run the retention policy after each task: true or false.")
     ("capabilities" . "Which capabilities to enable, comma separated: a name this build offers, or a path to a file you wrote.")

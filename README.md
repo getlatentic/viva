@@ -165,11 +165,13 @@ go in `~/.viva/auth.json`, one entry per provider:
 | provider | entry |
 | --- | --- |
 | `deepseek`, `openai`, `openrouter`, `bedrock` | `{ "apiKey": "..." }` |
+| `watsonx` | `{ "apiKey": "...", "models": ["<your gateway's alias>"] }`, plus `endpoint` for your region |
 | `local` (llama.cpp on port 8099), `ollama` (port 11434) | `{}`, or `VIVA_LOCAL_ENDPOINT` or `OLLAMA_ENDPOINT` in the environment; they need no key |
 
 An entry's `endpoint` reaches another deployment, and `models` replaces the
 list it offers. Every model answers to `provider/id`, as in
-`viva do --model deepseek/deepseek-v4-flash`.
+`viva do --model deepseek/deepseek-v4-flash`. For watsonx, viva mints IBM's
+access token from the key it holds.
 
 ## Develop
 

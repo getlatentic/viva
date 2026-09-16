@@ -82,7 +82,8 @@
            #:make-default-provider
            #:headers #:supports-grammar-p #:constrained-output-prefix #:augment-payload
            #:llama-cpp #:llama-cpp-provider #:+harmony-output-prefix+
-           #:openai #:openai-provider))
+           #:openai #:openai-provider
+           #:watsonx #:watsonx-provider))
 
 (defpackage #:viva.client
   (:use #:cl)

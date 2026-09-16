@@ -105,3 +105,55 @@ llama-server rejects its own model's output as unparseable.")))
 
 (defun openai-provider (&key api-key (endpoint "https://api.openai.com/v1/chat/completions"))
   (make-instance 'openai :endpoint endpoint :api-key api-key))
+
+;;; watsonx
+;;;
+;;; IBM's gateway speaks the same chat completions, and authenticates with an
+;;; access token rather than with the key somebody holds: the key buys a token,
+;;; the token expires, and every request needs a live one. Minting it belongs
+;;; here, where the core asks a provider what its headers are and nothing more.
+
+(defparameter *iam-token-url* "https://iam.cloud.ibm.com/identity/token"
+  "Where an API key is exchanged for an access token.")
+
+(defun mint-iam-token (api-key)
+  "Exchange API-KEY for an access token. Values: the token, and how many seconds
+it is good for."
+  (let ((answer (com.inuoe.jzon:parse
+                 (dexador:post *iam-token-url*
+                               :headers '(("Accept" . "application/json"))
+                               :content `(("grant_type" . "urn:ibm:params:oauth:grant-type:apikey")
+                                          ("apikey" . ,api-key))))))
+    (values (gethash "access_token" answer)
+            (or (gethash "expires_in" answer) 3600))))
+
+(defparameter *mint-token* #'mint-iam-token
+  "How a key becomes a token. A test has no IBM account to ask, and rebinds this.")
+
+(defclass watsonx (openai)
+  ((name :initform "watsonx")
+   (endpoint :initform "https://us-south.ml.cloud.ibm.com/ml/gateway/v1/chat/completions")
+   (token :initform nil :accessor watsonx-token)
+   (good-until :initform 0 :accessor watsonx-good-until)
+   (lock :initform (bordeaux-threads:make-lock "viva.watsonx") :reader watsonx-lock)))
+
+(defun live-token (provider)
+  "The access token, minted when the one held has expired or is about to.
+
+A MINUTE OF MARGIN, because a token that expires between the header and the
+answer is a refusal on work already begun. Under a lock, so two sessions
+starting a turn together buy one token rather than two."
+  (bordeaux-threads:with-lock-held ((watsonx-lock provider))
+    (when (>= (get-universal-time) (watsonx-good-until provider))
+      (multiple-value-bind (token seconds) (funcall *mint-token* (provider-api-key provider))
+        (setf (watsonx-token provider) token
+              (watsonx-good-until provider) (+ (get-universal-time) (max 60 (- seconds 60))))))
+    (watsonx-token provider)))
+
+(defmethod headers ((provider watsonx))
+  (list '("Content-Type" . "application/json")
+        (cons "Authorization" (format nil "Bearer ~a" (live-token provider)))))
+
+(defun watsonx-provider (&key api-key
+                              (endpoint "https://us-south.ml.cloud.ibm.com/ml/gateway/v1/chat/completions"))
+  (make-instance 'watsonx :endpoint endpoint :api-key api-key))
