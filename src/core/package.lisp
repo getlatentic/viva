@@ -80,7 +80,8 @@
                     (#:agent #:viva.agent))
   (:export #:provider #:provider-endpoint #:provider-api-key #:provider-name
            #:make-default-provider
-           #:headers #:supports-grammar-p #:constrained-output-prefix #:augment-payload
+           #:headers #:request-url #:supports-grammar-p #:constrained-output-prefix
+           #:augment-payload
            #:llama-cpp #:llama-cpp-provider #:+harmony-output-prefix+
            #:openai #:openai-provider
            #:watsonx #:watsonx-provider))
