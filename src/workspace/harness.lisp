@@ -647,7 +647,9 @@ and an ordinary one see the same world."
         ;; the reason this function exists. Bound around the run alone, a
         ;; command that printed for four minutes read as a hang.
         (workspace:*on-output*
-          (lambda (chunk) (agent:emit agent (list :type :tool-output :text chunk)))))
+          (lambda (chunk) (agent:emit agent (list :type :tool-output :text chunk))))
+        (workspace:*output-owner*
+          (a:when-let ((session (agent-session agent))) (session:session-id session))))
     (funcall thunk)))
 
 (defmethod agent:before-tool ((agent workspace-agent) call)

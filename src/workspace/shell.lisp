@@ -17,6 +17,11 @@ Bound by the agent that is watching, so RUN-BASH does not have to know who is
 looking. Collecting everything and returning at the end is why a slow command
 read as a hang -- two minutes of nothing, then all of it at once.")
 
+(defvar *output-owner* nil
+  "The id of the session the running command's output belongs to. A background
+job outlives the turn that started it and, across an upgrade, the image; this
+is how it can still say whose output it is.")
+
 (defun run-bash (command &key (timeout *bash-timeout*))
   (multiple-value-bind (status output)
       (env:exec (environment) command :timeout timeout :on-output *on-output*)
@@ -80,7 +85,8 @@ background true instead, and read it with `jobs`.]" text)
                              ;; outlives this turn, and the binding will not.
                              :on-output (let ((sink *on-output*))
                                           (lambda (chunk)
-                                            (when sink (funcall sink chunk)))))))
+                                            (when sink (funcall sink chunk))))
+                             :owner *output-owner*)))
         ;; A moment before reporting: a command that dies instantly -- a typo, a
         ;; missing binary -- should say so now rather than be announced as
         ;; started and found dead later.
