@@ -2048,10 +2048,11 @@ body~%~@[~%```~a~%print(1)~%```~%~]" name (and (plusp (length language)) languag
 SETF and restore rather than LET: the catalogue reads the process environment
 through SB-POSIX, which a dynamic binding does not touch."
   `(let ((keys '("OPENAI_API_KEY" "OPENROUTER_API_KEY" "DEEPSEEK_API_KEY"
-                 "BEDROCK_API_KEY"))
+                 "BEDROCK_API_KEY" "WATSONX_API_KEY"))
          ;; CLEARED, because the repository's own .env pins some of these and a
          ;; test that read them would assert against whoever edited that file.
-         (pins '("OPENAI_MODEL" "OPENROUTER_MODEL" "DEEPSEEK_MODEL" "BEDROCK_MODEL"))
+         (pins '("OPENAI_MODEL" "OPENROUTER_MODEL" "DEEPSEEK_MODEL" "BEDROCK_MODEL"
+                 "WATSONX_MODEL"))
          (restore '()))
      (unwind-protect
           (progn (dolist (name keys)
@@ -2110,6 +2111,42 @@ through SB-POSIX, which a dynamic binding does not touch."
       ;; And so does a raw model id, which is how a recorded session comes back.
       (is string= "openai.gpt-oss-20b"
           (models:choice-model (models:resolve-model "openai.gpt-oss-20b"))))))
+
+(define-test "watsonx is offered once its key, its project and its models are written down"
+  ;; What a project may run belongs to the tenant, so the catalogue ships no
+  ;; models: the entry carries the region's site and the key, and auth.json
+  ;; names the project that pays and the models to offer.
+  (let ((elsewhere (throwaway-directory))
+        (before (sb-posix:getenv "VIVA_HOME"))
+        (key (sb-posix:getenv "WATSONX_API_KEY"))
+        (project (sb-posix:getenv "WATSONX_PROJECT_ID")))
+    (unwind-protect
+         (progn
+           (sb-posix:setenv "VIVA_HOME" elsewhere 1)
+           (sb-posix:unsetenv "WATSONX_API_KEY")
+           (sb-posix:unsetenv "WATSONX_PROJECT_ID")
+           (with-open-file (out (env:auth-path) :direction :output :if-exists :supersede)
+             (write-string "{\"watsonx\": {\"apiKey\": \"k\", \"projectId\": \"p-1\", \"models\": [\"ibm/granite-3-2b-instruct\"]}}" out))
+           (let* ((choice (models:resolve-model "watsonx/ibm/granite-3-2b-instruct"))
+                  (provider (models:choice-provider choice)))
+             (is string= "ibm/granite-3-2b-instruct" (models:choice-model choice))
+             (is string= "https://us-south.ml.cloud.ibm.com"
+                 (viva.provider:provider-endpoint provider))
+             (is string= "https://us-south.ml.cloud.ibm.com/ml/v1/text/chat?version=2023-05-02"
+                 (viva.provider:request-url provider))
+             (is string= "p-1" (viva.provider::watsonx-project provider)))
+           ;; The environment answers where the file names no project.
+           (with-open-file (out (env:auth-path) :direction :output :if-exists :supersede)
+             (write-string "{\"watsonx\": {\"apiKey\": \"k\", \"models\": [\"granite\"]}}" out))
+           (sb-posix:setenv "WATSONX_PROJECT_ID" "p-2" 1)
+           (is string= "p-2"
+               (viva.provider::watsonx-project
+                (models:choice-provider (models:resolve-model "watsonx/granite")))))
+      (if before (sb-posix:setenv "VIVA_HOME" before 1) (sb-posix:unsetenv "VIVA_HOME"))
+      (if key (sb-posix:setenv "WATSONX_API_KEY" key 1) (sb-posix:unsetenv "WATSONX_API_KEY"))
+      (if project
+          (sb-posix:setenv "WATSONX_PROJECT_ID" project 1)
+          (sb-posix:unsetenv "WATSONX_PROJECT_ID")))))
 
 (define-test "a sweep over every arm is one per endpoint, not one per model"
   ;; An endpoint serving eight models would otherwise turn one battery into

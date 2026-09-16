@@ -68,9 +68,10 @@ explain: a skills loader can be correct in-process while the prompt the model
 receives is missing what it wrote, and this project has already paid once for a
 tool schema that was right in the image and malformed on the wire.")
 
-(defun request-payload (agent messages)
-  "The full request body. Reads the prompt and tool set from AGENT now, not
-when the run started -- that is what lets a mid-run change take effect here."
+(defun request-payload (agent messages &key stream)
+  "The full request body, streamed when STREAM. Reads the prompt and tool set
+from AGENT now, not when the run started -- that is what lets a mid-run change
+take effect here."
   (let* ((prompt (agent:system-prompt agent))
          (tools (agent:tools agent))
          (system (when (plusp (length prompt))
@@ -81,7 +82,13 @@ when the run started -- that is what lets a mid-run change take effect here."
                        "temperature" (agent:agent-temperature agent)
                        "max_tokens" (agent:agent-max-tokens agent)
                        "seed" (agent:agent-seed agent)
-                       "stream" nil)))
+                       "stream" (and stream t))))
+    (when stream
+      ;; Ask for the token counts. An OpenAI-compatible server sends them on a
+      ;; streamed response only when this is set, and the cost of not asking
+      ;; was every streamed run reporting no usage at all.
+      (setf (gethash "stream_options" payload)
+            (schema:obj "include_usage" t)))
     (when tools
       (setf (gethash "tools" payload) (map 'vector #'tool-json tools)
             (gethash "parallel_tool_calls" payload) (agent:agent-parallel-tools-p agent)
@@ -95,6 +102,9 @@ when the run started -- that is what lets a mid-run change take effect here."
             ;; on the same measurement -- 1 in 6 -- because a model forced to
             ;; call on a turn that wanted prose calls something irrelevant.
             (gethash "tool_choice" payload) "auto"))
+    ;; AUGMENT-PAYLOAD LAST, over the whole body including the streaming
+    ;; fields. A provider whose API does not take one of them can only drop it
+    ;; if it is there to be seen.
     (let ((final (provider:augment-payload (provider-for agent) payload agent)))
       ;; After AUGMENT-PAYLOAD: a provider may still change what is sent, and
       ;; observing before it would report a body that never left.
@@ -159,7 +169,7 @@ Every field here goes through WIRE: a message that is entirely tool calls has a
 
 (defun post-blocking (agent messages)
   (let ((provider (provider-for agent)))
-    (parse-response (dex:post (provider:provider-endpoint provider)
+    (parse-response (dex:post (provider:request-url provider)
                             :headers (provider:headers provider)
                             :content (jzon:stringify (request-payload agent messages))
                             :read-timeout 600))))
@@ -170,16 +180,9 @@ Every field here goes through WIRE: a message that is entirely tool calls has a
 ABORT-P is checked between events, so a steer arriving mid-generation ends the
 request instead of waiting for it. Neither Pi nor Codex can do that: both can
 preempt a *waiting* tool, but an in-flight completion runs to its end."
-  (let ((payload (request-payload agent messages))
+  (let ((payload (request-payload agent messages :stream t))
         (provider (provider-for agent)))
-    (setf (gethash "stream" payload) t)
-    ;; Ask for the token counts. An OpenAI-compatible server sends them on a
-    ;; streamed response only when this is set, and a provider that does not
-    ;; know the option ignores it -- so the cost of asking is nothing, and the
-    ;; cost of not asking was every streamed run reporting no usage at all.
-    (setf (gethash "stream_options" payload)
-          (schema:obj "include_usage" t))
-    (let ((input (dex:post (provider:provider-endpoint provider)
+    (let ((input (dex:post (provider:request-url provider :stream t)
                            :headers (provider:headers provider)
                            :content (jzon:stringify payload)
                            :want-stream t

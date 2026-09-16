@@ -32,6 +32,15 @@ Least-capable on purpose: no grammar, no template arguments."
             (a:when-let ((key (provider-api-key provider)))
               (list (cons "Authorization" (format nil "Bearer ~a" key)))))))
 
+(defgeneric request-url (provider &key stream)
+  (:documentation "Where one request goes, and the streaming form when STREAM.
+
+Generic because not every API puts streaming in the body. IBM's gives it a
+route of its own, so the address cannot be read off a slot alone.")
+  (:method ((provider provider) &key stream)
+    (declare (ignore stream))
+    (provider-endpoint provider)))
+
 (defgeneric supports-grammar-p (provider)
   (:documentation "Can this server constrain sampling to a supplied grammar?")
   (:method ((provider provider)) nil))
@@ -105,3 +114,94 @@ llama-server rejects its own model's output as unparseable.")))
 
 (defun openai-provider (&key api-key (endpoint "https://api.openai.com/v1/chat/completions"))
   (make-instance 'openai :endpoint endpoint :api-key api-key))
+
+;;; watsonx
+;;;
+;;; IBM's inference API carries OpenAI-shaped messages inside a request of its
+;;; own, and four differences live here: the body names the project that pays
+;;; for the call, the model is `model_id`, streaming is a second route rather
+;;; than a field, and the key buys an access token that every request spends.
+
+(defparameter *iam-token-url* "https://iam.cloud.ibm.com/identity/token"
+  "Where an API key is exchanged for an access token.")
+
+(defun mint-iam-token (api-key)
+  "Exchange API-KEY for an access token. Values: the token, and how many seconds
+it is good for."
+  (let ((answer (com.inuoe.jzon:parse
+                 (dexador:post *iam-token-url*
+                               :headers '(("Accept" . "application/json"))
+                               :content `(("grant_type" . "urn:ibm:params:oauth:grant-type:apikey")
+                                          ("apikey" . ,api-key))))))
+    (values (gethash "access_token" answer)
+            (or (gethash "expires_in" answer) 3600))))
+
+(defparameter *mint-token* #'mint-iam-token
+  "How a key becomes a token. A test has no IBM account to ask, and rebinds this.")
+
+(defparameter *watsonx-version* "2023-05-02"
+  "The version every watsonx route takes, and the one IBM's own examples pass.
+A date, because IBM changes what an endpoint does under a newer one and leaves
+the older date answering as it did.")
+
+(defclass watsonx (openai)
+  ((name :initform "watsonx")
+   ;; THE SITE, NOT THE ROUTE. Which region holds the instance is a person's to
+   ;; say. Which path serves a chat is this file's, and a person who wrote the
+   ;; whole URL down would have to write a second one to stream from it.
+   (endpoint :initform "https://us-south.ml.cloud.ibm.com")
+   (project :initarg :project :initform nil :reader watsonx-project)
+   (space :initarg :space :initform nil :reader watsonx-space)
+   (token :initform nil :accessor watsonx-token)
+   (good-until :initform 0 :accessor watsonx-good-until)
+   (lock :initform (bordeaux-threads:make-lock "viva.watsonx") :reader watsonx-lock)))
+
+(defmethod request-url ((provider watsonx) &key stream)
+  (format nil "~a/ml/v1/text/~:[chat~;chat_stream~]?version=~a"
+          (string-right-trim "/" (provider-endpoint provider))
+          stream *watsonx-version*))
+
+(defun live-token (provider)
+  "The access token, minted when the one held has expired or is about to.
+
+A MINUTE OF MARGIN, because a token that expires between the header and the
+answer is a refusal on work already begun. Under a lock, so two sessions
+starting a turn together buy one token rather than two."
+  (bordeaux-threads:with-lock-held ((watsonx-lock provider))
+    (when (>= (get-universal-time) (watsonx-good-until provider))
+      (multiple-value-bind (token seconds) (funcall *mint-token* (provider-api-key provider))
+        (setf (watsonx-token provider) token
+              (watsonx-good-until provider) (+ (get-universal-time) (max 60 (- seconds 60))))))
+    (watsonx-token provider)))
+
+(defmethod headers ((provider watsonx))
+  (list '("Content-Type" . "application/json")
+        (cons "Authorization" (format nil "Bearer ~a" (live-token provider)))))
+
+(defmethod augment-payload ((provider watsonx) payload agent)
+  (let ((payload (call-next-method)))
+    (a:when-let ((model (gethash "model" payload)))
+      (setf (gethash "model_id" payload) model)
+      (remhash "model" payload))
+    ;; WHO PAYS. IBM refuses a request that names neither a project nor a
+    ;; deployment space, and a key says which account but not which of these.
+    (a:when-let ((project (watsonx-project provider)))
+      (setf (gethash "project_id" payload) project))
+    (a:when-let ((space (watsonx-space provider)))
+      (setf (gethash "space_id" payload) space))
+    ;; `auto` is a word in one field here and a named tool in the other, where
+    ;; OpenAI spells both with `tool_choice`.
+    (let ((choice (gethash "tool_choice" payload)))
+      (when (stringp choice)
+        (setf (gethash "tool_choice_option" payload) choice)
+        (remhash "tool_choice" payload)))
+    ;; The route carries the streaming decision, and the schema has no room for
+    ;; the rest. A field IBM does not list is a refusal, where an
+    ;; OpenAI-compatible server would have ignored it.
+    (dolist (unlisted '("stream" "stream_options" "parallel_tool_calls") payload)
+      (remhash unlisted payload))))
+
+(defun watsonx-provider (&key api-key project space
+                              (endpoint "https://us-south.ml.cloud.ibm.com"))
+  (make-instance 'watsonx :endpoint endpoint :api-key api-key
+                          :project project :space space))

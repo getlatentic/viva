@@ -1,0 +1,13 @@
+# Copy to ~/.viva/config for every project, or to .viva/config for this one.
+# A project's file beats the machine's, the environment beats both, and a flag
+# beats all three. `viva config` says which one decided each value.
+
+model = deepseek/deepseek-v4-flash
+limit = 60
+
+# capabilities = self-modify,loop  # both off by default; see the README
+# retain = true                    # after each task, decide what outlives it
+# context-limit = 128000           # how much context the model will accept
+# root = /home/you/work            # refuse any path outside this directory
+# retire-after-days = 30           # a skill unused this long is retired
+# retire-keep-above = 5            # unless it has been used this often
