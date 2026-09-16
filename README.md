@@ -126,7 +126,9 @@ adds a tool:
 
 `(on :before-request #'function)` adds a hook instead. A `:tool-call` hook can
 refuse a call before it runs. `viva do --extension DIR` loads a directory of
-extensions for one run.
+extensions for one run. Five worked ones ship in
+[examples/extensions/](examples/extensions): curator, guard, recall, skillsmith
+and trace.
 
 ### Capabilities
 
@@ -171,7 +173,8 @@ go in `~/.viva/auth.json`, one entry per provider:
 An entry's `endpoint` reaches another deployment, and `models` replaces the
 list it offers. Every model answers to `provider/id`, as in
 `viva do --model deepseek/deepseek-v4-flash`. For watsonx, viva mints IBM's
-access token from the key it holds.
+access token from the key it holds. [examples/config/](examples/config) has a
+`config` and an `auth.json` to copy.
 
 ## Develop
 

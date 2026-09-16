@@ -106,7 +106,8 @@ the shell), because loading a file executes it and the working tree is exactly
 what an untrusted repository controls. The trust record lives outside the
 project, where the project cannot edit it.
 
-Two worked examples ship in [`examples/extensions/`](../examples/extensions):
+Five worked examples ship in [`examples/extensions/`](../examples/extensions).
+Two of them:
 
 - **`recall.lisp`** — improves memory without touching the harness. It scores
   remembered lines against the words in each prompt and injects the few that
