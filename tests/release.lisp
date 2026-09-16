@@ -192,7 +192,9 @@ DOES rather than about what it says."
     ;; A daemon keeps the file it started from, so it serves the old build until
     ;; it restarts. Silence there gets the new build blamed for old behaviour.
     (true (search "daemon status" code))
-    (true (search "viva daemon restart" code))))
+    ;; And asked to become the new build in place, rather than left serving the
+    ;; old one until somebody restarts it.
+    (true (search "daemon upgrade" code))))
 
 (define-test "the curl installer reaches a release, and checks what it gets"
   (let* ((script (repository-file "get.sh"))
@@ -891,7 +893,7 @@ you where you were rather than nowhere"))))
           "the timeout message must name the fix -- a bare timeout reads as ~
 `slow`, which is what invites the retry")))
 
-(define-test "a stale organism says so, and can be restarted"
+(define-test "a stale organism says so, and can be upgraded in place"
   ;; A long-lived process keeps the code it was built from. Someone who edits
   ;; viva, rebuilds and reattaches is talking to the OLD one -- and the
   ;; change they just made looks like it does not work. It cost a person five
@@ -900,10 +902,9 @@ you where you were rather than nowhere"))))
   (let ((source (repository-file "src/cli/commands.lisp")))
     (true (search "warn-if-stale" source))
     (true (search "newest-source-time" source))
-    ;; The warning has to name the cost of acting on it: sessions live in the
-    ;; process, so a restart ends them.
-    (true (search "Sessions live in the process" source))
-    (true (search "\"restart\" verb" source) "acting on the warning must be one command"))
+    ;; Acting on the warning is one command, and it costs nothing running.
+    (true (search "viva daemon upgrade" source))
+    (true (search "\"upgrade\" verb" source) "acting on the warning must be one command"))
   ;; And the daemon has to send what the comparison needs.
   (true (search "\"started\" *started-at*" (repository-file "src/daemon/server.lisp"))))
 

@@ -10,7 +10,8 @@ pub const BORDER: Color = Color::Indexed(240);
 /// terminal.
 pub fn state_mark(state: &str) -> (&'static str, Color) {
     match state {
-        "working" => ("*", Color::Indexed(220)),
+        // Draining is a turn finishing before the daemon upgrades.
+        "working" | "draining" => ("*", Color::Indexed(220)),
         "stuck" => ("!", Color::Indexed(203)),
         "suspended" => ("~", Color::Indexed(111)),
         "stopping" => (".", DIM),

@@ -79,7 +79,11 @@ can name without qualifying it."))
            #:call-component #:resolve-component #:reconstruct-lineage
            #:evolution-registry #:*activation-box* #:*default-door*
            #:capability-tools #:capability-prompt #:promoted-capabilities
-           #:capability-record))
+           #:capability-record
+           #:hold-sessions #:release-sessions #:at-rest-p #:settle #:unsettled-reason
+           #:cell-record #:adopt-cell #:subscribed-p #:*holding*
+           #:tasks-running-p #:tasks-record #:adopt-tasks #:journal-sync #:journal-settled
+           #:evolution-record #:adopt-evolution))
 
 (defpackage #:viva.daemon
   (:use #:cl)
@@ -106,4 +110,5 @@ can name without qualifying it."))
                     (#:extension #:viva.extension)
                     (#:actor #:viva.actor))
   (:export #:serve #:stop #:running-p #:socket-path #:check-socket-path #:connect
-           #:daemon-error #:with-connection #:request #:diagnostics))
+           #:daemon-error #:with-connection #:request #:diagnostics
+           #:*version* #:+handoff-format+))

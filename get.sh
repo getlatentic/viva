@@ -109,14 +109,13 @@ fi
 # not put there, and prints the export line when it has to. It also knows to
 # link ITSELF rather than a checkout, which is what makes this work at all.
 # A DAEMON KEEPS THE CODE IT STARTED WITH. It survives the replacement, which is
-# the point of renaming rather than writing in place -- but it goes on serving
-# the previous build until somebody says otherwise, and a new client talking to
-# an old daemon is the kind of mismatch that gets blamed on the new build.
+# the point of renaming rather than writing in place -- and it is then asked to
+# become the new build in place: running turns finish first, and sessions,
+# connections and background jobs carry on. A daemon older than that says so,
+# and `daemon upgrade` prints the one restart it needs.
 if [ -n "$was" ] && [ "$was" != "$now" ] && "$store/viva" daemon status >/dev/null 2>&1; then
-  step "a daemon is still running $was"
-  say "  it keeps serving that until it restarts. When the work in it can stop:"
-  say ""
-  say "      viva daemon restart"
+  step "upgrading the running daemon from $was"
+  "$store/viva" daemon upgrade --detach || true
 fi
 
 step "putting viva on your PATH"

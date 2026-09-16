@@ -440,8 +440,13 @@ it finds nobody home."
              (let ((line (read-line stream nil nil)))
                (cond ((null line) (format t "~&running, but it did not answer~%") 1)
                      (t (let ((ready (jzon:parse line)))
-                          (format t "~&running, pid ~a, ~d session~:p~%"
-                                  (gethash "pid" ready) (length (gethash "sessions" ready)))
+                          ;; `running, pid N` FIRST: scripts read the pid off
+                          ;; the front of this line.
+                          (format t "~&running, pid ~a, ~d session~:p~@[, ~a~]~%"
+                                  (gethash "pid" ready) (length (gethash "sessions" ready))
+                                  (gethash "version" ready))
+                          (a:when-let ((waiting (gethash "upgrade" ready)))
+                            (format t "~&upgrading: ~a~%" waiting))
                           (loop for each across (gethash "sessions" ready)
                                 do (format t "~&  ~a  ~10a ~a~@[  ~d queued~]~%"
                                            (gethash "id" each) (gethash "state" each)
@@ -496,6 +501,7 @@ it finds nobody home."
          ;; parse is a defect, and calling it `not running` is how one hid.
          (daemon:daemon-error () (format t "~&not running~%") 1)))
       ((string= "start" verb)
+       (setf daemon:*version* (version))
        (if (string= "true" (flag parsed "background" "false"))
            (start-detached-daemon)
            (progn (daemon:serve :announce (lambda (path)
@@ -514,6 +520,13 @@ it finds nobody home."
        ;; does not, and the restored session says so in its own stream.
        (format t "~&running turns end with the old process; sessions come back~%")
        (start-detached-daemon))
+      ((string= "upgrade" verb)
+       (command-daemon-upgrade parsed))
+      ;; What `upgrade` asks of the program a daemon is about to become: the
+      ;; handoff formats this build reads, printed readably.
+      ((string= "handoff" verb)
+       (format t "~s~%" (list daemon:+handoff-format+))
+       0)
       ((string= "stop" verb)
        (if (daemon:running-p)
            (multiple-value-bind (gone pid) (stop-daemon)
@@ -521,7 +534,63 @@ it finds nobody home."
                  (progn (format t "~&stopped~%") 0)
                  (progn (format t "~&asked pid ~a to stop, and it is still running~%" pid) 1)))
            (progn (format t "~&not running~%") 1)))
-      (t (format t "~&usage: viva daemon [status|start|stop|restart]~%") 1))))
+      (t (format t "~&usage: viva daemon [status|start|stop|restart|upgrade]~%") 1))))
+
+(defun command-daemon-upgrade (parsed)
+  "Make the running daemon this build, without restarting anything.
+
+The answer comes from whichever image finishes the job: the new one, on this
+same connection, when the upgrade succeeds, or the old one when it cannot."
+  (unless (daemon:running-p)
+    (format t "~&not running~%")
+    (return-from command-daemon-upgrade 1))
+  (daemon:with-connection (stream)
+    (let ((from (ignore-errors (gethash "version" (jzon:parse (read-line stream nil ""))))))
+      (let ((request (make-hash-table :test #'equal)))
+        (setf (gethash "type" request) "upgrade"
+              (gethash "id" request) 1)
+        (when (string= "true" (flag parsed "cancel" "false"))
+          (setf (gethash "cancel" request) t))
+        (write-line (jzon:stringify request) stream)
+        (force-output stream))
+      (loop for line = (read-line stream nil nil)
+            for reply = (and line (ignore-errors (jzon:parse line)))
+            do (cond ((null line)
+                      (format t "~&the daemon closed the connection before answering~%")
+                      (return 1))
+                     ((not (hash-table-p reply)))
+                     ((equal "upgrade" (gethash "type" reply))
+                      (format t "~&  ~a~%" (gethash "detail" reply))
+                      (finish-output)
+                      ;; DETACHED, the caller does not wait on somebody's turn:
+                      ;; the daemon finishes the upgrade on its own.
+                      (when (and (string= "true" (flag parsed "detach" "false"))
+                                 (a:starts-with-subseq "waiting" (gethash "detail" reply)))
+                        (format t "~&the daemon becomes this build once that is done; ~
+nothing restarts~%")
+                        (return 0)))
+                     ((equal "response" (gethash "type" reply))
+                      (return (report-upgrade reply from (string= "true" (flag parsed "cancel" "false"))))))))))
+
+(defun report-upgrade (reply from cancelling)
+  (cond ((and cancelling (gethash "success" reply))
+         (format t "~&cancelled; the daemon carries on as it was~%")
+         0)
+        ((gethash "success" reply)
+         (format t "~&~a -> ~a in ~ds, pid ~a: ~d session~:p and ~d job~:p carried over, ~
+nothing restarted~%"
+                 (or (gethash "from" reply) from "?") (gethash "to" reply)
+                 (gethash "seconds" reply) (gethash "pid" reply)
+                 (gethash "sessions" reply) (gethash "jobs" reply))
+         0)
+        ;; A daemon from before this existed says the command is unknown.
+        ((search "Unknown command upgrade" (or (gethash "error" reply) ""))
+         (format t "~&This daemon~@[ (~a)~] predates upgrading in place, so this once it has ~
+to restart:~%~%  viva daemon restart~%~%Every later update upgrades without restarting ~
+anything.~%" from)
+         1)
+        (t (format t "~&not upgraded: ~a~%" (gethash "error" reply))
+           1)))
 
 (defun own-launcher (&optional (runtime sb-ext:*runtime-pathname*)
                               (core sb-ext:*core-pathname*))
@@ -636,8 +705,7 @@ model that invented a shell workaround for a tool it could not see."
     (a:when-let ((newest (newest-source-time)))
       (when (> newest started)
         (format t "~&! This organism started before the current code ~
-\(~d minute~:p ago).~%  Sessions live in the process, so a restart ends them:  ~
-viva daemon restart~%~%"
+\(~d minute~:p ago).~%  Load it without restarting anything:  viva daemon upgrade~%~%"
                 (max 1 (round (- (get-universal-time) started) 60)))))))
 
 (defun current-sequence (stream id)
