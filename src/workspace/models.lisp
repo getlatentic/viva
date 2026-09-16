@@ -69,13 +69,15 @@
               "deepseek.v3.2"
               "qwen.qwen3-coder-480b-a35b-instruct"
               "nvidia.nemotron-super-3-120b"))
-    ;; IBM's gateway speaks the same chat completions, and authenticates with a
-    ;; token minted from the key rather than with the key itself. What it serves
-    ;; are the aliases a tenant configured, which no table here can know: name
-    ;; them in auth.json, or set WATSONX_MODEL.
+    ;; IBM's own inference API, which takes a token minted from the key rather
+    ;; than the key, and a project or deployment space to bill the call to.
+    ;; THE ENDPOINT IS THE REGION'S SITE, not a route: `us-south` here, and
+    ;; another region is another host serving the same paths. What a project
+    ;; may run is the tenant's business, so name the models in auth.json, or
+    ;; set WATSONX_MODEL.
     (:label "watsonx" :key "WATSONX_API_KEY" :kind :watsonx :effort "low"
      :endpoint-var "WATSONX_ENDPOINT"
-     :endpoint "https://us-south.ml.cloud.ibm.com/ml/gateway/v1/chat/completions"
+     :endpoint "https://us-south.ml.cloud.ibm.com"
      :model-var "WATSONX_MODEL"
      :models ())
     ;; KEYLESS, AND CONFIGURED BY BEING NAMED. A server on your own machine
@@ -135,6 +137,12 @@ endpoint the other is a rule nobody could hold."
   "The model this machine means by the endpoint's own name, if it names one."
   (or (auth:entry-setting (getf entry :label) "model" :auth auth)
       (from-environment (getf entry :model-var))))
+
+(defun billed-to (entry auth field variable)
+  "What the provider names as paying for a request: the file, then the
+environment. The order the key and the endpoint already follow."
+  (or (auth:entry-setting (getf entry :label) field :auth auth)
+      (from-environment variable)))
 
 (defun entry-limit (entry)
   (or (a:when-let ((given (from-environment "VIVA_CONTEXT_LIMIT")))
@@ -209,7 +217,10 @@ something still has to decide whether to offer it."
       (:llama-cpp (provider:llama-cpp-provider
                    :endpoint endpoint
                    :output-prefix provider:+harmony-output-prefix+))
-      (:watsonx (provider:watsonx-provider :endpoint endpoint :api-key key)))))
+      (:watsonx (provider:watsonx-provider
+                 :endpoint endpoint :api-key key
+                 :project (billed-to entry auth "projectId" "WATSONX_PROJECT_ID")
+                 :space (billed-to entry auth "spaceId" "WATSONX_SPACE_ID"))))))
 
 (defun entry-choices (entry &key (auth (auth:read-auth)) refresh)
   "ENTRY as usable choices, or NIL where it has no key.

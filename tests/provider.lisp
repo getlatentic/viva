@@ -116,11 +116,70 @@
       (is string= "Bearer token-2" (authorization))
       (is = 2 minted))))
 
-(define-test "watsonx sends what any OpenAI-compatible server expects"
-  ;; It inherits the payload, so the only difference on the wire is the header.
-  (let* ((agent (make-instance 'agent:queued-agent :reasoning-effort "low"))
-         (provider (provider:watsonx-provider :api-key "k"))
-         (payload (provider:augment-payload provider (payload-for agent) agent)))
+(define-test "watsonx addresses the route each request needs"
+  ;; A person configures the region's site. Which path serves a chat is IBM's
+  ;; answer, and streaming has a path of its own where an OpenAI-compatible
+  ;; server takes a field.
+  (let ((provider (provider:watsonx-provider :api-key "k"))
+        (frankfurt (provider:watsonx-provider
+                    :api-key "k" :endpoint "https://eu-de.ml.cloud.ibm.com/")))
+    (is string= "https://us-south.ml.cloud.ibm.com/ml/v1/text/chat?version=2023-05-02"
+        (provider:request-url provider))
+    (is string= "https://us-south.ml.cloud.ibm.com/ml/v1/text/chat_stream?version=2023-05-02"
+        (provider:request-url provider :stream t))
+    ;; A site written with a trailing slash still addresses one path.
+    (is string= "https://eu-de.ml.cloud.ibm.com/ml/v1/text/chat?version=2023-05-02"
+        (provider:request-url frankfurt))))
+
+(define-test "watsonx spells the model and the payer the way its API does"
+  (let* ((provider (provider:watsonx-provider :api-key "k" :project "a-project"))
+         (agent (make-instance 'agent:queued-agent
+                               :provider provider
+                               :model "ibm/granite-3-2b-instruct"
+                               :reasoning-effort "low"))
+         (payload (payload-for agent)))
+    (is string= "ibm/granite-3-2b-instruct" (gethash "model_id" payload))
+    (false (nth-value 1 (gethash "model" payload)) "it sent the OpenAI spelling too")
+    (is string= "a-project" (gethash "project_id" payload))
+    (false (nth-value 1 (gethash "space_id" payload)))
+    ;; What the two shapes share, it keeps.
     (is string= "low" (gethash "reasoning_effort" payload))
-    (is string= "https://us-south.ml.cloud.ibm.com/ml/gateway/v1/chat/completions"
-        (provider:provider-endpoint provider))))
+    (true (nth-value 1 (gethash "messages" payload)))))
+
+(define-test "a deployment space can pay for a watsonx request instead of a project"
+  (let* ((provider (provider:watsonx-provider :api-key "k" :space "a-space"))
+         (agent (make-instance 'agent:queued-agent :provider provider :model "m"))
+         (payload (payload-for agent)))
+    (is string= "a-space" (gethash "space_id" payload))
+    (false (nth-value 1 (gethash "project_id" payload)))))
+
+(define-test "watsonx sends no field its API does not list"
+  ;; IBM refuses a body carrying a field it does not know, where an
+  ;; OpenAI-compatible server ignores one. The streaming fields are the ones
+  ;; the core adds for every other server.
+  (let* ((provider (provider:watsonx-provider :api-key "k" :project "p"))
+         (agent (make-instance 'agent:queued-agent :provider provider :model "m")))
+    (setf (agent:tools agent)
+          (list (make-instance 'tool:function-tool
+                               :name "probe" :description "A probe."
+                               :parameters '()
+                               :body (lambda (a c) (declare (ignore a c)) "probed"))))
+    (let ((payload (client:request-payload agent (list (user "hello")) :stream t)))
+      (dolist (unlisted '("stream" "stream_options" "parallel_tool_calls"))
+        (false (nth-value 1 (gethash unlisted payload))
+               (format nil "~a went to an API that does not take it" unlisted)))
+      ;; Free choice among tools is a word in a field of its own here.
+      (is string= "auto" (gethash "tool_choice_option" payload))
+      (false (nth-value 1 (gethash "tool_choice" payload)))
+      (true (nth-value 1 (gethash "tools" payload))))))
+
+(define-test "a streamed request carries the usage counts it asks for"
+  ;; In the body before a provider sees it: one whose API does not take these
+  ;; can only drop what it can find.
+  (let ((agent (make-instance 'agent:queued-agent)))
+    (let ((streamed (client:request-payload agent (list (user "hello")) :stream t))
+          (blocking (payload-for agent)))
+      (true (gethash "stream" streamed))
+      (true (gethash "include_usage" (gethash "stream_options" streamed)))
+      (false (gethash "stream" blocking))
+      (false (nth-value 1 (gethash "stream_options" blocking))))))

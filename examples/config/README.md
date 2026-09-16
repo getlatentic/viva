@@ -20,17 +20,23 @@ provider offers.
 
 ## watsonx
 
-IBM's gateway speaks the same chat completions as the rest. Three things differ:
+IBM's inference API carries the same messages inside a request of its own.
 
-- The endpoint carries your region: `https://<region>.ml.cloud.ibm.com/ml/gateway/v1/chat/completions`.
-- The key is your IBM Cloud API key. viva exchanges it for an access token and
-  mints another when that one expires.
-- `models` are the aliases your gateway serves, so viva ships no list for it.
-  `viva do --model watsonx/<alias>` then names one.
+| field | what it is |
+| --- | --- |
+| `endpoint` | your region's site, with no path: `https://<region>.ml.cloud.ibm.com` |
+| `apiKey` | your IBM Cloud API key, which viva exchanges for an access token |
+| `projectId` | the project that pays for the call, or `spaceId` for a deployment space |
+| `models` | the model ids your project can run, since viva ships no list for watsonx |
+
+viva addresses `/ml/v1/text/chat` on the site, and `/ml/v1/text/chat_stream` to
+stream. It mints another access token when the one it holds expires. IBM
+refuses a request that names neither a project nor a space, and
+`WATSONX_PROJECT_ID` or `WATSONX_SPACE_ID` says one from the environment.
 
 ## Checking it
 
 ```bash
 viva config                  # the settings, and which file set each
-viva do --model watsonx/<alias> "say hello"
+viva do --model watsonx/ibm/granite-3-2b-instruct "say hello"
 ```
