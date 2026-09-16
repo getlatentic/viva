@@ -65,13 +65,19 @@ writing to a file avoided."
      (ignore-errors
       (with-open-file (log (job-log job) :direction :output
                                          :if-exists :supersede :if-does-not-exist :create)
-        (let ((from (sb-ext:process-output (job-process job))))
-          (loop for character = (read-char from nil nil)
-                while character
-                do (write-char character log)
-                   (force-output log)
-                   (when on-output
-                     (ignore-errors (funcall on-output (string character)))))))))
+        ;; A READ THAT FAILS ENDS THE LOOP, never the file. Unwinding out of
+        ;; WITH-OPEN-FILE closes with :ABORT, and aborting a stream opened to
+        ;; supersede deletes the file: one error reading the pipe took every
+        ;; line the job had ever printed with it.
+        (handler-case
+            (let ((from (sb-ext:process-output (job-process job))))
+              (loop for character = (read-char from nil nil)
+                    while character
+                    do (write-char character log)
+                       (force-output log)
+                       (when on-output
+                         (ignore-errors (funcall on-output (string character))))))
+          (error () nil)))))
    :name (format nil "viva-job-~a" (job-name job))))
 
 (defun start (command &key name directory on-output)

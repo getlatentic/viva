@@ -1040,6 +1040,23 @@ twice; it is somebody's record.")))
     (false (jobs:alive-p job) "the job survived eight concurrent stops")
     (false (jobs:find-job "suite-racer") "a stopped job must leave the table")))
 
+(define-test "a job's log survives a failure reading its pipe"
+  ;; The pump read inside WITH-OPEN-FILE, and an error there unwound out of it.
+  ;; Unwinding closes with :ABORT, and aborting a stream opened to supersede
+  ;; deletes the file: every line the job had printed went with the one read
+  ;; that failed, and `jobs output` answered `nothing yet`.
+  (let ((job (jobs:start "while true; do echo kept; sleep 0.1; done" :name "suite-kept-log")))
+    (unwind-protect
+         (progn
+           (loop repeat 100 until (search "kept" (jobs:output-of job)) do (sleep 0.05))
+           (true (search "kept" (jobs:output-of job)) "the job never printed")
+           ;; A failed read: the stream the pump reads, closed under it.
+           (close (sb-ext:process-output (viva.jobs::job-process job)))
+           (sleep 1)
+           (true (probe-file (jobs:job-log job)) "one failed read deleted the log")
+           (true (search "kept" (jobs:output-of job))))
+      (jobs:stop job))))
+
 (define-test "a background job can be watched, not only polled"
   ;; A running server's output sat in a file until somebody asked for it, so
   ;; `is it up?` meant polling. One pipe, two consumers: the log is what
