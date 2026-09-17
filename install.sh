@@ -107,6 +107,15 @@ fi
 step "putting viva on your PATH"
 "$root/bin/viva" install | sed 's/^/  /'
 
+step "the running daemon"
+# The same as the binary installer: a daemon already running becomes what was
+# just built, so updating is running this again and nothing after it.
+if "$root/bin/viva" daemon status >/dev/null 2>&1; then
+  "$root/bin/viva" daemon upgrade --detach --if-changed | sed 's/^/  /'
+else
+  say "  none running; the next viva starts one on this build"
+fi
+
 step "credentials"
 if [ -f "$VIVA_HOME/auth.json" ]; then
   say "  $VIVA_HOME/auth.json is already there; leaving it alone"

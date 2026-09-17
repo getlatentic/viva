@@ -218,10 +218,15 @@ state carrying ?t is how `this completion is about the current turn` is said."
 ;;;   (:completed)                  durable, deregistered -- terminal
 ;;;   (:stuck)                      stop deadline expired with a turn still
 ;;;;                                out -- terminal, stays registered
+;;;   (:draining ?turn ?queued)     held while ?turn runs: it ends, nothing
+;;;                                 queued behind it starts
+;;;   (:held ?queued ?return)       held at rest; ?return is :idle or
+;;;                                 :suspended, what :release restores
 ;;;
 ;;; Messages: (:submit ?turn) (:finished ?turn ?outcome) (:cancel ?turn)
 ;;;           (:steer ?turn) (:suspend) (:resume) (:shutdown) (:retarget)
 ;;;           (:stop-deadline) (:flush-confirmed) (:flush-failed)
+;;;           (:hold) (:release)
 ;;;
 ;;; Effects are DESCRIPTIONS the coordinator executes; the kernel never
 ;;; performs them. (:start-worker t) means BT:MAKE-THREAD around HARNESS:ASK;
@@ -229,7 +234,8 @@ state carrying ?t is how `this completion is about the current turn` is said."
 
 (define-owner cell
   (:states (:idle) (:working ?turn ?queued) (:suspended ?turn ?queued)
-           (:stopping ?turn) (:flushing) (:completed) (:stuck))
+           (:stopping ?turn) (:flushing) (:completed) (:stuck)
+           (:draining ?turn ?queued) (:held ?queued ?return))
 
   ;; --- accepting work ---------------------------------------------------
   (:transition ((:idle) (:submit ?turn))
@@ -350,6 +356,98 @@ state carrying ?t is how `this completion is about the current turn` is said."
   (:transition ((:suspended :none ?queued) (:retarget)) => :same (list :apply-model))
   (:transition ((:working ?turn ?queued) (:retarget)) => :same (list :stage-model))
   (:transition ((:suspended ?turn ?queued) (:retarget)) => :same (list :stage-model))
+
+  ;; --- holding: the daemon's image is about to be replaced ----------------
+  ;; An upgrade hands every session to a new image in the same process, and a
+  ;; turn is a thread that cannot cross. So the daemon HOLDS each session: a
+  ;; running turn is let finish, nothing queued behind it starts, and prompts
+  ;; arriving meanwhile wait -- then RELEASE, in the new image, starts them.
+  ;; A turn paused mid-way by suspension cannot finish while paused; holding
+  ;; leaves it paused, and the daemon waits for someone to resume or stop it.
+  (:transition ((:idle) (:hold)) => '(:held 0 :idle))
+  (:transition ((:working ?turn ?queued) (:hold)) => `(:draining ,?turn ,?queued))
+  (:transition ((:suspended :none ?queued) (:hold)) => `(:held ,?queued :suspended))
+  (:transition ((:suspended ?turn ?queued) (:hold)) => :same)
+  (:transition ((:draining ?turn ?queued) (:hold)) => :same)
+  (:transition ((:held ?queued ?return) (:hold)) => :same)
+  (:transition ((:stopping ?turn) (:hold)) => :same)
+  (:transition ((:flushing) (:hold)) => :same)
+
+  (:transition ((:draining ?turn ?queued) (:submit ?next))
+    :when (< ?queued +queue-limit+)
+    => `(:draining ,?turn ,(1+ ?queued))
+    (list :queue-prompt ?next))
+  (:transition ((:draining ?turn ?queued) (:submit ?next))
+    => :same
+    (list :publish :session.error :prompt-refused-queue-full ?next))
+  (:transition ((:held ?queued ?return) (:submit ?next))
+    :when (< ?queued +queue-limit+)
+    => `(:held ,(1+ ?queued) ,?return)
+    (list :queue-prompt ?next))
+  (:transition ((:held ?queued ?return) (:submit ?next))
+    => :same
+    (list :publish :session.error :prompt-refused-queue-full ?next))
+
+  ;; The running turn ends the way a working one does, minus the queue.
+  (:transition ((:draining ?turn ?queued) (:finished ?turn ?outcome))
+    => `(:held ,?queued :idle)
+    (list :publish-terminal ?turn ?outcome)
+    (list :apply-staged-model))
+  (:transition ((:draining ?turn ?queued) (:finished ?stale ?outcome))
+    => :same (list :diagnostic :stale-completion ?stale))
+  (:transition ((:held ?queued ?return) (:finished ?stale ?outcome))
+    => :same (list :diagnostic :stale-completion ?stale))
+
+  (:transition ((:draining ?turn ?queued) (:cancel ?turn))
+    => :same (list :request-cancel ?turn))
+  (:transition ((:draining ?turn ?queued) (:cancel ?stale))
+    => :same (list :diagnostic :cancel-ignored ?stale))
+  (:transition ((:draining ?turn ?queued) (:steer ?turn))
+    => :same (list :queue-steering ?turn))
+  (:transition ((:draining ?turn ?queued) (:steer ?stale))
+    => :same (list :diagnostic :steer-ignored ?stale))
+  (:transition ((:held ?queued ?return) (:cancel _)) => :same)
+  (:transition ((:held ?queued ?return) (:steer _)) => :same)
+
+  ;; Suspension while held changes only what release restores; while
+  ;; draining it pauses the turn like any other, and the hold waits on it.
+  (:transition ((:draining ?turn ?queued) (:suspend))
+    => `(:suspended ,?turn ,?queued)
+    (list :close-gate) (list :publish :task.suspended))
+  (:transition ((:held ?queued :idle) (:suspend))
+    => `(:held ,?queued :suspended)
+    (list :close-gate) (list :publish :task.suspended))
+  (:transition ((:held ?queued :suspended) (:suspend)) => :same)
+  (:transition ((:held ?queued :suspended) (:resume))
+    => `(:held ,?queued :idle)
+    (list :open-gate) (list :publish :task.resumed))
+  (:transition ((:held ?queued :idle) (:resume))
+    => :same (list :open-gate) (list :publish :task.resumed))
+
+  (:transition ((:draining ?turn ?queued) (:retarget)) => :same (list :stage-model))
+  (:transition ((:held ?queued ?return) (:retarget)) => :same (list :apply-model))
+
+  (:transition ((:draining ?turn ?queued) (:shutdown))
+    => `(:stopping ,?turn)
+    (list :cancel-agent) (list :discard-queue ?queued) (list :arm-stop-deadline))
+  (:transition ((:held ?queued ?return) (:shutdown))
+    => '(:flushing)
+    (list :discard-queue ?queued)
+    (list :publish :session.completed) (list :post-flush))
+
+  ;; Release: what was held starts, and a cancelled upgrade gives the running
+  ;; turn back its queue.
+  (:transition ((:held 0 :idle) (:release)) => '(:idle))
+  (:transition ((:held ?queued :idle) (:release))
+    => `(:working :next-queued ,(1- ?queued))
+    (list :apply-staged-model) (list :start-next-queued))
+  (:transition ((:held ?queued :suspended) (:release)) => `(:suspended :none ,?queued))
+  (:transition ((:draining ?turn ?queued) (:release)) => `(:working ,?turn ,?queued))
+  (:transition ((:idle) (:release)) => :same)
+  (:transition ((:working ?turn ?queued) (:release)) => :same)
+  (:transition ((:suspended ?turn ?queued) (:release)) => :same)
+  (:transition ((:stopping ?turn) (:release)) => :same)
+  (:transition ((:flushing) (:release)) => :same)
 
   ;; --- shutdown: BEGIN-STOPPING's two shapes ------------------------------
   (:transition ((:working ?turn ?queued) (:shutdown))
@@ -551,6 +649,32 @@ Returns the final state. A TLC error trace pastes in as one of these."
           '(((:retarget)
              :expect (:stopping "m2")
              :effects ((:publish :session.error :model-refused-stopping "m2")))))
+    ;; An upgrade holds: the running turn ends without starting what queued
+    ;; behind it, prompts arriving meanwhile wait, and release starts them.
+    (cell '(:working "h1" 1)
+          '(((:hold) :expect (:draining "h1" 1))
+            ((:submit "h2") :expect (:draining "h1" 2))
+            ((:finished "h1" :completed)
+             :expect (:held 2 :idle)
+             :effects ((:publish-terminal "h1" :completed) (:apply-staged-model)))
+            ((:submit "h3") :expect (:held 3 :idle))
+            ((:release)
+             :expect (:working :next-queued 2)
+             :effects ((:apply-staged-model) (:start-next-queued)))))
+    (cell '(:idle)
+          '(((:hold) :expect (:held 0 :idle))
+            ((:suspend) :expect (:held 0 :suspended))
+            ((:release) :expect (:suspended :none 0))))
+    (cell '(:suspended :none 1)
+          '(((:hold) :expect (:held 1 :suspended))
+            ((:resume) :expect (:held 1 :idle))
+            ((:release) :expect (:working :next-queued 0))))
+    ;; A turn paused mid-way stays paused under a hold, and drains once resumed.
+    (cell '(:suspended "h4" 0)
+          '(((:hold) :expect (:suspended "h4" 0))
+            ((:resume) :expect (:working "h4" 0))
+            ((:hold) :expect (:draining "h4" 0))
+            ((:finished "h4" :completed) :expect (:held 0 :idle))))
     ;; Queue overload is refused, not accumulated.
     (let ((state '(:working "t5" 0)))
       (dotimes (i (1+ +queue-limit+))

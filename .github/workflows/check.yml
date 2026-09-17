@@ -110,6 +110,12 @@ jobs:
       - name: The client renders what the protocol sends
         run: python3 tui/wire_check.py
 
+      # A daemon from this checkout, upgraded while a turn runs, a prompt waits
+      # and a background job prints, with a stub model on localhost: the same
+      # process, the same connections, every event once.
+      - name: An upgrade restarts nothing
+        run: python3 tools/upgrade_check.py
+
       # TLC, and the witnesses that must still violate. A proof that stops
       # proving fails the build rather than passing quietly.
       - name: Specifications
@@ -149,6 +155,12 @@ jobs:
             ps -o pid,ppid,stat,etime,command -p "$pid" || true
             exit 1
           fi
+
+      # The same against the image people download. A saved executable execs
+      # itself where a checkout execs its launcher, and the installer renames a
+      # new file over the one the daemon is running.
+      - name: The image upgrades in place
+        run: python3 tools/upgrade_check.py --program "./viva-${{ matrix.name }}"
 
       - uses: actions/upload-artifact@v4
         with:

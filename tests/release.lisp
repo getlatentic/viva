@@ -184,15 +184,21 @@ DOES rather than about what it says."
     (true (search "git describe" builder)))
   (true (search "VIVA_BUILD_VERSION" (repository-file "tools/build-image.lisp"))))
 
-(define-test "the installer says what it replaced, and what is still running"
+(define-test "the installer says what it replaced, and brings the running daemon along"
   (let ((code (shell-code (repository-file "get.sh"))))
     ;; Asked BEFORE the replacement, or there is nothing to compare with.
     (true (search "--version" code))
     (true (search "was=" code))
     ;; A daemon keeps the file it started from, so it serves the old build until
-    ;; it restarts. Silence there gets the new build blamed for old behaviour.
-    (true (search "daemon status" code))
-    (true (search "viva daemon restart" code))))
+    ;; it switches. Silence there gets the new build blamed for old behaviour.
+    (true (search "daemon status" code)))
+  ;; Updating is running an installer again and NOTHING AFTER IT: both ask a
+  ;; running daemon to become what they installed, and leave alone one that
+  ;; already is. A step a person has to remember is a step that gets skipped.
+  (dolist (installer '("get.sh" "install.sh"))
+    (let ((code (shell-code (repository-file installer))))
+      (true (search "daemon upgrade --detach --if-changed" code)
+            "~a leaves the running daemon on the build it replaced" installer))))
 
 (define-test "the curl installer reaches a release, and checks what it gets"
   (let* ((script (repository-file "get.sh"))
@@ -891,7 +897,7 @@ you where you were rather than nowhere"))))
           "the timeout message must name the fix -- a bare timeout reads as ~
 `slow`, which is what invites the retry")))
 
-(define-test "a stale organism says so, and can be restarted"
+(define-test "a stale organism says so, and can be upgraded in place"
   ;; A long-lived process keeps the code it was built from. Someone who edits
   ;; viva, rebuilds and reattaches is talking to the OLD one -- and the
   ;; change they just made looks like it does not work. It cost a person five
@@ -900,10 +906,9 @@ you where you were rather than nowhere"))))
   (let ((source (repository-file "src/cli/commands.lisp")))
     (true (search "warn-if-stale" source))
     (true (search "newest-source-time" source))
-    ;; The warning has to name the cost of acting on it: sessions live in the
-    ;; process, so a restart ends them.
-    (true (search "Sessions live in the process" source))
-    (true (search "\"restart\" verb" source) "acting on the warning must be one command"))
+    ;; Acting on the warning is one command, and it costs nothing running.
+    (true (search "viva daemon upgrade" source))
+    (true (search "\"upgrade\" verb" source) "acting on the warning must be one command"))
   ;; And the daemon has to send what the comparison needs.
   (true (search "\"started\" *started-at*" (repository-file "src/daemon/server.lisp"))))
 
@@ -1039,6 +1044,23 @@ twice; it is somebody's record.")))
           (loop repeat 8 collect (bt:make-thread (lambda () (ignore-errors (jobs:stop job))))))
     (false (jobs:alive-p job) "the job survived eight concurrent stops")
     (false (jobs:find-job "suite-racer") "a stopped job must leave the table")))
+
+(define-test "a job's log survives a failure reading its pipe"
+  ;; The pump read inside WITH-OPEN-FILE, and an error there unwound out of it.
+  ;; Unwinding closes with :ABORT, and aborting a stream opened to supersede
+  ;; deletes the file: every line the job had printed went with the one read
+  ;; that failed, and `jobs output` answered `nothing yet`.
+  (let ((job (jobs:start "while true; do echo kept; sleep 0.1; done" :name "suite-kept-log")))
+    (unwind-protect
+         (progn
+           (loop repeat 100 until (search "kept" (jobs:output-of job)) do (sleep 0.05))
+           (true (search "kept" (jobs:output-of job)) "the job never printed")
+           ;; A failed read: the stream the pump reads, closed under it.
+           (close (sb-ext:process-output (viva.jobs::job-process job)))
+           (sleep 1)
+           (true (probe-file (jobs:job-log job)) "one failed read deleted the log")
+           (true (search "kept" (jobs:output-of job))))
+      (jobs:stop job))))
 
 (define-test "a background job can be watched, not only polled"
   ;; A running server's output sat in a file until somebody asked for it, so

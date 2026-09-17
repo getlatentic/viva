@@ -101,6 +101,15 @@ path on this platform can be at most ~d. Set VIVA_SOCKET (or VIVA_HOME) to a sho
 (defvar *diagnostics-lock* (bt:make-lock "viva.diagnostics"))
 (defvar *failures* 0 "How many there have been, which the kept ones do not say.")
 
+(defvar *version* "unknown"
+  "The build this image runs, set by whoever starts the daemon. The daemon is
+below the command line that knows how to ask.")
+
+(defvar *quiescing* nil
+  "True while an upgrade stops this image's traffic at safe points: each reader
+after a whole line, each writer after a whole message, the accept loop before
+its next connection, each job's pump between reads. Owned by the upgrade.")
+
 (defvar *started-at* (get-universal-time)
   "When this image began serving, for the staleness check.")
 
@@ -183,7 +192,11 @@ a tally that counts successes cannot be read for faults at all."
   ;; and an untimed one once waited an hour and fifty minutes on a writer
   ;; nothing was going to finish.
   (finished (bt:make-semaphore :count 0))
-  (watching '() :type list))
+  (watching '() :type list)
+  ;; NIL once the reader, or the writer, has stopped for an upgrade at a safe
+  ;; point: nothing half-read, nothing half-written.
+  (reading t)
+  (writing t))
 
 (defparameter +outbound-limit+ 20000
   "Messages a client may fall behind by before it is disconnected.
@@ -253,6 +266,13 @@ read their greeting first."
           (note-hangup)
           (note-failure "write" condition)))))
 
+(defun pause-while-quiescing (client slot)
+  "Stop this thread at a safe point until the upgrade is either abandoned or
+has replaced the image around it."
+  (setf (slot-value client slot) nil)
+  (loop while *quiescing* do (sleep 0.05))
+  (setf (slot-value client slot) t))
+
 (defun start-writer (client)
   "The outbound side has one owner: this thread. The descriptor has another.
 
@@ -269,9 +289,11 @@ because WAKE's shutdown forces the send to return first."
            (unwind-protect
                 (loop for item = (mailbox:receive-message (client-outbound client))
                       until (eq item :done)
-                      do (unless (write-one client item)
-                           (wake client)
-                           (return)))
+                      do (cond ((eq item :pause)
+                                (when *quiescing* (pause-while-quiescing client 'writing)))
+                               ((not (write-one client item))
+                                (wake client)
+                                (return))))
              (bt:signal-semaphore (client-finished client) :count 1000)))
          :name "viva-client-writer")))
 
@@ -286,7 +308,9 @@ again, NIL if that confirmation never came."
 
 (defun sweep-clients ()
   "Disconnect anyone too far behind to be worth waiting for."
-  (dolist (client (bt:with-lock-held (*clients-lock*) (copy-list *clients*)))
+  (dolist (client (if *quiescing*
+                      '()
+                      (bt:with-lock-held (*clients-lock*) (copy-list *clients*))))
     (let ((behind (mailbox:mailbox-count (client-outbound client))))
       (when (> behind +outbound-limit+)
         (note-failure "backpressure"
@@ -295,15 +319,34 @@ again, NIL if that confirmation never came."
                                       :format-arguments (list behind)))
         (wake client)))))
 
+(defparameter +read-poll+ 1
+  "Seconds a reader waits for input before looking up to see whether an upgrade
+wants it stopped. Input ends the wait at once; this only decides how often an
+idle connection wakes, and how long an upgrade may wait to stop it.")
+
 (defun next-line (client)
   "The next line, or NIL when this connection is over for any reason at all.
 
 A broken socket is how a connection ends, not a condition to signal. READ-LINE
 raises on a bad descriptor rather than returning its EOF value, and this runs
 under `sbcl --script`, where an unhandled condition in any thread quits the
-whole process -- one hung-up client used to take the organism with it."
-  (handler-case (read-line (client-stream client) nil nil)
-    (error (condition) (note-failure "read" condition))))
+whole process -- one hung-up client used to take the organism with it.
+
+POLLED, NOT BLOCKED. An upgrade has to stop a reader between lines: a line this
+image had read and not yet answered would be gone with the image. A reader
+blocked in READ-LINE cannot be stopped anywhere, so this waits at most a second
+at a time and stops only with nothing buffered. What arrives after that
+stays in the kernel's socket buffer, which the next image inherits."
+  (let ((stream (client-stream client))
+        (fd (sockets:socket-file-descriptor (client-socket client))))
+    (handler-case
+        (loop
+          (when (and *quiescing* (not (listen stream)))
+            (pause-while-quiescing client 'reading))
+          (when (or (listen stream)
+                    (sb-sys:wait-until-fd-usable fd :input +read-poll+ nil))
+            (return (read-line stream nil nil))))
+      (error (condition) (note-failure "read" condition)))))
 
 (defun watch (client cell &key (from 0))
   "Send CELL's events to CLIENT, starting with whatever it missed.
@@ -386,6 +429,10 @@ somebody bringing one back has only that."
 
 (defvar *deleting-lock* (bt:make-lock "viva.deleting"))
 
+(defvar *shells* (list 0)
+  "Shell commands running, in a cons so ATOMIC-INCF can reach it. An upgrade
+waits for them: a command is a thread, and a thread does not cross an exec.")
+
 (defun deleting-p (id)
   (bt:with-lock-held (*deleting-lock*) (gethash id *deleting*)))
 
@@ -434,6 +481,22 @@ cell on the same transcript would be two writers to one file."
   (a:when-let ((running (a:when-let ((wanted (text-of command "resume")))
                           (and (not (string= "true" wanted)) (actor:find-cell wanted)))))
     (return-from start-session running))
+  (multiple-value-bind (agent session earlier) (session-agent command)
+    (let ((cell (actor:spawn :label (or (text-of command "label")
+                                        (text-of command "cwd")
+                                        (uiop:native-namestring (uiop:getcwd)))
+                             :agent agent
+                             :id (session:session-id session))))
+      (when earlier (announce-resumed cell agent))
+      cell)))
+
+(defun session-agent (command)
+  "The agent a session COMMAND describes, with its conversation loaded when the
+command continues one. Values: the agent, its transcript, and the recorded
+session it continues, or NIL.
+
+Apart from spawning, because an upgrade needs exactly this for a session whose
+cell was in the image being replaced."
   (let* ((cwd (or (text-of command "cwd") (uiop:native-namestring (uiop:getcwd))))
          (choice (models:resolve-model (text-of command "model")))
          ;; BEFORE OPEN-SESSION. Opening writes this session's own file, so
@@ -509,10 +572,7 @@ cell on the same transcript would be two writers to one file."
                                             (session:summary-id earlier)
                                             (session:summary-messages earlier))))
             (error (condition) (note-failure "resume" condition)))))
-    (let ((cell (actor:spawn :label (or (text-of command "label") cwd) :agent agent
-                             :id (session:session-id session))))
-      (when earlier (announce-resumed cell agent))
-      cell)))
+    (values agent session earlier)))
 
 (defun announce-interruption (cell)
   "Say so when the daemon died in the middle of a turn.
@@ -548,16 +608,19 @@ keep."
     (actor:publish cell "tool.started"
                    (object "call" (object "id" id "name" "!"
                                           "arguments" (object "command" line))))
+    (sb-ext:atomic-incf (car *shells*))
     (bt:make-thread
      (lambda ()
-       (multiple-value-bind (output status)
-           (handler-case
-               (workspace:with-environment ((env:make-local-environment :cwd cwd))
-                 (workspace:run-bash line))
-             (error (condition) (values (princ-to-string condition) 1)))
-         (actor:publish cell (if (eql 0 status) "tool.completed" "tool.failed")
-                        (object "call" (object "id" id "name" "!")
-                                "output" output))))
+       (unwind-protect
+            (multiple-value-bind (output status)
+                (handler-case
+                    (workspace:with-environment ((env:make-local-environment :cwd cwd))
+                      (workspace:run-bash line))
+                  (error (condition) (values (princ-to-string condition) 1)))
+              (actor:publish cell (if (eql 0 status) "tool.completed" "tool.failed")
+                             (object "call" (object "id" id "name" "!")
+                                     "output" output)))
+         (sb-ext:atomic-decf (car *shells*))))
      :name "viva-shell")))
 
 (defun rehydrate-sessions ()
@@ -885,6 +948,14 @@ correct and nobody could receive it."
                 (no "This session is working. Retention reflects on finished work; try again when it is idle."))
                (t (ok "turn" (actor:submit-retention cell)))))
 
+        ;; Answered when it is over: by the new image on this connection when
+        ;; it succeeds, by this one when it does not.
+        ((string= "upgrade" type)
+         (cond ((eq t (gethash "cancel" command))
+                (if (cancel-upgrade) (ok) (no "No upgrade is under way.")))
+               ((request-upgrade client id))
+               (t (no "An upgrade is already under way."))))
+
         ((string= "diagnostics" type)
          (multiple-value-bind (kept total hangups) (diagnostics)
            (ok "failures" total "hangups" hangups "recent" (coerce kept 'vector))))
@@ -904,26 +975,37 @@ correct and nobody could receive it."
 
         (t (no (format nil "Unknown command ~a." type)))))))
 
-(defun serve-client (stream socket)
-  "The reader thread, which owns this connection's lifecycle.
+(defun serve-client (client)
+  "The reader thread, which owns this connection's lifecycle."
+  (serve-lines client
+               (lambda ()
+                 (start-writer client)
+                 (say client
+                      (object "type" "ready" "pid" (sb-posix:getpid)
+                              "version" *version*
+                              ;; What an upgrade under way waits on.
+                              "upgrade" (upgrade-under-way)
+                              ;; When this image started. A long-lived process
+                              ;; keeps the code it was built from, so a person
+                              ;; who edits viva and reattaches is talking to the
+                              ;; old one -- which looks exactly like the change
+                              ;; not working. The client compares this against
+                              ;; the source on disk.
+                              "started" *started-at*
+                              "sessions" (coerce (mapcar #'cell-json (actor:all-cells))
+                                                 'vector))))))
+
+(defun serve-lines (client begin)
+  "Run BEGIN, then answer CLIENT's lines until the connection ends, then clean
+up. A connection handed over by an upgrade begins differently and ends the same.
 
 There is no shared liveness boolean. The writer wakes the connection when it
 can no longer write, READ-LINE returns, and cleanup happens here -- in one
 place, on one thread, with exactly one close."
-  (let ((client (make-client :stream stream :socket socket :key (gensym "CLIENT"))))
-    (register-client client)
+  (let ((socket (client-socket client)))
     (unwind-protect
          (progn
-           (start-writer client)
-           (say client (object "type" "ready" "pid" (sb-posix:getpid)
-                               ;; When this generation started. A long-lived
-                               ;; process keeps the code it was built from, so
-                               ;; a person who edits viva and reattaches is
-                               ;; talking to the old one -- which looks exactly
-                               ;; like the change not working. The client
-                               ;; compares this against the source on disk.
-                               "started" *started-at*
-                               "sessions" (coerce (mapcar #'cell-json (actor:all-cells)) 'vector)))
+           (funcall begin)
            (loop for line = (next-line client)
                  while line
                  do (unless (zerop (length (string-trim '(#\Space #\Tab #\Return) line)))
@@ -955,18 +1037,23 @@ one socket, SBCL handed them the same stream, and they wrote interleaved JSON
 onto one descriptor while the first to finish closed it under the other. That
 is both of the daemon's observed failures: a client that could not parse the
 greeting, and a `Bad file descriptor` that quit the entire organism."
-  (bt:make-thread
-   (lambda ()
-     ;; Nothing a client does may reach the top level: --script disables the
-     ;; debugger, and an unhandled condition in any thread ends the process.
-     (handler-case
-         (serve-client (sockets:socket-make-stream connection
-                                                   :input t :output nil
-                                                   :element-type 'character
-                                                   :external-format :utf-8)
-                       connection)
-       (error (condition) (note-failure "client" condition))))
-   :name "viva-client"))
+  ;; REGISTERED HERE, on the accept loop's thread, before the reader exists. An
+  ;; upgrade that stops the accept loop then knows every connection it took:
+  ;; one registered on its own thread could be missed, and lose its greeting.
+  (let ((client (make-client :stream (sockets:socket-make-stream connection
+                                                                 :input t :output nil
+                                                                 :element-type 'character
+                                                                 :external-format :utf-8)
+                             :socket connection
+                             :key (gensym "CLIENT"))))
+    (register-client client)
+    (bt:make-thread
+     (lambda ()
+       ;; Nothing a client does may reach the top level: --script disables the
+       ;; debugger, and an unhandled condition in any thread ends the process.
+       (handler-case (serve-client client)
+         (error (condition) (note-failure "client" condition))))
+     :name "viva-client")))
 
 (defun start-sweeper (instance)
   "One sweeper per generation, ending with that generation.
@@ -979,7 +1066,7 @@ thing they belong to are the same unowned lifetime as every other bug here."
    (lambda ()
      (loop while (current-p instance)
            do (sleep 1)
-              (ignore-errors (sweep-clients))))
+              (unless *quiescing* (ignore-errors (sweep-clients)))))
    :name "viva-sweeper"))
 
 ;;; The daemon
@@ -1142,7 +1229,9 @@ all reported `listening on`, and four of them were not."
                    (error 'daemon-error :detail "This process is already serving.")))
         (started nil))
     (unwind-protect
-         (progn (serve-bound path background announce token)
+         (progn (a:if-let ((state (read-handoff)))
+                  (serve-handed-over state background announce token)
+                  (serve-bound path background announce token))
                 (setf started t))
       (unless started (release-startup token)))))
 
@@ -1194,33 +1283,54 @@ while the accept loop serves on."
              (when announce
                (handler-case (funcall announce path)
                  (error (condition) (note-failure "announce" condition))))
-             (flet ((accept-loop ()
-                      (unwind-protect
-                           (loop with failures = 0
-                                 ;; This generation, not `some daemon`.
-                                 while (current-p instance)
-                                 do (let ((connection (handler-case (sockets:socket-accept socket)
-                                                        (error () nil))))
-                                      (cond (connection
-                                             (setf failures 0)
-                                             (serve-connection connection))
-                                            ;; STOP closed the listener: the
-                                            ;; ordinary exit. Anything else is
-                                            ;; one refused connection, which
-                                            ;; must not retire the listener.
-                                            ((or (not (current-p instance))
-                                                 (> (incf failures) 32))
-                                             (loop-finish)))))
-                        (retire instance))))
-               (if background
-                   (bt:make-thread #'accept-loop :name "vivad")
-                   (accept-loop)))
+             (run-accepting instance background)
              path))
       (unless published
         (when socket
           (ignore-errors (sockets:socket-close socket))
           (ignore-errors (delete-file path)))
         (when fd (ignore-errors (sb-posix:close fd)))))))
+
+(defvar *accepting* t
+  "NIL once the accept loop has stopped taking connections for an upgrade.")
+
+(defun accept-connections (instance)
+  "Take connections for INSTANCE until it stops.
+
+POLLED, for the reason readers are: an upgrade stops the loop before its next
+connection. What arrives meanwhile waits in the listening socket's backlog,
+which the next image inherits with the socket and accepts from."
+  (let* ((socket (instance-socket instance))
+         (fd (sockets:socket-file-descriptor socket)))
+    (unwind-protect
+         (loop with failures = 0
+               ;; This generation, not `some daemon`.
+               while (current-p instance)
+               do (cond (*quiescing*
+                         (setf *accepting* nil)
+                         (sleep 0.05))
+                        ((progn (setf *accepting* t)
+                                (not (ignore-errors
+                                      (sb-sys:wait-until-fd-usable fd :input +read-poll+ nil)))))
+                        (t
+                         (let ((connection (handler-case (sockets:socket-accept socket)
+                                             (error () nil))))
+                           (cond (connection
+                                  (setf failures 0)
+                                  (serve-connection connection))
+                                 ;; STOP closed the listener: the ordinary
+                                 ;; exit. Anything else is one refused
+                                 ;; connection, which must not retire the
+                                 ;; listener.
+                                 ((or (not (current-p instance))
+                                      (> (incf failures) 32))
+                                  (loop-finish)))))))
+      (retire instance))))
+
+(defun run-accepting (instance background)
+  (if background
+      (bt:make-thread (lambda () (accept-connections instance)) :name "vivad")
+      (accept-connections instance)))
 
 (defun current-p (instance)
   (bt:with-lock-held (*lock*) (eq instance *current*)))

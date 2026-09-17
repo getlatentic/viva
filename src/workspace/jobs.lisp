@@ -19,7 +19,21 @@
 (defstruct (job (:conc-name job-))
   (name "" :type string)
   (command "" :type string)
+  ;; The SB-EXT process this image started, or NIL for a job an upgrade handed
+  ;; over: the process is still this one's child, but the object that tracked
+  ;; it was memory in the image before.
   (process nil)
+  (pid 0 :type integer)
+  ;; What the pump reads: the process's output stream, or for a job handed
+  ;; over, a stream around the pipe descriptor that crossed the exec.
+  (output nil)
+  ;; The session whose output this is, by id -- so a job that outlives both the
+  ;; turn and the image that started it can still say whose it is.
+  (owner nil)
+  ;; A handed-over job's exit code, once reaped. SB-EXT keeps its own.
+  (exit nil)
+  ;; NIL once the pump has stopped for an upgrade with nothing half-read.
+  (pumping t)
   (log "" :type string)
   (directory "" :type string)
   ;; :starting :running :exited :stopping. A STATE the job owns, not a question
@@ -37,6 +51,9 @@ that started them -- which is the entire point.")
 
 (defvar *lock* (bt:make-lock "viva.jobs"))
 
+(defvar *pausing* nil
+  "True while an upgrade stops every pump between reads.")
+
 (defun log-path (name)
   (env:join-path (uiop:native-namestring (uiop:temporary-directory))
                  (format nil "viva-job-~a.log" name)))
@@ -49,7 +66,7 @@ that started them -- which is the entire point.")
               for candidate = (format nil "~a~d" (or wanted "job") index)
               unless (gethash candidate *jobs*) return candidate))))
 
-(defun pump (job on-output)
+(defun pump (job on-output &key (if-exists :supersede))
   "Read the job's output, writing it to its log and handing it onward.
 
 TWO CONSUMERS, one pipe. The log is what `jobs output` reads afterwards; the
@@ -59,26 +76,43 @@ polling is what made a running server invisible until somebody asked.
 
 The thread is the drain as well: an unread pipe fills and stops the process
 producing it, which is exactly the dev-server-wedged-by-its-own-logs failure
-writing to a file avoided."
+writing to a file avoided.
+
+POLLED, so an upgrade can stop it between reads with nothing half-read. What
+the process writes meanwhile waits in the pipe, which the next image inherits."
   (bt:make-thread
    (lambda ()
      (ignore-errors
       (with-open-file (log (job-log job) :direction :output
-                                         :if-exists :supersede :if-does-not-exist :create)
-        (let ((from (sb-ext:process-output (job-process job))))
-          (loop for character = (read-char from nil nil)
-                while character
-                do (write-char character log)
-                   (force-output log)
-                   (when on-output
-                     (ignore-errors (funcall on-output (string character)))))))))
+                                         :if-exists if-exists :if-does-not-exist :create)
+        ;; A READ THAT FAILS ENDS THE LOOP, never the file. Unwinding out of
+        ;; WITH-OPEN-FILE closes with :ABORT, and aborting a stream opened to
+        ;; supersede deletes the file: one error reading the pipe took every
+        ;; line the job had ever printed with it.
+        (handler-case
+            (let* ((from (job-output job))
+                   (fd (sb-sys:fd-stream-fd from)))
+              (loop
+                (when (and *pausing* (not (listen from)))
+                  (setf (job-pumping job) nil)
+                  (loop while *pausing* do (sleep 0.05))
+                  (setf (job-pumping job) t))
+                (when (or (listen from) (sb-sys:wait-until-fd-usable fd :input 1 nil))
+                  (let ((character (read-char from nil nil)))
+                    (unless character (return))
+                    (write-char character log)
+                    (force-output log)
+                    (when on-output
+                      (ignore-errors (funcall on-output (string character))))))))
+          (error () nil)))))
    :name (format nil "viva-job-~a" (job-name job))))
 
-(defun start (command &key name directory on-output)
+(defun start (command &key name directory on-output owner)
   "Start COMMAND and return its JOB, without waiting for it.
 
 ON-OUTPUT, when given, receives the output as it arrives -- so a background
-process can be watched rather than polled."
+process can be watched rather than polled. OWNER names the session it belongs
+to."
   (let* ((name (mint-name name))
          (log (log-path name))
          (process (sb-ext:run-program
@@ -86,19 +120,49 @@ process can be watched rather than polled."
                    :output :stream :error :output
                    :directory directory :wait nil :search nil)))
     (let ((job (make-job :name name :command command :process process
+                         :pid (sb-ext:process-pid process)
+                         :output (sb-ext:process-output process)
+                         :owner owner
                          :log log :directory (or directory ""))))
       (pump job on-output)
       (bt:with-lock-held (*lock*) (setf (gethash name *jobs*) job))
       job)))
 
+(defun process-running-p (job)
+  "Is JOB's process still running? Called under the job's lock.
+
+A HANDED-OVER JOB IS REAPED HERE. SBCL reaps only the children it started, so
+the exit of one this image inherited would otherwise leave a zombie behind."
+  (a:if-let ((process (job-process job)))
+    (eq :running (sb-ext:process-status process))
+    (and (null (job-exit job))
+         (handler-case
+             (multiple-value-bind (pid status) (sb-posix:waitpid (job-pid job) sb-posix:wnohang)
+               (if (eql pid (job-pid job))
+                   (progn (setf (job-exit job)
+                                (if (sb-posix:wifexited status)
+                                    (sb-posix:wexitstatus status)
+                                    (+ 128 (sb-posix:wtermsig status))))
+                          nil)
+                   t))
+           ;; ECHILD: reaped already, by nobody this image knows of.
+           (sb-posix:syscall-error ()
+             (setf (job-exit job) (or (job-exit job) -1))
+             nil)))))
+
+(defun exit-code (job)
+  (a:if-let ((process (job-process job)))
+    (sb-ext:process-exit-code process)
+    (job-exit job)))
+
 (defun observe (job)
   "Bring the job's own state up to date with the OS, under its lock.
 
-One place asks PROCESS-STATUS and one place writes the answer down. Everything
-else reads the job's state, so a decision and the act that follows it cannot
-straddle a change."
+One place asks whether the process runs and one place writes the answer down.
+Everything else reads the job's state, so a decision and the act that follows
+it cannot straddle a change."
   (bt:with-lock-held ((job-lock job))
-    (let ((running (eq :running (sb-ext:process-status (job-process job)))))
+    (let ((running (process-running-p job)))
       (case (job-state job)
         (:stopping (unless running (setf (job-state job) :exited)))
         (:exited)
@@ -113,7 +177,7 @@ straddle a change."
     (:running "running")
     (:starting "starting")
     (:stopping "stopping")
-    (t (format nil "exited ~a" (or (sb-ext:process-exit-code (job-process job)) "?")))))
+    (t (format nil "exited ~a" (or (exit-code job) "?")))))
 
 (defun all-jobs ()
   (bt:with-lock-held (*lock*)
@@ -149,13 +213,15 @@ port -- which looks exactly like the stop having failed."
                   t))))
     (declare (ignorable mine)))
   (when (alive-p job)
-    (let ((pid (sb-ext:process-pid (job-process job))))
+    (let ((pid (job-pid job)))
       (ignore-errors (sb-posix:killpg pid sb-unix:sigterm))
-      (ignore-errors (sb-ext:process-kill (job-process job) sb-unix:sigterm)))
+      (ignore-errors (sb-posix:kill pid sb-unix:sigterm)))
     (loop repeat 30 while (alive-p job) do (sleep 0.1))
     (when (alive-p job)
-      (ignore-errors (sb-ext:process-kill (job-process job) sb-unix:sigkill))))
-  (sb-ext:process-wait (job-process job) t)
+      (ignore-errors (sb-posix:kill (job-pid job) sb-unix:sigkill))))
+  (a:if-let ((process (job-process job)))
+    (sb-ext:process-wait process t)
+    (loop repeat 100 while (alive-p job) do (sleep 0.05)))
   (bt:with-lock-held (*lock*) (remhash (job-name job) *jobs*))
   t)
 
@@ -171,6 +237,70 @@ process, so it matters more rather than less."
   (let ((stopped 0))
     (dolist (job (all-jobs) stopped)
       (when (ignore-errors (stop job)) (incf stopped)))))
+
+;;; Across an upgrade
+;;;
+;;; The daemon replaces its image in the same process, so every job stays its
+;;; child and every pump's pipe stays open. What goes is the record of which
+;;; is which, and the thread reading each pipe.
+
+(defun pause-pumps (&key (timeout 15))
+  "Stop every running job's pump between reads. T once all have stopped."
+  (setf *pausing* t)
+  (let ((deadline (+ (get-internal-real-time) (* timeout internal-time-units-per-second))))
+    (loop
+      (when (notany (lambda (job) (and (job-pumping job) (alive-p job))) (all-jobs))
+        (return t))
+      (when (> (get-internal-real-time) deadline)
+        (return nil))
+      (sleep 0.02))))
+
+(defun resume-pumps ()
+  (setf *pausing* nil))
+
+(defun handoff-records ()
+  "Every job, as the next image needs to take it over."
+  (loop for job in (all-jobs)
+        for running = (alive-p job)
+        collect (let ((table (make-hash-table :test #'equal)))
+                  (setf (gethash "name" table) (job-name job)
+                        (gethash "command" table) (job-command job)
+                        (gethash "directory" table) (job-directory job)
+                        (gethash "log" table) (job-log job)
+                        (gethash "pid" table) (job-pid job)
+                        (gethash "state" table) (string-downcase (symbol-name (job-state job))))
+                  (when running
+                    (setf (gethash "fd" table) (sb-sys:fd-stream-fd (job-output job))))
+                  (a:when-let ((owner (job-owner job)))
+                    (setf (gethash "owner" table) owner))
+                  (a:when-let ((code (exit-code job)))
+                    (setf (gethash "exit" table) code))
+                  table)))
+
+(defun handoff-descriptors ()
+  "The pipes this image's jobs are read through, which the exec must keep."
+  (loop for job in (all-jobs)
+        when (alive-p job)
+          collect (sb-sys:fd-stream-fd (job-output job))))
+
+(defun adopt (record &key on-output)
+  "Take over the job RECORD describes: the same process, read from the same pipe.
+ON-OUTPUT is where its output goes now."
+  (let* ((fd (gethash "fd" record))
+         (job (make-job :name (gethash "name" record)
+                        :command (gethash "command" record)
+                        :directory (or (gethash "directory" record) "")
+                        :log (gethash "log" record)
+                        :pid (gethash "pid" record)
+                        :owner (gethash "owner" record)
+                        :exit (gethash "exit" record)
+                        :state (if fd :running :exited)
+                        :output (and fd (sb-sys:make-fd-stream fd :input t
+                                                                  :external-format :utf-8
+                                                                  :buffering :full)))))
+    (when fd (pump job on-output :if-exists :append))
+    (bt:with-lock-held (*lock*) (setf (gethash (job-name job) *jobs*) job))
+    job))
 
 ;;; Services: a process the germline declares
 ;;;

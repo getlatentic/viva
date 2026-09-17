@@ -47,6 +47,8 @@ THE ORGANISM
 
   daemon [status|start|stop]  the long-lived process sessions live inside
       --background            detach the accept loop and return
+  daemon upgrade              become the build on disk, restarting nothing
+      --detach                return at once; it switches once turns end
   attach [SESSION] [options]  open or rejoin a session; /detach leaves it running
       --new                   always start a fresh one, never rejoin
       --cwd DIR               where a new session works

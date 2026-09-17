@@ -55,8 +55,11 @@ viva                                 # opens this directory's session
 
 Sessions run in a daemon. Closing the client leaves a turn running, and `viva`
 rejoins the session later. If the daemon stops, the session comes back under
-the same id, but the turn that was running is lost. `viva help` lists every
-flag, and [tui/README.md](tui/README.md) lists the full-screen client's keys.
+the same id, but the turn that was running is lost. Running an installer again
+upgrades a running daemon without stopping it: running turns finish, then the
+new build takes over the same process, with every session, connection and
+background job. `viva help` lists every flag, and
+[tui/README.md](tui/README.md) lists the full-screen client's keys.
 
 ## Capabilities and extensions
 

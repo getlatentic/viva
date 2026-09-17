@@ -118,6 +118,11 @@ live undefined-variable warning that every later warning would have hidden in.")
 (defvar *cells* (make-hash-table :test #'equal))
 (defvar *registry-lock* (bt:make-lock "viva.cells"))
 
+(defvar *holding* nil
+  "True while the daemon holds its sessions to replace its image. A session
+started meanwhile is born held, so the upgrade never waits on a turn that
+began after it did.")
+
 (defparameter +stopping-grace+ 120
   "Seconds a shutting-down session waits for its turn to report. After this the
 session is STUCK, which is a state it is allowed to be in and not allowed to
@@ -854,6 +859,7 @@ lifecycle decision (or names a turn that is already gone, the old APPLIES-P)."
          (list verb))))
     (:shutdown '(:shutdown))
     (:retarget '(:retarget))
+    ((:hold :release) (list verb))
     ((:stop-deadline :flush-confirmed :flush-failed) (list verb))
     (t nil)))
 
@@ -993,6 +999,11 @@ else arrives meanwhile."
 (defun handle (cell message)
   (destructuring-bind (verb &rest options) message
     (case verb
+      ;; A marker the upgrade waits on. FIFO: once it is handled, everything
+      ;; posted to this session before it has been handled too, so what the
+      ;; cell says next is final while nothing more is posted.
+      (:barrier
+       (bt:signal-semaphore (getf options :semaphore)))
       ;; Not a lifecycle decision: the journal owner cannot publish --
       ;; publishing appends to the journal -- so it reports here and the
       ;; coordinator says it out loud.
@@ -1153,6 +1164,13 @@ as diagnostics -- and stays registered, visibly, until an operator resolves it."
                     (publish cell "session.error"
                              (event::object "detail" (princ-to-string condition))))))))))
 
+(defun listen-through (cell agent)
+  "Route AGENT's loop events into CELL's stream, where every frontend reads."
+  (setf (harness:agent-listener agent)
+        (lambda (loop-event)
+          (multiple-value-bind (name data) (event:from-loop loop-event)
+            (when name (publish cell name data))))))
+
 (defun spawn (&key (label "") agent (id (session:new-id)))
   "Start a session that outlives whoever started it.
 
@@ -1167,10 +1185,7 @@ visible loss. spec/Recovery.tla, RecoveryWitnessName."
                           :cwd (env:env-cwd (harness:agent-environment agent)))))
     ;; The agent publishes through the cell, so every frontend sees the same
     ;; stream and none of them has to understand the agent loop's own events.
-    (setf (harness:agent-listener agent)
-          (lambda (loop-event)
-            (multiple-value-bind (name data) (event:from-loop loop-event)
-              (when name (publish cell name data)))))
+    (listen-through cell agent)
     (ensure-journal)
     (setf (cell-journal-path cell) (journal-path-for id))
     (bt:with-lock-held (*registry-lock*) (setf (gethash id *cells*) cell))
@@ -1203,6 +1218,7 @@ visible loss. spec/Recovery.tla, RecoveryWitnessName."
     ;; that OPEN-SESSION just opened for the whole of its life.
     (release-descriptors cell)
     (setf (cell-parked cell) t)
+    (when *holding* (tell cell :hold))
     cell))
 
 (defun tell (cell &rest message)

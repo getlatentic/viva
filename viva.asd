@@ -90,7 +90,11 @@
                              (:file "evolver")
                              (:file "supervisor")
                              (:file "capability")
-                             (:file "server")))))
+                             (:file "adoption")
+                             (:file "server")
+                             (:file "exec")
+                             (:file "handoff")
+                             (:file "upgrade")))))
 
 (defsystem "viva/console"
   :description "Two ways to run the workspace agent: an interactive shell and a JSONL IPC server."
@@ -185,6 +189,7 @@
                              (:file "attached")
                              (:file "commands")
                              (:file "version")
+                             (:file "upgrade")
                              (:file "install")
                              (:file "learned")
                              (:file "attend")
@@ -211,5 +216,6 @@
                              (:file "render")
                              (:file "workspace")
                              (:file "release")
-                             (:file "daemon"))))
+                             (:file "daemon")
+                             (:file "upgrade"))))
   :perform (test-op (op c) (symbol-call :parachute :test :viva.tests)))

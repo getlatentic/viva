@@ -71,8 +71,9 @@
                     (#:bt #:bordeaux-threads)
                     (#:env #:viva.env))
   (:export #:start #:stop #:all-jobs #:find-job #:alive-p #:status-of #:output-of
-           #:job #:job-name #:job-command #:job-log #:stop-all
-           #:declared #:start-declared #:services-directory))
+           #:job #:job-name #:job-command #:job-log #:job-owner #:stop-all
+           #:declared #:start-declared #:services-directory
+           #:pause-pumps #:resume-pumps #:handoff-records #:handoff-descriptors #:adopt))
 
 (defpackage #:viva.skill
   (:use #:cl)
@@ -98,7 +99,7 @@
                     (#:edit #:viva.edit))
   (:export #:*environment* #:environment #:with-environment #:display-path
            #:read-file #:write-file #:edit-file #:list-files #:find-files
-           #:search-files #:run-bash #:*bash-timeout* #:*on-output* #:walk #:*excluded-paths*
+           #:search-files #:run-bash #:*bash-timeout* #:*on-output* #:*output-owner* #:walk #:*excluded-paths*
            #:read-tool #:write-tool #:edit-tool
            #:ls-tool #:find-tool #:grep-tool #:bash-tool
            #:file-tools #:search-tools #:tool-set
