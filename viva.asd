@@ -189,6 +189,7 @@
                              (:file "attached")
                              (:file "commands")
                              (:file "version")
+                             (:file "upgrade")
                              (:file "install")
                              (:file "learned")
                              (:file "attend")

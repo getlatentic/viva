@@ -184,17 +184,21 @@ DOES rather than about what it says."
     (true (search "git describe" builder)))
   (true (search "VIVA_BUILD_VERSION" (repository-file "tools/build-image.lisp"))))
 
-(define-test "the installer says what it replaced, and what is still running"
+(define-test "the installer says what it replaced, and brings the running daemon along"
   (let ((code (shell-code (repository-file "get.sh"))))
     ;; Asked BEFORE the replacement, or there is nothing to compare with.
     (true (search "--version" code))
     (true (search "was=" code))
     ;; A daemon keeps the file it started from, so it serves the old build until
-    ;; it restarts. Silence there gets the new build blamed for old behaviour.
-    (true (search "daemon status" code))
-    ;; And asked to become the new build in place, rather than left serving the
-    ;; old one until somebody restarts it.
-    (true (search "daemon upgrade" code))))
+    ;; it switches. Silence there gets the new build blamed for old behaviour.
+    (true (search "daemon status" code)))
+  ;; Updating is running an installer again and NOTHING AFTER IT: both ask a
+  ;; running daemon to become what they installed, and leave alone one that
+  ;; already is. A step a person has to remember is a step that gets skipped.
+  (dolist (installer '("get.sh" "install.sh"))
+    (let ((code (shell-code (repository-file installer))))
+      (true (search "daemon upgrade --detach --if-changed" code)
+            "~a leaves the running daemon on the build it replaced" installer))))
 
 (define-test "the curl installer reaches a release, and checks what it gets"
   (let* ((script (repository-file "get.sh"))

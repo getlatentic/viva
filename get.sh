@@ -105,19 +105,20 @@ else
   say "  $was -> $now"
 fi
 
+# A RUNNING DAEMON BECOMES THIS BUILD, and nothing is left for a person to do.
+# It keeps the file it started from -- the point of renaming rather than
+# writing in place -- so it is asked to switch. One already on this build is
+# left alone. One new enough switches in place: running turns finish, then
+# sessions, connections and background jobs carry on in the same process. One
+# too old for that restarts once, by itself, when no turn is running.
+if "$store/viva" daemon status >/dev/null 2>&1; then
+  step "the running daemon"
+  "$store/viva" daemon upgrade --detach --if-changed | sed 's/^/  /' || true
+fi
+
 # `viva install` owns the PATH question: it refuses to replace anything it did
 # not put there, and prints the export line when it has to. It also knows to
 # link ITSELF rather than a checkout, which is what makes this work at all.
-# A DAEMON KEEPS THE CODE IT STARTED WITH. It survives the replacement, which is
-# the point of renaming rather than writing in place -- and it is then asked to
-# become the new build in place: running turns finish first, and sessions,
-# connections and background jobs carry on. A daemon older than that says so,
-# and `daemon upgrade` prints the one restart it needs.
-if [ -n "$was" ] && [ "$was" != "$now" ] && "$store/viva" daemon status >/dev/null 2>&1; then
-  step "upgrading the running daemon from $was"
-  "$store/viva" daemon upgrade --detach || true
-fi
-
 step "putting viva on your PATH"
 # VIVA_PREFIX names the directory, for a machine where the guess would be
 # wrong -- and so this script can be tested without writing to a real PATH.

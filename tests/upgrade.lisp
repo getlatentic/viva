@@ -217,3 +217,23 @@ start no turn in any test after this one."
                            "the carried session could not run what it had in force: ~a"
                            (tool:tool-result-output ran))
                     (true (search "HELLO" (tool:tool-result-output ran)))))))))))))
+
+(define-test "a daemon too old to upgrade in place restarts only when idle"
+  ;; What `session.list` has always said, which is all a daemon from before
+  ;; upgrading in place can be asked.
+  (flet ((session (&rest plist)
+           (let ((table (make-hash-table :test #'equal)))
+             (loop for (key value) on plist by #'cddr do (setf (gethash key table) value))
+             table)))
+    (true (viva.cli::sessions-idle-p #()))
+    (true (viva.cli::sessions-idle-p (vector (session "state" "idle" "queued" 0)
+                                             (session "state" "suspended" "queued" 0))))
+    ;; Restarting is what resolves a stuck session, so it does not hold one up.
+    (true (viva.cli::sessions-idle-p (vector (session "state" "stuck" "turn" "s-t3"))))
+    (false (viva.cli::sessions-idle-p (vector (session "state" "working" "turn" "s-t1" "queued" 0)))
+           "a running turn would be cut off")
+    (false (viva.cli::sessions-idle-p (vector (session "state" "idle" "queued" 1)))
+           "a waiting prompt would be lost")
+    (false (viva.cli::sessions-idle-p (vector (session "state" "suspended" "turn" "s-t2" "queued" 0)))
+           "a paused turn would be cut off")
+    (false (viva.cli::sessions-idle-p (vector (session "state" "stopping" "turn" "s-t4"))))))
