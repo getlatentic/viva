@@ -66,7 +66,7 @@ that started them -- which is the entire point.")
               for candidate = (format nil "~a~d" (or wanted "job") index)
               unless (gethash candidate *jobs*) return candidate))))
 
-(defun pump (job on-output &key (if-exists :supersede))
+(defun pump (job on-output)
   "Read the job's output, writing it to its log and handing it onward.
 
 TWO CONSUMERS, one pipe. The log is what `jobs output` reads afterwards; the
@@ -83,12 +83,14 @@ the process writes meanwhile waits in the pipe, which the next image inherits."
   (bt:make-thread
    (lambda ()
      (ignore-errors
+      ;; APPENDED TO, never superseded: START empties the log before it
+      ;; returns, and a job an upgrade handed over keeps what it printed.
       (with-open-file (log (job-log job) :direction :output
-                                         :if-exists if-exists :if-does-not-exist :create)
+                                         :if-exists :append :if-does-not-exist :create)
         ;; A READ THAT FAILS ENDS THE LOOP, never the file. Unwinding out of
-        ;; WITH-OPEN-FILE closes with :ABORT, and aborting a stream opened to
-        ;; supersede deletes the file: one error reading the pipe took every
-        ;; line the job had ever printed with it.
+        ;; WITH-OPEN-FILE closes with :ABORT, which deletes a file the open
+        ;; created: one error reading the pipe took every line the job had
+        ;; printed with it.
         (handler-case
             (let* ((from (job-output job))
                    (fd (sb-sys:fd-stream-fd from)))
@@ -115,10 +117,18 @@ process can be watched rather than polled. OWNER names the session it belongs
 to."
   (let* ((name (mint-name name))
          (log (log-path name))
-         (process (sb-ext:run-program
+         ;; THE LOG STARTS EMPTY BEFORE THIS RETURNS. It is named for the job,
+         ;; so a job that ran under this name left one behind -- and emptied by
+         ;; the pump, on its own thread, a moment later, `jobs output` asked
+         ;; straight after the start read the output of the job before.
+         (process (progn (with-open-file (out log :direction :output
+                                                  :if-exists :supersede
+                                                  :if-does-not-exist :create)
+                           (declare (ignore out)))
+                         (sb-ext:run-program
                    "/bin/sh" (list "-c" command)
                    :output :stream :error :output
-                   :directory directory :wait nil :search nil)))
+                   :directory directory :wait nil :search nil))))
     (let ((job (make-job :name name :command command :process process
                          :pid (sb-ext:process-pid process)
                          :output (sb-ext:process-output process)
@@ -298,7 +308,7 @@ ON-OUTPUT is where its output goes now."
                         :output (and fd (sb-sys:make-fd-stream fd :input t
                                                                   :external-format :utf-8
                                                                   :buffering :full)))))
-    (when fd (pump job on-output :if-exists :append))
+    (when fd (pump job on-output))
     (bt:with-lock-held (*lock*) (setf (gethash (job-name job) *jobs*) job))
     job))
 
