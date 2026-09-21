@@ -102,6 +102,34 @@ and how somebody keeps their keys and sessions somewhere other than home."
 (defun project-path (cwd &rest leaves)
   (apply #'join-path (data-directory cwd) leaves))
 
+(defun resolved-path (path)
+  "PATH through links: its nearest existing ancestor resolved, the rest as
+written. A file not yet made still lives where its directory really is."
+  (let ((trimmed (string-right-trim "/" path)))
+    (a:if-let ((found (ignore-errors (probe-file trimmed))))
+      (string-right-trim "/" (namestring found))
+      (let ((parent (parent-path trimmed)))
+        (if (or (zerop (length parent)) (string= parent trimmed))
+            trimmed
+            (join-path (resolved-path parent) (base-name trimmed)))))))
+
+(defun same-place-p (a b)
+  "Do paths A and B name one file or directory? Through links: a link to
+~/.viva is still ~/.viva, and on macOS /tmp is /private/tmp."
+  (string= (resolved-path a) (resolved-path b)))
+
+(defun layers (machine project)
+  "MACHINE then PROJECT, the order they merge in -- or MACHINE alone when both
+name one place.
+
+A SESSION IN THE HOME DIRECTORY HAS NO PROJECT LAYER. Its `.viva` is the
+machine's, and reading it again as a project's read the machine's own files a
+second time under a project's rules: its settings came back as an untrusted
+project's, and every such session asked its person to trust their home."
+  (if (same-place-p machine project)
+      (list machine)
+      (list machine project)))
+
 ;;; One name per thing kept, so no caller spells a path itself
 
 (defun auth-path () (home-path "auth.json"))

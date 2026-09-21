@@ -80,8 +80,8 @@ editing a file that was never being read."
              (source (if (flag parsed name) :flag (config:source table name))))
         (format t "~&~14a ~20a ~a~%" name (or (flag parsed name) value "-")
                 (describe-source source))))
-    (format t "~&~%  ~a~%  ~a~%~%" (config:machine-config-path)
-            (config:project-config-path cwd))
+    (format t "~&~%~{  ~a~%~}~%" (env:layers (config:machine-config-path)
+                                             (config:project-config-path cwd)))
     (dolist (entry config:+settings+)
       (format t "~&~14a ~a~%" (car entry) (cdr entry)))
     (format t "~&~%Credentials are not settings: they stay in ~a, which lives ~
