@@ -2649,3 +2649,43 @@ per turn about one broken provider is a warning nobody finishes reading."
   ;; Below the floor the estimate is noise, and noise is not evidence.
   (is equal '() (accounting-run '(1848 1850 1852) (list "ok" "ok" "ok"))
       "a two-character result was treated as lost content"))
+
+(define-test "a session in the home directory reads the machine's files once"
+  ;; Its `.viva` IS the machine's. Read again as a project's, the machine
+  ;; config's settings came back labelled as an untrusted project's -- and every
+  ;; session working in the home directory told its person to `viva trust` it,
+  ;; five times on one daemon's status.
+  (let* ((home (throwaway-directory))
+         (machine (format nil "~a/.viva" home))
+         (project (format nil "~a/work" home))
+         (before (sb-posix:getenv "VIVA_HOME")))
+    (unwind-protect
+         (progn
+           (sb-posix:setenv "VIVA_HOME" machine 1)
+           (ensure-directories-exist (format nil "~a/" machine))
+           (ensure-directories-exist (format nil "~a/.viva/" project))
+           (with-open-file (out (format nil "~a/config" machine) :direction :output
+                                                               :if-exists :supersede)
+             (write-line "capabilities=loop" out))
+           (is eq :machine (config:source (config:load-settings home) "capabilities")
+               "the machine's config was read again as the home directory's project config")
+           (multiple-value-bind (names files complaint) (daemon::capabilities-for home)
+             (declare (ignore files))
+             (true (member "loop" names :test #'equal))
+             (false complaint "the home directory was asked to be trusted: ~a" complaint))
+           (let ((environment (env:make-local-environment :cwd home)))
+             (is = 1 (length (harness::resource-directories environment "skills")))
+             (is = 1 (length (extension:extension-directories environment)))
+             (is = 1 (length (germline::memory-files environment))))
+           ;; A directory with a `.viva` of its own is still a project.
+           (let ((environment (env:make-local-environment :cwd project)))
+             (is = 2 (length (harness::resource-directories environment "skills")))
+             (is = 2 (length (extension:extension-directories environment))))
+           ;; And a link to the machine's directory is the machine's directory.
+           (let ((linked (format nil "~a/linked" home)))
+             (sb-posix:symlink machine linked)
+             (true (env:same-place-p linked machine))
+             (false (env:same-place-p project machine))))
+      (if before (sb-posix:setenv "VIVA_HOME" before 1) (sb-posix:unsetenv "VIVA_HOME"))
+      (ignore-errors (uiop:delete-directory-tree (uiop:ensure-directory-pathname home)
+                                                 :validate t)))))

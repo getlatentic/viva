@@ -157,11 +157,11 @@ Settings are `key = value` lines. A project's `.viva/config` overrides
 three. `viva config` shows which one decided each value:
 
 ```text
-setting        value                from
-model          deepseek             ~/.viva/config
-limit          -                    the built-in default
-retain         -                    the built-in default
-capabilities   self-modify,loop     ~/.viva/config
+setting           value                from
+model             deepseek             ~/.viva/config
+limit             -                    the built-in default
+retain            -                    the built-in default
+capabilities      self-modify,loop     ~/.viva/config
 ```
 
 Keys never go in a config file, because people commit a project's config. They

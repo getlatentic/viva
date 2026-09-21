@@ -723,8 +723,8 @@ Named accessors beside it because the order is load order, and `(first ...)`
 reads like `the obvious one` while meaning `the user's home directory`. A test
 fixture that indexed by position wrote its skills into the home of whoever ran
 the suite -- and passed, because it read them back from the same place."
-  (list (machine-resource-directory leaf)
-        (project-resource-directory environment leaf)))
+  (env:layers (machine-resource-directory leaf)
+              (project-resource-directory environment leaf)))
 
 (defun skill-directories (environment) (resource-directories environment "skills"))
 

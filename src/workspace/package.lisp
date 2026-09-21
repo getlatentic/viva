@@ -26,6 +26,7 @@
            #:absolute-path #:join-path #:relative-path #:parent-path #:base-name
            #:canonical-directory
            #:data-directory #:home-directory #:home-path #:project-path
+           #:same-place-p #:layers
            #:+data-directory+
            #:auth-path #:machine-config-file #:machine-memory-file
            #:sessions-directory #:journal-directory #:trust-file

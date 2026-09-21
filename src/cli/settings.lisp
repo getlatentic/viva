@@ -57,6 +57,10 @@ thing."
     (:machine (format nil "~~/~a/config" env:+data-directory+))
     (:default "the built-in default")))
 
+(defun name-width ()
+  "The widest setting name, so a long one does not push its row out of line."
+  (reduce #'max config:+settings+ :key (lambda (entry) (length (car entry)))))
+
 (defun command-config (parsed)
   "Show every setting, its value, and which layer decided it.
 
@@ -73,17 +77,17 @@ editing a file that was never being read."
     (when complaints
       (dolist (complaint complaints) (format t "~&! ~a~%" complaint))
       (terpri))
-    (format t "~&~14a ~20a ~a~%" "setting" "value" "from")
+    (format t "~&~va ~20a ~a~%" (name-width) "setting" "value" "from")
     (dolist (entry config:+settings+)
       (let* ((name (car entry))
              (value (config:setting table name))
              (source (if (flag parsed name) :flag (config:source table name))))
-        (format t "~&~14a ~20a ~a~%" name (or (flag parsed name) value "-")
+        (format t "~&~va ~20a ~a~%" (name-width) name (or (flag parsed name) value "-")
                 (describe-source source))))
-    (format t "~&~%  ~a~%  ~a~%~%" (config:machine-config-path)
-            (config:project-config-path cwd))
+    (format t "~&~%~{  ~a~%~}~%" (env:layers (config:machine-config-path)
+                                             (config:project-config-path cwd)))
     (dolist (entry config:+settings+)
-      (format t "~&~14a ~a~%" (car entry) (cdr entry)))
+      (format t "~&~va ~a~%" (name-width) (car entry) (cdr entry)))
     (format t "~&~%Credentials are not settings: they stay in ~a, which lives ~
 outside any repository.~%A config file is committed, and a key in a committed ~
 file is published.~%" (env:auth-path))

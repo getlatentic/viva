@@ -120,8 +120,10 @@ Returns (values TABLE COMPLAINTS)."
                (loop for (name . value) in settings
                      do (setf (gethash name table)
                               (make-resolved :value value :source source))))))
-      (absorb (machine-config-path) :machine)
-      (absorb (project-config-path cwd) :project))
+      (destructuring-bind (machine &optional project)
+          (env:layers (machine-config-path) (project-config-path cwd))
+        (absorb machine :machine)
+        (when project (absorb project :project))))
     ;; SB-POSIX directly, as MODELS does: ENV is the filesystem abstraction and
     ;; knows nothing about the process environment.
     (loop for (name . nil) in +settings+
