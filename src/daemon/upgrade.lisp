@@ -199,6 +199,12 @@ signalling."
             (unwind-protect
                  (progn
                    (actor:hold-sessions)
+                   ;; EVERY SESSION TAKES THE HOLD before anything is reported.
+                   ;; Until it has, an idle session has an unread message and
+                   ;; reads as busy -- which is what an installer printed as the
+                   ;; reason to wait, on a daemon with nothing running at all.
+                   (dolist (cell (actor:all-cells))
+                     (actor:settle cell :timeout 2))
                    (stop-traffic upgrade instance)
                    (hand-over upgrade instance program arguments))
               ;; Reached only when the exec did not happen.

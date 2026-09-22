@@ -270,6 +270,13 @@ def main():
             gaps = [b for a, b in zip(seqs, seqs[1:]) if b != a + 1]
             check(seqs and not gaps, f"the {name} client saw every event once, in order",
                   f"out of order at {gaps[:5]}")
+        # A third, with the session idle: nothing to wait for, so even a
+        # detached upgrade reports the result rather than a wait.
+        idle = subprocess.run([LAUNCHER, "daemon", "upgrade", "--detach"], env=environment,
+                              capture_output=True, text=True, timeout=900)
+        check(idle.returncode == 0 and "nothing restarted" in idle.stdout
+              and "waiting" not in idle.stdout,
+              "an idle daemon upgrades without reporting a wait", idle.stdout + idle.stderr)
         replay = fresh.ask(type="session.attach", session=session, since=0)
         final = max(e["seq"] for e in watcher.events(session))
         replayed = fresh.wait(lambda e: e.get("session") == session and e.get("seq") == final, timeout=10)
