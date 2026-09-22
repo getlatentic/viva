@@ -1050,7 +1050,9 @@ twice; it is somebody's record.")))
   ;; Unwinding closes with :ABORT, and aborting a stream opened to supersede
   ;; deletes the file: every line the job had printed went with the one read
   ;; that failed, and `jobs output` answered `nothing yet`.
-  (let ((job (jobs:start "while true; do echo kept; sleep 0.1; done" :name "suite-kept-log")))
+  (let ((job (jobs:start "while true; do echo kept; sleep 0.1; done"
+                         :name (format nil "suite-kept-log-~36r"
+                                       (random (expt 2 32) (make-random-state t))))))
     (unwind-protect
          (progn
            (loop repeat 100 until (search "kept" (jobs:output-of job)) do (sleep 0.05))
@@ -1061,6 +1063,19 @@ twice; it is somebody's record.")))
            (true (probe-file (jobs:job-log job)) "one failed read deleted the log")
            (true (search "kept" (jobs:output-of job))))
       (jobs:stop job))))
+
+(define-test "a job's log starts empty, not with the last job of its name"
+  ;; The log is named for the job, and the pump that emptied it ran on its own
+  ;; thread: `jobs output` asked straight after a start could read the output
+  ;; of the job that last ran under the name: 12 runs in 20 did, measured.
+  (let ((name (format nil "suite-fresh-log-~36r" (random (expt 2 32) (make-random-state t)))))
+    (with-open-file (out (viva.jobs::log-path name) :direction :output :if-exists :supersede)
+      (write-line "from a job that ended yesterday" out))
+    (let ((job (jobs:start "sleep 5" :name name)))
+      (unwind-protect
+           (false (search "yesterday" (jobs:output-of job))
+                  "a new job's log showed the last job's output")
+        (jobs:stop job)))))
 
 (define-test "a background job can be watched, not only polled"
   ;; A running server's output sat in a file until somebody asked for it, so

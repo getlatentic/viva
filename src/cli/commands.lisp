@@ -421,6 +421,19 @@ how a restart could start a second daemon beside the first."
                       finally (return (not (process-alive-p pid)))))
             pid)))
 
+(defun carried-history (faults started)
+  "How many of FAULTS this build has run into, when some of them are older than
+it; NIL when none are.
+
+AN UPGRADE CARRIES THE RECORD ACROSS, because what went wrong should not vanish
+with an update. Unlabelled, the record read as current: a fix that stopped a
+failure still showed the failure, now from a build that never had it."
+  (let ((since (count-if (lambda (each) (>= (or (gethash "time" each) 0) started)) faults)))
+    (when (< since (length faults))
+      (if (zerop since)
+          "none since this build started"
+          (format nil "~d since this build started" since)))))
+
 (defun command-daemon (parsed)
   "Start, stop or inspect the organism.
 
@@ -483,8 +496,9 @@ it finds nobody home."
                                    (failures (or (gethash "failures" reply) 0))
                                    (hangups (gethash "hangups" reply)))
                               (when (plusp failures)
-                                (format t "~&~%~d contained client failure~:p~@[, ~d hangup~:p~]~%"
-                                        failures (and hangups (plusp hangups) hangups))
+                                (format t "~&~%~d contained client failure~:p~@[, ~d hangup~:p~]~@[, ~a~]~%"
+                                        failures (and hangups (plusp hangups) hangups)
+                                        (carried-history faults (gethash "started" ready)))
                                 (loop for each in faults repeat 5
                                       do (format t "~&  ~a in ~a: ~a~%"
                                                  (kind-of each)

@@ -237,3 +237,17 @@ start no turn in any test after this one."
     (false (viva.cli::sessions-idle-p (vector (session "state" "suspended" "turn" "s-t2" "queued" 0)))
            "a paused turn would be cut off")
     (false (viva.cli::sessions-idle-p (vector (session "state" "stopping" "turn" "s-t4"))))))
+
+(define-test "status says which failures this build ran into"
+  ;; The record crosses an upgrade, and a failure from before it must not read
+  ;; as one the new build has.
+  (flet ((fault (time)
+           (let ((table (make-hash-table :test #'equal)))
+             (setf (gethash "time" table) time)
+             table)))
+    (false (viva.cli::carried-history (list (fault 200) (fault 300)) 100)
+           "a daemon that was never upgraded has nothing to set apart")
+    (is equal "none since this build started"
+        (viva.cli::carried-history (list (fault 50) (fault 60)) 100))
+    (is equal "1 since this build started"
+        (viva.cli::carried-history (list (fault 150) (fault 60)) 100))))
