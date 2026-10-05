@@ -767,6 +767,11 @@ impl Model {
             }
             "turn.started" => {
                 conversation.busy = true;
+                // A turn the daemon died during, carrying on: said in the
+                // conversation, where the work it continues is.
+                if event.data.get("resumed").and_then(|v| v.as_bool()) == Some(true) {
+                    conversation.push(Role::Note, "the daemon stopped during this turn; carrying on".to_string());
+                }
             }
             "turn.completed" | "turn.failed" | "turn.cancelled" => {
                 conversation.end_partial();
@@ -1198,6 +1203,24 @@ mod tests {
         }];
         model.open_tab(session);
         model
+    }
+
+    #[test]
+    fn a_resumed_turn_says_so_and_an_ordinary_one_does_not() {
+        let mut model = model_with("s1");
+        model.absorb(&event("turn.started", "s1", json!({"turn": "s1-t1"})));
+        model.absorb(&event("turn.completed", "s1", json!({"turn": "s1-t1"})));
+        model.absorb(&event("turn.started", "s1", json!({"turn": "s1-t2", "resumed": true})));
+        let notes: Vec<&str> = model
+            .current_conversation()
+            .unwrap()
+            .entries
+            .iter()
+            .filter(|entry| entry.role == Role::Note)
+            .map(|entry| entry.text.as_str())
+            .collect();
+        assert_eq!(notes, ["the daemon stopped during this turn; carrying on"]);
+        assert!(model.current_conversation().unwrap().busy);
     }
 
     #[test]

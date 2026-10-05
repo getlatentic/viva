@@ -66,6 +66,7 @@ VISIT returning :STOP ends the walk. Symlinks are reported, never followed."
                 (report-truncation (length shown) limit "entries")))))
 
 (tool:define-tool ls-tool (args context)
+  :replay :safe
   :name "ls"
   :description "List the contents of a directory, sorted, dotfiles included, with
 a trailing slash on directories."
@@ -91,6 +92,7 @@ a trailing slash on directories."
                 (report-truncation count limit "results")))))
 
 (tool:define-tool find-tool (args context)
+  :replay :safe
   :name "find"
   :description "Find files by glob pattern, e.g. \"*.lisp\" or \"src/**/*.test.ts\".
 A pattern with no slash matches on the file name at any depth. Paths are returned
@@ -168,6 +170,7 @@ Pass literal=true to search for it as plain text."
                   text matches files (report-truncation matches limit "matches"))))))
 
 (tool:define-tool grep-tool (args context)
+  :replay :safe
   :name "grep"
   :description "Search file contents by regular expression. Returns
 path:line:text for each match. Respects .gitignore and skips binary files."

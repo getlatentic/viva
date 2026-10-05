@@ -116,6 +116,11 @@ jobs:
       - name: An upgrade restarts nothing
         run: python3 tools/upgrade_check.py
 
+      # A daemon killed with SIGKILL in a model request, in an unsafe call, in a
+      # harmless call, and with a prompt waiting: what comes back, and what ran.
+      - name: A crash loses no acknowledged prompt
+        run: python3 tools/crash_check.py
+
       # TLC, and the witnesses that must still violate. A proof that stops
       # proving fails the build rather than passing quietly.
       - name: Specifications

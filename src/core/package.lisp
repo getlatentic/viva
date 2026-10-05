@@ -45,7 +45,7 @@
                     (#:schema #:viva.schema)
                     (#:fault #:viva.fault)
                     (#:msg #:viva.message))
-  (:export #:tool #:tool-name #:tool-description #:tool-parameters
+  (:export #:tool #:tool-name #:tool-description #:tool-parameters #:tool-replay
            #:execute #:tool-result #:make-tool-result
            #:tool-result-output #:tool-result-error-p #:tool-result-terminate-p
            #:define-tool #:function-tool #:tool-body))
@@ -108,5 +108,6 @@
                     (#:agent #:viva.agent)
                     (#:fault #:viva.fault)
                     (#:client #:viva.client))
-  (:export #:run #:context #:make-context #:context-messages #:*request-deadline*))
+  (:export #:run #:context #:make-context #:context-messages #:*request-deadline*
+           #:execute-batch #:find-tool))
 

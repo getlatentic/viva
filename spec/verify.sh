@@ -37,8 +37,17 @@ MSG
   exit 2
 fi
 
+failures=0
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
 # config : module : expectation : what the expectation means
-cases='
+#
+# A QUOTED HEREDOC, so a description may say anything. In a single-quoted
+# string an apostrophe ended the list there, and the rest ran as commands.
+# Read back by redirection, never by a pipe: a piped while runs in a subshell
+# and every failure it counted would be discarded at the done.
+cat > "$work/cases" <<'CASES'
 CellLifecycle:CellLifecycle:holds:the cell lifecycle, complete space
 CellLifecycleWitnessRetarget:CellLifecycle:violates:a model applied at once reaches a turn already running
 CellLifecycleWitnessHold:CellLifecycle:violates:a draining turn that starts its queue breaks the hold
@@ -64,14 +73,12 @@ StreamOpeningWitnessRace:StreamOpening:violates:published from two threads, the 
 RecoverySafety:Recovery:holds:a session can outlive the daemon without losing an event or a name
 RecoveryWitnessOrder:Recovery:violates:the arrangement the daemon has today: told before written, a crash loses what was read
 RecoveryWitnessName:Recovery:violates:a counter-minted name points a client at a different conversation
-'
-
-failures=0
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-# Fed by redirection, never by a pipe: a piped while runs in a subshell and
-# every failure it counted would be discarded at the done.
-printf '%s\n' "$cases" > "$work/cases"
+ResumptionSafety:Resumption:holds:an acknowledged prompt survives, runs once, and an unsafe call never runs twice
+ResumptionWitnessAck:Resumption:violates:acknowledged before written down, a crash loses the prompt
+ResumptionWitnessDedupe:Resumption:violates:request ids kept in memory, a retry after a crash runs twice
+ResumptionWitnessRerun:Resumption:violates:running every unanswered call again runs an unsafe one twice
+ResumptionWitnessPolicy:Resumption:violates:trusting the class a tool has now runs a call recorded unsafe twice
+CASES
 
 printf '%-28s %-9s %s\n' CONFIG EXPECTED RESULT
 while IFS=: read -r config module expect meaning; do

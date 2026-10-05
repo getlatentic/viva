@@ -27,6 +27,10 @@ possible is one that waits for the next process.")
 
 (defclass workspace-agent (agent:queued-agent)
   ((environment :initarg :environment :accessor agent-environment)
+   ;; The daemon turn this agent is running, or NIL between turns. Each entry
+   ;; written meanwhile carries it, which is what tells a turn the daemon died
+   ;; during apart from one that never reached the conversation.
+   (turn :initform nil :accessor agent-turn)
    (resource-environment :initarg :resource-environment :accessor agent-resource-environment
                          :documentation "The same directory, without the root confinement.
 
@@ -672,8 +676,21 @@ could overturn would make the order of extensions load-bearing and invisible."
   (case (getf event :type)
     (:message (a:when-let ((session (agent-session agent)))
                 (session:append-entry session :message (getf event :message)
-                                      :lane (agent-lane agent))))
-    (:tool-start (extension:fire :before-tool event))
+                                      :lane (agent-lane agent)
+                                      :turn (agent-turn agent))))
+    (:tool-start
+     ;; THE INTENT, WRITTEN BEFORE THE CALL RUNS: which call, and whether running
+     ;; it twice is harmless. A crash between here and the result leaves exactly
+     ;; this behind, and it is what decides whether the call may run again.
+     (a:when-let ((session (agent-session agent)))
+       (let* ((call (getf event :call))
+              (tool (loop*:find-tool agent (msg:tool-call-name call))))
+         (session:append-record session :intent
+                                "call" (msg:tool-call-id call)
+                                "tool" (msg:tool-call-name call)
+                                "replay" (if (and tool (eq :safe (tool:tool-replay tool)))
+                                             "safe" "unsafe"))))
+     (extension:fire :before-tool event))
     (:tool-end
      (extension:fire :after-tool event)
      ;; Recorded here rather than from a :MESSAGE event, because the loop pushes
@@ -814,7 +831,14 @@ never a reason to refuse to start."
   (a:when-let ((message (find-if #'msg:assistant-message-p (reverse messages))))
     (msg:text-of message)))
 
-(defun ask (agent text &key (reset t))
+(defmacro in-turn ((agent turn) &body body)
+  "Run BODY with AGENT's entries written as part of TURN."
+  (a:once-only (agent)
+    `(progn (setf (agent-turn ,agent) ,turn)
+            (unwind-protect (progn ,@body)
+              (setf (agent-turn ,agent) nil)))))
+
+(defun ask (agent text &key (reset t) turn)
   "Send TEXT and run until the agent stops. Returns (values REPLY MESSAGES).
 
 The conversation persists on the agent, so a second ASK continues the first.
@@ -834,11 +858,12 @@ cancel. A cancel must not be erasable by the thing it cancels."
   ;; :BEFORE-REQUEST handler that reads a file -- which is exactly what a memory
   ;; extension does -- would otherwise fail on every request, be caught, and be
   ;; reported as a warning nobody reads.
-  (let* ((produced (agent:call-in-tool-context
-                    agent
-                    (lambda ()
-                      (let ((message (extension:fire :before-request (user-message text))))
-                        (loop*:run agent (list message) :context (agent-context agent)))))))
+  (let* ((produced (in-turn (agent turn)
+                     (agent:call-in-tool-context
+                      agent
+                      (lambda ()
+                        (let ((message (extension:fire :before-request (user-message text))))
+                          (loop*:run agent (list message) :context (agent-context agent))))))))
     (extension:fire :agent-end (list :agent agent :messages produced))
     (values (last-assistant-text produced) produced)))
 

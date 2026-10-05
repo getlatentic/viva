@@ -72,6 +72,7 @@
                              (:file "harness")
                              (:file "continuation")
                              (:file "reflection")
+                             (:file "resumption")
                              (:file "germline")))))
 
 (defsystem "viva/daemon"
@@ -85,6 +86,7 @@
                              (:file "evolution")
                              (:file "package")
                              (:file "events")
+                             (:file "inbox")
                              (:file "actor")
                              (:file "capability-store")
                              (:file "evolver")
@@ -217,5 +219,6 @@
                              (:file "workspace")
                              (:file "release")
                              (:file "daemon")
-                             (:file "upgrade"))))
+                             (:file "upgrade")
+                             (:file "resumption"))))
   :perform (test-op (op c) (symbol-call :parachute :test :viva.tests)))

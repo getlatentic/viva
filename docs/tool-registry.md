@@ -32,11 +32,17 @@ same resolution skills and templates already use.
 ```
 
 `name` is alphanumeric with dashes and underscores. `exec` is a non-empty
-array of strings, run from the tool's own directory. `parameters` accepts
-`string`, `integer`, `number`, `boolean` — scalars only for now, and an
-unknown type is a refusal rather than a guess. The parameter list becomes a
-JSON Schema through the same builder every shipped tool uses, so a registry
-tool reaches the model by exactly the path the others do.
+array of strings. An argument that names a file beside the manifest resolves
+there. The command runs in the task's working directory, so a relative path
+from the model means the task's file. `parameters` accepts `string`,
+`integer`, `number`, `boolean` — scalars only for now, and an unknown type is
+a refusal rather than a guess. The parameter list becomes a JSON Schema
+through the same builder every shipped tool uses, so a registry tool reaches
+the model by exactly the path the others do.
+
+`replay` is `"safe"` when running the tool twice does what running it once
+does, and `"unsafe"`, the default, otherwise. viva runs a call that a crash cut
+off again only when it is safe, and answers any other as interrupted.
 
 ## The calling convention: JSON on stdin, result on stdout
 

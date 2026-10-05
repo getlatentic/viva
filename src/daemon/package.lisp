@@ -83,7 +83,8 @@ can name without qualifying it."))
            #:hold-sessions #:release-sessions #:at-rest-p #:settle #:unsettled-reason
            #:cell-record #:adopt-cell #:subscribed-p #:*holding*
            #:tasks-running-p #:tasks-record #:adopt-tasks #:journal-sync #:journal-settled
-           #:evolution-record #:adopt-evolution))
+           #:evolution-record #:adopt-evolution
+           #:resume-work #:turn-record #:turn-entry))
 
 (defpackage #:viva.daemon
   (:use #:cl)

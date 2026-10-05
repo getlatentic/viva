@@ -30,6 +30,18 @@ pub enum Awaiting {
     /// A session to delete, forgotten here once the daemon says it is gone.
     Deleted(String),
     Search,
+    /// A prompt, by its request id, confirmed once the daemon has written it down.
+    Prompt(String),
+}
+
+/// A prompt sent and not yet confirmed. Kept across a lost connection and sent
+/// again under the same request id, so the daemon runs it once whichever side
+/// of the break it reached.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Unconfirmed {
+    pub request: String,
+    pub session: String,
+    pub text: String,
 }
 
 struct Asked {
@@ -47,6 +59,10 @@ pub struct Requests {
     /// Only the newest search may fill the picker: an older answer landing late
     /// would show results for what was typed before.
     latest_search: Option<u64>,
+    /// Prompts the daemon has not confirmed, oldest first.
+    pub unconfirmed: Vec<Unconfirmed>,
+    /// Request ids minted by this client, so each one is new.
+    minted: u64,
 }
 
 impl Requests {
@@ -79,6 +95,7 @@ impl Requests {
 
     /// A new connection numbers its requests from one again, so nothing asked
     /// on the old one will be answered, and nothing is still being looked for.
+    /// Unconfirmed prompts stay: they are sent again once the daemon answers.
     pub fn forget(&mut self, model: &mut Model) {
         self.asked.clear();
         self.latest_search = None;
@@ -95,6 +112,7 @@ fn overdue(awaiting: &Awaiting, id: u64, latest_search: Option<u64>) -> Option<&
         Awaiting::Switched => Some("the daemon has not changed the model yet"),
         Awaiting::Deleted(_) => Some("the daemon has not deleted the session yet"),
         Awaiting::Attached(_) => Some("the daemon has not sent the session yet"),
+        Awaiting::Prompt(_) => Some("the daemon has not confirmed the prompt yet"),
         _ => None,
     }
 }
@@ -191,6 +209,25 @@ impl Requests {
         Ok(())
     }
 
+    /// Send TEXT to SESSION. Held as unconfirmed BEFORE it is written: a write
+    /// that fails is a connection that broke, and the prompt is sent again
+    /// once it is back rather than lost with it.
+    pub fn prompt(&mut self, connection: &mut Connection, session: &str, text: &str) -> std::io::Result<()> {
+        self.minted += 1;
+        let request = format!("{}-{}-{}", std::process::id(), unix_nanos(), self.minted);
+        let prompt = Unconfirmed { request, session: session.to_string(), text: text.to_string() };
+        self.unconfirmed.push(prompt.clone());
+        self.send_prompt(connection, &prompt)
+    }
+
+    fn send_prompt(&mut self, connection: &mut Connection, prompt: &Unconfirmed) -> std::io::Result<()> {
+        let id = connection.send(json!({
+            "type": "prompt", "session": prompt.session, "text": prompt.text, "request": prompt.request
+        }))?;
+        self.expect(id, Awaiting::Prompt(prompt.request.clone()), Duration::from_secs(30));
+        Ok(())
+    }
+
     pub fn search(&mut self, connection: &mut Connection, text: &str) -> std::io::Result<()> {
         let request = if text.trim().is_empty() {
             json!({"type": "session.recorded", "limit": 50})
@@ -258,6 +295,12 @@ impl Requests {
                 // A refusal has to say why, or the pane just keeps waiting.
                 None => take_response(model, reply),
             },
+            // Confirmed or refused, it is settled either way: a refusal --
+            // no such session -- would be refused again on every reconnect.
+            Awaiting::Prompt(request) => {
+                self.unconfirmed.retain(|prompt| prompt.request != request);
+                take_response(model, reply);
+            }
             Awaiting::Search => {
                 if self.latest_search == Some(id) {
                     model.picker.searching = false;
@@ -297,9 +340,25 @@ impl Requests {
             }
             model.status = "reconnected".into();
         }
+        // After the attaches, so the session each was sent to exists here again.
+        // The daemon runs one only if it never wrote it down; one it did is
+        // answered with the turn it already became.
+        for prompt in self.unconfirmed.clone() {
+            self.send_prompt(connection, &prompt)?;
+        }
+        if !self.unconfirmed.is_empty() {
+            model.status = format!("reconnected; sent {} unconfirmed prompt(s) again", self.unconfirmed.len());
+        }
         self.ask_learned(connection, model)?;
         self.ask_recent(connection, model)
     }
+}
+
+fn unix_nanos() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or(0)
 }
 
 fn started(reply: &Value) -> Option<String> {
@@ -383,6 +442,53 @@ mod tests {
             }
         }
         value
+    }
+
+    #[test]
+    fn a_prompt_carries_a_request_id_and_waits_to_be_confirmed() {
+        let mut wire = Wire::new();
+        let mut model = Model::new("/w".into());
+        let mut asked = Requests::default();
+        asked.prompt(&mut wire.connection, "s1", "hello").unwrap();
+        let sent = wire.written();
+        assert_eq!(kinds(&sent), ["prompt"]);
+        let request = sent[0]["request"].as_str().expect("a request id").to_string();
+        assert_eq!(asked.unconfirmed.len(), 1);
+        let id = sent[0]["id"].as_u64().unwrap();
+        asked.answered(&mut wire.connection, &mut model, &reply(id, json!({"turn": "s1-t1"}))).unwrap();
+        assert!(asked.unconfirmed.is_empty(), "a confirmed prompt is still unconfirmed");
+        asked.prompt(&mut wire.connection, "s1", "hello").unwrap();
+        assert_ne!(wire.written()[0]["request"].as_str().unwrap(), request, "two prompts shared a request id");
+    }
+
+    #[test]
+    fn an_unconfirmed_prompt_is_sent_again_after_a_reconnect_under_the_same_id() {
+        let mut wire = Wire::new();
+        let mut model = Model::new("/w".into());
+        model.open_tab("s1");
+        let mut asked = Requests::default();
+        asked.prompt(&mut wire.connection, "s1", "while it broke").unwrap();
+        let request = wire.written()[0]["request"].as_str().unwrap().to_string();
+        // The connection breaks before any answer, and comes back.
+        asked.forget(&mut model);
+        asked.greeted(&mut wire.connection, &mut model, &json!({"type": "ready", "sessions": []})).unwrap();
+        let again: Vec<Value> = wire.written().into_iter().filter(|sent| sent["type"] == "prompt").collect();
+        assert_eq!(again.len(), 1, "the prompt was not sent again, or sent twice");
+        assert_eq!(again[0]["request"].as_str().unwrap(), request);
+        assert_eq!(again[0]["text"], "while it broke");
+    }
+
+    #[test]
+    fn a_refused_prompt_is_not_sent_again() {
+        let mut wire = Wire::new();
+        let mut model = Model::new("/w".into());
+        let mut asked = Requests::default();
+        asked.prompt(&mut wire.connection, "gone", "hello").unwrap();
+        let id = wire.written()[0]["id"].as_u64().unwrap();
+        let refused = json!({"type": "response", "id": id, "success": false, "error": "No such session."});
+        asked.answered(&mut wire.connection, &mut model, &refused).unwrap();
+        assert!(asked.unconfirmed.is_empty());
+        assert_eq!(model.status, "No such session.");
     }
 
     #[test]

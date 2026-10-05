@@ -112,7 +112,7 @@ and cannot be retired by it, while sweeping first would race the write."
   (a:when-let ((environment (agent-environment agent)))
     (decay:sweep-skills environment (agent-skills agent) :now now)))
 
-(defun reflect (agent)
+(defun reflect (agent &key turn)
   "Run the retention policy's reflection turn on AGENT's just-finished task.
 
 Returns the reflection's reply, or NIL when the turn could not run (an
@@ -122,7 +122,7 @@ left it, so the turn has room of its own without inheriting starvation."
   (unless (agent-aborting agent)
     (setf (agent-request-limit agent)
           (+ (agent-requests agent) *reflection-budget*))
-    (prog1 (ask agent *reflection-prompt* :reset nil)
+    (prog1 (ask agent *reflection-prompt* :reset nil :turn turn)
       ;; A retirement nobody is told about is indistinguishable from a bug, so
       ;; it goes to the same place every other retention decision goes.
       (dolist (retirement (ignore-errors (retire-unused agent)))

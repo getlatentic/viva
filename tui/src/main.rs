@@ -283,9 +283,8 @@ fn perform(
                 model.input = text;
                 model.status = "no session is open yet".into();
             } else {
-                connection.send(json!({
-                    "type": "prompt", "session": model.current, "text": text
-                }))?;
+                let session = model.current.clone();
+                asked.prompt(connection, &session, &text)?;
             }
         }
         Action::Open(id) => asked.open(connection, model, &id)?,
