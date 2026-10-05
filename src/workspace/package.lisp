@@ -278,6 +278,7 @@
            #:agent-extension-files #:agent-extension-directories #:agent-compaction #:agent-active-tools
            #:agent-last-tokens
            #:compact-now #:set-model #:use-choice #:apply-choice #:set-active-tools #:apply-settings
+           #:resume-turn #:settle-unanswered #:unanswered-calls #:turn-entered-p
            #:send-message #:append-custom #:navigate #:tree-lines #:close-agent
            #:delegate #:delegate-tool #:sub-agent #:agent-lane #:delegate-async
            #:machine-resource-directory #:project-resource-directory

@@ -64,6 +64,11 @@ StreamOpeningWitnessRace:StreamOpening:violates:published from two threads, the 
 RecoverySafety:Recovery:holds:a session can outlive the daemon without losing an event or a name
 RecoveryWitnessOrder:Recovery:violates:the arrangement the daemon has today: told before written, a crash loses what was read
 RecoveryWitnessName:Recovery:violates:a counter-minted name points a client at a different conversation
+ResumptionSafety:Resumption:holds:an acknowledged prompt survives, runs once, and an unsafe call never runs twice
+ResumptionWitnessAck:Resumption:violates:acknowledged before written down, a crash loses the prompt
+ResumptionWitnessDedupe:Resumption:violates:request ids kept in memory, a retry after a crash runs twice
+ResumptionWitnessRerun:Resumption:violates:running every unanswered call again runs an unsafe one twice
+ResumptionWitnessPolicy:Resumption:violates:trusting the class a tool has now runs a call recorded unsafe twice
 '
 
 failures=0

@@ -62,22 +62,6 @@ right answer for a reader and the wrong one for an upgrade."
 
 ;;; The record
 
-(defun queued-record (entry)
-  (destructuring-bind (turn . options) entry
-    (event::object "turn" turn
-                   "text" (getf options :text)
-                   "source" (getf options :source)
-                   "retain" (and (getf options :retain) t))))
-
-(defun queued-entry (record)
-  "RECORD as the queue holds it: (TURN . the message's own options)."
-  (let ((turn (gethash "turn" record)))
-    (cons turn
-          (append (list :turn turn)
-                  (a:when-let ((text (gethash "text" record))) (list :text text))
-                  (a:when-let ((source (gethash "source" record))) (list :source source))
-                  (when (gethash "retain" record) (list :retain t))))))
-
 (defun cell-record (cell)
   "What the next image needs to continue CELL and cannot read back from disk.
 Taken at rest, with every event committed to the journal."
@@ -96,7 +80,7 @@ Taken at rest, with every event committed to the journal."
                      "staged" (a:when-let ((choice (cell-staged-model cell)))
                                 (models:choice-label choice))
                      "opening" (cell-opening cell)
-                     "turns" (cell-turns cell)
+                     "turns" (inbox-turns (cell-inbox cell))
                      "sequence" (cell-sequence cell)
                      "journal" (cell-journal-path cell)
                      "degraded" (a:when-let ((degraded (cell-degraded cell)))
@@ -105,7 +89,10 @@ Taken at rest, with every event committed to the journal."
                                (:held (if (eq :suspended (third machine)) "suspended" "idle"))
                                (:suspended "suspended")
                                (t (string-downcase (symbol-name (first machine)))))
-                     "queued" (coerce (mapcar #'queued-record (cell-queued cell)) 'vector)
+                     ;; At rest under the hold nothing runs, and what is queued
+                     ;; is everything accepted.
+                     "queued" (coerce (mapcar #'turn-record (cell-queued cell)) 'vector)
+                     "requests" (requests-record (inbox-requests (cell-inbox cell)))
                      "capability" (a:when-let ((identity (agent-capability-identity (cell-agent cell))))
                                     (event::object "task" (first identity)
                                                    "seen" (coerce (second identity) 'vector)))))))
@@ -117,7 +104,7 @@ HELD, not idle. The prompts that waited through the upgrade start when the
 daemon releases its sessions, which it does once every one of them is back --
 so a session whose turn begins early cannot race the ones still arriving."
   (let* ((sequence (gethash "sequence" record))
-         (queued (map 'list #'queued-entry (or (gethash "queued" record) #())))
+         (queued (map 'list #'turn-entry (or (gethash "queued" record) #())))
          (state (gethash "state" record))
          (cell (make-cell :id (gethash "id" record)
                           :label (gethash "label" record)
@@ -125,13 +112,15 @@ so a session whose turn begins early cannot race the ones still arriving."
                           :model (gethash "model" record)
                           :cwd (env:env-cwd (harness:agent-environment agent))
                           :opening (or (gethash "opening" record) "")
-                          :turns (gethash "turns" record)
                           :sequence sequence
                           :committed sequence
                           :journal-path (gethash "journal" record)
                           :degraded (a:when-let ((degraded (gethash "degraded" record)))
                                       (a:make-keyword (string-upcase degraded)))
                           :queued queued
+                          :inbox (make-inbox :turns (gethash "turns" record)
+                                             :accepted (copy-list queued)
+                                             :requests (requests-from (gethash "requests" record)))
                           :machine (cond ((equal state "stuck") '(:stuck))
                                          ((equal state "suspended")
                                           `(:held ,(length queued) :suspended))

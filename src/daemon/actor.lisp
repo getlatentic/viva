@@ -71,7 +71,6 @@ live undefined-variable warning that every later warning would have hidden in.")
   ;; over when the coordinator has consumed its completion, not when its thread
   ;; happens to have exited.
   (turn nil)
-  (turns 0 :type integer)
   ;; The turn's thread. A handle for diagnostics; nothing decides anything by
   ;; asking whether it is alive.
   (worker nil)
@@ -113,7 +112,10 @@ live undefined-variable warning that every later warning would have hidden in.")
   (flush-declared nil :type boolean)
   (journal-path "" :type string)
   (subscribers '() :type list)
-  (running t :type boolean))
+  (running t :type boolean)
+  ;; What a crash must not lose (inbox.lisp), kept in the live marker too.
+  (inbox (make-inbox))
+  (marker-lock (bt:make-lock "viva.marker") :read-only t))
 
 (defvar *cells* (make-hash-table :test #'equal))
 (defvar *registry-lock* (bt:make-lock "viva.cells"))
@@ -228,32 +230,46 @@ if it is ever forced to evict them.")
 (defun live-path (id)
   (merge-pathnames (format nil "~a.json" id) (live-root)))
 
+(defun marker-table (cell)
+  "What the live marker says about CELL: the cell's own fields, read under its
+lock, and its inbox."
+  (let ((table (owning (cell) (marker-head cell))))
+    (loop for (key value) on (inbox-fields (cell-inbox cell)) by #'cddr
+          do (setf (gethash key table) value))
+    table))
+
+(defun marker-head (cell)
+  "CELL's own part of the live marker. Caller holds the cell's lock."
+  (event::object "id" (cell-id cell)
+                 ;; THE TRANSCRIPT'S CWD, not the environment's. The store of
+                 ;; transcripts is keyed by the directory a session was started
+                 ;; with, and the environment canonicalises its own -- on macOS
+                 ;; /var is a link to /private/var, so the two name one
+                 ;; directory under two slugs, and a marker carrying the
+                 ;; canonical one found no transcript and was dropped.
+                 "cwd" (or (a:when-let ((session (and (cell-agent cell)
+                                                      (harness:agent-session (cell-agent cell)))))
+                             (session:session-cwd session))
+                           (cell-cwd cell))
+                 "label" (cell-label cell)
+                 "model" (cell-model cell)))
+
 (defun mark-live (cell)
-  "Write down that this session is running, and what starting it again needs.
+  "Write down that this session is running, what starting it again needs, and
+the work a crash must not lose.
 
 The journal says what a session SAID; nothing said which sessions were open
 when the daemon died, so none came back. A marker is a file whose existence is
 the fact: made when the cell registers, removed when it deregisters, and
 untouched by the daemon stopping -- a daemon that stops is exactly the case the
-marker exists for."
-  (let ((path (live-path (cell-id cell)))
-        ;; THE TRANSCRIPT'S CWD, not the environment's. The store of
-        ;; transcripts is keyed by the directory a session was started with,
-        ;; and the environment canonicalises its own -- on macOS /var is a
-        ;; link to /private/var, so the two name one directory under two
-        ;; slugs, and a marker carrying the canonical one found no
-        ;; transcript and was dropped.
-        (cwd (or (a:when-let ((session (harness:agent-session (cell-agent cell))))
-                   (session:session-cwd session))
-                 (cell-cwd cell))))
-    (ensure-directories-exist path)
-    (with-open-file (out path :direction :output :if-exists :supersede
-                              :external-format :utf-8)
-      (jzon:stringify (event::object "id" (cell-id cell)
-                                     "cwd" cwd
-                                     "label" (cell-label cell)
-                                     "model" (cell-model cell))
-                      :stream out))))
+marker exists for.
+
+UNDER ITS OWN LOCK, NOT THE CELL'S: the table is read under the cell's lock and
+written outside it, so a publish never waits on a disk. Writers take turns, and
+each reads the cell after the last one wrote, so the file ends at the newest."
+  (bt:with-lock-held ((cell-marker-lock cell))
+    (write-atomically (live-path (cell-id cell))
+                      (jzon:stringify (marker-table cell)))))
 
 (defun unmark-live (id)
   (ignore-errors (delete-file (live-path id))))
@@ -784,11 +800,6 @@ completion then destroyed."
   '("turn.completed" "turn.cancelled" "turn.failed")
   "One of these follows each TURN.STARTED. Exactly one.")
 
-(defun mint-turn (cell)
-  "An id for a turn that has not been posted yet, so a caller can wait for its
-own turn rather than for whichever turn ends first."
-  (owning (cell) (format nil "~a-t~d" (cell-id cell) (incf (cell-turns cell)))))
-
 (defun turn-outcome (agent)
   "What became of the work, asked once the work has stopped.
 
@@ -796,6 +807,26 @@ Not which mechanism noticed. A run ends through a checkpoint, an aborted stream
 or a turn declining to take another, and only the agent knows whether any of
 that was what someone asked for."
   (if (agent:cancelled-p agent) :cancelled :completed))
+
+(defun turn-work (agent turn options)
+  "What a turn does, by the kind of turn it is. Returns the reply."
+  (cond ((getf options :resume)
+         (harness:resume-turn agent :turn turn
+                                    :text (getf options :text)
+                                    :retain (getf options :retain)))
+        ((getf options :retain) (harness:reflect agent :turn turn))
+        (t (harness:ask agent (getf options :text) :turn turn))))
+
+(defun remark (cell)
+  "Rewrite CELL's live marker after its inbox changed."
+  (handler-case (mark-live cell)
+    (error (condition)
+      (format *error-output* "~&viva live-marker: ~a not rewritten: ~a~%" (cell-id cell) condition))))
+
+(defun begin-turn (cell turn) (inbox-begin (cell-inbox cell) turn) (remark cell))
+(defun end-turn (cell turn) (inbox-end (cell-inbox cell) turn) (remark cell))
+(defun forget-turns (cell turns)
+  (when turns (inbox-forget (cell-inbox cell) turns) (remark cell)))
 
 (defun start-worker (cell turn options)
   "The mechanics of a turn: one thread around the work, reporting back through
@@ -808,11 +839,7 @@ from the client's thread would put two threads in one agent's turn."
   (let ((worker (bt:make-thread
                  (lambda ()
                    (multiple-value-bind (outcome detail reply)
-                       (handler-case (let ((reply (progn
-                                                    (if (getf options :retain)
-                                                      (harness:reflect (cell-agent cell))
-                                                      (harness:ask (cell-agent cell)
-                                                                   (getf options :text))))))
+                       (handler-case (let ((reply (turn-work (cell-agent cell) turn options)))
                                        (values (turn-outcome (cell-agent cell)) nil reply))
                          ;; A failed turn ends the turn, not the session. The
                          ;; organism has to survive its own bad requests or it
@@ -885,11 +912,14 @@ carrying what the alphabet abstracts away: prompt text, detail, reply, model."
        (destructuring-bind (name &rest detail) arguments
          (case name
            (:turn.started
-            (publish cell "turn.started" (event::object "turn" (first detail))))
+            (publish cell "turn.started" (event::object "turn" (first detail)
+                                                        "resumed" (getf options :resume))))
            (:session.error
             (publish cell "session.error"
                      (event::object "detail" (refusal-detail (first detail))
-                                    "turn" (second detail))))
+                                    "turn" (second detail)))
+            (when (member (first detail) '(:prompt-refused-stopping :prompt-refused-queue-full))
+              (forget-turns cell (list (second detail)))))
            (:session.completed (publish cell "session.completed" nil))
            (:task.suspended (publish cell "task.suspended" nil))
            (:task.resumed (publish cell "task.resumed" nil)))))
@@ -901,8 +931,11 @@ carrying what the alphabet abstracts away: prompt text, detail, reply, model."
                   (event::object "turn" turn
                                  "detail" (getf options :detail)
                                  "text" (getf options :reply)))
+         (end-turn cell turn)
          (continue-if-asked cell outcome)))
-      (:start-worker (start-worker cell (first arguments) options))
+      (:start-worker
+       (begin-turn cell (first arguments))
+       (start-worker cell (first arguments) options))
       (:queue-prompt
        ;; The whole message, not just its text. A queued turn that dropped
        ;; everything but the string would run a retention turn as an ordinary
@@ -920,7 +953,9 @@ carrying what the alphabet abstracts away: prompt text, detail, reply, model."
            (owning (cell)
              (setf (cell-machine cell)
                    (substitute (car next) :next-queued (cell-machine cell))))
-           (publish cell "turn.started" (event::object "turn" (car next)))
+           (begin-turn cell (car next))
+           (publish cell "turn.started" (event::object "turn" (car next)
+                                                       "resumed" (getf (cdr next) :resume)))
            (start-worker cell (car next) (cdr next)))))
       (:request-cancel (harness:cancel-agent (cell-agent cell)))
       (:queue-steering
@@ -930,7 +965,8 @@ carrying what the alphabet abstracts away: prompt text, detail, reply, model."
       (:close-gate (harness:suspend-agent (cell-agent cell)))
       (:open-gate (harness:resume-agent (cell-agent cell)))
       (:cancel-agent (harness:cancel-agent (cell-agent cell)))
-      (:discard-queue (owning (cell) (setf (cell-queued cell) '())))
+      (:discard-queue
+       (forget-turns cell (mapcar #'car (owning (cell) (shiftf (cell-queued cell) '())))))
       (:arm-stop-deadline
        (owning (cell)
          (setf (cell-stop-deadline cell)
@@ -1023,7 +1059,9 @@ else arrives meanwhile."
       ;; Retention turns take the same path and are NOT a person speaking, so
       ;; they are not announced as one.
       (:user-message
-       (unless (getf options :retain)
+       ;; A RESUMED turn whose prompt is already in the conversation was shown
+       ;; with it, when the session came back; announcing it again shows it twice.
+       (unless (or (getf options :retain) (getf options :quiet))
          (publish cell "user.message"
                   (event::object "text" (getf options :text)
                                  "turn" (getf options :turn)
@@ -1171,7 +1209,28 @@ as diagnostics -- and stays registered, visibly, until an operator resolves it."
           (multiple-value-bind (name data) (event:from-loop loop-event)
             (when name (publish cell name data))))))
 
-(defun spawn (&key (label "") agent (id (session:new-id)))
+(defun resume-work (cell)
+  "Post the work CELL was restored with. The turn the daemon died during goes
+first and carries on where it stopped; the prompts behind it queue as they did.
+
+WITH NO TURN TO CARRY ON, a conversation left ending in an unanswered call has
+it answered as interrupted: no provider accepts that conversation, so the next
+prompt would fail on it. Before any turn is posted, so the agent is idle."
+  (let* ((pending (inbox-pending (cell-inbox cell)))
+         (agent (cell-agent cell))
+         (resuming (and pending (getf (cdr (first pending)) :resume))))
+    (unless resuming
+      (harness:settle-unanswered agent :rerun nil))
+    (dolist (entry pending)
+      (let ((options (cdr entry)))
+        (deliver cell (list* :user-message
+                             (if (and (getf options :resume)
+                                      (harness:turn-entered-p agent (car entry)))
+                                 (append options (list :quiet t))
+                                 options)))))
+    (length pending)))
+
+(defun spawn (&key (label "") agent (id (session:new-id)) restore)
   "Start a session that outlives whoever started it.
 
 ID IS THE RECORDED SESSION'S ID, and durable. It was minted here from a counter
@@ -1186,6 +1245,9 @@ visible loss. spec/Recovery.tla, RecoveryWitnessName."
     ;; The agent publishes through the cell, so every frontend sees the same
     ;; stream and none of them has to understand the agent loop's own events.
     (listen-through cell agent)
+    ;; WHAT THE LAST DAEMON HELD, before this cell's first marker is written,
+    ;; so a crash in between cannot lose it.
+    (when restore (setf (cell-inbox cell) (inbox-from restore)))
     (ensure-journal)
     (setf (cell-journal-path cell) (journal-path-for id))
     (bt:with-lock-held (*registry-lock*) (setf (gethash id *cells*) cell))
@@ -1232,18 +1294,32 @@ is running, when the running turn is over otherwise. spec/CellLifecycle.tla,
 RunningTurnKeepsItsModel."
   (tell cell :retarget :choice choice))
 
-(defun submit (cell text)
-  "Post a prompt and return the id of the turn it will become.
+(defun accept (cell options &key request)
+  "Record a turn durably, then post it. Returns (values TURN DUPLICATE-P).
+
+THE ACKNOWLEDGEMENT FOLLOWS THE WRITE. A prompt is in the live marker before
+its caller is told it was accepted, so a crash at any moment either loses a
+prompt nobody was told about or keeps one somebody was.
+
+REQUEST names the prompt across retries: a client that sent it, lost the
+connection and sent it again is answered with the turn the first one became."
+  (multiple-value-bind (turn duplicate posted)
+      (inbox-accept (cell-inbox cell) (cell-id cell) options :request request)
+    (unless duplicate
+      (remark cell)
+      (deliver cell (list* :user-message posted)))
+    (values turn duplicate)))
+
+(defun submit (cell text &key request)
+  "Post a prompt and return the id of the turn it will become, and whether
+REQUEST had already been accepted as that turn.
 
 Minted here rather than by the coordinator so a caller can wait for its own
 turn. Waiting for `the next turn to finish` waits for somebody else's when one
 is already running, and waits for the timeout when the turn fails or is
 cancelled."
-  (let ((cell (resolve cell)))
-    (when cell
-      (let ((turn (mint-turn cell)))
-        (tell cell :user-message :text text :turn turn)
-        turn))))
+  (a:when-let ((cell (resolve cell)))
+    (accept cell (list :text text) :request request)))
 
 (defun continue-if-asked (cell outcome)
   "Start the next turn of a loop, if the agent asked for one.
@@ -1260,9 +1336,7 @@ so a cancel arriving while the turn was still running has already emptied this."
   (when (eq outcome :completed)
     (a:when-let* ((agent (cell-agent cell))
                   (text (harness:take-continuation agent)))
-      (let ((turn (mint-turn cell)))
-        (tell cell :user-message :text text :turn turn :source "loop")
-        turn))))
+      (values (accept cell (list :text text :source "loop"))))))
 
 (defun submit-retention (cell)
   "Post a RETENTION turn and return its id.
@@ -1271,11 +1345,8 @@ The same path an ordinary prompt takes -- mint a turn, tell the cell -- so the
 lifecycle machine sees one kind of turn and the spec that mirrors it does not
 grow a case. What differs is only the mechanics: the worker runs the retention
 policy rather than a prompt, on the thread that owns the agent."
-  (let ((cell (resolve cell)))
-    (when cell
-      (let ((turn (mint-turn cell)))
-        (tell cell :user-message :text harness:*reflection-prompt* :retain t :turn turn)
-        turn))))
+  (a:when-let ((cell (resolve cell)))
+    (values (accept cell (list :text harness:*reflection-prompt* :retain t)))))
 
 (defun terminal-for-p (event turn)
   (and (member (event:event-name event) +terminal-events+ :test #'string=)
@@ -1316,18 +1387,18 @@ Returns the terminal EVENT, which is the turn's immutable record."
 are a one-shot script rather than an interface."
   (let ((cell (resolve cell)))
     (when cell
-      (let ((turn (mint-turn cell))
-            (mailbox (mailbox:make-mailbox))
+      (let ((mailbox (mailbox:make-mailbox))
             (key (gensym "WAIT")))
+        ;; Subscribed before the turn exists, so none of its events go by.
         (subscribe cell key mailbox)
         (unwind-protect
-             (progn (tell cell :user-message :text text :turn turn)
-                    ;; The event, not the live agent. Reading the agent after
-                    ;; waiting for turn N reads whatever turn N+1 -- already
-                    ;; started from the queue by FINISH-TURN -- is doing to it.
-                    (a:when-let ((event (drain-for-terminal cell mailbox turn timeout)))
-                      (gethash "text" (or (event:event-data event)
-                                          (make-hash-table :test #'equal)))))
+             (let ((turn (accept cell (list :text text))))
+               ;; The event, not the live agent. Reading the agent after
+               ;; waiting for turn N reads whatever turn N+1 -- already
+               ;; started from the queue by FINISH-TURN -- is doing to it.
+               (a:when-let ((event (drain-for-terminal cell mailbox turn timeout)))
+                 (gethash "text" (or (event:event-data event)
+                                     (make-hash-table :test #'equal)))))
           (unsubscribe cell key))))))
 
 (defun shutdown (cell)

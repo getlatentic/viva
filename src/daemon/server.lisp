@@ -468,7 +468,7 @@ files would go while the session stayed."
                (+ transcripts journals))))
     (bt:with-lock-held (*deleting-lock*) (remhash id *deleting*))))
 
-(defun start-session (command)
+(defun start-session (command &key restore)
   "Start a session, or continue one. Returns its cell.
 
 A SESSION THAT IS ALREADY RUNNING IS ATTACHED TO, NOT STARTED AGAIN. With ids
@@ -486,7 +486,8 @@ cell on the same transcript would be two writers to one file."
                                         (text-of command "cwd")
                                         (uiop:native-namestring (uiop:getcwd)))
                              :agent agent
-                             :id (session:session-id session))))
+                             :id (session:session-id session)
+                             :restore restore)))
       (when earlier (announce-resumed cell agent))
       cell)))
 
@@ -574,27 +575,6 @@ cell was in the image being replaced."
             (error (condition) (note-failure "resume" condition)))))
     (values agent session earlier)))
 
-(defun announce-interruption (cell)
-  "Say so when the daemon died in the middle of a turn.
-
-The session comes back; the turn does not. It was a thread in a process that
-is gone, and the request it was waiting on died with it. What the transcript
-holds is everything up to the last message written -- the question, and any
-tool results before the end -- so the conversation is intact up to there. But
-a person who closed the lid on an agent that was working and opens it to a
-session that is quietly idle has been told nothing, and will ask again what
-has already been half-answered. The interruption is said in the session's own
-stream, where the work was, not in a log nobody reads."
-  (let* ((agent (viva.actor::cell-agent cell))
-         (messages (loop*:context-messages (harness:agent-context agent)))
-         (last (car (last messages))))
-    (when (and last
-               (or (msg:user-message-p last)
-                   (and (msg:assistant-message-p last)
-                        (msg:tool-calls-in last))))
-      (actor:publish cell "session.error"
-                     (object "detail" "the daemon stopped while this turn was running; the turn did not finish. Ask again to continue.")))))
-
 (defun run-shell (cell line)
   "Run LINE in the session's directory, and publish it like any other call.
 
@@ -636,7 +616,11 @@ marker whose file is gone, a directory that no longer exists: each is reported
 and the rest come back. Restoring 199 sessions is not cancelled by the 200th.
 
 A transcript with nothing in it is not brought back, and its marker is removed:
-it is an accident of attaching, by the same rule CLOSE-SESSION removes the file."
+it is an accident of attaching, by the same rule CLOSE-SESSION removes the file.
+
+EACH COMES BACK WITH ITS WORK. The marker holds the turn that was running and
+the prompts accepted behind it; the turn carries on where the transcript says
+it stopped, and the prompts run after it (RESUME-WORK)."
   (let ((restored 0))
     (dolist (marker (actor:live-sessions))
       (let ((id (gethash "id" marker)) (cwd (gethash "cwd" marker)))
@@ -648,7 +632,11 @@ it is an accident of attaching, by the same rule CLOSE-SESSION removes the file.
                                    (make-condition 'simple-error
                                                    :format-control "~a has no transcript under ~a; marker dropped"
                                                    :format-arguments (list id cwd))))
-                    ((zerop (session:summary-messages recorded))
+                    ;; Unless it holds work: a first prompt accepted and not
+                    ;; yet written into the conversation is still owed.
+                    ((and (zerop (session:summary-messages recorded))
+                          (null (gethash "running" marker))
+                          (zerop (length (or (gethash "accepted" marker) #()))))
                      (actor:unmark-live id))
                     (t
                      (let ((command (make-hash-table :test #'equal)))
@@ -658,8 +646,8 @@ it is an accident of attaching, by the same rule CLOSE-SESSION removes the file.
                        (a:when-let ((model (gethash "model" marker)))
                          (when (and (stringp model) (plusp (length model)))
                            (setf (gethash "model" command) model)))
-                       (let ((cell (start-session command)))
-                         (announce-interruption cell)
+                       (let ((cell (start-session command :restore marker)))
+                         (actor:resume-work cell)
                          (incf restored))))))
           (error (condition)
             (note-failure "rehydrate"
@@ -846,10 +834,16 @@ correct and nobody could receive it."
         ;; work continues whether or not the caller stays connected. The turn
         ;; id comes back so a caller can name what it started -- to wait for
         ;; that turn, or to cancel that turn and not its successor.
+        ;; REQUEST names a prompt across retries. Answered once the prompt is
+        ;; written down, so an acknowledged prompt survives a crash; a retry
+        ;; of one already accepted gets the same turn back, marked duplicate.
         ((string= "prompt" type)
          (cond ((null cell) (no "No such session."))
                ((null (text-of command "text")) (no "prompt needs text."))
-               (t (ok "accepted" t "turn" (actor:submit cell (text-of command "text"))))))
+               (t (multiple-value-bind (turn duplicate)
+                      (actor:submit cell (text-of command "text")
+                                    :request (text-of command "request"))
+                    (ok "accepted" t "turn" turn "duplicate" duplicate)))))
 
         ((string= "steer" type)
          (if cell (progn (actor:tell cell :steer :text (text-of command "text")
