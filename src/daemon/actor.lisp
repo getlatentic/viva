@@ -1032,6 +1032,19 @@ else arrives meanwhile."
     (setf (cell-state cell) (first (cell-machine cell))
           (cell-turn cell) (current-turn cell))))
 
+(defun move-machine (cell next)
+  "Put CELL's machine in NEXT, and its display slots with it, in one step.
+
+TOGETHER, OR A READER SEES TWO ANSWERS. BUSY-P reads the machine and a snapshot
+reads the slots, and the slots were mirrored only after the transition's
+effects had run -- writing the live marker among them. A delete arriving in
+between found a session busy by one and idle by the other, and deleted a
+session whose turn was starting."
+  (owning (cell)
+    (setf (cell-machine cell) next)
+    (setf (cell-state cell) (first next)
+          (cell-turn cell) (current-turn cell))))
+
 (defun handle (cell message)
   (destructuring-bind (verb &rest options) message
     (case verb
@@ -1077,7 +1090,7 @@ else arrives meanwhile."
                             (invoke-restart 'kernel:ignore-message))))
            (multiple-value-bind (next effects)
                (kernel:cell-transition (cell-machine cell) translated)
-             (owning (cell) (setf (cell-machine cell) next))
+             (move-machine cell next)
              (dolist (effect effects) (run-effect cell effect options))
              (sync-mechanics cell)))))
       (t
@@ -1088,7 +1101,7 @@ else arrives meanwhile."
                             (invoke-restart 'kernel:ignore-message))))
            (multiple-value-bind (next effects)
                (kernel:cell-transition (cell-machine cell) translated)
-             (owning (cell) (setf (cell-machine cell) next))
+             (move-machine cell next)
              (dolist (effect effects) (run-effect cell effect options))
              (sync-mechanics cell))))))))
 
