@@ -34,7 +34,11 @@
   (parent nil)
   (kind :message :type keyword)
   (time 0 :type integer)
-  (payload nil))
+  (payload nil)
+  ;; The turn this entry was written in, when a daemon session wrote it. It is
+  ;; how a turn the daemon died during is known to have reached the
+  ;; conversation: the prompt it was given carries its id, or it does not.
+  (turn nil))
 
 (defstruct (session (:conc-name session-))
   (id "" :type string)
@@ -51,7 +55,10 @@
   ;; session, and it needs no new machinery: the tree already branches, so a
   ;; lane is a second name for a second leaf. "main" is the one everything uses
   ;; unless it says otherwise.
-  (lanes (make-hash-table :test #'equal) :type hash-table))
+  (lanes (make-hash-table :test #'equal) :type hash-table)
+  ;; One writer at a time. A parallel tool batch records results and intents
+  ;; from a thread per call, and two lines written at once interleave.
+  (lock (bt:make-lock "viva.transcript") :read-only t))
 
 (defparameter +conversation-kinds+
   '(:message :compaction :branch-summary :custom :custom-message
@@ -275,24 +282,29 @@ and anything more is content."
   entry)
 
 (defun append-entry (session kind payload &key (lane +main-lane+)
-                                            (parent (lane-leaf session lane)))
+                                            (parent nil parent-given)
+                                            turn)
   "Add one entry to the conversation tree and make it the new leaf.
 
 PARENT defaults to the current leaf, so ordinary appends form a line. Passing an
 older entry's id starts a branch there -- which is the whole of forking, and
 needs no second file."
-  (let ((entry (make-entry :id (next-entry-id) :parent parent :kind kind
-                           :time (get-universal-time)
-                           :payload (if (msg:message-p payload) (encode-message payload) payload))))
-    (remember-entry session entry)
-    (setf (lane-leaf session lane) (entry-id entry))
-    (write-line* session (object "kind" (string-downcase (symbol-name kind))
-                                 "id" (entry-id entry)
-                                 "parent" parent
-                                 "lane" (unless (string= lane +main-lane+) lane)
-                                 "time" (entry-time entry)
-                                 "payload" (entry-payload entry)))
-    entry))
+  (bt:with-lock-held ((session-lock session))
+    (let ((entry (make-entry :id (next-entry-id)
+                             :parent (if parent-given parent (lane-leaf session lane))
+                             :kind kind :turn turn
+                             :time (get-universal-time)
+                             :payload (if (msg:message-p payload) (encode-message payload) payload))))
+      (remember-entry session entry)
+      (setf (lane-leaf session lane) (entry-id entry))
+      (write-line* session (object "kind" (string-downcase (symbol-name kind))
+                                   "id" (entry-id entry)
+                                   "parent" (entry-parent entry)
+                                   "lane" (unless (string= lane +main-lane+) lane)
+                                   "turn" turn
+                                   "time" (entry-time entry)
+                                   "payload" (entry-payload entry)))
+      entry)))
 
 (defun append-record (session kind &rest plist)
   "Write an operational record: outside the tree, never sent to a model.
@@ -300,15 +312,16 @@ needs no second file."
 Silently does nothing without a session, so a caller that traces need not know
 whether anyone asked for a transcript."
   (when session
-    (let ((entry (make-entry :id (next-entry-id) :parent nil :kind kind
-                             :time (get-universal-time)
-                             :payload (apply #'object plist))))
-      (remember-entry session entry)
-      (write-line* session (object "kind" (string-downcase (symbol-name kind))
-                                   "id" (entry-id entry)
-                                   "time" (entry-time entry)
-                                   "payload" (entry-payload entry)))
-      entry)))
+    (bt:with-lock-held ((session-lock session))
+      (let ((entry (make-entry :id (next-entry-id) :parent nil :kind kind
+                               :time (get-universal-time)
+                               :payload (apply #'object plist))))
+        (remember-entry session entry)
+        (write-line* session (object "kind" (string-downcase (symbol-name kind))
+                                     "id" (entry-id entry)
+                                     "time" (entry-time entry)
+                                     "payload" (entry-payload entry)))
+        entry))))
 
 (defun record-entry (session kind payload)
   "Append one conversation entry. The name the harness already calls."
@@ -394,7 +407,9 @@ the format."
                                      :parent (let ((p (gethash "parent" table))) (and (stringp p) p))
                                      :kind (a:make-keyword (string-upcase (or kind "message")))
                                      :time (or (gethash "time" table) 0)
-                                     :payload (gethash "payload" table))))
+                                     :payload (gethash "payload" table)
+                                     :turn (let ((turn (gethash "turn" table)))
+                                             (and (stringp turn) turn)))))
                          (remember-entry session entry)
                          ;; The leaf is the last tree entry written. In a linear
                          ;; session that is the end; in a branched one it is the

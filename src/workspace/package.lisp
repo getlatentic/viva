@@ -188,10 +188,12 @@
 (defpackage #:viva.session
   (:use #:cl)
   (:local-nicknames (#:a #:alexandria)
+                    (#:bt #:bordeaux-threads)
                     (#:jzon #:com.inuoe.jzon)
                     (#:env #:viva.env)
                     (#:msg #:viva.message))
   (:export #:session #:session-p #:open-session #:reopen-session #:new-id #:session-path #:session-id
+           #:entry-turn
            #:session-entries #:session-cwd #:session-leaf #:session-parent
            #:lane-leaf #:lanes-of #:+main-lane+ #:session-lanes
            #:record-entry #:append-entry #:append-record #:append-custom-message #:append-custom #:entries-of #:records-of
