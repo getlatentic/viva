@@ -207,6 +207,7 @@ everybody resolves."
                                :error-p t))))
 
 (tool:define-tool list-capabilities (args context)
+  :replay :safe
   :name "list_capabilities"
   :description "What capabilities exist: the promoted defaults every task
 resolves, and whatever you have put in force for this one."
@@ -290,6 +291,7 @@ those could read work the isolation law exists to keep separate."
           (capability-text source)))
 
 (tool:define-tool show-capability (args context)
+  :replay :safe
   :name "show_capability"
   :description "Read what a capability does now: its source, what it is for,
 and the versions behind it.

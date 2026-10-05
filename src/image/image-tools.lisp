@@ -34,6 +34,7 @@ trial child can rebind it without rebuilding the tool set.")
         (t (format nil "Installed ~a." (image:installation-target result)))))
 
 (tool:define-tool read-definition (args context)
+  :replay :safe
   :description "Read the source of one definition in the running image."
   :parameters (("target" :string "A definition, e.g. \"DEFUN MY-PACKAGE::ORDER-TOTAL\"" :required-p t))
   (let* ((target (gethash "target" args))
@@ -66,6 +67,7 @@ version it replaced."
   (report-installation (image:rollback-definition (backend) (gethash "target" args))))
 
 (tool:define-tool find-definitions (args context)
+  :replay :safe
   :description "List definitions in the running image. Called with no pattern it
 lists EVERY definition, which is how you discover state you were not told about;
 with a pattern it lists those whose name contains it."

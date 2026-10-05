@@ -11,7 +11,13 @@
    (description :initarg :description :reader tool-description :type string)
    ;; ((name type description &key required) ...), turned into JSON schema at the
    ;; provider boundary. Kept declarative so a schema is never hand-written.
-   (parameters :initarg :parameters :initform '() :reader tool-parameters)))
+   (parameters :initarg :parameters :initform '() :reader tool-parameters)
+   ;; :SAFE when running a call twice does what running it once does -- reading,
+   ;; listing, searching -- so a call a crash cut off can simply run again.
+   ;; :UNSAFE otherwise, and by default: a write, a shell command or a deploy may
+   ;; already have happened, and running it again is a second one.
+   (replay :initarg :replay :initform :unsafe :reader tool-replay
+           :type (member :safe :unsafe))))
 
 (defmethod print-object ((tool tool) stream)
   (print-unreadable-object (tool stream :type t)
@@ -101,6 +107,7 @@ return early without the caller needing a symbol out of this package.
                        return rest))
          (description (getf options :description))
          (parameters (getf options :parameters))
+         (replay (getf options :replay :unsafe))
          (name (or (getf options :name)
                    (string-downcase (substitute #\_ #\- (symbol-name variable))))))
     `(defparameter ,variable
@@ -108,6 +115,7 @@ return early without the caller needing a symbol out of this package.
                       :name ,name
                       :description ,description
                       :parameters ',parameters
+                      :replay ,replay
                       :body (lambda (,arguments ,context)
                               (declare (ignorable ,arguments ,context))
                               (block ,variable ,@body))))))

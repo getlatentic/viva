@@ -46,7 +46,8 @@ than by ambient inheritance, which is not.")
   (exec '() :type list)
   (parameters '() :type list)
   (directory "" :type string)
-  (digest nil))
+  (digest nil)
+  (replay :unsafe :type (member :safe :unsafe)))
 
 ;;; Reading manifests
 
@@ -93,6 +94,9 @@ a tool that fails to load looks exactly like a tool nobody wrote."
         ((or (not (vectorp exec)) (zerop (length exec))
              (notevery #'stringp (coerce exec 'list)))
          (values nil (format nil "~a needs exec as a non-empty array of strings" name)))
+        ((not (member (field table "replay") '(nil "safe" "unsafe") :test #'equal))
+         (values nil (format nil "~a: replay is \"safe\" or \"unsafe\", not ~s"
+                             name (field table "replay"))))
         (t
          (let ((specs '()))
            (loop for spec across (or parameters #())
@@ -107,6 +111,7 @@ a tool that fails to load looks exactly like a tool nobody wrote."
                                          (and (stringp recorded) recorded))
                                :version (or (field table "version") 1)
                                :exec (coerce exec 'list)
+                               :replay (if (equal "safe" (field table "replay")) :safe :unsafe)
                                :parameters (nreverse specs)
                                :directory directory)
                    nil)))))))
@@ -226,6 +231,7 @@ files the task sees and nothing else it was not pointed at."
    :name (entry-name entry)
    :description (entry-description entry)
    :parameters (entry-parameters entry)
+   :replay (entry-replay entry)
    :body (lambda (arguments context)
            (declare (ignore context))
            (handler-case

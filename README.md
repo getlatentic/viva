@@ -90,11 +90,15 @@ result. `.viva/tools/word_count/tool.json`:
   "description": "Count the words in a piece of text.",
   "version": 1,
   "exec": ["python3", "run.py"],
+  "replay": "safe",
   "parameters": [
     {"name": "text", "type": "string", "description": "the text to count", "required": true}
   ]
 }
 ```
+
+`"replay": "safe"` says that running the tool twice does no harm, so a call a
+crash cut off runs again. Leave it out for a tool that changes anything.
 
 `.viva/tools/word_count/run.py`:
 

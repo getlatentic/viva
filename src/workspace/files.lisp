@@ -80,6 +80,7 @@ range costs four lines; explaining it to every model costs every run."
       (values offset (when (and limit (plusp limit)) limit)))))
 
 (tool:define-tool read-tool (args context)
+  :replay :safe
   :name "read"
   :description "Read the contents of a file. Output is truncated to 2000 lines
 or 50KB, whichever comes first; use offset and limit for large files, and keep
