@@ -37,8 +37,17 @@ MSG
   exit 2
 fi
 
+failures=0
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
 # config : module : expectation : what the expectation means
-cases='
+#
+# A QUOTED HEREDOC, so a description may say anything. In a single-quoted
+# string an apostrophe ended the list there, and the rest ran as commands.
+# Read back by redirection, never by a pipe: a piped while runs in a subshell
+# and every failure it counted would be discarded at the done.
+cat > "$work/cases" <<'CASES'
 CellLifecycle:CellLifecycle:holds:the cell lifecycle, complete space
 CellLifecycleWitnessRetarget:CellLifecycle:violates:a model applied at once reaches a turn already running
 CellLifecycleWitnessHold:CellLifecycle:violates:a draining turn that starts its queue breaks the hold
@@ -69,14 +78,7 @@ ResumptionWitnessAck:Resumption:violates:acknowledged before written down, a cra
 ResumptionWitnessDedupe:Resumption:violates:request ids kept in memory, a retry after a crash runs twice
 ResumptionWitnessRerun:Resumption:violates:running every unanswered call again runs an unsafe one twice
 ResumptionWitnessPolicy:Resumption:violates:trusting the class a tool has now runs a call recorded unsafe twice
-'
-
-failures=0
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-# Fed by redirection, never by a pipe: a piped while runs in a subshell and
-# every failure it counted would be discarded at the done.
-printf '%s\n' "$cases" > "$work/cases"
+CASES
 
 printf '%-28s %-9s %s\n' CONFIG EXPECTED RESULT
 while IFS=: read -r config module expect meaning; do
